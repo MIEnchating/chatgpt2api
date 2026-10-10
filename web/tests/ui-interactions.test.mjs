@@ -457,7 +457,8 @@ test("workflow editor keeps multi-image planning in the main flow and a stable s
   assert.match(workflowEditorSource, /bg-card shadow-sm lg:sticky lg:top-0/);
   assert.ok(workflowEditorSource.indexOf("多图提示词规划") < workflowEditorSource.indexOf("<aside className"));
   assert.match(workflowEditorSource, /<Field label="工作流名称">/);
-  assert.match(workflowEditorSource, /<Field label="用户提示词模板">/);
+  assert.match(workflowEditorSource, /<label htmlFor="workflow-prompt-template"[^>]*>用户提示词模板<\/label>/);
+  assert.match(workflowEditorSource, /<Textarea\s+id="workflow-prompt-template"/);
   assert.match(workflowSource, /function VariableEditor\(\{ index,/);
   assert.match(workflowSource, />变量 \{index \+ 1\}</);
   assert.match(workflowSource, /sm:grid-cols-2 xl:grid-cols-3/);

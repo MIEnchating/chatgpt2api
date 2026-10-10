@@ -48,7 +48,7 @@ import {
 } from "@/lib/api";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { relayTokenOptions } from "@/lib/relay-token-selection";
-import { filterModelsByCapability } from "@/lib/model-capabilities";
+import { filterModelsByCapability, type ModelCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
 import type { StoredAuthSession } from "@/lib/auth-session";
 
@@ -90,6 +90,8 @@ function GlobalModelList({
   onClear,
   onConfigure,
   definitions,
+  capabilities,
+  onCapabilityChange,
 }: {
   icon: typeof ImageIcon;
   kind: ModelKind;
@@ -99,6 +101,8 @@ function GlobalModelList({
   onClear: () => void;
   onConfigure?: (model: string) => void;
   definitions?: ImageModelDefinitions;
+  capabilities?: Record<string, ModelCapability>;
+  onCapabilityChange?: (model: string, capability: ModelCapability) => void;
 }) {
   const title = modelKindMetadata[kind].title;
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -178,6 +182,7 @@ function GlobalModelList({
                 <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing" aria-label="拖拽排序" />
                 <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
                 <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
+                {onCapabilityChange ? <Select value={capabilities?.[model] || kind} onValueChange={(value) => onCapabilityChange(model, value as ModelCapability)}><SelectTrigger className="h-7 w-24 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{(["text", "image", "video", "audio"] as ModelCapability[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select> : null}
               </div>
               <div className="flex items-center justify-end gap-2 sm:shrink-0">
                 {index === 0 ? <Badge className="mr-auto shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
@@ -235,6 +240,7 @@ function GlobalModelList({
 
 function AddModelDialog({
   modelsByKind,
+  capabilities,
   onAdd,
   open,
   onOpenChange,
@@ -242,6 +248,7 @@ function AddModelDialog({
   initialKind,
 }: {
   modelsByKind: Record<ModelKind, string[]>;
+  capabilities: Record<string, ModelCapability>;
   onAdd: (kind: ModelKind, models: string[]) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -401,6 +408,7 @@ function AddModelDialog({
           relayModelOptionsFromList(response.data).map((option) => option.value)
         )))),
         requestKind,
+        capabilities,
       );
       setFetchedModels(models);
       setSelectedModels(new Set());
@@ -607,6 +615,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const setVideoModels = useSettingsStore((state) => state.setVideoModels);
   const setTextModels = useSettingsStore((state) => state.setTextModels);
   const setAudioModels = useSettingsStore((state) => state.setAudioModels);
+  const setModelCapabilities = useSettingsStore((state) => state.setModelCapabilities);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKind, setAddDialogKind] = useState<ModelKind>("image");
 
@@ -615,6 +624,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const textModels = normalizeModelNames(config?.text_models, []);
   const audioModels = normalizeModelNames(config?.audio_models, []);
   const modelsByKind: Record<ModelKind, string[]> = { text: textModels, image: imageModels, video: videoModels, audio: audioModels };
+  const capabilities = config?.model_capabilities || {};
 
   if (isLoadingConfig || !config) {
     return (
@@ -665,6 +675,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onChange={(models) => updateModels("text", models)}
               onAdd={() => openAddDialog("text")}
               onClear={() => updateModels("text", [])}
+              capabilities={capabilities}
+              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
               icon={ImageIcon}
@@ -675,6 +687,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onClear={() => updateModels("image", [])}
               onConfigure={setDefinitionModel}
               definitions={config.image_model_definitions}
+              capabilities={capabilities}
+              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
               icon={Clapperboard}
@@ -683,6 +697,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onChange={(models) => updateModels("video", models)}
               onAdd={() => openAddDialog("video")}
               onClear={() => updateModels("video", [])}
+              capabilities={capabilities}
+              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
               icon={AudioLines}
@@ -691,12 +707,15 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onChange={(models) => updateModels("audio", models)}
               onAdd={() => openAddDialog("audio")}
               onClear={() => updateModels("audio", [])}
+              capabilities={capabilities}
+              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
           </div>
         </div>
       </SettingsCard>
       <AddModelDialog
         modelsByKind={modelsByKind}
+        capabilities={capabilities}
         onAdd={addModels}
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}

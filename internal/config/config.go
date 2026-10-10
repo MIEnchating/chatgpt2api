@@ -17,6 +17,7 @@ import (
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/translation"
 	"chatgpt2api/internal/util"
 
 	"github.com/robfig/cron/v3"
@@ -28,6 +29,7 @@ var settingEnvKeys = map[string]string{
 	"project_name":                   "PROJECT_NAME",
 	"site_icon_url":                  "SITE_ICON_URL",
 	"relay_base_url":                 "API_BASE_URL",
+	"relay_parameter_translation":    "RELAY_PARAMETER_TRANSLATION",
 	"relay_text_group":               "RELAY_TEXT_GROUP",
 	"relay_image_group":              "RELAY_IMAGE_GROUP",
 	"relay_video_group":              "RELAY_VIDEO_GROUP",
@@ -43,6 +45,7 @@ var settingEnvKeys = map[string]string{
 	"proxy":                          "PROXY",
 	"image_models":                   "IMAGE_MODELS",
 	"image_model_definitions":        "IMAGE_MODEL_DEFINITIONS",
+	"model_capabilities":             "MODEL_CAPABILITIES",
 	"video_models":                   "VIDEO_MODELS",
 	"text_models":                    "TEXT_MODELS",
 	"audio_models":                   "AUDIO_MODELS",
@@ -454,6 +457,10 @@ func (s *Store) ProjectName() string {
 	return value
 }
 
+func (s *Store) RelayParameterTranslation() string {
+	return strings.TrimSpace(util.Clean(s.settingValue("relay_parameter_translation", "")))
+}
+
 func (s *Store) RelayBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
 }
@@ -667,6 +674,10 @@ func (s *Store) ImageModels() []string {
 	return normalizeModelList(s.settingValue("image_models", defaultImageModels), defaultImageModels)
 }
 
+func (s *Store) ModelCapabilities() map[string]string {
+	return normalizeModelCapabilities(s.settingValue("model_capabilities", nil))
+}
+
 func (s *Store) VideoModels() []string {
 	return normalizeModelList(s.settingValue("video_models", defaultVideoModels), defaultVideoModels)
 }
@@ -719,6 +730,7 @@ func (s *Store) Get() map[string]any {
 	data["image_task_timeout_seconds"] = snapshot.ImageTaskTimeoutSeconds()
 	data["image_models"] = snapshot.ImageModels()
 	data["image_model_definitions"] = snapshot.ImageModelDefinitions()
+	data["model_capabilities"] = snapshot.ModelCapabilities()
 	data["video_models"] = snapshot.VideoModels()
 	data["text_models"] = snapshot.TextModels()
 	data["audio_models"] = snapshot.AudioModels()
@@ -748,6 +760,7 @@ func (s *Store) Get() map[string]any {
 	data["project_name"] = snapshot.ProjectName()
 	data["site_icon_url"] = snapshot.SiteIconURL()
 	data["relay_base_url"] = snapshot.RelayBaseURL()
+	data["relay_parameter_translation"] = snapshot.RelayParameterTranslation()
 	data["relay_database_type"] = snapshot.RelayDatabaseType()
 	for _, kind := range []string{"text", "image", "video", "audio"} {
 		key := "relay_" + kind + "_group"
@@ -841,6 +854,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["image_models"]; ok {
 		next["image_models"] = normalizeModelList(value, defaultImageModels)
+	}
+	if value, ok := next["model_capabilities"]; ok {
+		next["model_capabilities"] = normalizeModelCapabilities(value)
 	}
 	if value, ok := next["video_models"]; ok {
 		next["video_models"] = normalizeModelList(value, defaultVideoModels)
@@ -955,6 +971,9 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 }
 
 func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
+	if _, err := translation.Models(util.Clean(s.settingValueFromData(data, "relay_parameter_translation", ""))); err != nil {
+		return err
+	}
 	if _, err := decodeImageModelDefinitions(s.settingValueFromData(data, "image_model_definitions", nil)); err != nil {
 		return err
 	}
@@ -1326,6 +1345,30 @@ func normalizeModelList(value any, fallback []string) []string {
 		return append([]string(nil), fallback...)
 	}
 	return out
+}
+
+func normalizeModelCapabilities(value any) map[string]string {
+	result := map[string]string{}
+	var source map[string]any
+	switch typed := value.(type) {
+	case map[string]any:
+		source = typed
+	case map[string]string:
+		source = map[string]any{}
+		for model, capability := range typed {
+			source[model] = capability
+		}
+	case string:
+		_ = json.Unmarshal([]byte(typed), &source)
+	}
+	for model, raw := range source {
+		model = strings.TrimSpace(model)
+		capability := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
+		if model != "" && (capability == "text" || capability == "image" || capability == "video" || capability == "audio") {
+			result[model] = capability
+		}
+	}
+	return result
 }
 
 func firstString(values []string, fallback string) string {

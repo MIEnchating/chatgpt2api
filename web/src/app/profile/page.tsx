@@ -21,6 +21,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import { ChannelParameterEditor } from "@/components/channel-parameter-editor";
 import { Badge } from "@/components/ui/badge";
 import { SectionNavigation } from "@/components/section-navigation";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ import {
   type ImageGenerationPreferences,
   type CustomRelayConfigStatus,
   type CustomRelayConfigsResponse,
+  type ModelCapability,
   type ProfileBalanceStatus,
 } from "@/lib/api";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
@@ -244,6 +246,7 @@ function CustomRelayConfigDialog({
   sessionKey: string;
 }) {
   const [baseURL, setBaseURL] = useState("");
+  const [parameterTranslation, setParameterTranslation] = useState("");
   const [protocol, setProtocol] = useState<CustomRelayConfigStatus["protocol"]>("openai");
   const [name, setName] = useState("");
   const [apiKey, setAPIKey] = useState("");
@@ -262,9 +265,10 @@ function CustomRelayConfigDialog({
     setName(status?.name || "");
     setProtocol(status?.protocol || "openai");
     setBaseURL(status?.base_url || "");
+    setParameterTranslation(status?.parameter_translation || "");
     setAPIKey("");
     setConfirmDelete(deleteRequested);
-  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol]);
+  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol, status?.parameter_translation]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
@@ -275,8 +279,8 @@ function CustomRelayConfigDialog({
     setIsSaving(true);
     try {
       const { item } = status
-        ? await updateCustomRelayConfig(status.id, { protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
-        : await createCustomRelayConfig({ protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
+        ? await updateCustomRelayConfig(status.id, { parameter_translation: parameterTranslation, protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
+        : await createCustomRelayConfig({ parameter_translation: parameterTranslation, protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
       if (!isCurrentSession()) return;
       onSaved(item);
       toast.success(`${title}自定义 API 配置已保存`);
@@ -344,6 +348,7 @@ function CustomRelayConfigDialog({
             <span>API Key</span>
             <Input type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" />
           </label>
+          {kind !== "text" ? <ChannelParameterEditor value={parameterTranslation} onChange={setParameterTranslation} baseURL={baseURL} kind={kind} disabled={isSaving} /> : null}
         </div> : null}
         <DialogFooter>
           {status ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
@@ -492,6 +497,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     image: { models: [] as string[], defaultModel: "" },
     video: { models: [] as string[], defaultModel: "" },
     audio: { models: [] as string[], defaultModel: "" },
+    capabilities: {} as Record<string, ModelCapability>,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -542,6 +548,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
             image: { models: configuredModels.image, defaultModel: resolveConfiguredModel(configuredModels.image, config.default_image_model) },
             video: { models: configuredModels.video, defaultModel: resolveConfiguredModel(configuredModels.video, config.default_video_model) },
             audio: { models: configuredModels.audio, defaultModel: resolveConfiguredModel(configuredModels.audio, config.default_audio_model) },
+            capabilities: config.model_capabilities || {},
           });
         }
         if (preferencesResult.status === "fulfilled") {
@@ -631,6 +638,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       const upstreamModels = filterModelsByCapability(
         Array.from(new Set(responses.flatMap((response) => relayModelOptionsFromList(response.data).map((option) => option.value)))),
         kind,
+        modelConfig.capabilities,
       );
       const upstreamSet = new Set(upstreamModels);
       const availableModels = modelConfig[kind].models.filter((model) => upstreamSet.has(model));

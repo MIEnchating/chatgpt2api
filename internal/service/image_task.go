@@ -33,7 +33,8 @@ const (
 	// the task's terminal state has been persisted.
 	ImageOutputCompletionReleasePayloadKey = "image_output_completion_release"
 
-	TextOutputCallbackPayloadKey = "text_output_callback"
+	TextOutputCallbackPayloadKey        = "text_output_callback"
+	MediaTaskProgressCallbackPayloadKey = "media_task_progress_callback"
 	// VideoTaskProgressCallbackPayloadKey reports the normalized upstream
 	// queue state without exposing a provider-specific status as our task state.
 	VideoTaskProgressCallbackPayloadKey = "video_task_progress_callback"
@@ -792,6 +793,9 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			return
 		}
 		return
+	}
+	payload[MediaTaskProgressCallbackPayloadKey] = func(progress int) {
+		_ = s.updateActiveTask(key, map[string]any{"status": TaskStatusRunning, "progress": max(0, min(99, progress))})
 	}
 	result, err := handler(runCtx, identity, payload)
 	completionRelease, _ := payload[ImageOutputCompletionReleasePayloadKey].(func())
@@ -1935,6 +1939,9 @@ func normalizedFallbackReferenceImage(value any) map[string]any {
 }
 
 func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	if value, ok := metadata["relay_task_credential"]; ok {
+		payload["relay_task_credential"] = value
+	}
 	if snapshot, ok := metadata["video_contract_snapshot"]; ok && snapshot != nil {
 		payload["video_contract_snapshot"] = snapshot
 	}

@@ -293,6 +293,9 @@ func (a *App) runLoggedAudioTask(ctx context.Context, identity service.Identity,
 
 func (a *App) relayAudioSpeech(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	ctx = relayContextForPayload(ctx, payload)
+	if result, matched, err := a.relayTranslatedMedia(ctx, payload, nil, "audio"); matched || err != nil {
+		return result, err
+	}
 	if util.Clean(payload["relay_protocol"]) == "autodl" {
 		return a.relayAutoDLTask(ctx, payload, "audio", time.Duration(a.config.ImageTaskTimeoutSeconds())*time.Second)
 	}

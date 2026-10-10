@@ -5,9 +5,11 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  Braces,
   ChevronDown,
   ChevronRight,
   CircleCheck,
+  CircleAlert,
   Clock3,
   ClipboardList,
   Copy,
@@ -2109,11 +2111,30 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
 
 function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, onChange, onSave, onAssetsOpen, onReferencesAdd, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; referenceBusy: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onClose: () => void }) {
   const templateInputRef = useRef<HTMLInputElement>(null);
+  const promptTemplateRef = useRef<HTMLTextAreaElement>(null);
   if (!workflow) return null;
   const patch = (value: Partial<CreativeWorkflow>) => onChange({ ...workflow, ...value });
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
   const patchSeries = (value: Partial<WorkflowSeriesConfig>) => patch({ series_config: { ...workflow.series_config, ...value } });
   const patchVariable = (id: string, value: Partial<WorkflowVariable>) => patch({ variables: workflow.variables.map((item) => item.id === id ? { ...item, ...value } : item) });
+  const promptTemplate = workflow.config.prompt_template;
+  const templateVariableKeys = Array.from(promptTemplate.matchAll(/{{\s*([\w.-]+)\s*}}/g), (match) => match[1]);
+  const uniqueTemplateVariableKeys = [...new Set(templateVariableKeys)];
+  const knownVariableKeys = new Set(workflow.variables.map((variable) => variable.key).filter(Boolean));
+  const undefinedTemplateVariables = uniqueTemplateVariableKeys.filter((key) => !knownVariableKeys.has(key));
+  const insertTemplateVariable = (key: string) => {
+    const textarea = promptTemplateRef.current;
+    const token = `{{${key}}}`;
+    const start = textarea?.selectionStart ?? promptTemplate.length;
+    const end = textarea?.selectionEnd ?? start;
+    const nextPrompt = `${promptTemplate.slice(0, start)}${token}${promptTemplate.slice(end)}`;
+    patchConfig({ prompt_template: nextPrompt });
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      const cursor = start + token.length;
+      textarea?.setSelectionRange(cursor, cursor);
+    });
+  };
   const removeTemplateReference = (id: string) => {
     const templateReferences = workflow.template_references.filter((reference) => reference.id !== id);
     patch({
@@ -2264,7 +2285,37 @@ function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, 
                   <h3 className="text-sm font-semibold">提示词模板</h3>
                 </div>
                 <div className="space-y-4">
-                  <Field label="用户提示词模板"><Textarea rows={7} value={workflow.config.prompt_template} onChange={(event) => patchConfig({ prompt_template: event.target.value })} placeholder="使用 {{变量名}} 插入变量" /></Field>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="workflow-prompt-template" className="text-sm font-medium">用户提示词模板</label>
+                      <span className="text-xs tabular-nums text-muted-foreground">{promptTemplate.length} 字 · {Math.max(1, promptTemplate.split("\n").length)} 行</span>
+                    </div>
+                    <div className="overflow-hidden rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+                      <Textarea
+                        id="workflow-prompt-template"
+                        ref={promptTemplateRef}
+                        rows={8}
+                        className="min-h-44 resize-y rounded-none border-0 bg-transparent font-mono text-[13px] leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0"
+                        value={promptTemplate}
+                        onChange={(event) => patchConfig({ prompt_template: event.target.value })}
+                        placeholder="例如：为 {{product_name}} 生成一张……"
+                      />
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1"><Braces className="size-3.5" />使用双大括号插入变量</span>
+                        <span>空变量会替换为空文本</span>
+                        {undefinedTemplateVariables.length ? <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><CircleAlert className="size-3.5" />未定义：{undefinedTemplateVariables.join("、")}</span> : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">快速插入</span>
+                      {workflow.variables.length ? workflow.variables.map((variable) => (
+                        <Button key={variable.id} type="button" size="sm" variant="outline" className="h-7 px-2 font-mono text-xs" onClick={() => insertTemplateVariable(variable.key)} disabled={!variable.key}>
+                          {`{{${variable.key || "变量名"}}}`}
+                        </Button>
+                      )) : <span className="text-xs text-muted-foreground">先在上方添加变量</span>}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">建议把固定要求写在模板中，把产品名称、风格、受众等变化内容定义为变量。变量名必须与上方设置完全一致。</p>
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="系统提示词"><Textarea rows={3} value={workflow.config.system_prompt} onChange={(event) => patchConfig({ system_prompt: event.target.value })} placeholder="可选" /></Field>
                     <Field label="负面约束"><Textarea rows={3} value={workflow.config.negative_prompt} onChange={(event) => patchConfig({ negative_prompt: event.target.value })} placeholder="可选" /></Field>

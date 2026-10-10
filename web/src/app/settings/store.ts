@@ -56,6 +56,11 @@ function normalizeConfiguredModels(value: unknown, fallback: readonly string[]) 
   return normalizeModelNames(value, []);
 }
 
+function normalizeModelCapabilities(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, capability]) => ["text", "image", "video", "audio"].includes(String(capability)))) as NonNullable<SettingsConfig["model_capabilities"]>;
+}
+
 function databaseFieldsFromConfig(config: SettingsConfig) {
   return {
     driver: config.relay_database_driver === "sqlite" ? "sqlite" : config.relay_database_driver === "mysql" ? "mysql" : "postgres",
@@ -93,6 +98,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     text_models: textModels,
     default_text_model: resolveConfiguredModel(textModels, config.default_text_model),
     audio_models: audioModels,
+    model_capabilities: normalizeModelCapabilities(config.model_capabilities),
     default_audio_model: resolveConfiguredModel(audioModels, config.default_audio_model),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
@@ -190,6 +196,7 @@ type SettingsStore = SettingsSessionData & {
   setImageTaskTimeoutSeconds: (value: string) => void;
   setImageModels: (value: string) => void;
   setImageModelDefinitions: (value: NonNullable<SettingsConfig["image_model_definitions"]>) => void;
+  setModelCapabilities: (value: NonNullable<SettingsConfig["model_capabilities"]>) => void;
   setVideoModels: (value: string) => void;
   setTextModels: (value: string) => void;
   setAudioModels: (value: string) => void;
@@ -207,6 +214,7 @@ type SettingsStore = SettingsSessionData & {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
+  setRelayParameterTranslation: (value: string) => void;
   setRelayCreationGroup: (kind: "text" | "image" | "video" | "audio", value: string) => void;
   setRelayDatabaseType: (value: "newapi" | "sub2api") => void;
   setRelayDatabaseDriver: (value: "sqlite" | "postgres" | "mysql") => void;
@@ -399,6 +407,7 @@ export function createSettingsStore(
         text_models: textModels,
         default_text_model: resolveConfiguredModel(textModels, config.default_text_model),
         audio_models: audioModels,
+        model_capabilities: config.model_capabilities || {},
         default_audio_model: resolveConfiguredModel(audioModels, config.default_audio_model),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
@@ -517,6 +526,10 @@ export function createSettingsStore(
     set((state) => state.config ? { config: { ...state.config, image_model_definitions: value } } : {});
   },
 
+  setModelCapabilities: (value) => {
+    set((state) => state.config ? { config: { ...state.config, model_capabilities: value } } : {});
+  },
+
   setVideoModels: (value) => {
     set((state) => state.config ? { config: { ...state.config, video_models: value, default_video_model: normalizeModelNames(value, [])[0] || "" } } : {});
   },
@@ -579,6 +592,9 @@ export function createSettingsStore(
     });
   },
 
+  setRelayParameterTranslation: (value) => {
+    set((state) => state.config ? { config: { ...state.config, relay_parameter_translation: value } } : {});
+  },
   setRelayBaseUrl: (value) => {
     set((state) => {
       if (!state.config) {

@@ -119,7 +119,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     if (!editor) return;
     removeActiveContentEditableMention();
     const leadingSpace = document.createTextNode(" ");
-    const chip = createReferenceChip(reference, setImagePreview);
+    const chip = createReferenceChip(reference, setImagePreview, `@${reference.label}`);
     const trailingSpace = document.createTextNode(" ");
     const selection = window.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;

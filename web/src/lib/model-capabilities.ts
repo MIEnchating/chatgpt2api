@@ -1,4 +1,6 @@
-export type ModelCapability = "text" | "image" | "video" | "audio";
+import type { ModelCapability as ConfiguredModelCapability } from "./api";
+
+export type ModelCapability = ConfiguredModelCapability;
 
 function normalizedModelName(model: string) {
   return String(model || "").trim().toLowerCase();
@@ -13,6 +15,7 @@ function isAudioModelName(model: string) {
 function isVideoModelName(model: string) {
   const value = normalizedModelName(model);
   if (/(^|\/)minimax-m\d+(?:$|[-.])/.test(value)) return false;
+  if (/(^|\/)sd2(?:[.\s/_-]|$)/.test(value)) return true;
   return [
     "video", "sora", "veo", "kling", "hailuo", "minimax", "seedance", "wan2", "wan/2",
     "t2v-", "i2v-", "s2v-", "r2v", "videoedit", "jimeng", "即梦", "vidu", "pixverse",
@@ -32,13 +35,15 @@ function isImageModelName(model: string) {
   ].some((keyword) => value.includes(keyword));
 }
 
-function modelMatchesCapability(model: string, capability: ModelCapability) {
+function modelMatchesCapability(model: string, capability: ModelCapability, explicit?: Record<string, ModelCapability>) {
+  const configured = explicit?.[model] || explicit?.[model.trim()];
+  if (configured) return configured === capability;
   if (capability === "audio") return isAudioModelName(model);
   if (capability === "video") return isVideoModelName(model);
   if (capability === "image") return isImageModelName(model);
   return !isAudioModelName(model) && !isVideoModelName(model) && !isImageModelName(model);
 }
 
-export function filterModelsByCapability(models: string[], capability: ModelCapability) {
-  return models.filter((model) => modelMatchesCapability(model, capability));
+export function filterModelsByCapability(models: string[], capability: ModelCapability, explicit?: Record<string, ModelCapability>) {
+  return models.filter((model) => modelMatchesCapability(model, capability, explicit));
 }

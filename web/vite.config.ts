@@ -84,6 +84,9 @@ export default defineConfig({
     strictPort: true,
     proxy: backendProxy,
   },
+  optimizeDeps: {
+    force: true,
+  },
   build: {
     outDir: "../internal/web/dist",
     emptyOutDir: true,

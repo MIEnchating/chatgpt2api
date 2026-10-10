@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/HugoSmits86/nativewebp v1.2.1
+	github.com/dop251/goja v0.0.0-20261002085108-39f5d4011994
 	github.com/enetx/g v1.0.224
 	github.com/enetx/surf v1.0.199
 	github.com/go-sql-driver/mysql v1.9.3
@@ -21,11 +22,14 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.8.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/enetx/http v1.0.28 // indirect
 	github.com/enetx/http2 v1.0.26 // indirect
 	github.com/enetx/http3 v1.0.7 // indirect
 	github.com/enetx/iter v0.0.0-20250912135656-f1583323588f // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect

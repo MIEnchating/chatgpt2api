@@ -1033,6 +1033,10 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 					delete(body, key)
 					continue
 				}
+				if key == "relay_parameter_translation" {
+					util.WriteError(w, http.StatusForbidden, "仅管理员可以配置默认渠道参数转换")
+					return
+				}
 				if strings.HasPrefix(key, "relay_database_") || isObjectStorageCredentialKey(key) {
 					util.WriteError(w, http.StatusForbidden, "仅管理员可以配置数据库或存储凭据")
 					return
@@ -1074,6 +1078,9 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if err := a.storageFiles.RefreshCapacityScheduler(a.ctx); err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "failed to refresh storage capacity scheduler")
 			return
+		}
+		if identity.Role != service.AuthRoleAdmin {
+			delete(updated, "relay_parameter_translation")
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
@@ -1134,6 +1141,7 @@ func isObjectStorageCredentialKey(key string) bool {
 func (a *App) settingsConfig(includeDatabaseCredentials bool) map[string]any {
 	config := a.config.Get()
 	if !includeDatabaseCredentials {
+		delete(config, "relay_parameter_translation")
 		for key := range config {
 			if strings.HasPrefix(key, "relay_database_") && key != "relay_database_configured" {
 				delete(config, key)
@@ -1171,6 +1179,7 @@ func (a *App) modelConfig() map[string]any {
 	return map[string]any{
 		"image_models":            imageModels,
 		"image_model_definitions": a.config.ImageModelDefinitions(),
+		"model_capabilities":      a.config.ModelCapabilities(),
 		"default_image_model":     defaultConfiguredImageModel(imageModels),
 		"video_models":            videoModels,
 		"default_video_model":     defaultConfiguredVideoModel(videoModels, videoContracts),
@@ -2576,7 +2585,7 @@ func cleanAuditPayloadMap(payload map[string]any) map[string]any {
 	out := make(map[string]any, len(payload))
 	for key, value := range payload {
 		switch key {
-		case "owner_id", "owner_name", "base_url", "relay_base_url", relayCustomEndpointPayloadKey:
+		case relayTaskCredentialKey, relayTranslationSourceKey, "owner_id", "owner_name", "base_url", "relay_base_url", relayCustomEndpointPayloadKey:
 			continue
 		}
 		if isInternalPayloadValue(value) {
@@ -2618,6 +2627,7 @@ func isInternalPayloadValue(value any) bool {
 	case func(context.Context, int) (func(), error),
 		func([]map[string]any),
 		func(service.VideoTaskProgressUpdate),
+		func(int),
 		func(string):
 		return true
 	default:

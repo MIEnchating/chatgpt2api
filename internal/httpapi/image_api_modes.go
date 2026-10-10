@@ -13,6 +13,9 @@ import (
 )
 
 func (a *App) relayImageCreationTask(ctx context.Context, payload map[string]any, images []protocol.UploadedImage, edit bool) (map[string]any, error) {
+	if result, matched, err := a.relayTranslatedMedia(ctx, payload, images, "image"); matched || err != nil {
+		return result, err
+	}
 	a.attachImageModelDefinition(payload)
 	payload["api_mode"] = normalizeImageTaskAPIMode(util.Clean(payload["api_mode"]), util.Clean(payload["model"]), payload)
 	switch util.Clean(payload["api_mode"]) {

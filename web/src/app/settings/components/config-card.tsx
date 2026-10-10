@@ -10,6 +10,8 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ChannelParameterEditor } from "@/components/channel-parameter-editor";
+import { configuredModelNames } from "@/lib/model-config-selection";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -130,6 +132,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
+  const setRelayParameterTranslation = useSettingsStore((state) => state.setRelayParameterTranslation);
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
   const setRelayDatabaseType = useSettingsStore((state) => state.setRelayDatabaseType);
   const setRelayDatabaseDriver = useSettingsStore((state) => state.setRelayDatabaseDriver);
@@ -278,6 +281,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               />
             </Field>
             {isAdmin ? <RelayCreationGroups /> : null}
+            {isAdmin ? <div className="col-span-full"><ChannelParameterEditor value={config?.relay_parameter_translation || ""} onChange={setRelayParameterTranslation} baseURL={String(config?.relay_base_url || "")} models={[...configuredModelNames(config?.image_models), ...configuredModelNames(config?.video_models), ...configuredModelNames(config?.audio_models)]} disabled={isLoadingConfig || isSavingConfig} /></div> : null}
           </div>
         </section>
 

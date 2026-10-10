@@ -37,3 +37,7 @@ test("keeps MiniMax M3 language models out of fetched video candidates", () => {
 test("keeps MiniMax H3 video models in fetched video candidates", () => {
   assert.deepEqual(filterModelsByCapability(["minimax-h3-768p", "minimax-m2.5"], "video"), ["minimax-h3-768p"]);
 });
+
+test("classifies Seedance short names without treating SDXL as video", () => {
+  assert.deepEqual(filterModelsByCapability(["sd2.5 720p", "vendor/sd2-0", "seedance2-5", "sdxl"], "video"), ["sd2.5 720p", "vendor/sd2-0", "seedance2-5"]);
+});

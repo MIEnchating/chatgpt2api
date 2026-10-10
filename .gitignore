@@ -18,6 +18,7 @@ docs/*
 !docs/video-generation-api.md
 !docs/windows-desktop.md
 !docs/canvas-alignment.md
+!docs/channel-parameter-translation.md
 !docs/user-quota-allocation-requirements.md
 !jshook/docs/
 

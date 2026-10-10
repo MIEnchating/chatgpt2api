@@ -1522,7 +1522,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "图片模型不可用")
 			return
 		}
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1629,7 +1629,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "当前视频模型不支持所选视频参数")
 			return
 		}
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1657,7 +1657,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1692,7 +1692,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		if prompt == "" {
 			prompt = util.Clean(messages[len(messages)-1]["content"])
 		}
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1740,7 +1740,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "图片模型不可用")
 			return
 		}
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1924,7 +1924,7 @@ func isPublicReferenceIP(ip net.IP) bool {
 }
 
 func creationTaskRequestMetadata(body map[string]any) map[string]any {
-	metadata := map[string]any{}
+	metadata := map[string]any{relayTaskCredentialKey: body[relayTaskCredentialKey]}
 	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
 		metadata["token_group"] = tokenGroup
 	}
@@ -1957,6 +1957,7 @@ func chatTaskRequestMetadata(body map[string]any) map[string]any {
 
 func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelContract) map[string]any {
 	metadata := map[string]any{
+		relayTaskCredentialKey:                    body[relayTaskCredentialKey],
 		protocol.VideoContractSnapshotPayloadKey:  contract,
 		service.VideoTaskTimeoutSecondsPayloadKey: contract.Polling.TimeoutSeconds + contract.Polling.IntervalSeconds,
 	}

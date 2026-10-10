@@ -21,6 +21,7 @@ func TestInternalPackageDependencyDirection(t *testing.T) {
 		"service":       {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/protocol", "chatgpt2api/internal/videocontract", "chatgpt2api/internal/web"},
 		"storage":       {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/protocol", "chatgpt2api/internal/service", "chatgpt2api/internal/videocontract", "chatgpt2api/internal/web"},
 		"util":          {"chatgpt2api/internal"},
+		"translation":   {"chatgpt2api/internal"},
 		"videocontract": {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/service", "chatgpt2api/internal/web"},
 		"web":           {"chatgpt2api/internal"},
 	}

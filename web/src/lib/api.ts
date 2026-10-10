@@ -177,6 +177,7 @@ export type AnnouncementPreferences = {
 };
 
 export type SettingsConfig = {
+  relay_parameter_translation?: string;
 	storage?: StorageSettingConfig;
   proxy: string;
   base_url?: string;
@@ -200,6 +201,7 @@ export type SettingsConfig = {
   relay_database_password_configured?: boolean;
   image_models?: string[] | string;
   image_model_definitions?: ImageModelDefinitions;
+  model_capabilities?: Record<string, ModelCapability>;
   default_image_model?: string;
   video_models?: string[] | string;
   default_video_model?: string;
@@ -274,6 +276,7 @@ export type StorageSettingConfig = {
 export type ModelConfig = {
   image_models: ImageModel[];
   image_model_definitions?: ImageModelDefinitions;
+  model_capabilities?: Record<string, ModelCapability>;
   default_image_model: ImageModel;
   video_models: string[];
   default_video_model: string;
@@ -285,6 +288,8 @@ export type ModelConfig = {
   custom_relay_configurable?: boolean;
   video_model_contracts?: VideoModelContract[];
 };
+
+export type ModelCapability = "text" | "image" | "video" | "audio";
 
 export type ManagedVideoModelContract = {
   id: string;
@@ -338,6 +343,7 @@ export type VideoModelContractTransferDocument = {
 export type CustomRelayProtocol = "openai" | "autodl" | "ark" | "runninghub";
 
 export type CustomRelayConfigStatus = {
+  parameter_translation?: string;
   protocol: CustomRelayProtocol;
   id: string;
   kind: "text" | "image" | "video" | "audio";
@@ -865,7 +871,7 @@ export async function fetchCustomRelayConfigs() {
 }
 
 export async function createCustomRelayConfig(
-  input: { protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
+  input: { parameter_translation: string; protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     "/api/profile/custom-relay-configs",
@@ -875,7 +881,7 @@ export async function createCustomRelayConfig(
 
 export async function updateCustomRelayConfig(
   id: string,
-  input: { protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
+  input: { parameter_translation: string; protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
@@ -2000,4 +2006,8 @@ export async function testProxy(url?: string) {
     method: "POST",
     body: { url: url ?? "" },
   });
+}
+
+export function validateParameterTranslation(source: string) {
+ return httpRequest<{ models: string[] }>("/api/profile/custom-relay-configs/validate-translation", { method: "POST", body: { source } });
 }

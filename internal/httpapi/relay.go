@@ -47,29 +47,31 @@ type relayBufferedReadCloser struct {
 }
 
 type relayCredential struct {
-	APIKey   string
-	BaseURL  string
-	Custom   bool
-	Protocol string
+	ParameterTranslation string
+	APIKey               string
+	BaseURL              string
+	Custom               bool
+	Protocol             string
 }
 
 func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
 	if body == nil {
 		return nil
 	}
-	credential, err := a.relayCredentialForIdentitySelection(ctx, identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body))
+	credential, err := a.relayCredentialForTask(ctx, identity, body)
 	if err != nil {
 		return err
 	}
 	protocol.RecordAccountUsage(ctx, credential.APIKey)
 	body["api_key"] = credential.APIKey
 	body["relay_protocol"] = credential.Protocol
+	body[relayTranslationSourceKey] = credential.ParameterTranslation
 	if credential.Custom {
 		body[relayCustomEndpointPayloadKey] = true
 	} else {
 		delete(body, relayCustomEndpointPayloadKey)
 	}
-	if credential.BaseURL != "" && credential.BaseURL != a.relayBaseURL() {
+	if credential.BaseURL != "" {
 		body["relay_base_url"] = credential.BaseURL
 	} else {
 		delete(body, "relay_base_url")
@@ -98,7 +100,7 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		if config.BaseURL == "" || config.APIKey == "" {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}
 		}
-		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true, Protocol: config.Protocol}, nil
+		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true, Protocol: config.Protocol, ParameterTranslation: config.ParameterTranslation}, nil
 	}
 	reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()
@@ -1010,6 +1012,9 @@ func videoContractSnapshot(payload map[string]any, model string) (protocol.Video
 // configured relay and polls it using the same protocol driver snapshot.
 func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	ctx = relayContextForPayload(ctx, payload)
+	if result, matched, err := a.relayTranslatedMedia(ctx, payload, nil, "video"); matched || err != nil {
+		return result, err
+	}
 	model := strings.TrimSpace(util.Clean(payload["model"]))
 	contract, err := videoContractSnapshot(payload, model)
 	if err != nil {
@@ -3338,7 +3343,7 @@ func ceilToRelayImageMultiple(value float64) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
-		"relay_base_url", "relay_protocol", "workflow_inputs", relayCustomEndpointPayloadKey,
+		relayTranslationSourceKey, relayTaskCredentialKey, "relay_base_url", "relay_protocol", "workflow_inputs", relayCustomEndpointPayloadKey,
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
@@ -3347,7 +3352,8 @@ func shouldDropRelayPayloadKey(key string) bool {
 		relayImageTaskSlotManagedPayloadKey,
 		service.ImageOutputCompletionReleasePayloadKey,
 		protocol.ImageOutputSlotAcquirerPayloadKey,
-		"image_output_callback", "text_output_callback", service.VideoTaskProgressCallbackPayloadKey:
+		"image_output_callback", "text_output_callback", service.VideoTaskProgressCallbackPayloadKey,
+		service.MediaTaskProgressCallbackPayloadKey:
 		return true
 	default:
 		return false
