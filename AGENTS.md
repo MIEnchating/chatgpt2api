@@ -67,6 +67,10 @@ Recent history uses Conventional Commit-style subjects such as `feat: ...`, `cho
 
 ## Release Notes Guidelines
 
+- CI runs only for pull request `opened`, `synchronize`, and `closed` events; both jobs skip closed PRs that were not merged. Ordinary branch pushes, including direct pushes to `main` and `dev`, do not trigger CI. Pushing updates to an existing PR still triggers CI.
+- All CI jobs check out the event commit (`github.sha`) so queued checks do not follow later branch changes. Validate workflow changes with `node --test scripts/__tests__/ci-trigger.test.mjs`.
+- Version tag and manual release workflows retain frontend lint, tests and build, backend tests and vet, race tests, and database integration checks before publishing. Changing CI triggers does not waive release checks.
+
 Every release commit must include a root `RELEASE_NOTES.md`. Its first line must be `# vX.Y.Z`, matching the release tag. It must contain exactly these five H2 sections in order: `版本概览`, `新增功能`, `功能改进`, `问题修复`, and `移除与调整`. Every section must contain content; use `- 无` when no change applies. Do not add other Markdown headings. Validate locally with `bash scripts/validate-release-notes.sh`, or pass the expected tag as its only argument before release.
 
 ## Security & Configuration Tips

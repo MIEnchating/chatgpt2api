@@ -1,11 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - dev
   pull_request:
+    types: [opened, synchronize, closed]
 
 permissions:
   contents: read
@@ -20,10 +17,13 @@ env:
 
 jobs:
   test:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
 
       - name: Validate release notes format
         run: bash scripts/validate-release-notes.sh
@@ -31,6 +31,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate CI trigger rules
+        run: node --test scripts/__tests__/ci-trigger.test.mjs
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -104,6 +107,7 @@ jobs:
           rm .env
 
   storage-integration:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -136,6 +140,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-go@v6
         with:

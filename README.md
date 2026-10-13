@@ -426,7 +426,7 @@ bun run build
 
 ### CI
 
-`.github/workflows/ci.yml` 在 `main`、`dev` push 和 pull request 上执行：
+`.github/workflows/ci.yml` 仅在 PR 创建、更新和合并时执行（`opened`、`synchronize`、`closed`，未合并关闭时跳过）。普通分支推送（包括直接推送到 `main`、`dev`）不触发 CI；向已有 PR 推送更新仍会触发检查。所有 CI 任务固定检出事件提交，执行以下检查：
 
 - `bun install --frozen-lockfile`
 - `bun run lint`
