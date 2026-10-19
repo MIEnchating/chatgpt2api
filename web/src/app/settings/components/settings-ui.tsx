@@ -58,7 +58,7 @@ export function SettingsCard({
     <Card
       data-settings-card
       className={cn(
-        "min-w-0 overflow-hidden rounded-xl lg:h-full lg:min-h-0",
+        "h-full min-h-0 min-w-0 overflow-hidden rounded-xl lg:h-full lg:min-h-0",
         className,
       )}
     >
@@ -68,7 +68,7 @@ export function SettingsCard({
       >
         <CardHeader
           data-settings-card-header
-          className="gap-4 border-b border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-5"
+          className="gap-3 border-b border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-5"
         >
           <div className="flex min-w-0 items-center gap-3 sm:flex-[1_1_16rem]">
             <div
@@ -89,7 +89,7 @@ export function SettingsCard({
             </div>
           </div>
           {meta || action ? (
-            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:justify-end">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>[data-slot=button]:last-child]:ml-auto sm:justify-end">
               {meta}
               {action}
             </div>
@@ -99,14 +99,14 @@ export function SettingsCard({
       {contentScrollable ? (
         <ScrollArea
           data-settings-card-body
-          className="min-h-0 min-w-0 lg:flex-1"
+          className="min-h-0 min-w-0 flex-1"
         >
           <CardContent className={cn("min-w-0 p-4 sm:p-5", contentClassName)}>
             {children}
           </CardContent>
         </ScrollArea>
       ) : (
-        <div data-settings-card-body className="min-h-0 min-w-0 lg:flex lg:flex-1 lg:flex-col">
+        <div data-settings-card-body className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           <CardContent className={cn("min-w-0 p-4 sm:p-5", contentClassName)}>
             {children}
           </CardContent>

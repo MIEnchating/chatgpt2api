@@ -1,6 +1,8 @@
+import { stopCreationTasks } from "@/lib/stop-creation-tasks";
+import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
 import { toPng } from "html-to-image";
 import { Bot, Camera, Check, ChevronDown, CircleDot, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, Menu, Minus, Music, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Settings2, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -76,7 +78,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CANVAS_DOCK_BREAKPOINT, CANVAS_DOCK_COMPACT_WIDTH, CANVAS_DOCK_WIDTH, CanvasNodeCreatePalette, CanvasWorkspaceControls, type CanvasCreatableNodeType } from "@/app/canvas/canvas-workspace-controls";
+import { CANVAS_DOCK_BREAKPOINT, CANVAS_DOCK_COMPACT_WIDTH, CanvasNodeCreatePalette, CanvasWorkspaceControls, type CanvasCreatableNodeType } from "@/app/canvas/canvas-workspace-controls";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
@@ -145,6 +147,7 @@ type PendingPanoramaImport = {
 type CanvasGenerationOptions = { onSubmitted?: (taskID: string) => void; resultTitle?: string; generationModel?: string; referenceImageDataURLs?: string[]; forceImageGeneration?: boolean; resultBounds?: { width: number; height: number }; resultCount?: number; selectResultNode?: boolean; concurrent?: boolean };
 type CanvasActiveGeneration = {
   controller: AbortController;
+  sessionKey: string;
   nodeIDs: Set<string>;
   taskIDs: Set<string>;
   submittedTaskIDs: Set<string>;
@@ -1028,6 +1031,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function registerActiveGeneration(controller: AbortController, nodeIDs: Iterable<string>, taskIDs: Iterable<string> = []) {
     const generation: CanvasActiveGeneration = {
       controller,
+      sessionKey: session.key,
       nodeIDs: new Set([...nodeIDs].filter(Boolean)),
       taskIDs: new Set([...taskIDs].filter(Boolean)),
       submittedTaskIDs: new Set(),
@@ -1042,6 +1046,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (taskID) {
       generation.taskIDs.add(taskID);
       generation.submittedTaskIDs.add(taskID);
+      if (generation.controller.signal.aborted) {
+        void stopCreationTasks([taskID], undefined, generation.sessionKey).catch(() => undefined);
+      }
     }
   }
 
@@ -1508,10 +1515,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function activateNode(nodeID: string) {
     const node = nodesRef.current.find((item) => item.id === nodeID);
     setAgentReferenceNodeClick((current) => ({ nodeID, version: current.version + 1 }));
-    if (agentOpen) {
-      setPanelNodeID("");
-      return;
-    }
     setPanelNodeID(node?.type === "group" ? "" : node?.id || "");
   }
 
@@ -2971,7 +2974,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setImageTool(null);
     setMaskEditModel("");
     setPanelNodeID(nodeID);
-    const prompt = `参考图中蓝色高亮覆盖区域是需要修改的位置，蓝色只是编辑标记，不要保留在最终图像中。只修改蓝色高亮区域，其他区域的构图、人物、文字、光影和风格保持不变。修改要求：${payload.prompt.trim()}`;
+    const prompt = imageMaskEditPrompt(payload.prompt);
     void runGeneration(nodeID, prompt, false, {
       resultTitle: payload.prompt.slice(0, 32) || "局部编辑结果",
       generationModel: payload.model,
@@ -3350,10 +3353,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setCancellingGenerationNodeIDs((current) => new Set([...current, ...generation.nodeIDs]));
     generation.controller.abort();
     try {
-      await Promise.all([...generation.submittedTaskIDs].map((taskID) => cancelCreationTask(taskID)));
-      toast.success("已停止生成");
+      await stopCreationTasks([...generation.submittedTaskIDs], undefined, generation.sessionKey);
     } catch (error) {
-      toast.error(error instanceof Error ? `本地已停止，服务端停止失败：${error.message}` : "本地已停止，服务端停止失败");
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        toast.error(error instanceof Error ? `本地已停止，服务端停止失败：${error.message}` : "本地已停止，服务端停止失败");
+      }
     } finally {
       releaseActiveGeneration(generation);
     }
@@ -4206,9 +4210,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         taskSubmissionAttempted = true;
         submitted = await createImageGenerationTask(taskID, requestPrompt, generationModel || undefined, size, size, quality, count, "private", resolution, outputFormat, outputCompression, stream, partialImages, compatibilityOptions, undefined, taskRelayTokenName, undefined, undefined, { signal: controller.signal });
       }
-      if (!generationIsCurrent()) return;
       activeTaskID = submitted.id || taskID;
       addActiveGenerationTask(activeGeneration, activeTaskID, taskID);
+      if (!generationIsCurrent()) return;
       options.onSubmitted?.(activeTaskID);
       replaceNodes(setCanvasConfigGenerationStatus(nodesRef.current, sourceNode.id, "success", "", activeTaskID));
       if (!concurrent) {
@@ -4564,7 +4568,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
                 inputs={inputs}
                 promptTools={configPromptTools}
                 onComposerChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)}
-                onClose={() => setPanelNodeID("")}
               >
                 <label className="grid gap-1 text-xs"><span className="text-muted-foreground">生成模式</span><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></label>
                 {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} expanded showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="w-full" /></> : null}
@@ -4805,16 +4808,17 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return () => window.removeEventListener("pointerdown", close, true);
   }, [projectMenuOpen]);
 
-  const inspectorWidth = agentOpen ? Math.min(agentWidth, canvasSize.width - 24) : panelNodeID ? Math.min(420, canvasSize.width - 24) : 0;
   const controlsWidth = workspaceWidth;
-  const dockHalfWidth = (workspaceWidth < CANVAS_DOCK_BREAKPOINT ? CANVAS_DOCK_COMPACT_WIDTH : CANVAS_DOCK_WIDTH) / 2;
   const showWorkspaceControls = !loading && !switchPhase
-    && workspaceWidth / 2 - dockHalfWidth >= (sidePanel.open ? sidePanel.width + 12 : 0)
-    && workspaceWidth / 2 + dockHalfWidth <= workspaceWidth - (inspectorWidth ? inspectorWidth + 24 : 0);
+    && controlsWidth >= CANVAS_DOCK_COMPACT_WIDTH + 24;
+  const dockClearance = showWorkspaceControls
+    ? `calc(${controlsWidth < CANVAS_DOCK_BREAKPOINT ? 104 : 60}px + max(1rem, env(safe-area-inset-bottom)))`
+    : "12px";
   const renderedCanvasID = documentRef.current.id;
 
   return (
-    <section ref={workspaceRef} className="relative flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
+    <section ref={workspaceRef} style={{ "--canvas-dock-clearance": dockClearance } as CSSProperties} aria-label={`画布编辑器：${title}`} className="relative flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
+      <h1 className="sr-only">{title || "无限画布"}</h1>
       <CanvasSidePanel
         sessionKey={session.key}
         nodes={nodes}
@@ -4840,12 +4844,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onInsertPrompt={(prompt, promptTitle) => addTextNodeAt(placement(), prompt, promptTitle.trim() || prompt.trim().slice(0, 32) || "文字")}
       />
       <div ref={hostRef} className="relative min-w-0 flex-1 overflow-hidden bg-muted/50">
-      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} showImageInfo={showImageInfo} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={agentOpen ? "" : panelNodeID} loadingNodeID="" pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeMediaLoad={handleNodeMediaLoad} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} renderNodeQuickActions={renderNodeQuickActions} renderNodeActions={renderNodeActions} renderNodeInfo={(node) => <CanvasNodeInfoContent node={node} configInputs={node.type === "config" ? canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current) : []} />} onDrop={handleCanvasDrop} />
+      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} showImageInfo={showImageInfo} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} nodePanelReturnsToAgent={agentOpen} loadingNodeID="" pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeMediaLoad={handleNodeMediaLoad} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} renderNodeQuickActions={renderNodeQuickActions} renderNodeActions={renderNodeActions} renderNodeInfo={(node) => <CanvasNodeInfoContent node={node} configInputs={node.type === "config" ? canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current) : []} />} onDrop={handleCanvasDrop} />
       {audioTrimNodeID && nodes.some((node) => node.id === audioTrimNodeID && node.type === "audio") ? <CanvasAudioTrimDialog key={audioTrimNodeID} node={nodes.find((node) => node.id === audioTrimNodeID)!} busy={mediaBusyNodeIDs.has(audioTrimNodeID)} onClose={() => setAudioTrimNodeID("")} onTrim={(trim) => void editCanvasMedia(audioTrimNodeID, "trim-audio", trim)} /> : null}
       {!loading && !switchPhase && !nodes.length && !agentOpen && canvasSize.height > 320 ? <div className="pointer-events-none absolute inset-x-6 bottom-36 top-20 flex items-center justify-center">
         <div className="pointer-events-auto max-w-sm rounded-2xl border border-border/70 bg-card/95 p-6 text-center shadow-sm backdrop-blur">
           {canvasSize.height > 480 ? <span className="mx-auto grid size-11 place-items-center rounded-xl bg-brand-soft text-brand"><Images className="size-5" /></span> : null}
-          <h2 className="mt-3 text-base font-semibold">从一个想法开始创作</h2>
+          <h2 className="mt-3 text-lg font-semibold tracking-tight">从一个想法开始创作</h2>
           {canvasSize.height > 480 ? <p className="mt-2 text-xs leading-5 text-muted-foreground">添加文字或图片，将节点连接起来。也可以直接拖入素材，或让 Agent 帮你开始。</p> : null}
           <div className="mt-4 flex flex-wrap justify-center gap-2"><Button size="sm" className="text-xs" onClick={() => createCanvasNode("image")}><ImagePlus />添加图片</Button><Button size="sm" variant="outline" className="text-xs" onClick={() => createCanvasNode("text")}><Type />添加文字</Button></div>
         </div>
@@ -4872,16 +4876,17 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             </span>
           </Button>
           <div className="mx-1 h-5 w-px bg-border" />
-          <Button aria-label="画布菜单" title="画布菜单" variant="ghost" size="icon" className={cn("size-8 rounded-full", canvasMenuOpen && "bg-muted text-brand")} onClick={() => { setCanvasMenuOpen((value) => !value); setProjectMenuOpen(false); }}><Menu className="size-5" /></Button>
+          <Button aria-label="画布菜单" aria-expanded={canvasMenuOpen} title="画布菜单" variant="ghost" size="icon" className={cn("size-8 rounded-lg", canvasMenuOpen && "bg-brand-soft text-brand")} onClick={() => { setCanvasMenuOpen((value) => !value); setProjectMenuOpen(false); }}><Menu className="size-5" /></Button>
           <div className="mx-1 h-5 w-px bg-border" />
-          <Button aria-label="画布项目" variant="ghost" size="sm" className="h-8 min-w-0 max-w-[30vw] flex-1 rounded-lg px-2 text-xs font-semibold sm:max-w-56 sm:px-2.5" onClick={() => { setProjectMenuOpen((value) => !value); setCanvasMenuOpen(false); }}><span className="truncate">{title}</span><ChevronDown className="size-3.5" /></Button>
+          <Button aria-label="画布项目" aria-expanded={projectMenuOpen} variant="ghost" size="sm" className="h-8 min-w-0 max-w-[30vw] flex-1 rounded-lg px-2 text-xs font-semibold sm:max-w-56 sm:px-2.5" onClick={() => { setProjectMenuOpen((value) => !value); setCanvasMenuOpen(false); }}><span className="truncate">{title}</span><ChevronDown className={cn("size-3.5 transition-transform", projectMenuOpen && "rotate-180")} /></Button>
           <div className="mx-1 h-5 w-px bg-border" />
           <Button
             type="button"
-            variant={agentOpen ? "secondary" : "ghost"}
+            variant={agentOpen && !panelNodeID ? "secondary" : "ghost"}
             size="sm"
             className="size-8 shrink-0 rounded-lg p-0 text-xs font-semibold sm:w-auto sm:px-2.5"
             aria-label="打开 Agent"
+            aria-expanded={agentOpen && !panelNodeID}
             onClick={() => {
               setPanelNodeID("");
               setAgentOpen(true);
@@ -4915,7 +4920,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {agentPanelMounted ? <Suspense fallback={null}><CanvasAgentPanel
         key={renderedCanvasID}
-        open={agentOpen}
+        open={agentOpen && !panelNodeID}
         nodes={nodes}
         selectedNodeIDs={[...selectedNodeIDs]}
         referenceNodeClick={agentReferenceNodeClick}
@@ -4981,7 +4986,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onClose={() => setAssetPickerOpen(false)}
       /></Suspense> : null}
 
-      {miniMapOpen && showWorkspaceControls && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap onClose={() => setMiniMapOpen(false)} nodes={nodes} viewport={viewport} viewportSize={canvasSize} controlsWidth={controlsWidth} onViewportChange={(next) => updateViewport(next, true)} /> : null}
+      {miniMapOpen && showWorkspaceControls && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap onClose={() => setMiniMapOpen(false)} nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
       {contextMenu ? <CanvasRightClickMenu mediaNode={contextMenu.type === "node" ? nodes.find((node) => node.id === contextMenu.nodeID) : undefined} mediaBusy={contextMenu.type === "node" && mediaBusyNodeIDs.has(contextMenu.nodeID)} onMediaOperation={(operation) => { if (contextMenu.type === "node") handleCanvasMediaOperation(contextMenu.nodeID, operation); }} menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") createCanvasNode("video", contextMenu.position); setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { void exportProjectArchive(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
       <RelayTokenRequiredDialog
@@ -5075,7 +5080,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       <Input ref={imageInputRef} type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={(event) => void handleNodeImageUpload(event)} />
       {loading || switchPhase ? <CanvasSwitchShell revealing={!loading && switchPhase === "revealing"} /> : null}
       </div>
-      {showWorkspaceControls ? <CanvasWorkspaceControls
+      {showWorkspaceControls ? <div data-canvas-workspace-overlay className="pointer-events-none absolute inset-0 z-30"><CanvasWorkspaceControls
         width={controlsWidth}
         zoom={viewport.zoom}
         selectedCount={selectedNodeIDs.size || (selectedConnectionID ? 1 : 0)}
@@ -5096,7 +5101,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onFit={fitCanvasContent}
         onMiniMap={() => setMiniMapOpen((value) => !value)}
         onShortcuts={() => setShortcutsOpen(true)}
-      /> : null}
+      /></div> : null}
     </section>
   );
 }
@@ -5137,7 +5142,7 @@ function BackgroundButton({ active, label, ...props }: React.ComponentProps<type
   return <Button variant="ghost" size="sm" className={cn("h-8 flex-1 text-[11px]", active && "bg-card text-brand dark:bg-background")} {...props}>{props.children}{label}</Button>;
 }
 
-function CanvasMiniMap({ nodes, viewport, viewportSize, controlsWidth, onViewportChange, onClose }: { controlsWidth: number; onClose: () => void; nodes: CanvasNode[]; viewport: CanvasDocument["viewport"]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: CanvasDocument["viewport"]) => void }) {
+function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange, onClose }: { onClose: () => void; nodes: CanvasNode[]; viewport: CanvasDocument["viewport"]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: CanvasDocument["viewport"]) => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const width = Math.min(240, Math.max(80, viewportSize.width - 24));
@@ -5166,7 +5171,7 @@ function CanvasMiniMap({ nodes, viewport, viewportSize, controlsWidth, onViewpor
   }
 
   return (
-    <div data-canvas-minimap className="absolute left-3 z-30 overflow-hidden rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur" style={{ width, bottom: controlsWidth < CANVAS_DOCK_BREAKPOINT ? "calc(7.5rem + env(safe-area-inset-bottom))" : "calc(4.5rem + env(safe-area-inset-bottom))" }}>
+    <div data-canvas-minimap className="absolute left-3 z-30 overflow-hidden rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur" style={{ width, bottom: "var(--canvas-dock-clearance)" }}>
       <div className="flex h-8 items-center justify-between border-b border-border/70 px-2.5 text-[11px] font-medium">画布导航<button type="button" className="grid size-6 place-items-center rounded hover:bg-muted" aria-label="关闭小地图" onClick={onClose}><X className="size-3.5" /></button></div>
       <div ref={containerRef} aria-label="拖动小地图定位画布" className="relative cursor-crosshair touch-none" style={{ height }} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}>
         {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-primary" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}

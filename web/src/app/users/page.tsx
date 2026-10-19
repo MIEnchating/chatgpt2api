@@ -11,7 +11,6 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   TriangleAlert,
   Trash2,
@@ -33,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
+import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -662,25 +663,21 @@ function UsersContent() {
   };
 
   return (
-    <ManagementPage data-users-layout>
+    <ManagementPage data-users-layout title="用户管理" description="管理账号、角色与额度，查看用户的使用情况。">
       <ManagementPanel className="flex-1">
           <ManagementToolbar>
             <div data-user-toolbar className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(12rem,1fr)_140px_140px_auto_auto]">
               <div className="relative col-span-2 min-w-0 sm:col-span-3 xl:col-span-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
+                <SearchInput
                   value={searchInput}
-                  onChange={(event) => {
-                    setSearchInput(event.target.value);
-                  }}
+                  onValueChange={setSearchInput}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                       setSearchText(searchInput.trim());
                       setPage(1);
                     }
                   }}
                   placeholder="搜索用户名、用户 ID、owner 或会话"
-                  className="h-10 rounded-lg pl-9"
                 />
               </div>
               <Select
@@ -743,7 +740,7 @@ function UsersContent() {
             </div>
           </ManagementToolbar>
           <ScrollArea className="min-h-0 flex-1">
-            <Table className="min-w-[1320px]">
+            <Table aria-label="用户列表" aria-busy={isLoading} className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>
                   <TableHead className="w-12">
@@ -753,8 +750,8 @@ function UsersContent() {
                       aria-label="选择当前页用户"
                     />
                   </TableHead>
-                  {sortableHead("id", "用户 ID", "w-[220px]")}
                   {sortableHead("name", "用户", "w-[240px]")}
+                  {sortableHead("id", "用户 ID", "w-[220px]")}
                   {sortableHead("role_name", "角色", "w-[180px]")}
                   {sortableHead("call_count", "近 14 日调用", "w-[280px]")}
                   {sortableHead("last_used_at", "时间", "w-[170px]")}
@@ -772,11 +769,6 @@ function UsersContent() {
                           onCheckedChange={(checked) => toggleSelectedUser(user.id, checked === true)}
                           aria-label={`选择 ${user.name || user.username || user.id}`}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <TooltipHint content={user.id}><code className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground">
-                          {user.id}
-                        </code></TooltipHint>
                       </TableCell>
                       <TableCell className="max-w-[240px]">
                         <div className="min-w-0 space-y-1.5">
@@ -798,6 +790,11 @@ function UsersContent() {
                             </Badge>
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <TooltipHint content={user.id}><code className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground">
+                          {user.id}
+                        </code></TooltipHint>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col items-start gap-1">
@@ -886,13 +883,9 @@ function UsersContent() {
                 })}
               </TableBody>
             </Table>
+            {isLoading && items.length === 0 ? <LoadingState label="正在加载用户" /> : null}
+            {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
           </ScrollArea>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-14">
-              <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : null}
-          {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
           <ManagementPagination
             page={safePage}
             totalPages={totalPages}
@@ -1110,7 +1103,7 @@ function UsersContent() {
 export default function UsersPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/users");
   if (isCheckingAuth || !session) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
+    return <LoadingState label="正在加载用户管理" />;
   }
   return <UsersContent key={session.key} />;
 }

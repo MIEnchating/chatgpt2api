@@ -40,6 +40,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [rememberAccount, setRememberAccount] = useState(Boolean(rememberedLogin));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const { isCheckingAuth } = useRedirectIfAuthenticated();
 
   const finishAuth = async (data: Awaited<ReturnType<typeof login>>, message: string, redirectTo?: string) => {
@@ -56,6 +57,8 @@ export default function LoginPage() {
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+    setLoginError("");
     const normalizedUsername = username.trim();
     if (!normalizedUsername) {
       toast.error("请输入用户名");
@@ -77,7 +80,7 @@ export default function LoginPage() {
       await finishAuth(data, "登录成功");
     } catch (error) {
       const message = error instanceof Error ? error.message : "登录失败";
-      toast.error(message);
+      setLoginError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -96,7 +99,7 @@ export default function LoginPage() {
   return (
     <ScrollArea
       className={`${loginBackgroundClass} fixed inset-0 z-50 w-full font-sans`}
-      viewportClassName="flex min-h-full items-center justify-center px-4 py-6 [align-items:safe_center] sm:px-6 lg:px-8"
+      viewportClassName="flex min-h-full items-center justify-center px-4 pt-16 pb-8 [align-items:safe_center] sm:px-6 lg:px-8"
       viewClass="w-full shrink-0"
     >
       <div className="fixed right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-6">
@@ -104,8 +107,8 @@ export default function LoginPage() {
       </div>
 
       <div className="relative z-10 mx-auto grid w-full max-w-[58rem] overflow-hidden rounded-2xl border border-border bg-card/95 ambient-shadow backdrop-blur transition-[min-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:min-h-[39rem] lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
-        <section className="flex min-h-[460px] flex-col justify-center px-6 py-8 sm:px-10 lg:px-12">
-          <div className="flex flex-col gap-9 transition-[gap] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none">
+        <section className="flex min-h-[460px] flex-col justify-center px-6 py-8 sm:px-10 sm:py-10 lg:px-12">
+          <div className="flex flex-col gap-7 transition-[gap] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:gap-9">
             <div className="flex items-center gap-3">
               <img
                 src={resolveSiteIconSrc(appMeta.site_icon_url)}
@@ -140,11 +143,14 @@ export default function LoginPage() {
 
             <form
               className="flex flex-col gap-5"
+              aria-busy={isSubmitting}
+              aria-describedby={loginError ? "login-error" : undefined}
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleSubmit();
               }}
             >
+              {loginError ? <div id="login-error" role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm leading-6 text-destructive">{loginError}</div> : null}
               <div className="flex flex-col gap-2">
                 <label htmlFor="login-username" className="block text-sm font-semibold text-foreground">
                   用户名
@@ -156,7 +162,11 @@ export default function LoginPage() {
                     type="text"
                     autoComplete="username"
                     value={username}
-                    onChange={(event) => setUsername(event.target.value)}
+                    onChange={(event) => { setUsername(event.target.value); setLoginError(""); }}
+                    required
+                    disabled={isSubmitting}
+                    autoCapitalize="none"
+                    spellCheck={false}
                     placeholder="请输入用户名"
                     className="h-12 pl-10"
                   />
@@ -173,7 +183,9 @@ export default function LoginPage() {
                     type="password"
                     autoComplete="current-password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => { setPassword(event.target.value); setLoginError(""); }}
+                    required
+                    disabled={isSubmitting}
                     placeholder="请输入密码"
                     className="h-12 pl-10"
                   />

@@ -31,8 +31,8 @@ export function EmptyState({
       {...props}
     >
       {Icon ? (
-        <span className="mb-3 grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="size-5" />
+        <span className="mb-4 grid size-12 shrink-0 place-items-center rounded-2xl border border-border bg-muted/60 text-muted-foreground shadow-xs">
+          <Icon className="size-5" aria-hidden="true" />
         </span>
       ) : null}
       <p className="max-w-full text-sm leading-6 font-medium text-foreground [overflow-wrap:anywhere]">{title}</p>

@@ -1,4 +1,4 @@
-import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Trash2, Type, Video, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Trash2, Type, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -57,6 +57,7 @@ type CanvasEngineProps = {
   selectedNodeIDs: Set<string>;
   selectedConnectionID: string;
   panelNodeID: string;
+  nodePanelReturnsToAgent: boolean;
   loadingNodeID: string;
   pendingConnectionActive: boolean;
   collapsingBatchRootIDs: Set<string>;
@@ -102,6 +103,7 @@ export function CanvasEngine({
   selectedNodeIDs,
   selectedConnectionID,
   panelNodeID,
+  nodePanelReturnsToAgent,
   loadingNodeID,
   pendingConnectionActive,
   collapsingBatchRootIDs,
@@ -732,8 +734,18 @@ export function CanvasEngine({
         ) : null}
       </div>
       {!exporting && panelNode ? (
-        <div className="pointer-events-none absolute inset-y-3 right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-start gap-2 [@media(max-height:540px)]:fixed [@media(max-height:540px)]:z-[60]">
-          {renderNodeQuickActions && canvasSize.width >= 720 ? <div data-canvas-no-pan className="pointer-events-auto mt-16 flex shrink-0 items-start" style={{ height: Math.max(0, canvasSize.height - 88) }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>{renderNodeQuickActions(panelNode)}</div> : null}
+        <button
+          type="button"
+          data-canvas-node-drawer-backdrop
+          style={{ bottom: "var(--canvas-dock-clearance)" }}
+          aria-label="关闭节点面板"
+          className="pointer-events-auto absolute inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px] md:hidden"
+          onClick={() => onNodePanelToggle(panelNode.id)}
+        />
+      ) : null}
+      {!exporting && panelNode ? (
+        <div className="pointer-events-none absolute top-3 bottom-[var(--canvas-dock-clearance)] right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-start gap-2 [@media(max-height:540px)]:fixed [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[60]">
+          {renderNodeQuickActions && canvasSize.width >= 720 ? <div data-canvas-no-pan className="pointer-events-auto mt-16 flex h-[calc(100%-4rem)] shrink-0 items-start" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>{renderNodeQuickActions(panelNode)}</div> : null}
         <div
           data-canvas-no-pan
           data-canvas-node-drawer
@@ -757,7 +769,7 @@ export function CanvasEngine({
               <OverflowMarqueeText className="min-w-0 flex-1 text-sm font-semibold" text={panelNode.title || NODE_TYPE_BADGE[panelNode.type].label} />
               <div className="flex shrink-0 items-center gap-1">
                 <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNodeDelete(panelNode.id)} aria-label="删除节点"><Trash2 className="size-4" /></button></TooltipTrigger><TooltipContent>删除节点</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNodePanelToggle(panelNode.id)} aria-label="关闭节点抽屉"><X className="size-4" /></button></TooltipTrigger><TooltipContent>关闭节点抽屉</TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger asChild><button type="button" className={cn("inline-flex h-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", nodePanelReturnsToAgent ? "gap-1 px-2 text-xs" : "w-8")} onClick={() => onNodePanelToggle(panelNode.id)} aria-label={nodePanelReturnsToAgent ? "返回 Agent" : "关闭节点抽屉"}>{nodePanelReturnsToAgent ? <><ArrowLeft className="size-4" /><span>Agent</span></> : <X className="size-4" />}</button></TooltipTrigger><TooltipContent>{nodePanelReturnsToAgent ? "返回 Agent，保留对话与草稿" : "关闭节点抽屉"}</TooltipContent></Tooltip>
               </div>
             </div>
             <div role="tablist" aria-label="节点设置分类" className="flex items-center gap-1 rounded-lg bg-muted/75 p-1" onKeyDown={(event) => {
@@ -862,9 +874,14 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
     if (!editingTitle) setTitleDraft(node.title || "");
   }, [editingTitle, node.title]);
 
-  useEffect(() => () => {
+  const cancelTitleActivation = useCallback(() => {
     if (titleActivationTimerRef.current !== null) window.clearTimeout(titleActivationTimerRef.current);
+    titleActivationTimerRef.current = null;
+    window.removeEventListener("pointerdown", cancelTitleActivation, true);
+    window.removeEventListener("keydown", cancelTitleActivation, true);
   }, []);
+
+  useEffect(() => cancelTitleActivation, [cancelTitleActivation]);
 
   const finishTitleEditing = useCallback(() => {
     const title = titleDraft.trim() || NODE_TYPE_BADGE[node.type].label;
@@ -949,22 +966,18 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             className="flex h-7 min-w-0 max-w-full items-center gap-1.5 overflow-hidden rounded-lg border border-border/60 bg-card/90 px-2 text-left text-xs font-medium text-foreground/80 shadow-sm backdrop-blur transition hover:border-brand/40 hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(event) => {
               event.stopPropagation();
-              if (titleActivationTimerRef.current !== null) {
-                window.clearTimeout(titleActivationTimerRef.current);
-                titleActivationTimerRef.current = null;
-              }
+              cancelTitleActivation();
               if (event.detail > 1) return;
+              window.addEventListener("pointerdown", cancelTitleActivation, true);
+              window.addEventListener("keydown", cancelTitleActivation, true);
               titleActivationTimerRef.current = window.setTimeout(() => {
-                titleActivationTimerRef.current = null;
+                cancelTitleActivation();
                 onActivate(node.id);
               }, 220);
             }}
             onDoubleClick={(event) => {
               event.stopPropagation();
-              if (titleActivationTimerRef.current !== null) {
-                window.clearTimeout(titleActivationTimerRef.current);
-                titleActivationTimerRef.current = null;
-              }
+              cancelTitleActivation();
               setEditingTitle(true);
             }}
           >

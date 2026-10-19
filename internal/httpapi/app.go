@@ -1733,8 +1733,11 @@ func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := "video/mp4"
-	if strings.EqualFold(filepath.Ext(name), ".webm") {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".webm":
 		contentType = "video/webm"
+	case ".mov":
+		contentType = "video/quicktime"
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")

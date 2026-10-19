@@ -17,7 +17,6 @@ import {
   Settings2,
   Type,
   Video,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
@@ -33,7 +32,7 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { canvasNodeTreeRows } from "@/app/canvas/canvas-node-tree";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipHint } from "@/components/ui/tooltip";
@@ -240,7 +239,7 @@ export function CanvasSidePanel({
         onOpenChange(false);
       }}
     >
-      {open ? <button type="button" aria-label="关闭画布侧栏" tabIndex={-1} className="pointer-events-auto absolute inset-0 z-0 bg-slate-950/20 backdrop-blur-[1px] md:hidden" onClick={() => onOpenChange(false)} /> : null}
+      {open ? <button type="button" aria-label="关闭画布侧栏" tabIndex={-1} style={{ bottom: "var(--canvas-dock-clearance)" }} className="pointer-events-auto absolute inset-0 z-0 bg-slate-950/20 backdrop-blur-[1px] md:hidden" onClick={() => onOpenChange(false)} /> : null}
       <aside
         aria-label="画布资源侧栏"
         className={cn(
@@ -249,7 +248,7 @@ export function CanvasSidePanel({
             ? "pointer-events-auto translate-x-0 border-border opacity-100 shadow-xl md:shadow-none"
             : "pointer-events-none -translate-x-full border-transparent opacity-0 shadow-none",
         )}
-        style={{ width }}
+        style={{ width, bottom: "var(--canvas-dock-clearance)" }}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-3">
           <div
@@ -363,18 +362,15 @@ function CanvasNodesTab({ nodes, selectedNodeIDs, onFocusNode }: {
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{nodes.length}</span>
           {selectedNodeIDs.size ? <span className="ml-auto whitespace-nowrap text-[10px] tabular-nums text-brand">已选 {selectedNodeIDs.size}</span> : null}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 rounded-md border-border/80 bg-card pl-8 pr-7 text-xs" placeholder="搜索节点" aria-label="搜索节点标题或内容" />
-            {query ? <button type="button" aria-label="清除节点搜索" className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3.5" /></button> : null}
-          </div>
+        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索节点标题或内容" aria-label="搜索节点标题或内容" />
+        <div className="flex items-center justify-between gap-2">
           <Select value={type} onValueChange={(value) => setType(value as "all" | CanvasNode["type"])}>
-            <SelectTrigger aria-label="节点类型筛选" className="h-8 w-[92px] shrink-0 gap-1 rounded-md border-border/80 bg-card px-2 text-xs shadow-none"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="节点类型筛选" className="h-8 w-32 shrink-0 gap-1 rounded-lg border-border/80 bg-card px-2 text-xs shadow-none"><SelectValue /></SelectTrigger>
             <SelectContent>
               {NODE_FILTERS.map((filter) => <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>)}
             </SelectContent>
           </Select>
+          <span className="text-[11px] tabular-nums text-muted-foreground" role="status">{filteredNodes.length} 个结果</span>
         </div>
       </div>
 
@@ -419,6 +415,7 @@ const CanvasNodeRow = ({ ref, node, selected, onClick }: {
     <button
       ref={ref}
       type="button"
+      aria-pressed={selected}
       className={cn(
         "group relative flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-lg border px-2 py-1.5 text-left transition-[color,background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected ? "border-brand/45 bg-brand-soft shadow-sm" : "border-transparent hover:border-border/70 hover:bg-muted/70",
@@ -477,11 +474,8 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
             <FolderOpen className="size-3.5" />全部素材
           </Button>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 rounded-md border-border/80 bg-card pl-8 pr-8 text-xs" placeholder="搜索素材名称或提示词" aria-label="搜索素材" />
-          {query ? <button type="button" aria-label="清除素材搜索" className="absolute right-2 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3.5" /></button> : null}
-        </div>
+        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索素材名称或提示词" aria-label="搜索素材" />
+        <p className="text-[11px] text-muted-foreground">点击插入，或将素材拖到画布指定位置</p>
       </div>
 
       <ScrollArea className="min-h-0 flex-1" viewportClassName="p-2.5">
@@ -612,11 +606,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
           <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{filteredPrompts.length}</span>
           <TooltipHint content="刷新提示词库"><Button type="button" variant="ghost" size="icon" className="ml-auto size-7 rounded-lg text-muted-foreground" aria-label="刷新提示词库" disabled={loading} onClick={() => load(true)}><RefreshCcw className={cn("size-3.5", loading && "animate-spin")} /></Button></TooltipHint>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 rounded-md border-border/80 bg-card pl-8 pr-8 text-xs" placeholder="搜索提示词" aria-label="搜索提示词" />
-          {query ? <button type="button" aria-label="清除提示词搜索" className="absolute right-2 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3.5" /></button> : null}
-        </div>
+        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索提示词" aria-label="搜索提示词" />
       </div>
 
       <ScrollArea className="min-h-0 flex-1" viewportClassName="p-2">

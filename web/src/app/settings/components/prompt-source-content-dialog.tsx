@@ -113,9 +113,9 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent scrollable={false} className="flex h-[min(88dvh,780px)] w-[min(94vw,1180px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-          <div className="flex min-h-20 items-center justify-between gap-4 border-b border-border px-5 py-4 pr-14 sm:px-6 sm:pr-16">
+          <div className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 pr-14 sm:px-6 sm:pr-16">
             <div className="min-w-0">
-              <DialogTitle className="truncate text-lg sm:text-xl">{source?.label || "提示词来源"} · 提示词内容</DialogTitle>
+              <DialogTitle className="break-words text-base sm:text-xl">{source?.label || "提示词来源"} · 提示词内容</DialogTitle>
               <DialogDescription className="mt-1">{isLoading && prompts.length === 0 ? "正在读取..." : `共 ${prompts.length} 条`}</DialogDescription>
             </div>
             <Button type="button" variant="outline" size="sm" disabled={isLoading || !source} onClick={() => void loadPrompts(false)}>
@@ -164,10 +164,10 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
             )}
           </ScrollArea>
 
-          <DialogFooter flush className="flex-row justify-center gap-1 sm:justify-center">
+          <DialogFooter flush className="flex-row flex-wrap justify-center gap-1 sm:justify-center">
             <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} aria-label="上一页"><ChevronLeft /></Button>
             {paginationItems(page, totalPages).map((item) => typeof item === "number" ? (
-              <Button key={item} type="button" variant={item === page ? "default" : "ghost"} size="icon" className="size-8" onClick={() => setPage(item)}>{item}</Button>
+              <Button key={item} type="button" aria-label={`第 ${item} 页`} aria-current={item === page ? "page" : undefined} variant={item === page ? "default" : "ghost"} size="icon" className="size-8" onClick={() => setPage(item)}>{item}</Button>
             ) : <span key={item} className="flex size-8 items-center justify-center text-xs text-muted-foreground">...</span>)}
             <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} aria-label="下一页"><ChevronRight /></Button>
           </DialogFooter>
@@ -175,18 +175,18 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
       </Dialog>
 
       <Dialog open={Boolean(selectedPrompt)} onOpenChange={(nextOpen) => !nextOpen && setSelectedPrompt(null)}>
-        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
-          <div className="grid min-h-0 md:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
-            <div className="flex min-h-64 items-center justify-center overflow-hidden bg-muted md:min-h-[520px]">
+        <DialogContent scrollable={false} className="flex h-[min(90dvh,680px)] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
+          <div className="grid h-full min-h-0 grid-rows-[minmax(0,0.65fr)_minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] md:grid-rows-1">
+            <div className="flex min-h-0 items-center justify-center overflow-hidden bg-muted">
               {selectedPrompt ? <PromptCover prompt={selectedPrompt} large /> : null}
             </div>
             <div className="flex min-h-0 flex-col p-5 pr-7 sm:p-6 sm:pr-8">
-              <DialogTitle className="pr-20 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
+              <DialogTitle className="line-clamp-2 shrink-0 pr-6 text-base leading-7 md:pr-8 md:text-xl">{selectedPrompt?.title}</DialogTitle>
               <DialogDescription className="mt-1.5">{[selectedPrompt?.category, selectedPrompt?.author].filter(Boolean).join(" · ")}</DialogDescription>
               <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
                 <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>
               </ScrollArea>
-              <div className="mt-5 flex justify-end border-t border-border pt-4">
+              <div className="mt-4 flex shrink-0 justify-end border-t border-border pt-3">
                 {selectedPrompt ? <Button type="button" onClick={() => void copyPrompt(selectedPrompt)}><ClipboardCopy />复制提示词</Button> : null}
               </div>
             </div>

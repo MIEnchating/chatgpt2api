@@ -21,7 +21,6 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { ChannelParameterEditor } from "@/components/channel-parameter-editor";
 import { Badge } from "@/components/ui/badge";
 import { SectionNavigation } from "@/components/section-navigation";
 import { Button } from "@/components/ui/button";
@@ -65,6 +64,7 @@ import {
   type RelayTokenKind,
 } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
 import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
@@ -246,7 +246,6 @@ function CustomRelayConfigDialog({
   sessionKey: string;
 }) {
   const [baseURL, setBaseURL] = useState("");
-  const [parameterTranslation, setParameterTranslation] = useState("");
   const [protocol, setProtocol] = useState<CustomRelayConfigStatus["protocol"]>("openai");
   const [name, setName] = useState("");
   const [apiKey, setAPIKey] = useState("");
@@ -265,10 +264,9 @@ function CustomRelayConfigDialog({
     setName(status?.name || "");
     setProtocol(status?.protocol || "openai");
     setBaseURL(status?.base_url || "");
-    setParameterTranslation(status?.parameter_translation || "");
     setAPIKey("");
     setConfirmDelete(deleteRequested);
-  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol, status?.parameter_translation]);
+  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
@@ -279,8 +277,8 @@ function CustomRelayConfigDialog({
     setIsSaving(true);
     try {
       const { item } = status
-        ? await updateCustomRelayConfig(status.id, { parameter_translation: parameterTranslation, protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
-        : await createCustomRelayConfig({ parameter_translation: parameterTranslation, protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
+        ? await updateCustomRelayConfig(status.id, { protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
+        : await createCustomRelayConfig({ protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
       if (!isCurrentSession()) return;
       onSaved(item);
       toast.success(`${title}自定义 API 配置已保存`);
@@ -348,7 +346,6 @@ function CustomRelayConfigDialog({
             <span>API Key</span>
             <Input type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" />
           </label>
-          {kind !== "text" ? <ChannelParameterEditor value={parameterTranslation} onChange={setParameterTranslation} baseURL={baseURL} kind={kind} disabled={isSaving} /> : null}
         </div> : null}
         <DialogFooter>
           {status ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
@@ -697,7 +694,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   };
 
   return (
-    <Card data-profile-preferences-card className="overflow-hidden lg:h-full lg:min-h-0">
+    <Card data-profile-preferences-card className="h-full min-h-0 overflow-hidden lg:h-full lg:min-h-0">
       <CardHeader
         data-profile-preferences-header
         className="shrink-0 border-b border-border bg-card p-4 sm:p-5"
@@ -720,7 +717,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       </CardHeader>
       <ScrollArea
         data-profile-preferences-body
-        className="min-h-0 lg:flex-1"
+        className="min-h-0 flex-1"
       >
         <CardContent className="space-y-6 p-4 sm:p-5">
         <section className="space-y-4 border-t border-border/70 pt-5 first:border-t-0 first:pt-0">
@@ -1000,21 +997,21 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       viewportClassName="pr-1 lg:pr-0"
       viewStyle={{ height: "100%", minHeight: "100%" }}
     >
-      <div data-profile-layout className="grid min-h-full w-full grid-cols-[minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)]">
+      <div data-profile-layout className="grid h-full min-h-0 w-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-1 2xl:grid-cols-[240px_minmax(0,1fr)]">
         <SectionNavigation
-          title="个人设置"
+          title="个人中心"
           description="管理账户与创作偏好"
           items={profileItems}
           activeId={activeSection}
           ariaLabel="个人设置分类"
           onSelect={selectSection}
         />
-        <main id={activeSection} className="min-w-0 lg:h-full lg:min-h-0">
-          <div hidden={activeSection !== "account"}><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
-          <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
-          <div hidden={activeSection !== "creation"} className="lg:h-full lg:min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
-          <div hidden={activeSection !== "storage"}><StorageProviderCard /></div>
-        </main>
+        <section id={activeSection} aria-label={profileItems.find((item) => item.id === activeSection)?.label} className="h-full min-h-0 min-w-0 overflow-hidden rounded-xl">
+          <div hidden={activeSection !== "account"} className="h-full overflow-y-auto overscroll-contain"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
+          <div hidden={activeSection !== "keys"} className="h-full overflow-y-auto overscroll-contain"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
+          <div hidden={activeSection !== "creation"} className="h-full min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
+          <div hidden={activeSection !== "storage"} className="h-full min-h-0"><StorageProviderCard /></div>
+        </section>
       </div>
       <CustomRelayConfigDialog
         sessionKey={session.key}
@@ -1040,9 +1037,7 @@ export default function ProfilePage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/profile");
   if (isCheckingAuth || !session) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      <LoadingState label="正在加载个人中心" />
     );
   }
   return <ProfileContent key={session.key} session={session} />;

@@ -1,22 +1,24 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/util"
 )
 
 func TestCustomRelayConfigProtocolsPersistAndRejectWrongKinds(t *testing.T) {
 	service := NewCustomRelayConfigService(newTestStorageBackend(t))
 	for _, test := range []struct{ kind, protocol string }{{"text", "autodl"}, {"audio", "ark"}, {"video", "unsupported"}} {
-		if _, err := service.Create("owner", test.kind, "test", "https://api.example", "key", test.protocol, ""); err == nil {
+		if _, err := service.Create("owner", test.kind, "test", "https://api.example", "key", test.protocol); err == nil {
 			t.Fatalf("accepted %#v", test)
 		}
 	}
-	status, err := service.Create("owner", "video", "native", "https://api.example/api/plan/v3", "key", "ark", "")
+	status, err := service.Create("owner", "video", "native", "https://api.example/api/plan/v3", "key", "ark")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,11 +30,11 @@ func TestCustomRelayConfigProtocolsPersistAndRejectWrongKinds(t *testing.T) {
 
 func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *testing.T) {
 	service := NewCustomRelayConfigService(newTestStorageBackend(t))
-	first, err := service.Create("owner-a", "image", "主线路", "https://api.example.test/v1/", "sk-secret", "openai", "")
+	first, err := service.Create("owner-a", "image", "主线路", "https://api.example.test/v1/", "sk-secret", "openai")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	second, err := service.Create("owner-a", "image", "备用线路", "https://backup.example.test/v1", "sk-backup", "openai", "")
+	second, err := service.Create("owner-a", "image", "备用线路", "https://backup.example.test/v1", "sk-backup", "openai")
 	if err != nil {
 		t.Fatalf("Create(second) error = %v", err)
 	}
@@ -40,7 +42,7 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 		t.Fatalf("created statuses = %#v, %#v", first, second)
 	}
 
-	updated, err := service.Update("owner-a", first.ID, "主线路更新", "https://api.example.test/v2", "", "openai", "")
+	updated, err := service.Update("owner-a", first.ID, "主线路更新", "https://api.example.test/v2", "", "openai")
 	if err != nil {
 		t.Fatalf("Update() preserving key error = %v", err)
 	}
@@ -51,7 +53,7 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 	if config.BaseURL != "https://api.example.test/v2" || config.APIKey != "sk-secret" || config.Name != "主线路更新" || !updated.Configured {
 		t.Fatalf("Config() = %#v, status = %#v", config, updated)
 	}
-	if _, err := service.Update("owner-a", first.ID, "切换线路", "https://next.example.test", "", "openai", ""); err == nil || !strings.Contains(err.Error(), "必须重新填写 API Key") {
+	if _, err := service.Update("owner-a", first.ID, "切换线路", "https://next.example.test", "", "openai"); err == nil || !strings.Contains(err.Error(), "必须重新填写 API Key") {
 		t.Fatalf("Update(changed origin without key) error = %v", err)
 	}
 	statuses, err := service.Statuses("owner-a")
@@ -63,17 +65,17 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 func TestCustomRelayConfigServiceValidatesAndDeletesConfig(t *testing.T) {
 	service := NewCustomRelayConfigService(newTestStorageBackend(t))
 	for _, baseURL := range []string{"", "ftp://api.example.test", "https://user:pass@api.example.test", "https://api.example.test?key=value", "http://127.0.0.1:8080", "http://[::1]:8080"} {
-		if _, err := service.Create("owner-a", "text", "测试", baseURL, "sk-secret", "openai", ""); err == nil {
+		if _, err := service.Create("owner-a", "text", "测试", baseURL, "sk-secret", "openai"); err == nil {
 			t.Fatalf("Create(%q) error = nil", baseURL)
 		}
 	}
-	if _, err := service.Create("owner-a", "unknown", "测试", "https://api.example.test", "sk-secret", "openai", ""); err == nil {
+	if _, err := service.Create("owner-a", "unknown", "测试", "https://api.example.test", "sk-secret", "openai"); err == nil {
 		t.Fatal("Create(unknown kind) error = nil")
 	}
-	if _, err := service.Create("owner-a", "text", "测试", "https://api.example.test", "", "openai", ""); err == nil {
+	if _, err := service.Create("owner-a", "text", "测试", "https://api.example.test", "", "openai"); err == nil {
 		t.Fatal("Create(empty key) error = nil")
 	}
-	created, err := service.Create("owner-a", "text", "测试", "https://api.example.test", "sk-secret", "openai", "")
+	created, err := service.Create("owner-a", "text", "测试", "https://api.example.test", "sk-secret", "openai")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -119,11 +121,11 @@ func TestCustomRelayConfigServiceMergesConcurrentCreates(t *testing.T) {
 	}
 	results := make(chan createResult, 2)
 	go func() {
-		status, createErr := serviceA.Create("owner", "image", "线路 A", "https://a.example.test", "sk-a", "openai", "")
+		status, createErr := serviceA.Create("owner", "image", "线路 A", "https://a.example.test", "sk-a", "openai")
 		results <- createResult{status: status, err: createErr}
 	}()
 	go func() {
-		status, createErr := serviceB.Create("owner", "video", "线路 B", "https://b.example.test", "sk-b", "openai", "")
+		status, createErr := serviceB.Create("owner", "video", "线路 B", "https://b.example.test", "sk-b", "openai")
 		results <- createResult{status: status, err: createErr}
 	}()
 	createdIDs := map[string]bool{}
@@ -162,30 +164,39 @@ func TestCustomRelayConfigServiceClassifiesStorageAndNotFoundErrors(t *testing.T
 	}
 
 	service = NewCustomRelayConfigService(newTestStorageBackend(t))
-	if _, err := service.Update("owner", "missing", "名称", "https://api.example.test", "sk-key", "openai", ""); !errors.Is(err, ErrCustomRelayConfigNotFound) {
+	if _, err := service.Update("owner", "missing", "名称", "https://api.example.test", "sk-key", "openai"); !errors.Is(err, ErrCustomRelayConfigNotFound) {
 		t.Fatalf("Update(missing) error = %v, want ErrCustomRelayConfigNotFound", err)
 	}
 }
 
-func TestCustomRelayParameterRulesPersistAndValidate(t *testing.T) {
-	service := NewCustomRelayConfigService(newTestStorageBackend(t))
-	source := `{models:{custom:{POST:{url:"/create",body:{prompt}},result:"data"}}}`
-	created, err := service.Create("owner", "image", "rules", "https://example.com", "key", "openai", source)
-	if err != nil || created.ParameterTranslation != source {
-		t.Fatalf("create: %#v %v", created, err)
-	}
-	if _, err := service.Update("owner", created.ID, "rules", "https://example.com", "", "openai", `{models:broken}`); err == nil {
-		t.Fatal("invalid rules saved")
-	}
-	current, err := service.Config("owner", created.ID)
-	if err != nil || current.ParameterTranslation != source {
-		t.Fatal("invalid save replaced rules")
-	}
-	if _, err := service.Update("owner", created.ID, "rules", "https://example.com", "", "openai", ""); err != nil {
+func TestCustomRelayConfigDiscardsRemovedParameterRules(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documents := jsonDocumentStoreFromBackend(backend)
+	name := customRelayConfigDocumentName("owner")
+	if err := saveStoredJSON(documents, name, map[string]any{
+		"channel": map[string]any{
+			"kind": "image", "name": "Existing channel", "protocol": "openai",
+			"base_url": "https://api.example.test/v1", "api_key": "saved-key",
+			"parameter_translation": "invalid obsolete rule",
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	current, err = service.Config("owner", created.ID)
-	if err != nil || current.ParameterTranslation != "" {
-		t.Fatal("clear did not persist")
+	service := NewCustomRelayConfigService(backend)
+	config, err := service.Config("owner", "channel")
+	if err != nil || config.APIKey != "saved-key" || config.BaseURL != "https://api.example.test/v1" {
+		t.Fatalf("existing channel = %#v, %v", config, err)
+	}
+	if _, err := service.Update("owner", "channel", "Renamed", config.BaseURL, "", config.Protocol); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := documents.LoadJSONDocument(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := util.StringMap(util.StringMap(stored)["channel"])
+	if _, exists := item["parameter_translation"]; exists || item["api_key"] != "saved-key" {
+		encoded, _ := json.Marshal(item)
+		t.Fatalf("saved channel = %s", encoded)
 	}
 }

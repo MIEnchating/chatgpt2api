@@ -166,19 +166,25 @@ export function StorageProvidersCard() {
     >
       <div>
         <div className="overflow-x-auto border-b border-border/70 pb-4">
-          <div role="tablist" aria-label="素材存储设置" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1">
+          <div role="tablist" aria-label="素材存储设置" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1" onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home" ? "local" : event.key === "End" ? "providers" : activeTab === "local" ? "providers" : "local";
+            setActiveTab(next);
+            event.currentTarget.querySelector<HTMLButtonElement>(`#storage-tab-${next}`)?.focus();
+          }}>
             {([
               { id: "local", label: "基础设置", icon: HardDrive },
               { id: "providers", label: `外部存储${setting.providers.length ? ` (${setting.providers.length})` : ""}`, icon: Cloud },
             ] as const).map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
-              return <button key={tab.id} type="button" role="tab" aria-selected={active} aria-controls={`storage-panel-${tab.id}`} onClick={() => setActiveTab(tab.id)} className={cn("flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors sm:px-4", active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Icon className="size-4" />{tab.label}</button>;
+              return <button key={tab.id} id={`storage-tab-${tab.id}`} type="button" role="tab" tabIndex={active ? 0 : -1} aria-selected={active} aria-controls={`storage-panel-${tab.id}`} onClick={() => setActiveTab(tab.id)} className={cn("flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4", active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Icon className="size-4" />{tab.label}</button>;
             })}
           </div>
         </div>
 
-        {activeTab === "local" ? <section id="storage-panel-local" role="tabpanel" className="max-w-6xl space-y-6 pt-5">
+        {activeTab === "local" ? <section id="storage-panel-local" role="tabpanel" aria-labelledby="storage-tab-local" className="max-w-6xl space-y-6 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h3 className="text-base font-semibold text-foreground">服务器本机</h3><p className="mt-1 text-sm text-muted-foreground">默认回退存储，素材保存在服务器目录并可跨设备访问。</p></div>
             <Button type="button" variant="outline" size="sm" onClick={() => void measure(-1)} disabled={measuringIndex !== null}>{measuringIndex === -1 ? <LoaderCircle className="animate-spin" /> : <Gauge />}统计容量</Button>
@@ -207,7 +213,7 @@ export function StorageProvidersCard() {
           </div>
         </section> : null}
 
-        {activeTab === "providers" ? <section id="storage-panel-providers" role="tabpanel" className="space-y-5 pt-5">
+        {activeTab === "providers" ? <section id="storage-panel-providers" role="tabpanel" aria-labelledby="storage-tab-providers" className="space-y-5 pt-5">
           <div data-storage-provider-toolbar className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0"><h3 className="text-base font-semibold text-foreground">全局外部存储</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">统一配置 S3、R2 与 WebDAV；素材写入失败时自动回退到服务器本机。</p></div>
             <div className="flex shrink-0 flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("s3", setting.providers.length)] })}><Plus />S3 / R2</Button><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("webdav", setting.providers.length)] })}><Plus />WebDAV</Button></div>

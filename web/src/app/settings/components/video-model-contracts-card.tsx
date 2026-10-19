@@ -2456,7 +2456,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
               </details>
             </ScrollArea>
           </fieldset>
-          <DialogFooter>
+          <DialogFooter className="flex-row flex-wrap [&>button]:flex-1 [&>button]:px-2 [&>button]:text-xs [&>button>svg]:hidden sm:[&>button]:flex-none sm:[&>button]:px-4 sm:[&>button]:text-sm sm:[&>button>svg]:block">
             <Button type="button" variant="outline" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving}><ShieldCheck className="size-4" />校验配置</Button> : null}
             {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}><FileText className="size-4" />保存草稿</Button> : null}

@@ -476,6 +476,9 @@ func (s *ImageConversationHistoryService) mergeImageConversationRowsContext(ctx 
 	prepared := make([]normalizedImageConversationRowInput, 0, len(incoming))
 	seen := make(map[string]struct{}, len(incoming))
 	for _, raw := range incoming {
+		if raw["historySummaryOnly"] == true || raw["history_summary_only"] == true {
+			return nil, 0, ImageConversationHistoryValidationError{Err: fmt.Errorf("summary-only conversations cannot be saved")}
+		}
 		incomingRevision, hasRevision := raw["revision"]
 		item, err := normalizeImageConversationHistoryItem(raw)
 		if err != nil {

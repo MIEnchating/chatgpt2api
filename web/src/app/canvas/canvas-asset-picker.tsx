@@ -11,7 +11,8 @@ import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-t
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchAssetGroups, type AssetGroup } from "@/lib/asset-groups";
@@ -125,30 +126,33 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
+        <DialogContent scrollable={false} className="flex h-[min(820px,92dvh)] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
             <DialogTitle>选择素材</DialogTitle>
             <DialogDescription>从我的素材或公开素材库插入文本、图片、视频和音频。</DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-5 pt-3 sm:px-6">
             {([{"value":"my-assets","label":"我的素材"},{"value":"library","label":"素材库"}] as const).map((item) => (
-              <button key={item.value} type="button" onClick={() => setTab(item.value)} className={cn("h-9 border-b-2 px-3 text-sm font-medium text-muted-foreground", tab === item.value ? "border-brand text-brand" : "border-transparent")}>{item.label}</button>
+              <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("h-10 border-b-2 px-3 text-sm font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring", tab === item.value ? "border-brand text-brand" : "border-transparent hover:text-foreground")}>{item.label}</button>
             ))}
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 pt-4 sm:px-6">
-            <div className="relative min-w-52 flex-1"><Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-8" placeholder="搜索素材" /></div>
-            <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1">
-              {kinds.map((item) => <button key={item.value} type="button" onClick={() => setKind(item.value)} className={cn("h-8 shrink-0 rounded-md px-2.5 text-xs font-medium text-muted-foreground", kind === item.value && "bg-card text-foreground shadow-sm")}>{item.label}</button>)}
+          <div className="grid shrink-0 gap-3 px-4 pt-3 sm:px-6">
+            <SearchInput value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div role="group" aria-label="素材类型" className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1">
+              {kinds.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => setKind(item.value)} className={cn("h-8 shrink-0 rounded-md px-2.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring", kind === item.value && "bg-card text-foreground shadow-sm")}>{item.label}</button>)}
             </div>
-            {tab === "my-assets" ? <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : null}
+            {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : null}
+            </div>
           </div>
-          <div className="grid shrink-0 gap-2 px-5 pt-3 sm:px-6">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 py-3 sm:px-6">
             <Select value={groupFilter} onValueChange={setGroupFilter} disabled={!groupsLoaded}>
               <SelectTrigger className="h-8 w-44" aria-label="筛选素材标签"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="ungrouped">未标签</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
             </Select>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground" role="status">{filtered.length} 个结果</span>
           </div>
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-4 sm:px-6">
+          <ScrollArea className="min-h-0 flex-1 bg-muted/15" viewportClassName="px-4 py-4 sm:px-6">
             {(loading || remoteLoading) && !tabAssets.length ? (
               <div className="grid h-72 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
             ) : visible.length ? (
@@ -156,7 +160,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
                 {visible.map((asset) => <CanvasAssetCard key={assetListKey(asset)} asset={asset} onInsert={() => insert(asset)} />)}
               </div>
             ) : (
-              <div className="grid h-72 place-items-center text-sm text-muted-foreground">没有素材</div>
+              <EmptyState icon={Search} title={query || kind !== "all" || groupFilter !== "all" ? "没有匹配的素材" : "暂无可用素材"} description={query || kind !== "all" || groupFilter !== "all" ? "调整关键词、类型或标签后再试。" : "新增素材后，可以从这里插入画布。"} action={query || kind !== "all" || groupFilter !== "all" ? <Button variant="outline" size="sm" onClick={() => { setQuery(""); setKind("all"); setGroupFilter("all"); }}>清除筛选</Button> : tab === "my-assets" ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : undefined} />
             )}
           </ScrollArea>
           {filtered.length > PAGE_SIZE ? (
@@ -185,7 +189,7 @@ function CanvasAssetCard({ asset, onInsert }: { asset: MyAsset; onInsert: () => 
   const Icon = asset.kind === "image" ? ImageIcon : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : FileText;
   const preview = asset.coverUrl || asset.url || "";
   return (
-    <button type="button" className="group min-w-0 overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-brand/40 hover:shadow-md" onClick={onInsert}>
+    <button type="button" aria-label={`插入素材：${asset.title}`} className="group min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left outline-none transition hover:border-brand/40 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring" onClick={onInsert}>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
         {asset.kind === "image" && preview ? <AuthenticatedImage src={preview} alt={asset.title} className="size-full object-cover" /> : null}
         {asset.kind === "video" && asset.coverUrl ? <AuthenticatedImage src={asset.coverUrl} alt={asset.title} className="size-full object-cover" /> : null}

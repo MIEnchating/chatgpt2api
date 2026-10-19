@@ -35,6 +35,17 @@ export function deriveGenerationTaskStatus(slots: GenerationTaskSlot[]) {
   return { status: "queued" as const, error: undefined };
 }
 
+export function imageConversationHasActiveTurn(conversation: ImageConversation) {
+  if (conversation.historySummaryOnly) {
+    return (conversation.historySummary?.queued || 0) > 0 || (conversation.historySummary?.running || 0) > 0;
+  }
+  return conversation.turns.some((turn) =>
+    turn.status === "queued" ||
+    turn.status === "generating" ||
+    turn.images.some((image) => image.status === "loading"),
+  );
+}
+
 export function canStartImageConversationQueueRunner(
   activeConversationIds: ReadonlySet<string>,
   conversationId: string,

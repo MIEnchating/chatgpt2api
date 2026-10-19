@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -102,8 +103,8 @@ export function StorageProviderCard() {
   };
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-4">
+    <Card className="h-full min-h-0 overflow-hidden">
+      <CardHeader className="shrink-0 border-b border-border p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground ring-1 ring-border"><Cloud className="size-5" /></span>
@@ -112,11 +113,18 @@ export function StorageProviderCard() {
           <Button type="button" onClick={() => void save()} disabled={saving}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}保存</Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <ScrollArea className="min-h-0 flex-1">
+      <CardContent className="space-y-5 p-4 sm:p-5">
         <div className="overflow-x-auto border-b border-border/70 pb-4">
-          <div role="tablist" aria-label="个人素材存储类型" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1">
-            <button type="button" role="tab" aria-selected={activeType === "s3"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "s3" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("s3")}><Database className="size-4" />S3 / R2</button>
-            <button type="button" role="tab" aria-selected={activeType === "webdav"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "webdav" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("webdav")}><Cloud className="size-4" />WebDAV</button>
+          <div role="tablist" aria-label="个人素材存储类型" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1" onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home" ? "s3" : event.key === "End" ? "webdav" : activeType === "s3" ? "webdav" : "s3";
+            setActiveType(next);
+            event.currentTarget.querySelector<HTMLButtonElement>(`#storage-tab-${next}`)?.focus();
+          }}>
+            <button type="button" role="tab" id="storage-tab-s3" aria-controls="storage-panel-s3" tabIndex={activeType === "s3" ? 0 : -1} aria-selected={activeType === "s3"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "s3" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("s3")}><Database className="size-4" />S3 / R2</button>
+            <button type="button" role="tab" id="storage-tab-webdav" aria-controls="storage-panel-webdav" tabIndex={activeType === "webdav" ? 0 : -1} aria-selected={activeType === "webdav"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "webdav" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("webdav")}><Cloud className="size-4" />WebDAV</button>
           </div>
         </div>
         <div className="flex min-h-16 items-center justify-between gap-4 border-y border-border/70 py-3">
@@ -124,7 +132,7 @@ export function StorageProviderCard() {
           <Switch checked={provider.enabled} onCheckedChange={setProviderEnabled} />
         </div>
         {activeType === "s3" ? (
-          <div role="tabpanel" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
+          <div role="tabpanel" id="storage-panel-s3" aria-labelledby="storage-tab-s3" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
             <StorageField label="配置名称"><Input value={s3.name} onChange={(event) => setS3((value) => ({ ...value, name: event.target.value }))} placeholder="我的对象存储" /></StorageField>
             <StorageField label="S3 / R2 服务地址"><Input value={s3.endpoint} onChange={(event) => setS3((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://account.r2.cloudflarestorage.com" /></StorageField>
             <StorageField label="存储桶名称"><Input value={s3.bucket} onChange={(event) => setS3((value) => ({ ...value, bucket: event.target.value }))} placeholder="media-assets" /></StorageField>
@@ -135,7 +143,7 @@ export function StorageProviderCard() {
             <StorageField label="Secret Access Key" hint="编辑已有配置时留空表示保持原密钥"><Input type="password" value={s3.secretAccessKey} onChange={(event) => setS3((value) => ({ ...value, secretAccessKey: event.target.value }))} placeholder="访问密钥" autoComplete="new-password" /></StorageField>
           </div>
         ) : (
-          <div role="tabpanel" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
+          <div role="tabpanel" id="storage-panel-webdav" aria-labelledby="storage-tab-webdav" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
             <StorageField label="配置名称"><Input value={webdav.name} onChange={(event) => setWebDAV((value) => ({ ...value, name: event.target.value }))} placeholder="我的 WebDAV" /></StorageField>
             <StorageField label="WebDAV 服务器地址"><Input value={webdav.endpoint} onChange={(event) => setWebDAV((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://dav.example.com" /></StorageField>
             <StorageField label="用户名"><Input value={webdav.username} onChange={(event) => setWebDAV((value) => ({ ...value, username: event.target.value }))} placeholder="WebDAV 用户名" autoComplete="off" /></StorageField>
@@ -148,6 +156,7 @@ export function StorageProviderCard() {
           <Button type="button" variant="outline" onClick={() => void measure()} disabled={measuring || !provider.enabled}>{measuring ? <LoaderCircle className="animate-spin" /> : <Gauge />}统计容量</Button>
         </div>
       </CardContent>
+      </ScrollArea>
     </Card>
   );
 }

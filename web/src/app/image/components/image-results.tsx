@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
+import { AlertCircle, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
@@ -56,12 +56,16 @@ type DownloadableImage = {
 type ImageResultsProps = {
   selectedConversation: ImageConversation | null;
   isLoadingHistory: boolean;
+  isLoadingConversationDetail: boolean;
+  conversationDetailError: string;
+  onRetryConversationDetail: () => void;
   progressByTurnKey: Record<string, ImageTurnProgress>;
   progressNow: number;
   promptPresets: readonly ImagePromptPreset[];
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
   onApplyPromptPreset: (preset: ImagePromptPreset) => void | Promise<void>;
   onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
+  onMaskEdit: (conversationId: string, turnId: string, image: StoredImage) => void;
   onEditTurn: (conversationId: string, turnId: string) => void;
   onCancelTurn: (conversationId: string, turnId: string) => void | Promise<void>;
   onRegenerateTurn: (conversationId: string, turnId: string) => void | Promise<void>;
@@ -297,12 +301,16 @@ async function fetchImageSizeLabel(src: string) {
 export function ImageResults({
   selectedConversation,
   isLoadingHistory,
+  isLoadingConversationDetail,
+  conversationDetailError,
+  onRetryConversationDetail,
   progressByTurnKey,
   progressNow,
   promptPresets,
   onOpenLightbox,
   onApplyPromptPreset,
   onContinueEdit,
+  onMaskEdit,
   onEditTurn,
   onCancelTurn,
   onRegenerateTurn,
@@ -407,10 +415,35 @@ export function ImageResults({
     );
   }
 
+  if (conversationDetailError) {
+    return (
+      <div className="flex h-full min-h-[300px] items-center justify-center px-4 py-3 text-center sm:min-h-[420px] sm:py-6">
+        <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <span className="flex size-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span>
+          <p className="text-sm font-semibold">暂时无法读取会话</p>
+          <p className="max-h-36 w-full overflow-auto text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{conversationDetailError}</p>
+          <Button type="button" variant="outline" onClick={onRetryConversationDetail}>重试读取</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoadingConversationDetail || selectedConversation?.historySummaryOnly === true) {
+    return (
+      <div data-image-conversation-detail-loading className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-brand" />
+          正在读取会话详情
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedConversation) {
     return (
       <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5">
+        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6">
+          <div className="space-y-2 text-center"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-brand/15 bg-brand-soft text-brand"><Plus className="size-5" /></span><h2 className="pt-2 text-xl font-semibold tracking-tight">今天，想创作什么？</h2><p className="text-sm leading-6 text-muted-foreground">写下你的想法，或选择一个灵感开始。</p></div>
           <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
             {promptPresets.map((preset) => (
               <button
@@ -450,19 +483,9 @@ export function ImageResults({
     );
   }
 
-  if (selectedConversation.historySummaryOnly === true) {
-    return (
-      <div data-image-conversation-detail-loading className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-brand" />
-          正在读取会话详情
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 sm:gap-8">
+    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-8 sm:gap-10">
       {selectedConversation.turns.map((turn, turnIndex) => {
         const progress = progressByTurnKey[turnProgressKey(selectedConversation.id, turn.id)];
         const displayedReferenceImages = [
@@ -571,6 +594,9 @@ export function ImageResults({
         const isVideoTurn = turn.mode === "video";
         const turnFrameAspectRatio = generationFrameAspectRatio(turn);
         const turnVideoFrameMaxWidth = videoFrameMaxWidth(turnFrameAspectRatio);
+        const videoResolutionLabel = turn.videoResolution || "默认清晰度";
+        const videoDurationLabel = turn.videoSeconds === -1 ? "智能时长" : turn.videoSeconds ? `${turn.videoSeconds} 秒` : "默认时长";
+        const videoAudioLabel = turn.videoGenerateAudio === false ? "静音" : turn.videoGenerateAudio === true ? "含声音" : "默认音频";
         const resultCount = successfulVisualImages.length;
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
         const isQueued = effectiveStatus === "queued";
@@ -650,13 +676,13 @@ export function ImageResults({
           ) : null;
 
         return (
-          <div key={turn.id} className="flex flex-col gap-3 sm:gap-4">
+          <div key={turn.id} className={cn("flex min-w-0 flex-col gap-4", isVideoTurn && "mx-auto w-full max-w-[960px]")}>
             <div className="flex justify-end">
               <article className={cn(
-                "w-full rounded-xl border border-border/80 bg-card px-4 py-3 text-left text-[14px] leading-6 text-foreground shadow-[var(--shadow-card)] sm:px-5 sm:py-4 sm:text-[15px] sm:leading-7",
+                "w-full min-w-0 rounded-2xl border border-border/70 bg-card px-4 py-4 text-left text-sm leading-7 text-foreground shadow-xs sm:px-5 sm:text-[15px]",
                 isVideoTurn ? "max-w-[960px]" : "max-w-[min(94%,760px)]",
               )}>
-                <div className="mb-3 flex items-start justify-between gap-3 border-b border-border pb-2">
+                <div className="mb-3 flex items-start justify-between gap-3 border-b border-border/60 pb-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-muted-foreground">
                     <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">第 {turnIndex + 1} 轮</span>
                     {turn.workflowName ? (
@@ -668,10 +694,10 @@ export function ImageResults({
                     <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">{turn.model}</span>
                     {turn.mode === "video" ? (
                       <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
-                        {turn.videoResolution || "720p"} · {turn.videoSeconds || 4} 秒{turn.videoGenerateAudio === false ? " · 静音" : " · 声音"}
+                        {videoResolutionLabel} · {videoDurationLabel} · {videoAudioLabel}
                       </span>
                     ) : null}
-                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
+                    <span className={cn("max-w-full rounded-full px-2.5 py-0.5 [overflow-wrap:anywhere]", getStatusChipClass(effectiveStatus))}>
                       {getTurnStatusLabel(effectiveStatus)}
                     </span>
                     <span className="px-1 text-muted-foreground">{formatConversationTime(turn.createdAt)}</span>
@@ -719,7 +745,7 @@ export function ImageResults({
                   </div>
                 </div>
                 <div>
-                  <div className="whitespace-pre-wrap break-words">{turn.prompt}</div>
+                  <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.prompt}</div>
                   {displayedReferenceImages.length > 0 ? (
                     <div className="mt-3 flex flex-wrap justify-start gap-2">
                       {displayedReferenceImages.map((image, index) => (
@@ -745,14 +771,14 @@ export function ImageResults({
             </div>
 
             <div className="flex justify-start">
-              <section className={cn("w-full px-1", isVideoTurn && "mx-auto max-w-[960px]")}>
+              <section className={cn("w-full min-w-0", isVideoTurn && "mx-auto max-w-[960px]")}>
                 {showResultSummary ? (
                   <div
                     data-video-result-summary={isVideoTurn || undefined}
                     className={cn(
                       "mb-3 flex items-center gap-3 sm:mb-4",
                       isVideoTurn
-                        ? "flex-wrap rounded-lg border border-border/80 bg-card px-4 py-3 shadow-[var(--shadow-card)]"
+                        ? "flex-wrap rounded-2xl border border-border/70 bg-card px-4 py-3"
                         : "hide-scrollbar overflow-x-auto border-b border-border pb-3",
                     )}
                   >
@@ -773,7 +799,7 @@ export function ImageResults({
                         </span>
                       ) : (
                         <span>
-                          {isVideoTurn ? "共" : "生成结果："}<strong className="font-semibold text-foreground">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
+                          {isVideoTurn ? "已完成 " : "生成结果："}<strong className="font-semibold text-foreground">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
                         </span>
                       )}
                       {!turnBusy && turn.count !== resultCount ? (
@@ -824,8 +850,8 @@ export function ImageResults({
                     {turnBusy || downloadActions ? (
                       <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
                         {turnBusy ? (
-                          <span className="flex max-w-full flex-col gap-0.5 rounded-2xl bg-amber-50 px-3 py-1 text-[11px] leading-5 text-amber-700 sm:text-xs dark:bg-amber-950/35 dark:text-amber-300">
-                            <span className="w-fit whitespace-nowrap font-medium">{progressMessage}</span>
+                          <span className="flex max-w-full flex-col gap-0.5 rounded-xl bg-brand-soft px-3 py-1.5 text-[11px] leading-5 text-brand sm:text-xs">
+                            <span className="w-fit font-medium [overflow-wrap:anywhere]">{progressMessage}</span>
                             {longTaskHint ? <span className="max-w-[20rem] text-[11px] leading-5">{longTaskHint}</span> : null}
                           </span>
                         ) : null}
@@ -869,7 +895,7 @@ export function ImageResults({
                 ) : null}
 
                 {visualImages.length > 0 ? (
-                  <div className={cn(turn.mode === "video" ? "grid grid-cols-1 gap-4" : "columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3")}>
+                  <div className={cn(turn.mode === "video" ? "grid min-w-0 grid-cols-1 items-start gap-4" : "columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3")}>
                     {visualImages.map(({ image, index }) => {
                     const imageSrc = getStoredImageSrc(image, resolvedStorageURLs);
                     const video = isStoredVideo(image) || turn.mode === "video";
@@ -886,23 +912,24 @@ export function ImageResults({
                         <figure
                           key={image.id}
                           data-video-result-card
-                          className="group relative mx-auto w-full max-w-[960px] overflow-hidden rounded-lg border border-border/80 bg-card shadow-[var(--shadow-card)]"
-                          style={{ maxWidth: turnVideoFrameMaxWidth }}
+                          className="group relative mx-auto w-full min-w-0 max-w-[960px] overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm"
+                          style={{ maxWidth: `min(${turnVideoFrameMaxWidth}, calc(56dvh * ${turnFrameAspectRatio}))` }}
                         >
                           <MediaVideoPlayer
                             aspectRatio={turnFrameAspectRatio}
                             src={imageSrc}
                             title={`生成视频 ${index + 1}`}
+                            className="rounded-none"
                           />
-                          <figcaption className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-border/80 bg-card px-3 py-2 text-xs text-muted-foreground sm:px-4">
+                          <figcaption className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
                             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                               <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
                                 <Clapperboard className="size-3.5 text-primary" />
                                 视频 {index + 1}
                               </span>
                               <span className="uppercase">{(image.mimeType || "video/mp4").replace("video/", "")}</span>
-                              <span>{turn.videoResolution || "720p"}</span>
-                              <span>{turn.videoSeconds || 4} 秒{turn.videoGenerateAudio === false ? " · 静音" : " · 含声音"}</span>
+                              <span>{videoResolutionLabel}</span>
+                              <span>{videoDurationLabel} · {videoAudioLabel}</span>
                             </div>
                             {downloadItem ? (
                               <Button
@@ -919,6 +946,50 @@ export function ImageResults({
                             ) : null}
                           </figcaption>
                         </figure>
+                      );
+                    }
+                    if (video && image.status !== "success") {
+                      const failed = image.status === "error";
+                      const cancelled = image.status === "cancelled";
+                      const phase = getStoredImageLoadingPhase(image, turn);
+                      const running = phase === "running";
+                      const errorMessage = videoTaskErrorMessage(image.error);
+                      return (
+                        <div key={image.id} data-video-task-state={image.status} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs" role={failed ? "alert" : undefined}>
+                          <div className={cn("flex items-center gap-3 border-b border-border/60 px-4 py-3", failed ? "bg-destructive/5" : "bg-muted/20")}>
+                            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", failed ? "bg-destructive/10 text-destructive" : cancelled ? "bg-muted text-muted-foreground" : "bg-brand-soft text-brand")}>
+                              {failed ? <AlertCircle className="size-4" /> : cancelled ? <CircleStop className="size-4" /> : running ? <LoaderCircle className="size-4 animate-spin" /> : <Clock3 className="size-4" />}
+                            </span>
+                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{failed ? "视频生成失败" : cancelled ? "视频生成已终止" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
+                            {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
+                          </div>
+                          {failed || cancelled ? (
+                            <div className="space-y-3 p-4 sm:p-5">
+                              <p className="text-sm leading-6 text-muted-foreground">{failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
+                              {failed ? errorMessage.length > 280 ? (
+                                <details className="group rounded-xl border border-destructive/15 bg-destructive/5 text-xs">
+                                  <summary className="cursor-pointer px-3 py-2.5 font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看完整错误信息</summary>
+                                  <p className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-destructive/10 p-3 leading-6 text-muted-foreground [overflow-wrap:anywhere]">{errorMessage}</p>
+                                </details>
+                              ) : <p className="rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2.5 text-xs leading-6 text-destructive [overflow-wrap:anywhere]">{errorMessage}</p> : image.error ? <p className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/50 p-3 text-xs leading-6 text-muted-foreground [overflow-wrap:anywhere]">{image.error}</p> : null}
+                            </div>
+                          ) : (
+                            <div className="flex min-h-52 flex-col items-center justify-center gap-3 bg-gradient-to-b from-muted/25 to-transparent px-5 py-7 text-center">
+                              <span className="flex size-14 items-center justify-center rounded-2xl border border-brand/15 bg-brand-soft text-brand"><Clapperboard className="size-6" /></span>
+                              <p className="text-sm font-medium">{running ? "正在把你的想法变成动态画面" : "等待任务开始"}</p>
+                              <p className="max-w-sm text-xs leading-6 text-muted-foreground">{running ? "视频生成需要一些时间，结果会自动出现在这里。" : "轮到此任务时将自动开始生成。"}</p>
+                              {running ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mt-1 max-w-64" /> : null}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-4 py-3">
+                            <span className="text-[11px] text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel}</span>
+                            <div className="flex items-center gap-2">
+                              {failed || cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine className="size-3.5" />调整设置</Button> : null}
+                              {failed ? <Button type="button" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy || !turn.prompt.trim()} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw className="size-3.5" />重试视频生成</Button> : null}
+                              {!failed && !cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop className="size-3.5" />终止生成</Button> : null}
+                            </div>
+                          </div>
+                        </div>
                       );
                     }
                     if ((image.status === "success" || isPreview) && imageSrc) {
@@ -1027,6 +1098,16 @@ export function ImageResults({
                               >
                                 <Eye className="size-3" />
                                 查看原图
+                              </TooltipButton>
+                              <TooltipButton
+                                type="button"
+                                onClick={() => onMaskEdit(selectedConversation.id, turn.id, image)}
+                                disabled={turnBusy}
+                                className="inline-flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground shadow-sm transition hover:bg-card disabled:opacity-50"
+                                aria-label="局部重绘"
+                                tooltip="局部重绘"
+                              >
+                                <Brush className="size-3.5" />
                               </TooltipButton>
                               <TooltipButton
                                 type="button"

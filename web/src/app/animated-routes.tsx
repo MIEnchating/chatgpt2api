@@ -8,6 +8,8 @@ import {
 } from "react-router-dom";
 
 import { appRoutes } from "@/app/route-config";
+import { LoadingState } from "@/components/ui/loading-state";
+import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { getCachedAuthSession } from "@/lib/session";
 import { canAccessPath, getDefaultRouteForSession } from "@/lib/auth-session";
 
@@ -33,24 +35,22 @@ export function AnimatedRoutes() {
 
   return (
     <div className="h-full min-h-0 min-w-0">
-      <Suspense
-        key={pathname}
-        fallback={(
-          <div role="status" className="flex h-full min-h-[240px] items-center justify-center text-sm text-muted-foreground">
-            正在加载页面
-          </div>
-        )}
-      >
-        <Routes>
-          {appRoutes.map((route) => (
-            <Route
-              key={route.path}
-              path={route.path}
-              element={<PermissionRoute requiredPath={route.requiredPath}>{route.element}</PermissionRoute>}
-            />
-          ))}
-        </Routes>
-      </Suspense>
+      <RouteErrorBoundary key={pathname}>
+        <Suspense
+          key={pathname}
+          fallback={<LoadingState label="正在加载页面" />}
+        >
+          <Routes>
+            {appRoutes.map((route) => (
+              <Route
+                key={route.path}
+                path={route.path}
+                element={<PermissionRoute requiredPath={route.requiredPath}>{route.element}</PermissionRoute>}
+              />
+            ))}
+          </Routes>
+        </Suspense>
+      </RouteErrorBoundary>
     </div>
   );
 }

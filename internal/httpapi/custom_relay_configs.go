@@ -7,7 +7,6 @@ import (
 
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
-	"chatgpt2api/internal/translation"
 	"chatgpt2api/internal/util"
 )
 
@@ -41,7 +40,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]), util.Clean(body["parameter_translation"]))
+			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 			if err != nil {
 				writeCustomRelayConfigError(w, err)
 				return
@@ -56,20 +55,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 		util.WriteError(w, http.StatusForbidden, "管理员尚未允许用户添加自定义 API 配置")
 		return
 	}
-	if path == "validate-translation" && r.Method == http.MethodPost {
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		models, err := translation.Models(util.Clean(body["source"]))
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"models": models})
-		return
-	}
+
 	switch r.Method {
 	case http.MethodPut:
 		body, err := readJSONMap(r)
@@ -77,7 +63,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]), util.Clean(body["parameter_translation"]))
+		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 		if err != nil {
 			writeCustomRelayConfigError(w, err)
 			return

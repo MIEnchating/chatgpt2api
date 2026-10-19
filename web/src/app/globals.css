@@ -263,7 +263,7 @@ input[type="number"]::-webkit-outer-spin-button {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Zen Hei", ui-sans-serif, system-ui, sans-serif;
   --font-login: var(--font-sans);
   --font-display: var(--font-sans);
   --font-mid: var(--font-sans);
@@ -309,20 +309,20 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 :root {
-  --page-section-gap: 1rem;
+  --page-section-gap: 0.75rem;
   --page-padding: 0.75rem;
   --theme-transition-x: 50vw;
   --theme-transition-y: 50vh;
   --theme-transition-radius: 0px;
   --radius: 0.75rem;
-  --background: #f6f8fc;
-  --page-background-start: #f8fbff;
-  --page-background-end: #f2f6fb;
-  --foreground: #222222;
-  --card: #fbfdff;
-  --card-foreground: #222222;
-  --popover: #fbfdff;
-  --popover-foreground: #222222;
+  --background: #f5f7fa;
+  --page-background-start: #f8fafc;
+  --page-background-end: #f1f4f8;
+  --foreground: #1e293b;
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
   --primary: #181e25;
   --primary-foreground: #ffffff;
   --secondary: #edf2f8;
@@ -474,6 +474,7 @@ input[type="number"]::-webkit-outer-spin-button {
     line-height: 1.5;
     min-width: 320px;
     min-height: 100dvh;
+    text-rendering: optimizeLegibility;
   }
   #root {
     min-height: 100dvh;
@@ -536,6 +537,7 @@ input[type="number"]::-webkit-outer-spin-button {
 @media (min-width: 640px) {
   :root {
     --page-padding: 1.25rem;
+    --page-section-gap: 1rem;
   }
 }
 
@@ -545,10 +547,17 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 }
 
-@media (max-height: 700px) {
+@media (max-width: 639px) {
   [data-management-page] > [data-management-panel] {
     flex-shrink: 0;
-    min-height: 44rem;
+    min-height: 32rem;
+  }
+}
+
+@media (max-height: 540px) and (min-width: 640px) {
+  [data-management-page] > [data-management-panel] {
+    flex-shrink: 0;
+    min-height: 24rem;
   }
 
   [data-management-panel] [data-empty-state] {

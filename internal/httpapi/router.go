@@ -73,6 +73,7 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/api/creation-tasks/audio-reference-uploads", a.handleAudioReferenceUpload),
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),
+		exact(http.MethodPost, "/api/settings/validate-translation", a.handleValidateParameterTranslation),
 		exact(http.MethodGet, "/api/settings/relay-groups", a.handleRelayCreationGroups),
 		exact("", "/api/settings/login-page-image", a.handleLoginPageImageSettings),
 		exact("", "/api/settings/site-icon", a.handleSiteIconSettings),

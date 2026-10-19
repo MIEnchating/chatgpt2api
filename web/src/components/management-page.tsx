@@ -13,10 +13,16 @@ import {
 import { cn } from "@/lib/utils";
 
 type ManagementPageProps = ComponentProps<"section"> & {
+  title?: string;
+  description?: string;
+  meta?: ReactNode;
   actions?: ReactNode;
 };
 
 function ManagementPage({
+  title,
+  description,
+  meta,
   actions,
   children,
   className,
@@ -31,7 +37,7 @@ function ManagementPage({
       )}
       {...props}
     >
-      {actions ? <PageHeader actions={actions} /> : null}
+      {title || actions ? <PageHeader title={title} description={description} meta={meta} actions={actions} /> : null}
       {children}
     </section>
   );
@@ -63,7 +69,7 @@ function ManagementToolbar({ className, ...props }: ComponentProps<"div">) {
     <div
       data-management-toolbar
       className={cn(
-        "min-w-0 shrink-0 border-b border-border px-4 py-4 sm:px-5",
+        "min-w-0 shrink-0 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-4",
         className
       )}
       {...props}
@@ -106,35 +112,39 @@ function ManagementPagination(props: ManagementPaginationProps) {
   const itemLabel = props.itemLabel || "条";
 
   return (
-    <div
+    <nav
       data-management-pagination
-      className="mt-auto grid min-h-14 shrink-0 grid-cols-[1fr_auto] items-center gap-3 border-t border-border px-4 py-2 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:px-5"
+      aria-label="分页导航"
+      className="mt-auto grid min-h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:px-5"
     >
-      <span className="shrink-0 whitespace-nowrap tabular-nums">
+      <span className="min-w-0 truncate tabular-nums" role="status" aria-live="polite">
         {cursorMode ? "本页" : "共"} {cursorMode ? props.currentItems : props.totalItems} {itemLabel}
       </span>
-      <div className="order-3 col-span-2 flex items-center justify-center gap-2 sm:order-none sm:col-span-1">
+      <div className="flex items-center justify-center gap-1 sm:gap-2">
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="size-9 shrink-0 rounded-lg"
+          className="size-8 shrink-0 rounded-lg sm:size-9"
           aria-label="上一页"
           disabled={!canGoPrevious || props.disabled}
           onClick={() => props.onPageChange(page - 1)}
         >
           <ChevronLeft className="size-4" />
         </Button>
-        <span className="min-w-24 shrink-0 text-center tabular-nums">
+        <span className="min-w-10 shrink-0 text-center tabular-nums sm:min-w-24">
+          <span className="sm:hidden">{cursorMode ? `${hasItems || page > 1 ? page : 0}` : `${hasItems ? page : 0} / ${hasItems ? totalPages : 0}`}</span>
+          <span className="hidden sm:inline">
           {cursorMode
             ? `第 ${hasItems || page > 1 ? page : 0} 页`
             : `第 ${hasItems ? page : 0} / ${hasItems ? totalPages : 0} 页`}
+          </span>
         </span>
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="size-9 shrink-0 rounded-lg"
+          className="size-8 shrink-0 rounded-lg sm:size-9"
           aria-label="下一页"
           disabled={!canGoNext || props.disabled}
           onClick={() => props.onPageChange(page + 1)}
@@ -149,7 +159,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
           disabled={props.disabled}
         >
           <SelectTrigger
-            className="h-9 w-24 shrink-0 rounded-lg"
+            className="h-8 w-20 shrink-0 rounded-lg px-2 text-xs sm:h-9 sm:w-24 sm:px-3 sm:text-sm"
             aria-label="每页数量"
           >
             <SelectValue />
@@ -163,7 +173,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
           </SelectContent>
         </Select>
       </div>
-    </div>
+    </nav>
   );
 }
 

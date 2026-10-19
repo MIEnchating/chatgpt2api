@@ -1,4 +1,4 @@
-import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
+import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,7 +14,6 @@ import {
 } from "@/app/canvas/canvas-contenteditable";
 import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, canvasConfigUsesConnectedText, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CanvasNode } from "@/services/api/canvas";
 import { cn } from "@/lib/utils";
@@ -23,13 +22,12 @@ type ComposerToken =
   | { type: "text"; value: string }
   | { type: "reference"; nodeID: string };
 
-export function CanvasConfigComposer({ node, inputs, children, promptTools, onComposerChange, onClose }: {
+export function CanvasConfigComposer({ node, inputs, children, promptTools, onComposerChange }: {
   node: CanvasNode;
   inputs: CanvasConfigInput[];
   children?: ReactNode;
   promptTools?: ReactNode;
   onComposerChange: (value: string, commit?: boolean) => void;
-  onClose: () => void;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
@@ -137,12 +135,11 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <p className="shrink-0 text-xs font-semibold">组装提示词</p>
-          <p className="truncate text-[11px] text-muted-foreground">@ 引用已连接资源，发送时按当前连接编号</p>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-semibold">组装提示词</p>
+          <p className="text-xs leading-5 text-muted-foreground">输入 @ 引用已连接资源，发送时按当前连接编号。</p>
         </div>
-        <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="关闭提示词面板" onClick={onClose}><X className="size-3.5" /></Button>
       </div>
       <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
           {!value.trim() && !usesConnectedText ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}

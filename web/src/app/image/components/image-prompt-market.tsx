@@ -36,6 +36,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
+import { PageHeader } from "@/components/page-header";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
@@ -451,7 +453,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             <ChevronDown className="size-4 text-muted-foreground" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[min(calc(100vw-2rem),32rem)] p-2">
+        <PopoverContent align="start" scrollable={false} className="flex max-h-[min(70dvh,30rem)] w-[min(calc(100vw-2rem),32rem)] flex-col overflow-hidden p-2">
           <div className="sticky top-0 z-10 bg-popover pb-2">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -461,7 +463,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
               className="h-9 pl-8"
             />
           </div>
-          <div className="flex flex-col gap-0.5">
+          <ScrollArea className="min-h-0 flex-1" viewClass="flex flex-col gap-0.5">
             {visibleCategoryOptions.length > 0 ? visibleCategoryOptions.map((item) => (
               <button
                 key={item.id}
@@ -479,7 +481,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             )) : (
               <p className="px-3 py-6 text-center text-sm text-muted-foreground">没有匹配的分类</p>
             )}
-          </div>
+          </ScrollArea>
         </PopoverContent>
       </Popover>
   );
@@ -510,15 +512,11 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
 
         <div className="border-b border-border px-4 py-2.5 sm:px-6 sm:py-3">
           <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_minmax(220px,340px)_150px]">
-            <div className="relative min-w-0">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
+              <SearchInput
                 value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
+                onValueChange={setKeyword}
                 placeholder="搜索标题或提示词"
-                className="h-10 pl-9"
               />
-            </div>
             {renderCategoryFilters()}
             {renderFavoriteTabs("w-full min-w-0")}
           </div>
@@ -528,7 +526,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
               <div className="flex min-w-0 items-start gap-2">
                 <div className={cn(
                   "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-hidden pb-0.5 transition-[max-height] duration-200",
-                  tagsExpanded ? "max-h-64" : "max-h-8",
+                  tagsExpanded ? "max-h-40 overflow-y-auto" : "max-h-8",
                 )}>
                   <button
                     type="button"
@@ -610,7 +608,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                   ? visibleFavoritePrompts.length === 0
                     ? "还没有收藏提示词"
                     : "没有匹配的收藏提示词"
-                : "没有找到匹配的提示词"} description={favoriteFilter === "favorites" && visibleFavoritePrompts.length === 0 ? "点击提示词卡片上的星标，将常用提示词保存在这里。" : "试试其他关键词，或调整分类与标签筛选。"} />
+                : "没有找到匹配的提示词"} description={favoriteFilter === "favorites" && visibleFavoritePrompts.length === 0 ? "点击提示词卡片上的星标，将常用提示词保存在这里。" : "试试其他关键词，或调整分类与标签筛选。"} action={keyword || source !== "all" || tagFilters.length ? <Button variant="outline" onClick={() => { setKeyword(""); setSource("all"); setTagFilters([]); }}>清除筛选</Button> : favoriteFilter === "favorites" ? <Button variant="outline" onClick={() => setFavoriteFilter("all")}>浏览全部提示词</Button> : undefined} />
           ) : (
             <div className="flex flex-col gap-4">
               <div data-prompt-library-grid className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -776,7 +774,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   );
 
   if (presentation === "page") {
-    return <section className="card-surface flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</section>;
+    return <section data-prompt-library-layout className="flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)]"><PageHeader title="提示词库" description="发现灵感，收藏常用提示词，一键套用到创作台。" meta={isLoading ? undefined : `${filteredPrompts.length} 条提示词`} /><div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</div></section>;
   }
 
   return (

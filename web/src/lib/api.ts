@@ -343,7 +343,6 @@ export type VideoModelContractTransferDocument = {
 export type CustomRelayProtocol = "openai" | "autodl" | "ark" | "runninghub";
 
 export type CustomRelayConfigStatus = {
-  parameter_translation?: string;
   protocol: CustomRelayProtocol;
   id: string;
   kind: "text" | "image" | "video" | "audio";
@@ -871,7 +870,7 @@ export async function fetchCustomRelayConfigs() {
 }
 
 export async function createCustomRelayConfig(
-  input: { parameter_translation: string; protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     "/api/profile/custom-relay-configs",
@@ -881,7 +880,7 @@ export async function createCustomRelayConfig(
 
 export async function updateCustomRelayConfig(
   id: string,
-  input: { parameter_translation: string; protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
@@ -2009,5 +2008,5 @@ export async function testProxy(url?: string) {
 }
 
 export function validateParameterTranslation(source: string) {
- return httpRequest<{ models: string[] }>("/api/profile/custom-relay-configs/validate-translation", { method: "POST", body: { source } });
+ return httpRequest<{ models: string[] }>("/api/settings/validate-translation", { method: "POST", body: { source } });
 }

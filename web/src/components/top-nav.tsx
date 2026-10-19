@@ -74,7 +74,7 @@ function NavPill({ item, pathname, onPreloadRoute }: {
         cn(
           "relative isolate shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-[13px] font-medium transition-colors sm:text-sm",
           active
-            ? "text-accent-foreground"
+            ? "text-brand"
             : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         )
       }
@@ -83,7 +83,7 @@ function NavPill({ item, pathname, onPreloadRoute }: {
         <motion.span
           layoutId={NAV_ACTIVE_LAYOUT_ID}
           transition={prefersReducedMotion ? reducedNavActiveTransition : navActiveTransition}
-          className="absolute inset-0 -z-10 rounded-lg bg-accent"
+          className="absolute inset-0 -z-10 rounded-lg bg-brand-soft ring-1 ring-inset ring-brand-border/70"
         />
       ) : null}
       <motion.span

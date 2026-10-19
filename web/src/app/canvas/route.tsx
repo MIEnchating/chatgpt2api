@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { LoadingState } from "@/components/ui/loading-state";
 import { lazy, Suspense } from "react";
 import { useParams } from "react-router-dom";
 
@@ -14,18 +14,14 @@ export default function CanvasRoute() {
 
   if (isCheckingAuth || !session) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center">
-        <LoaderCircle className="size-6 animate-spin text-brand" />
-      </div>
+      <LoadingState label="正在加载画布" />
     );
   }
 
   return (
     <Suspense
       fallback={(
-        <div className="flex h-full min-h-0 items-center justify-center rounded-xl border border-border bg-card">
-          <LoaderCircle className="size-6 animate-spin text-brand" />
-        </div>
+        <LoadingState label="正在加载画布" />
       )}
     >
       <CanvasPage session={session} projectID={projectID} />

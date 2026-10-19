@@ -46,7 +46,7 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
   }
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" aria-describedby={undefined}>
+      <DialogContent className="max-h-[90dvh] sm:max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>图片模型协议与能力</DialogTitle>
           <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{model}</p>
@@ -66,7 +66,7 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
           <fieldset className="grid gap-2">
             <legend className="mb-2 text-sm font-medium">分辨率</legend>
             <div className="flex flex-wrap gap-x-5 gap-y-3">{["512", "1k", "2k", "4k", ...(draft.protocol === "openai-image" ? ["1080p"] : [])].map((value) => (
-              <label key={value} className="flex items-center gap-2 text-sm"><Checkbox checked={draft.resolutions.includes(value)} onCheckedChange={(checked) => toggleValue("resolutions", value, checked === true)} />{value.toUpperCase()}</label>
+              <label key={value} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 text-sm"><Checkbox checked={draft.resolutions.includes(value)} onCheckedChange={(checked) => toggleValue("resolutions", value, checked === true)} />{value.toUpperCase()}</label>
             ))}</div>
           </fieldset>
           <div className="grid grid-cols-2 gap-4">
@@ -79,14 +79,14 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
               <label key={value} className="flex items-center gap-2 text-sm"><Checkbox checked={draft.quality_values.includes(value)} onCheckedChange={(checked) => toggleValue("quality_values", value, checked === true)} />{label}</label>
             ))}</div>
           </fieldset> : null}
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
+          <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
             {([
               ["streaming", "流式输出", draft.protocol !== "google-gemini-image"],
               ["mask", "遮罩编辑", draft.protocol === "openai-image" && draft.max_reference_images > 0],
               ["output_controls", "输出格式与压缩", draft.protocol === "openai-image"],
               ["exact_dimensions", "精确像素尺寸", draft.protocol === "openai-image"],
             ] as const).filter(([, , enabled]) => enabled).map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={draft[key]} onCheckedChange={(checked) => setDraft({ ...draft, [key]: checked === true })} />{label}</label>
+              <label key={key} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 text-sm"><Checkbox checked={draft[key]} onCheckedChange={(checked) => setDraft({ ...draft, [key]: checked === true })} />{label}</label>
             ))}
           </div>
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

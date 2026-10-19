@@ -921,6 +921,9 @@ function normalizeHistoryPage(
 }
 
 function conversationForServerPersistence(conversation: ImageConversation): ImageConversation {
+  if (isImageConversationHistorySummaryOnly(conversation)) {
+    throw new Error("Cannot save an incomplete image conversation.");
+  }
   let changed = false;
   const turns = conversation.turns.map((turn) => {
     let turnChanged = false;
@@ -1176,6 +1179,9 @@ export async function getImageConversation(id: string): Promise<ImageConversatio
 }
 
 export async function saveImageConversation(conversation: ImageConversation): Promise<ImageConversation> {
+  if (isImageConversationHistorySummaryOnly(conversation)) {
+    throw new Error("Cannot save an incomplete image conversation.");
+  }
   const state = await getCurrentImageConversationScopeState();
   const nextConversation = normalizeConversation(conversation);
   return persistImageConversationDurably(state, nextConversation);
@@ -1298,6 +1304,9 @@ function ensureCoalescedConversationDrain(state: ImageConversationScopeState) {
 }
 
 export async function saveImageConversationCoalesced(conversation: ImageConversation): Promise<void> {
+  if (isImageConversationHistorySummaryOnly(conversation)) {
+    throw new Error("Cannot save an incomplete image conversation.");
+  }
   const state = await getCurrentImageConversationScopeState();
   const nextConversation = normalizeConversation(conversation);
   return new Promise<void>((resolve, reject) => {

@@ -258,15 +258,16 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
           </Button>
         </PopoverTrigger>
         <PopoverContent
+          scrollable={false}
           align="end"
           sideOffset={8}
           className="w-[min(calc(100vw-1.5rem),360px)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[0_22px_60px_-30px_rgba(15,23,42,0.55)]"
         >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/15 px-4 py-3">
             <div className="text-sm font-semibold text-foreground">系统公告</div>
             <div className="text-xs text-muted-foreground">{announcements.length} 条</div>
           </div>
-          <ScrollArea className="max-h-[min(420px,65dvh)]">
+          <ScrollArea className="min-h-0 max-h-[min(420px,65dvh)] flex-1">
             {!isLoaded ? (
               <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
@@ -282,7 +283,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                   <button
                     key={version}
                     type="button"
-                    className="group flex w-full items-start gap-3 border-b border-border/70 px-4 py-3 text-left transition last:border-b-0 hover:bg-muted/55"
+                    className="group flex w-full items-start gap-3 border-b border-border/70 px-4 py-3 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     onClick={() => openAnnouncement(item)}
                   >
                     <span
@@ -292,11 +293,9 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-3">
-                        <span className={cn("truncate text-sm text-foreground", unread && "font-semibold")}>{item.title}</span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">{announcementTime(item.updated_at)}</span>
-                      </span>
-                      <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{item.content}</span>
+                      <span className={cn("line-clamp-2 text-sm leading-5 text-foreground", unread && "font-semibold")}>{item.title}</span>
+                      <span className="mt-1 block text-[11px] text-muted-foreground">{unread ? "未读 · " : ""}{announcementTime(item.updated_at)}</span>
+                      <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.content}</span>
                     </span>
                     <ChevronRight className="mt-2 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
                   </button>

@@ -389,7 +389,7 @@ test("video contracts support page selection and ordered bulk operations", () =>
 
 test("large dialog pagination and actions use the shared footer layouts", () => {
   assert.match(canvasAssetPickerSource, /<DialogFooter flush className="flex-row justify-center/);
-  assert.match(promptSourceContentDialogSource, /<DialogFooter flush className="flex-row justify-center/);
+  assert.match(promptSourceContentDialogSource, /<DialogFooter flush className="flex-row flex-wrap justify-center/);
   assert.match(assetDisplaySource, /<DialogFooter>/);
   assert.doesNotMatch(assetDisplaySource, /flex justify-end gap-2 border-t border-border pt-4/);
 });
@@ -526,7 +526,8 @@ test("workflow tasks stay isolated from creation workbench history and queue", (
 
 test("the global task queue uses a compact flat list", () => {
   assert.match(imageTaskQueueSource, />任务队列</);
-  assert.match(imageTaskQueueSource, /w-\[min\(calc\(100vw-2rem\),420px\)\] overflow-hidden rounded-lg p-0/);
+  assert.match(imageTaskQueueSource, /<PopoverContent scrollable=\{false\}/);
+  assert.match(imageTaskQueueSource, /w-\[min\(calc\(100vw-2rem\),420px\)\] overflow-hidden/);
   assert.doesNotMatch(imageTaskQueueSource, />打开创作台</);
   assert.doesNotMatch(imageTaskQueueSource, /pointer-events-none absolute -inset-1/);
 });
@@ -728,7 +729,7 @@ test("creation composer toolbar does not show redundant tooltips", () => {
 });
 
 test("creation conversation cards keep spacing inside the scroll viewport", () => {
-  assert.match(imageSidebarSource, /<ScrollArea[\s\S]*?<div className=\{cn\("flex min-h-full flex-col gap-2"/);
+  assert.match(imageSidebarSource, /<ScrollArea[\s\S]*?<div className=\{cn\("flex min-h-full flex-col gap-1\.5"/);
   assert.doesNotMatch(imageSidebarSource, /hideActionButtons \? "flex flex-col gap-1 pr-0"/);
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -23,7 +23,6 @@ import {
   Play,
   Plus,
   Save,
-  Search,
   Settings2,
   Sparkles,
   Trash2,
@@ -92,6 +91,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -284,7 +285,7 @@ export function CreativeWorkflowWorkspace(props: CreativeWorkflowWorkspaceProps 
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/workflows");
   const sessionRevision = useAuthSessionRevision();
   if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载工作流</div>;
+    return <LoadingState label="正在加载工作流" />;
   }
   return <CreativeWorkflowWorkspaceContent key={`${session.key}:${sessionRevision}`} {...props} session={session} />;
 }
@@ -1564,10 +1565,7 @@ function CreativeWorkflowWorkspaceContent({
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <LoaderCircle className="mr-2 size-4 animate-spin" />
-        正在加载工作流
-      </div>
+      <LoadingState label="正在加载工作流" />
     );
   }
 
@@ -1585,13 +1583,12 @@ function CreativeWorkflowWorkspaceContent({
   );
 
   return (
-    <ManagementPage>
+    <ManagementPage title={embedded ? undefined : "工作流"} description={embedded ? undefined : "把重复的创作步骤整理成模板，随时复用与运行。"}>
       <ManagementPanel className={cn("flex-1", embedded && "rounded-none border-0 bg-transparent shadow-none")}>
         <header className={cn("shrink-0 border-b border-border p-4 sm:px-5", embedded && "pr-14 sm:pr-14")}>
           <div data-workflow-toolbar className="flex w-full flex-wrap items-center gap-3">
             <div className="relative min-w-0 basis-full sm:flex-[1_1_320px]">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="h-10 pl-9" aria-label="搜索工作流" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、分类或描述" />
+              <SearchInput aria-label="搜索工作流" value={query} onValueChange={setQuery} placeholder="搜索名称、分类或描述" />
             </div>
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
               <Select value={category} onValueChange={setCategory}>
@@ -1653,7 +1650,7 @@ function CreativeWorkflowWorkspaceContent({
                 </div>
               </section>
             ) : (
-              <EmptyState icon={WorkflowIcon} title="暂无工作流" description="新建工作流后可在这里配置并运行创作任务" className="min-h-72" />
+              <EmptyState icon={WorkflowIcon} title={items.length ? "没有匹配的工作流" : "还没有工作流"} description={items.length ? "试试其他关键词，或清除筛选查看全部工作流。" : "创建一个模板，开始组织你的创作步骤。"} className="min-h-72" action={items.length ? <Button variant="outline" onClick={() => { setQuery(""); setCategory("all"); setScopeFilter("all"); }}>清除筛选</Button> : <Button onClick={() => replaceEditor(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>} />
             )}
           </div>
         </ScrollArea>
@@ -1683,6 +1680,7 @@ function CreativeWorkflowWorkspaceContent({
       />
       <WorkflowEditor
         workflow={editing}
+        isNew={!items.some((item) => item.id === editing?.id)}
         models={models}
         preferences={preferences}
         saving={workflowSaving}
@@ -2109,7 +2107,7 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   );
 }
 
-function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, onChange, onSave, onAssetsOpen, onReferencesAdd, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; referenceBusy: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onClose: () => void }) {
+function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenceBusy, onChange, onSave, onAssetsOpen, onReferencesAdd, onClose }: { workflow: CreativeWorkflow | null; isNew: boolean; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; referenceBusy: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onClose: () => void }) {
   const templateInputRef = useRef<HTMLInputElement>(null);
   const promptTemplateRef = useRef<HTMLTextAreaElement>(null);
   if (!workflow) return null;
@@ -2174,7 +2172,7 @@ function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, 
       <DialogContent scrollable={false} showCloseButton={!saving} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <DialogTitle>{workflow.id ? "编辑工作流" : "新建工作流"}</DialogTitle>
+            <DialogTitle>{isNew ? "新建工作流" : "编辑工作流"}</DialogTitle>
             <Badge variant="secondary">{workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"}</Badge>
             <Badge variant="outline">{workflow.variables.length} 个变量</Badge>
           </div>
@@ -2767,7 +2765,28 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
 }
 
 function WorkflowVariableInput({ variable, value, onChange }: { variable: WorkflowVariable; value: string; onChange: (value: string) => void }) {
-  return <label className="grid gap-1.5 text-xs"><span className="font-medium">{variable.label || variable.key}{variable.required ? " *" : ""}</span>{variable.type === "textarea" ? <Textarea rows={3} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} /> : variable.type === "select" ? <Select value={value || "__none"} onValueChange={(next) => onChange(next === "__none" ? "" : next)}><SelectTrigger><SelectValue placeholder={variable.placeholder || "请选择"} /></SelectTrigger><SelectContent><SelectItem value="__none">请选择</SelectItem>{variable.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select> : variable.type === "boolean" ? <label className="flex h-9 items-center gap-2 rounded-lg border px-3"><Checkbox checked={value === "true"} onCheckedChange={(checked) => onChange(checked === true ? "true" : "false")} />{value === "true" ? "开启" : "关闭"}</label> : <Input type={variable.type === "number" ? "number" : "text"} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} />}</label>;
+  const inputID = useId();
+  const label = variable.label || variable.key;
+  return (
+    <div className="grid min-w-0 gap-2 text-xs">
+      <label htmlFor={inputID} className="font-medium">{label}{variable.required ? <span className="ml-1 text-destructive">*</span> : null}</label>
+      {variable.type === "textarea" ? (
+        <Textarea id={inputID} required={variable.required} rows={3} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} />
+      ) : variable.type === "select" ? (
+        <Select value={value || "__none"} onValueChange={(next) => onChange(next === "__none" ? "" : next)}>
+          <SelectTrigger id={inputID} aria-required={variable.required}><SelectValue placeholder={variable.placeholder || "请选择"} /></SelectTrigger>
+          <SelectContent><SelectItem value="__none">请选择</SelectItem>{variable.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+        </Select>
+      ) : variable.type === "boolean" ? (
+        <div className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3">
+          <span className="text-muted-foreground">{value === "true" ? "已开启" : "已关闭"}</span>
+          <Checkbox id={inputID} aria-label={label} aria-required={variable.required} checked={value === "true"} onCheckedChange={(checked) => onChange(checked === true ? "true" : "false")} />
+        </div>
+      ) : (
+        <Input id={inputID} required={variable.required} type={variable.type === "number" ? "number" : "text"} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} />
+      )}
+    </div>
+  );
 }
 
 type AgentDialogProps = {
@@ -2819,26 +2838,29 @@ function AgentDialog({
       <DialogContent className="w-[min(96vw,980px)]">
         <DialogHeader>
           <DialogTitle>Agent</DialogTitle>
-          <DialogDescription>描述目标、变量和图片结果。</DialogDescription>
+          <DialogDescription>描述创作目标与需要填写的变量，生成草稿后可继续编辑。</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <Select value={scope} onValueChange={onScopeChange}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="工作流可见范围"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="private">个人工作流</SelectItem>
                   <SelectItem value="public">公开工作流</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={modelAvailable ? model : ""} disabled={!textModelOptions.length} onValueChange={onModelChange}>
-                <SelectTrigger><SelectValue placeholder={textModelOptions.length ? "选择文本模型" : "暂无可用模型"} /></SelectTrigger>
+                <SelectTrigger aria-label="Agent 文本模型"><SelectValue placeholder={textModelOptions.length ? "选择文本模型" : "暂无可用模型"} /></SelectTrigger>
                 <SelectContent>
                   {textModelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <Textarea rows={12} value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="例如：创建一个电商海报工作流，只需要输入产品名称、核心卖点、活动信息，固定商业摄影质感和营销文案结构。" />
+            <label className="grid gap-2 text-xs font-medium">
+              <span>创作需求 <span className="text-destructive">*</span></span>
+              <Textarea className="min-h-36 sm:min-h-56" rows={6} required value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="例如：创建一个电商海报工作流，只需要输入产品名称、核心卖点、活动信息，固定商业摄影质感和营销文案结构。" />
+            </label>
             <section className="rounded-lg border border-border p-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold">参考图</h3>
@@ -2883,7 +2905,7 @@ function AgentDialog({
                 <Button className="w-full" disabled={busy} onClick={onApply}><Pencil />应用到编辑器</Button>
               </>
             ) : (
-              <div className="grid min-h-56 place-items-center rounded-lg border border-dashed text-xs text-muted-foreground">暂无草稿</div>
+              <EmptyState compact icon={WorkflowIcon} title="草稿将在这里显示" description="填写需求并生成后，确认变量和提示词，再应用到编辑器。" />
             )}
           </aside>
         </div>
@@ -2907,17 +2929,15 @@ function WorkflowAssetPicker({ open, assets, loading, imageOnly = false, onInser
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="w-[min(94vw,900px)]">
         <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>{imageOnly ? "选择图片作为工作流的持久风格模板。" : "选择文本填入变量或提示词，选择图片作为参考图。"}</DialogDescription></DialogHeader>
-        <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材" />
-        </div>
+        <SearchInput value={query} onValueChange={setQuery} placeholder="搜索素材名称、内容或标签" />
+        <p className="text-xs tabular-nums text-muted-foreground" role="status">{filtered.length} 个{imageOnly ? "图片" : ""}素材 · 点击插入</p>
         <ScrollArea className="h-[min(58vh,560px)]" viewportClassName="pr-3">
           {loading && !filtered.length ? (
             <div className="grid h-48 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
           ) : filtered.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((asset) => (
-                <button key={assetListKey(asset)} type="button" data-interaction="primary" className="interactive-card min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm" onClick={() => onInsert(asset)}>
+                <button key={assetListKey(asset)} type="button" data-interaction="primary" aria-label={`插入素材 ${asset.title}`} className="interactive-card min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onInsert(asset)}>
                   <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
                     {asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.coverUrl || asset.url} alt={asset.title} className="size-full object-cover" placeholderClassName="min-h-0" /> : asset.kind === "video" && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content || (asset.kind === "audio" ? "音频素材" : "媒体素材")}</p>}
                   </div>
@@ -2926,7 +2946,7 @@ function WorkflowAssetPicker({ open, assets, loading, imageOnly = false, onInser
               ))}
             </div>
           ) : (
-            <div className="grid h-48 place-items-center text-sm text-muted-foreground">暂无素材</div>
+            <EmptyState icon={ImageIcon} title={query.trim() ? "没有匹配的素材" : "暂无可用素材"} description={query.trim() ? "试试其他关键词，或清除搜索查看全部素材。" : "在「我的素材」中添加素材后，即可在这里引用。"} action={query.trim() ? <Button variant="outline" size="sm" onClick={() => setQuery("")}>清除搜索</Button> : undefined} />
           )}
         </ScrollArea>
       </DialogContent>

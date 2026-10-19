@@ -3,7 +3,6 @@ import {
   ArrowUp,
   AudioLines,
   BookOpenText,
-  Bot,
   ImagePlus,
   Link2,
   LoaderCircle,
@@ -120,6 +119,8 @@ type ImageComposerProps = {
   onVideoReferenceFileChange: (file: File) => void | Promise<void>;
   audioReferenceUploading: boolean;
   onAudioReferenceFileChange: (file: File) => void | Promise<void>;
+  submitDisabled?: boolean;
+  submitDisabledReason?: string;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -141,7 +142,7 @@ type DisplayReferenceImage = {
 };
 
 const PROMPT_AREA_MIN_HEIGHT = 58;
-const PROMPT_AREA_DEFAULT_HEIGHT = 72;
+const PROMPT_AREA_DEFAULT_HEIGHT = 96;
 const PROMPT_AREA_MAX_HEIGHT = 320;
 const PROMPT_AREA_KEYBOARD_STEP = 12;
 
@@ -339,6 +340,8 @@ export function ImageComposer({
   onVideoReferenceFileChange,
   audioReferenceUploading,
   onAudioReferenceFileChange,
+  submitDisabled = false,
+  submitDisabledReason,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -348,6 +351,7 @@ export function ImageComposer({
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isImageSettingsOpen, setIsImageSettingsOpen] = useState(false);
+  const [videoSettingsSection, setVideoSettingsSection] = useState<"parameters" | "materials">("parameters");
   const [promptAreaHeight, setPromptAreaHeight] = useState(PROMPT_AREA_DEFAULT_HEIGHT);
   const [isPromptAreaResizing, setIsPromptAreaResizing] = useState(false);
   const [isReferenceImageDragActive, setIsReferenceImageDragActive] = useState(false);
@@ -736,7 +740,7 @@ export function ImageComposer({
       <div
         ref={composerPanelRef}
         className={cn(
-          "relative overflow-visible rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+          "relative overflow-visible rounded-2xl border border-border bg-card shadow-[var(--shadow-elevated)] transition-[border-color,box-shadow] focus-within:border-brand/45 focus-within:ring-4 focus-within:ring-brand/5",
           isReferenceImageDragActive &&
             "border-brand bg-brand-soft",
         )}
@@ -756,7 +760,7 @@ export function ImageComposer({
         <button
           type="button"
           className={cn(
-            "hidden h-4 w-full cursor-[ns-resize] touch-none select-none items-center justify-center rounded-t-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex",
+            "hidden h-4 w-full cursor-[ns-resize] touch-none select-none items-center justify-center rounded-t-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex",
             isPromptAreaResizing && "cursor-row-resize",
           )}
           onPointerDown={handlePromptResizeStart}
@@ -769,9 +773,8 @@ export function ImageComposer({
           }}
           onKeyDown={handlePromptResizeKeyDown}
           aria-label="调整提示词输入区域高度"
-        >
-          <span className="h-1 w-10 rounded-full bg-muted-foreground/40 dark:bg-muted-foreground/35" />
-        </button>
+          title="拖动或使用上下方向键调整高度"
+        ><span aria-hidden="true" className="h-1 w-8 rounded-full bg-border transition-colors group-hover:bg-muted-foreground" /></button>
         <div
           className="cursor-text"
           onClick={() => {
@@ -785,14 +788,19 @@ export function ImageComposer({
             onOpenChange={setLightboxOpen}
             onIndexChange={setLightboxIndex}
           />
+          <div className="flex items-center justify-between gap-3 px-4 pt-3 sm:px-5 sm:pt-1">
+            <span className="text-xs font-medium text-muted-foreground">{composerMode === "video" ? "描述你的镜头" : hasReferenceImages ? "描述你的修改" : "把想象变成画面"}</span>
+            <span className="hidden text-[11px] text-muted-foreground/70 sm:block">Enter 发送 · Shift + Enter 换行</span>
+          </div>
           <Textarea
             ref={textareaRef}
             value={prompt}
             onChange={(event) => onPromptChange(event.target.value)}
             onPaste={handleTextareaPaste}
+            aria-label={composerMode === "video" ? "视频提示词" : "图片提示词"}
             placeholder={
               composerMode === "video"
-                ? hasReferenceImages ? "描述参考图如何动起来" : "描述你想生成的视频画面"
+                ? hasReferenceImages || hasVideoFrame ? "描述参考画面如何动起来，补充镜头运动和氛围…" : "描述场景、主体动作、镜头运动和声音…"
                 : hasReferenceImages
                 ? "描述你希望如何修改参考图"
                 : "输入你想要生成的画面，也可直接粘贴图片"
@@ -800,91 +808,96 @@ export function ImageComposer({
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                 event.preventDefault();
-                if (activeModelAvailable) void onSubmit();
+                if (activeModelAvailable && !submitDisabled) void onSubmit();
               }
             }}
-            className="min-h-[58px] resize-none rounded-none border-0 bg-transparent px-5 pt-4 pb-1 text-[16px] leading-6 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0 dark:text-foreground dark:placeholder:text-muted-foreground sm:min-h-0 sm:px-5 sm:py-2.5 sm:text-[15px]"
+            className="min-h-[58px] resize-none rounded-none border-0 bg-transparent px-4 py-3 text-base leading-7 text-foreground shadow-none placeholder:text-muted-foreground/60 focus-visible:ring-0 sm:min-h-0 sm:px-5 sm:text-[15px]"
             style={{ height: promptAreaHeight }}
           />
 
           <div
             ref={composerToolbarRef}
-            className="rounded-b-xl border-t border-border bg-muted/20 px-3 py-2.5 sm:px-4"
+            className="rounded-b-2xl border-t border-border/60 bg-muted/20 p-2.5 sm:px-4 sm:py-3"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-                <div className="flex shrink-0 items-center rounded-full bg-muted p-0.5 dark:bg-muted/70" role="group" aria-label="创作类型">
-                  <button
-                    type="button"
-                    className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "image" && "bg-card text-brand shadow-sm dark:bg-background")}
-                    onClick={() => onComposerModeChange("image")}
-                    aria-label="图片生成"
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">
+              <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
+                <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:gap-2">
+                  <div className="flex shrink-0 items-center rounded-xl border border-border/70 bg-muted/60 p-0.5" role="group" aria-label="创作类型">
+                    <button
+                      type="button"
+                      className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "image" && "bg-card text-brand shadow-sm")}
+                      onClick={() => onComposerModeChange("image")}
+                      aria-label="图片生成"
+                      aria-pressed={composerMode === "image"}
+                    >
+                      <ImagePlus className="size-4" />
+                      图片
+                    </button>
+                    <button
+                      type="button"
+                      className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "video" && "bg-card text-brand shadow-sm")}
+                      onClick={() => onComposerModeChange("video")}
+                      aria-label="视频生成"
+                      aria-pressed={composerMode === "video"}
+                    >
+                      <Video className="size-4" />
+                      视频
+                    </button>
+                  </div>
+                  <Select
+                    value={activeModelAvailable ? activeModel : ""}
+                    disabled={activeModelOptions.length === 0}
+                    open={isModelMenuOpen}
+                    onOpenChange={(open) => {
+                      setIsModelMenuOpen(open);
+                      if (open) setIsImageSettingsOpen(false);
+                    }}
+                    onValueChange={(value) => {
+                      if (composerMode === "video") {
+                        onVideoModelChange(value);
+                      } else {
+                        onImageModelChange(value as ImageModel);
+                      }
+                    }}
                   >
-                    <ImagePlus className="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "video" && "bg-card text-brand shadow-sm dark:bg-background")}
-                    onClick={() => onComposerModeChange("video")}
-                    aria-label="视频生成"
-                  >
-                    <Video className="size-4" />
-                  </button>
+                    <SelectTrigger
+                      className={cn(
+                        "h-9 min-w-0 flex-1 justify-between gap-2 rounded-xl border-border/70 bg-card px-3 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 sm:w-[190px] sm:flex-none",
+                        isModelMenuOpen &&
+                          "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
+                      )}
+                      aria-label={`选择模型，当前 ${imageModelLabel}`}
+                    >
+                      <SelectValue><span className="min-w-0 flex-1 truncate text-left">{imageModelLabel}</span></SelectValue>
+                    </SelectTrigger>
+                    <SelectContent
+                      side="top"
+                      align="start"
+                      sideOffset={8}
+                    >
+                      {activeModelOptions.map((option) => {
+                        const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
+                        return (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={unavailableForReferences}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Select
-                  value={activeModelAvailable ? activeModel : ""}
-                  disabled={activeModelOptions.length === 0}
-                  open={isModelMenuOpen}
-                  onOpenChange={(open) => {
-                    setIsModelMenuOpen(open);
-                    if (open) setIsImageSettingsOpen(false);
-                  }}
-                  onValueChange={(value) => {
-                    if (composerMode === "video") {
-                      onVideoModelChange(value);
-                    } else {
-                      onImageModelChange(value as ImageModel);
-                    }
-                  }}
-                >
-                  <SelectTrigger
-                    className={cn(
-                      "size-9 justify-center gap-1.5 rounded-full border-0 bg-muted/60 p-0 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-muted/70 dark:text-foreground [&>[data-slot=select-icon]]:hidden sm:h-8 sm:w-[190px] sm:justify-between sm:border sm:border-border sm:bg-card sm:px-3 sm:text-muted-foreground sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground sm:[&>[data-slot=select-icon]]:block",
-                      isModelMenuOpen &&
-                        "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
-                    )}
-                    aria-label={`选择模型，当前 ${imageModelLabel}`}
-                  >
-                    <Bot className="size-5 shrink-0 sm:hidden" />
-                    <SelectValue className="hidden sm:block"><span className="min-w-0 flex-1 truncate text-left font-semibold">{imageModelLabel}</span></SelectValue>
-                  </SelectTrigger>
-                  <SelectContent
-                    side="top"
-                    align="start"
-                    sideOffset={8}
-                  >
-                    {activeModelOptions.map((option) => {
-                      const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
-                      return (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value}
-                          disabled={unavailableForReferences}
-                        >
-                          {option.label}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
                 {composerMode !== "chat" ? <button
                   type="button"
-                  className="inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-border sm:bg-card sm:px-3 sm:text-xs sm:font-medium sm:text-muted-foreground sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={onOpenPromptMarket}
                   aria-label="打开提示词"
                 >
-                  <BookOpenText className="size-5 sm:size-3.5" />
+                  <BookOpenText className="size-3.5" />
                   <span className="hidden sm:inline">提示词</span>
                 </button> : null}
                 {composerMode === "image" ? (
@@ -893,109 +906,130 @@ export function ImageComposer({
                       <button
                         type="button"
                         className={cn(
-                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-border sm:bg-card sm:px-3 sm:text-xs sm:font-medium sm:text-muted-foreground sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
+                          "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isImageSettingsOpen &&
                             "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
                         )}
                         aria-label={isImageSettingsOpen ? "收起图像设置" : "打开图像设置"}
                         aria-expanded={isImageSettingsOpen}
                       >
-                        <SlidersHorizontal className="size-5 sm:size-3.5" />
-                        <span className="hidden sm:inline">参数</span>
+                        <SlidersHorizontal className="size-3.5" />
+                        <span>参数</span>
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
+                      scrollable={false}
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="z-[70] w-[min(calc(100vw-1rem),23rem)] overflow-hidden rounded-xl border-border bg-card p-0 shadow-[var(--shadow-elevated)] sm:w-[min(calc(100vw-2rem),23rem)]"
+                      className="z-[70] w-[min(calc(100vw-1rem),26rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
                     >
                       <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
-                      <div className="p-3 pr-4">
-                        <ImageSettingsPanel model={imageModel} value={imageSettingsValue} onChange={updateImageSettings} />
-                      </div>
+                        <div className="border-b border-border/70 px-4 py-3"><p className="text-sm font-semibold">图片参数</p><p className="mt-1 truncate text-xs text-muted-foreground">{imageModelLabel}</p></div>
+                        <div className="p-4">
+                          <ImageSettingsPanel model={imageModel} value={imageSettingsValue} onChange={updateImageSettings} />
+                        </div>
                       </ScrollArea>
                     </PopoverContent>
                   </Popover>
-                  ) : null}
+                ) : null}
                 {composerMode === "video" ? (
                   <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
                         className={cn(
-                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-muted-foreground transition hover:bg-muted dark:text-muted-foreground dark:hover:bg-accent/60 sm:h-8 sm:w-auto sm:border sm:border-border sm:bg-card sm:px-3 sm:text-xs sm:font-medium dark:sm:border-border dark:sm:bg-background/70",
+                          "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isImageSettingsOpen && "bg-brand-soft text-brand sm:border-brand-border",
                         )}
                         aria-label="打开视频设置"
+                        aria-expanded={isImageSettingsOpen}
                       >
-                        <SlidersHorizontal className="size-5 sm:size-3.5" />
-                        <span className="hidden sm:inline">参数</span>
+                        <SlidersHorizontal className="size-3.5" />
+                        <span>参数</span>
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
+                      scrollable={false}
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="z-[70] w-[min(calc(100vw-1rem),23rem)] overflow-hidden rounded-xl border-border bg-card p-0 shadow-[var(--shadow-elevated)] sm:w-[min(calc(100vw-2rem),23rem)]"
+                      className="z-[70] w-[min(calc(100vw-1rem),26rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
                     >
-                      <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
-                      <div className="flex flex-col gap-3.5 p-3 pr-4">
-                        {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section className="space-y-2">
-                          <div className="flex items-center justify-between"><ImageParameterLabel help="首帧和尾帧是独立输入，不会与普通参考图混用。">首尾帧</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
-                          <div className={cn("grid gap-2", videoFieldVisible("first_frame") && videoFieldVisible("last_frame") ? "grid-cols-2" : "grid-cols-1")}>
-                            {videoFieldVisible("first_frame") ? <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} disabled={videoFieldDisabled("first_frame")} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} /> : null}
-                            {videoFieldVisible("last_frame") ? <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} disabled={videoFieldDisabled("last_frame")} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} /> : null}
-                          </div>
-                        </section> : null}
-                        {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section className="space-y-1.5">
-                          <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片顺序分别作为首帧和尾帧。" : "上传一张图片时使用图生视频；多张图片或混合视频、音频时使用参考生视频。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
-                          <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
-                          <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
-                          {displayReferenceImages.length > 0 ? <div className="flex gap-1.5 overflow-x-auto">{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</div> : null}
-                          <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} onChange={onVideoReferenceImageURLsChange} />
-                          {activeVideoImageLimit === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考图片</p> : null}
-                        </section> : null}
-                        <div className="space-y-3 border-b border-border pb-3 dark:border-border">
-                          {activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? <><VideoReferencePicker values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video") || activeVideoReferenceLimits.video === 0 || videoReferenceVideoURLs.length >= activeVideoReferenceLimits.video} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video")} showValues={false} onChange={onVideoReferenceVideoURLsChange} /></> : null}
-                          {activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? <><AudioReferencePicker values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio") || activeVideoReferenceLimits.audio === 0 || videoReferenceAudioURLs.length >= activeVideoReferenceLimits.audio} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio")} showValues={false} onChange={onVideoReferenceAudioURLsChange} /></> : null}
+                      <div className="shrink-0 border-b border-border/70 px-4 pt-4 pb-3">
+                        <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">视频设置</p><Video className="size-4 text-brand" /></div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{imageModelLabel}</p>
+                        <div role="group" aria-label="视频设置分区" className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-muted/70 p-1">
+                          {(["parameters", "materials"] as const).map((section) => <button key={section} type="button" aria-pressed={videoSettingsSection === section} onClick={() => setVideoSettingsSection(section)} className={cn("h-9 rounded-lg text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", videoSettingsSection === section && "bg-card text-foreground shadow-sm")}>
+                            {section === "parameters" ? "生成参数" : "参考素材"}
+                          </button>)}
                         </div>
-                        <VideoSettingsPanel
-                          model={videoModel}
-                          value={videoSettingsValue}
-                          ruleValues={videoRuleValues}
-                          onChange={updateVideoSettings}
-                        />
                       </div>
+                      <ScrollArea className="min-h-0 max-h-[min(55dvh,30rem)] flex-1" viewportClassName="max-h-[min(55dvh,30rem)]">
+                        <div className="p-4">
+                          <div hidden={videoSettingsSection !== "materials"}>
+                            <div className="flex flex-col gap-4 [&>section]:space-y-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3">
+                              <p className="text-xs leading-5 text-muted-foreground">按需添加素材，控制画面、动作与声音。支持的素材类型随模型变化。</p>
+                              {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section className="space-y-2">
+                                <div className="flex items-center justify-between"><ImageParameterLabel help="首帧和尾帧是独立输入，不会与普通参考图混用。">首尾帧</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
+                                <div className={cn("grid gap-2", videoFieldVisible("first_frame") && videoFieldVisible("last_frame") ? "grid-cols-2" : "grid-cols-1")}>
+                                  {videoFieldVisible("first_frame") ? <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} disabled={videoFieldDisabled("first_frame")} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} /> : null}
+                                  {videoFieldVisible("last_frame") ? <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} disabled={videoFieldDisabled("last_frame")} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} /> : null}
+                                </div>
+                              </section> : null}
+                              {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section className="space-y-1.5">
+                                <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片顺序分别作为首帧和尾帧。" : "上传一张图片时使用图生视频；多张图片或混合视频、音频时使用参考生视频。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
+                                <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
+                                <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
+                                {displayReferenceImages.length > 0 ? <div className="flex gap-1.5 overflow-x-auto">{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</div> : null}
+                                <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} onChange={onVideoReferenceImageURLsChange} />
+                                {activeVideoImageLimit === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考图片</p> : null}
+                              </section> : null}
+                              <div className="space-y-3 empty:hidden">
+                                {activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? <><VideoReferencePicker values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video") || activeVideoReferenceLimits.video === 0 || videoReferenceVideoURLs.length >= activeVideoReferenceLimits.video} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video")} showValues={false} onChange={onVideoReferenceVideoURLsChange} /></> : null}
+                                {activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? <><AudioReferencePicker values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio") || activeVideoReferenceLimits.audio === 0 || videoReferenceAudioURLs.length >= activeVideoReferenceLimits.audio} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio")} showValues={false} onChange={onVideoReferenceAudioURLsChange} /></> : null}
+                              </div>
+                            </div>
+                          </div>
+                          <div hidden={videoSettingsSection !== "parameters"}>
+                            <VideoSettingsPanel
+                              model={videoModel}
+                              value={videoSettingsValue}
+                              ruleValues={videoRuleValues}
+                              onChange={updateVideoSettings}
+                            />
+                          </div>
+                        </div>
                       </ScrollArea>
                     </PopoverContent>
                   </Popover>
                 ) : null}
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="ml-auto flex shrink-0 items-center gap-2">
                 {composerMode !== "video" ? <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   onClick={handlePickReferenceImage}
                   disabled={!referenceEditingSupported}
-                  className="size-10 shrink-0 rounded-full text-muted-foreground sm:border sm:border-border sm:bg-background"
+                  className="size-9 shrink-0 rounded-xl border border-border/70 bg-card text-muted-foreground hover:text-foreground"
                   aria-label="上传参考图"
                 >
-                  <Plus className="size-6 sm:hidden" />
-                  <ImagePlus className="hidden size-4 sm:block" />
+                  <ImagePlus className="size-4" />
                 </Button> : null}
 
                 <Button
                   type="button"
-                  size="icon"
                   onClick={() => void onSubmit()}
-                  disabled={!prompt.trim() || !activeModelAvailable}
-                  className="size-10 shrink-0 rounded-full"
+                  disabled={!prompt.trim() || !activeModelAvailable || submitDisabled}
+                  title={submitDisabledReason}
+                  className="h-9 shrink-0 gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-sm sm:gap-2 sm:px-4"
                   aria-label={submitLabel}
                 >
-                  <ArrowUp className="size-5 sm:size-4" />
+                  <span className="min-[360px]:hidden">生成</span>
+                  <span className="hidden min-[360px]:inline">{submitLabel}</span>
+                  <ArrowUp className="size-4" />
                 </Button>
               </div>
             </div>

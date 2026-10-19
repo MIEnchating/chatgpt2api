@@ -26,11 +26,11 @@ const logsPageSource = readSource("../src/app/logs/page.tsx");
 
 test("creative workbench uses the full shell and increases useful wide-screen density", () => {
   assert.doesNotMatch(imagePageSource, /max-w-\[1380px\]/);
-  assert.match(imagePageSource, /2xl:grid-cols-\[260px_minmax\(0,1fr\)\]/);
+  assert.match(imagePageSource, /2xl:grid-cols-\[256px_minmax\(0,1fr\)\]/);
   assert.match(imagePageSource, /2xl:max-w-\[1180px\]/);
   assert.match(imageResultsSource, /max-w-\[1120px\]/);
   assert.match(imageResultsSource, /lg:grid-cols-3/);
-  assert.match(imageResultsSource, /max-w-\[1180px\]/);
+  assert.match(imageResultsSource, /max-w-\[1080px\]/);
 });
 
 test("video generation results use a dedicated compact result workspace", () => {
@@ -106,7 +106,7 @@ test("settings section titles and actions stay visible while their content scrol
   assert.doesNotMatch(settingsPageSource, /data-settings-layout className="w-full pr-1"/);
   assert.match(settingsUISource, /data-settings-card-header-frame/);
   assert.match(settingsUISource, /data-settings-card-body/);
-  assert.match(settingsUISource, /className="min-h-0 min-w-0 lg:flex-1"/);
+  assert.match(settingsUISource, /className="min-h-0 min-w-0 flex-1"/);
   assert.match(settingsUISource, /<CardContent className=\{cn\("min-w-0 p-4 sm:p-5"/);
   assert.match(settingsUISource, /className="shrink-0 bg-card"/);
   assert.match(settingsUISource, /data-settings-card-header/);
@@ -119,12 +119,12 @@ test("settings section titles and actions stay visible while their content scrol
 test("profile creation title and save action stay visible while preferences scroll", () => {
   assert.match(profilePageSource, /viewportClassName="pr-1 lg:pr-0"/);
   assert.match(profilePageSource, /viewStyle=\{\{ height: "100%", minHeight: "100%" \}\}/);
-  assert.match(profilePageSource, /data-profile-layout className="grid min-h-full[^"]*lg:h-full lg:min-h-0/);
+  assert.match(profilePageSource, /data-profile-layout className="grid h-full min-h-0[^"]*lg:h-full lg:min-h-0/);
   assert.match(profilePreferencesSource, /data-profile-preferences-card/);
   assert.match(profilePreferencesSource, /data-profile-preferences-header/);
   assert.match(profilePreferencesSource, /className="shrink-0 border-b border-border bg-card/);
   assert.match(profilePreferencesSource, /data-profile-preferences-body/);
-  assert.match(profilePreferencesSource, /className="min-h-0 lg:flex-1"/);
+  assert.match(profilePreferencesSource, /className="min-h-0 flex-1"/);
   assert.match(profilePreferencesSource, /data-profile-preferences-header[\s\S]*保存设置[\s\S]*data-profile-preferences-body/);
   assert.doesNotMatch(profilePreferencesSource, /data-profile-preferences-header[\s\S]{0,180}sticky top-0/);
 });

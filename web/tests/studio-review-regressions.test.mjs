@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { imageConversationHasActiveTurn } from "../src/lib/image-task-state.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
@@ -31,6 +32,7 @@ function turnContext() {
       conversationsRef: { current: [conversation] }, queueingTurnIdsRef: { current: new Set() },
       retryingImageIdsRef: { current: new Set() }, pageActiveRef: { current: true },
       isTurnInProgress: () => false, isConfiguredCreationModel: () => true,
+      imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: item => item?.historySummaryOnly === true,
       requireRelayToken: () => true, relayTokenNameForKind: (_kind, model) => `key-for-${model}`,
       imageModel: "new-model", videoModel: "video-model", imageTurnReferenceValidationError: () => "",
       imageTurnProgressKey: (a, b) => `${a}:${b}`, createId: () => "new-id", imageTaskBatchId: (id, i) => `${id}-${i}`,
@@ -143,7 +145,7 @@ test("IME confirmation does not submit a generation request", () => {
   let submitted = 0;
   let prevented = 0;
   const compiled = ts.transpile(`const handler = ${expression};`, { target: ts.ScriptTarget.ES2022 });
-  const handler = new Function("activeModelAvailable", "onSubmit", `${compiled}\nreturn handler;`)(true, () => submitted++);
+  const handler = new Function("activeModelAvailable", "submitDisabled", "onSubmit", `${compiled}\nreturn handler;`)(true, false, () => submitted++);
   const event = { key: "Enter", shiftKey: false, nativeEvent: { isComposing: true }, preventDefault: () => prevented++ };
   handler(event);
   assert.equal(submitted, 0);
@@ -154,4 +156,17 @@ test("IME confirmation does not submit a generation request", () => {
   handler({ ...event, nativeEvent: { isComposing: false } });
   assert.equal(submitted, 1);
   assert.equal(prevented, 1);
+  const blocked = new Function("activeModelAvailable", "submitDisabled", "onSubmit", `${compiled}\nreturn handler;`)(true, true, () => submitted++);
+  blocked({ ...event, nativeEvent: { isComposing: false } });
+  assert.equal(submitted, 1);
 });
+
+for (const name of ["handleRetryImage", "handleRegenerateTurn"]) {
+  test(`${name} refuses to queue an old result while another turn is generating`, async () => {
+    const fixture = turnContext();
+    fixture.context.conversationsRef.current[0].turns.push({ id: "other", status: "generating", images: [{ status: "loading" }] });
+    await callback(name, fixture.context)("conversation", "turn", 0);
+    assert.match(fixture.messages[0], /当前会话正在生成/);
+    assert.equal(fixture.saved, undefined);
+  });
+}

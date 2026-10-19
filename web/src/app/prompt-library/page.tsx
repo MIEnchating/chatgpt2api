@@ -6,6 +6,7 @@ import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import type { BananaPrompt } from "@/app/image/banana-prompts";
 import { stagePromptForWorkbench } from "@/app/prompt-library/prompt-handoff";
 import { createMyAsset, fetchMyAssets, upsertMyAsset } from "@/lib/my-assets";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -15,7 +16,7 @@ import { toast } from "sonner";
 export default function PromptLibraryPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/prompt-library");
   const sessionRevision = useAuthSessionRevision();
-  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在加载提示词库...</div>;
+  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) return <LoadingState label="正在加载提示词库..." />;
   return <PromptLibraryContent key={`${session.key}:${sessionRevision}`} session={session} />;
 }
 

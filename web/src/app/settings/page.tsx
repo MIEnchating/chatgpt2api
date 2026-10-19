@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
+import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, ScrollText, Settings2, Sparkles } from "lucide-react";
 
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -90,8 +91,8 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
         viewportClassName="pr-1 lg:pr-0"
         viewStyle={{ height: "100%", minHeight: "100%" }}
       >
-        <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
-          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)]">
+        <div data-settings-layout className="h-full min-h-0 w-full">
+          <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-1 2xl:grid-cols-[240px_minmax(0,1fr)]">
             <SectionNavigation
               title="系统设置"
               description="按类别管理站点配置"
@@ -100,7 +101,7 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
               ariaLabel="系统设置分类"
               onSelect={selectSection}
             />
-            <main id={activeItem.id} className="min-w-0 lg:h-full lg:min-h-0">{activeItem.content}</main>
+            <section id={activeItem.id} aria-label={activeItem.label} className="h-full min-h-0 min-w-0">{activeItem.content}</section>
           </div>
         </div>
       </ScrollArea>
@@ -114,9 +115,7 @@ export default function SettingsPage() {
 
   if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      <LoadingState label="正在加载系统设置" />
     );
   }
 

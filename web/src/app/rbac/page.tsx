@@ -6,7 +6,6 @@ import {
   Plus,
   RefreshCw,
   Save,
-  Search,
   ShieldCheck,
   Trash2,
   Undo2,
@@ -28,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   createManagedRole,
@@ -39,6 +39,7 @@ import {
   type ManagedRole,
   type PermissionMenu,
 } from "@/lib/api";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 
@@ -287,18 +288,12 @@ function RBACContent() {
   };
 
   return (
-    <ManagementPage data-rbac-layout>
+    <ManagementPage data-rbac-layout title="角色权限" description="先选择角色，再配置可访问的页面和接口。">
       <div className="grid min-h-0 min-w-0 flex-1 content-start gap-[var(--page-section-gap)] overflow-y-auto xl:content-stretch xl:grid-cols-[300px_minmax(0,1fr)] xl:overflow-hidden 2xl:grid-cols-[340px_minmax(0,1fr)]">
-        <ManagementPanel className="h-[min(45dvh,420px)] min-h-64 xl:h-auto xl:min-h-0">
+        <ManagementPanel className="h-56 min-h-48 sm:h-64 xl:h-auto xl:min-h-0">
             <ManagementToolbar className="flex items-center gap-2 bg-muted/20 px-4 py-3">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchText}
-                  onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="搜索角色"
-                  className="h-10 rounded-lg pl-9"
-                />
+                <SearchInput value={searchText} onValueChange={setSearchText} placeholder="搜索角色" />
               </div>
             <Button
               variant="outline"
@@ -327,7 +322,7 @@ function RBACContent() {
                 </div>
               ) : null}
               {!isLoading && filteredRoles.length === 0 ? (
-                <EmptyState compact icon={ShieldCheck} title="暂无角色" description="创建角色后可配置菜单与功能权限" />
+                <EmptyState compact icon={ShieldCheck} title={searchText.trim() ? "没有匹配的角色" : "暂无角色"} description={searchText.trim() ? "换个关键词，或清除搜索查看全部角色。" : "创建角色后可配置菜单与功能权限"} action={searchText.trim() ? <Button variant="outline" size="sm" onClick={() => setSearchText("")}>清除搜索</Button> : undefined} />
               ) : null}
               {!isLoading
                 ? filteredRoles.map((role) => {
@@ -337,8 +332,8 @@ function RBACContent() {
                         key={role.id}
                         type="button"
                         className={cn(
-                          "group relative block w-full border-b border-border/70 px-4 py-4 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5",
-                          active ? "bg-primary/[0.07] before:absolute before:inset-y-3 before:left-0 before:w-1 before:rounded-r before:bg-primary" : "",
+                          "group relative block w-full border-b border-border/70 px-4 py-3 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 xl:py-4",
+                          active ? "bg-brand-soft before:absolute before:inset-y-3 before:left-0 before:w-1 before:rounded-r before:bg-brand" : "",
                         )}
                         aria-pressed={active}
                         onClick={() => requestRoleSelection(role)}
@@ -355,7 +350,7 @@ function RBACContent() {
                           ) : null}
                         </div>
                         {role.description ? (
-                          <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{role.description}</p>
+                          <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground xl:mt-2 xl:line-clamp-2">{role.description}</p>
                         ) : null}
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <span className="rounded-md bg-muted px-2 py-1">{permissionCountLabel(role)}</span>
@@ -585,7 +580,7 @@ function RBACContent() {
 export default function RBACPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/rbac");
   if (isCheckingAuth || !session) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
+    return <LoadingState label="正在加载角色权限" />;
   }
   return <RBACContent key={session.key} />;
 }

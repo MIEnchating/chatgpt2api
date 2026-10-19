@@ -85,17 +85,17 @@ export function ImageSettingsPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3.5">
-      {showQuality && qualityOptions.length > 1 ? <section className="order-1 space-y-1.5">
-        <ImageParameterLabel help="质量档位同时参与目标尺寸换算；厂商不支持的 quality 字段不会透传。">质量</ImageParameterLabel>
-        <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
+    <div className="flex flex-col gap-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3.5">
+      {showQuality && qualityOptions.length > 1 ? <section className="order-1 space-y-2.5">
+        <ImageParameterLabel help="选择画面精细程度，更高质量通常需要更长生成时间。">画面质量</ImageParameterLabel>
+        <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/70 p-1" role="group" aria-label="图片质量">
           {qualityOptions.map((option) => (
             <button
               key={option.value || "auto"}
               type="button"
               disabled={disabled}
               aria-pressed={value.quality === option.value}
-              className={imageParameterChoiceClass(value.quality === option.value, "h-7")}
+              className={imageParameterChoiceClass(value.quality === option.value, "h-8")}
               onClick={() => onChange({ quality: option.value as "" | ImageQuality })}
             >
               {option.label}
@@ -104,11 +104,11 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize && (!definition || definition.exact_dimensions) ? <section className="order-3 space-y-1.5 border-t border-border pt-2.5 dark:border-border">
+      {showSize && (!definition || definition.exact_dimensions) ? <section className="order-3 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>16倍数对齐</span>
+            <span>对齐至 16 倍数</span>
             <Switch disabled={disabled} checked={value.snapToMultiple16} aria-label="16倍数对齐" onCheckedChange={(checked) => onChange({ snapToMultiple16: checked })} />
           </label> : null}
         </div>
@@ -157,7 +157,7 @@ export function ImageSettingsPanel({
         onChange={onChange}
       /> : null}
 
-      {showCount ? <section className="order-4 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border">
+      {showCount ? <section className="order-4 flex items-center justify-between gap-3">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>
         <NumberInput disabled={disabled} value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-8 w-32" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
       </section> : null}

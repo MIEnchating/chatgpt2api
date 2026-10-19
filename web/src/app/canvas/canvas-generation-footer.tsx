@@ -37,8 +37,9 @@ export function CanvasGenerationFooter({
             type="button"
             variant="outline"
             size="lg"
-            className="h-10 rounded-md px-3 text-xs"
-            disabled={secondaryAction.disabled}
+            className="h-10 min-w-0 rounded-lg px-3 text-xs"
+            disabled={secondaryAction.disabled || secondaryAction.loading}
+            aria-busy={secondaryAction.loading}
             onClick={secondaryAction.onClick}
           >
             {secondaryAction.loading ? <LoaderCircle className="animate-spin" /> : secondaryAction.icon}
@@ -49,8 +50,9 @@ export function CanvasGenerationFooter({
           type="button"
           size="lg"
           variant={running ? "destructive" : "default"}
-          className="h-10 w-full rounded-md text-xs font-semibold"
-          disabled={disabled}
+          className="h-10 w-full min-w-0 rounded-lg text-sm font-semibold"
+          disabled={disabled || stopping}
+          aria-busy={stopping}
           aria-label={running ? "停止生成" : "开始生成"}
           onClick={running ? onStop : onGenerate}
         >

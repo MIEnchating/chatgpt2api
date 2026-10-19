@@ -1,0 +1,4240 @@
+{
+  "date": "2026-10-19",
+  "data": "Synthetic browser fixtures; no live mutations",
+  "page_checks": {
+    "results": [
+      {
+        "view": "desktop",
+        "path": "/studio",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "创作台",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/canvas",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "无限画布",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/canvas/editor",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "秋日品牌设计",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/workflows",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "工作流",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/prompt-library",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "提示词库",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/assets",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "我的素材",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/users",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "用户管理",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/rbac",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "角色权限",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/logs",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "请求日志",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/settings",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "系统设置",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "desktop",
+        "path": "/profile",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "个人中心",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "mobile",
+        "path": "/studio",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "创作台",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/canvas",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "无限画布",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/canvas/editor",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "秋日品牌设计",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/workflows",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "工作流",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/prompt-library",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "提示词库",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/assets",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "我的素材",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/users",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "用户管理",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/rbac",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "角色权限",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/logs",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "请求日志",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/settings",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "系统设置",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "mobile",
+        "path": "/profile",
+        "width": 390,
+        "body": 390,
+        "html": 390,
+        "title": "个人中心",
+        "alerts": [],
+        "mainHeight": 708.5
+      },
+      {
+        "view": "dark",
+        "path": "/studio",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "创作台",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/canvas",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "无限画布",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/canvas/editor",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "秋日品牌设计",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/workflows",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "工作流",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/prompt-library",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "提示词库",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/assets",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "我的素材",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/users",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "用户管理",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/rbac",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "角色权限",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/logs",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "请求日志",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/settings",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "系统设置",
+        "alerts": [],
+        "mainHeight": 890
+      },
+      {
+        "view": "dark",
+        "path": "/profile",
+        "width": 1440,
+        "body": 1440,
+        "html": 1440,
+        "title": "个人中心",
+        "alerts": [],
+        "mainHeight": 890
+      }
+    ],
+    "errors": [],
+    "unknown": []
+  },
+  "interaction_checks": {
+    "checks": [
+      {
+        "name": "mobile/settings/config",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/model-config",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/video-model-contracts",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/image-object-storage",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/media-storage-governance",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/announcements",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/prompt-sources",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/log-governance",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/settings/login-page-image",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/profile/account",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/profile/keys",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/profile/creation",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/profile/storage",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": []
+      },
+      {
+        "name": "mobile/users/dialog",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": [
+          {
+            "x": 16,
+            "y": 73,
+            "w": 358,
+            "h": 698
+          }
+        ]
+      },
+      {
+        "name": "mobile/rbac/dialog",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": [
+          {
+            "x": 16,
+            "y": 229,
+            "w": 358,
+            "h": 386
+          }
+        ]
+      },
+      {
+        "name": "mobile/assets/dialog",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": [
+          {
+            "x": 11.703125,
+            "y": 33.765625,
+            "w": 366.59375,
+            "h": 776.46875
+          }
+        ]
+      },
+      {
+        "name": "mobile/workflows/dialog",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": [
+          {
+            "x": 7.8046875,
+            "y": 33.765625,
+            "w": 374.390625,
+            "h": 776.46875
+          }
+        ]
+      },
+      {
+        "name": "mobile/canvas/dialog",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "dialog": [
+          {
+            "x": 11.703125,
+            "y": 216,
+            "w": 366.59375,
+            "h": 412
+          }
+        ]
+      },
+      {
+        "name": "narrow/settings/config",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/model-config",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/video-model-contracts",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/image-object-storage",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/media-storage-governance",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/announcements",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/prompt-sources",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/log-governance",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/settings/login-page-image",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/profile/account",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/profile/keys",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/profile/creation",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/profile/storage",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": []
+      },
+      {
+        "name": "narrow/users/dialog",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": [
+          {
+            "x": 16,
+            "y": 21,
+            "w": 288,
+            "h": 698
+          }
+        ]
+      },
+      {
+        "name": "narrow/rbac/dialog",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": [
+          {
+            "x": 16,
+            "y": 177,
+            "w": 288,
+            "h": 386
+          }
+        ]
+      },
+      {
+        "name": "narrow/assets/dialog",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": [
+          {
+            "x": 9.6015625,
+            "y": 29.6015625,
+            "w": 300.796875,
+            "h": 680.796875
+          }
+        ]
+      },
+      {
+        "name": "narrow/workflows/dialog",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875
+          }
+        ]
+      },
+      {
+        "name": "narrow/canvas/dialog",
+        "width": 320,
+        "height": 740,
+        "html": 320,
+        "body": 320,
+        "dialog": [
+          {
+            "x": 9.6015625,
+            "y": 164,
+            "w": 300.796875,
+            "h": 412
+          }
+        ]
+      },
+      {
+        "name": "short-dark/settings/config",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/model-config",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/video-model-contracts",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/image-object-storage",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/media-storage-governance",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/announcements",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/prompt-sources",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/log-governance",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/settings/login-page-image",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/profile/account",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/profile/keys",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/profile/creation",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/profile/storage",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": []
+      },
+      {
+        "name": "short-dark/users/dialog",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": [
+          {
+            "x": 360,
+            "y": 95,
+            "w": 560,
+            "h": 410
+          }
+        ]
+      },
+      {
+        "name": "short-dark/rbac/dialog",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": [
+          {
+            "x": 360,
+            "y": 139,
+            "w": 560,
+            "h": 322
+          }
+        ]
+      },
+      {
+        "name": "short-dark/assets/dialog",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": [
+          {
+            "x": 190,
+            "y": 24,
+            "w": 900,
+            "h": 552
+          }
+        ]
+      },
+      {
+        "name": "short-dark/workflows/dialog",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": [
+          {
+            "x": 50,
+            "y": 24,
+            "w": 1180,
+            "h": 552
+          }
+        ]
+      },
+      {
+        "name": "short-dark/canvas/dialog",
+        "width": 1280,
+        "height": 600,
+        "html": 1280,
+        "body": 1280,
+        "dialog": [
+          {
+            "x": 190,
+            "y": 74,
+            "w": 900,
+            "h": 452
+          }
+        ]
+      },
+      {
+        "name": "canvas search, selection and Escape focus"
+      },
+      {
+        "name": "workflow filtered empty state recovery"
+      },
+      {
+        "name": "asset filtered empty state recovery"
+      },
+      {
+        "name": "prompt detail dialog",
+        "width": 1440,
+        "height": 1000,
+        "html": 1440,
+        "body": 1440,
+        "dialog": [
+          {
+            "x": 260,
+            "y": 120,
+            "w": 920,
+            "h": 760
+          }
+        ]
+      },
+      {
+        "name": "prompt search and preview"
+      },
+      {
+        "name": "log date preset closes picker"
+      },
+      {
+        "name": "log detail",
+        "width": 1440,
+        "height": 1000,
+        "html": 1440,
+        "body": 1440,
+        "dialog": [
+          {
+            "x": 230,
+            "y": 299.5,
+            "w": 980,
+            "h": 401
+          }
+        ]
+      },
+      {
+        "name": "settings keyboard navigation"
+      },
+      {
+        "name": "not found recovery"
+      },
+      {
+        "name": "login inline error",
+        "width": 390,
+        "height": 844,
+        "html": 390,
+        "body": 390,
+        "alert": "用户名或密码不正确",
+        "dialog": []
+      },
+      {
+        "name": "login validation and recoverable errors"
+      }
+    ],
+    "errors": []
+  },
+  "compact_and_recovery_checks": [
+    {
+      "path": "/assets",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        262
+      ],
+      "viewports": [
+        176
+      ]
+    },
+    {
+      "path": "/users",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        262
+      ],
+      "viewports": [
+        245
+      ]
+    },
+    {
+      "path": "/logs",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        262
+      ],
+      "viewports": [
+        173.171875
+      ]
+    },
+    {
+      "path": "/workflows",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        262
+      ],
+      "viewports": [
+        229
+      ]
+    },
+    {
+      "path": "/prompt-library",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        262
+      ],
+      "viewports": []
+    },
+    {
+      "path": "/canvas",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        187.609375
+      ],
+      "viewports": []
+    },
+    {
+      "path": "/canvas/preview-0",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [],
+      "viewports": []
+    },
+    {
+      "path": "/studio",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [],
+      "viewports": []
+    },
+    {
+      "path": "/rbac",
+      "width": 320,
+      "body": 320,
+      "html": 320,
+      "search": [
+        166
+      ],
+      "viewports": [
+        157
+      ]
+    },
+    {
+      "name": "home redirect"
+    },
+    {
+      "name": "image redirect"
+    },
+    {
+      "name": "storage tabs keyboard navigation"
+    },
+    {
+      "name": "canvas load failure retry"
+    },
+    {
+      "name": "route error boundary retains navigation and recovers on route change"
+    }
+  ],
+  "asset_filter_width_checks": [
+    {
+      "width": 320,
+      "body": 320,
+      "search": {
+        "x": 29,
+        "y": 230.5,
+        "w": 262,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 29,
+          "y": 278.5,
+          "w": 262,
+          "h": 40
+        },
+        {
+          "x": 29,
+          "y": 326.5,
+          "w": 136,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 33,
+          "y": 282.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 77,
+          "y": 282.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 121,
+          "y": 282.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 165,
+          "y": 282.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 209,
+          "y": 282.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 33,
+          "y": 330.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 77,
+          "y": 330.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 121,
+          "y": 330.5,
+          "w": 40,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 360,
+      "body": 360,
+      "search": {
+        "x": 29,
+        "y": 206.5,
+        "w": 302,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 29,
+          "y": 254.5,
+          "w": 302,
+          "h": 40
+        },
+        {
+          "x": 29,
+          "y": 302.5,
+          "w": 176,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 33,
+          "y": 258.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 77,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 141,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 205,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 269,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 33,
+          "y": 306.5,
+          "w": 53.328125,
+          "h": 32
+        },
+        {
+          "x": 90.328125,
+          "y": 306.5,
+          "w": 53.34375,
+          "h": 32
+        },
+        {
+          "x": 147.671875,
+          "y": 306.5,
+          "w": 53.328125,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "body": 390,
+      "search": {
+        "x": 29,
+        "y": 206.5,
+        "w": 332,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 29,
+          "y": 254.5,
+          "w": 332,
+          "h": 40
+        },
+        {
+          "x": 29,
+          "y": 302.5,
+          "w": 176,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 33,
+          "y": 258.5,
+          "w": 40,
+          "h": 32
+        },
+        {
+          "x": 77,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 141,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 205,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 269,
+          "y": 258.5,
+          "w": 60,
+          "h": 32
+        },
+        {
+          "x": 33,
+          "y": 306.5,
+          "w": 53.328125,
+          "h": 32
+        },
+        {
+          "x": 90.328125,
+          "y": 306.5,
+          "w": 53.34375,
+          "h": 32
+        },
+        {
+          "x": 147.671875,
+          "y": 306.5,
+          "w": 53.328125,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 640,
+      "body": 640,
+      "search": {
+        "x": 41,
+        "y": 223,
+        "w": 558,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 41,
+          "y": 271,
+          "w": 558,
+          "h": 40
+        },
+        {
+          "x": 41,
+          "y": 319,
+          "w": 188,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 45,
+          "y": 275,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 93,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 161,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 229,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 297,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 45,
+          "y": 323,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 93,
+          "y": 323,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 161,
+          "y": 323,
+          "w": 64,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 768,
+      "body": 768,
+      "search": {
+        "x": 41,
+        "y": 223,
+        "w": 686,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 41,
+          "y": 271,
+          "w": 686,
+          "h": 40
+        },
+        {
+          "x": 41,
+          "y": 319,
+          "w": 188,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 45,
+          "y": 275,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 93,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 161,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 229,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 297,
+          "y": 275,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 45,
+          "y": 323,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 93,
+          "y": 323,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 161,
+          "y": 323,
+          "w": 64,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 1024,
+      "body": 1024,
+      "search": {
+        "x": 45,
+        "y": 223,
+        "w": 294,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 347,
+          "y": 223,
+          "w": 324,
+          "h": 40
+        },
+        {
+          "x": 679,
+          "y": 223,
+          "w": 188,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 351,
+          "y": 227,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 399,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 467,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 535,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 603,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 683,
+          "y": 227,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 731,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 799,
+          "y": 227,
+          "w": 64,
+          "h": 32
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "body": 1440,
+      "search": {
+        "x": 45,
+        "y": 185,
+        "w": 710,
+        "h": 40
+      },
+      "groups": [
+        {
+          "x": 763,
+          "y": 185,
+          "w": 324,
+          "h": 40
+        },
+        {
+          "x": 1095,
+          "y": 185,
+          "w": 188,
+          "h": 40
+        }
+      ],
+      "buttons": [
+        {
+          "x": 767,
+          "y": 189,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 815,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 883,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 951,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 1019,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 1099,
+          "y": 189,
+          "w": 44,
+          "h": 32
+        },
+        {
+          "x": 1147,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        },
+        {
+          "x": 1215,
+          "y": 189,
+          "w": 64,
+          "h": 32
+        }
+      ]
+    }
+  ],
+  "canvas_node_checks": {
+    "results": [
+      {
+        "view": "desktop",
+        "state": "canvas",
+        "body": 1440,
+        "window": 1440,
+        "dock": true
+      },
+      {
+        "view": "desktop",
+        "state": "text",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "创意文案\n参数\n操作\n详情\n27 字\n提示词\n字号\n14px"
+      },
+      {
+        "view": "desktop",
+        "state": "text-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "创意文案\n参数\n操作\n详情\n文字操作\n生成图片\n用当前文字创建并连接生成配置\n复制文字\n复制当前文字内容\n素材\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "text-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "创意文案\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n创意文案\n\n文字 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-text\n画布尺寸\n320 × 220\n位置\n80, 100\n字号\n14px\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "desktop",
+        "state": "image",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "主视觉参考\n参数\n操作\n详情\n请输入你想要把这张图修改成什么\ngpt-image-1\n提示词\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "desktop",
+        "state": "image-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "主视觉参考\n参数\n操作\n详情\n图片编辑\n局部编辑\n涂抹区域并用 AI 定向修改\n裁剪\n裁剪后生成独立图片节点\n切图\n按行列切分并连接子节点\n放大\n提升分辨率并保留原节点\n多角度\n基于原图生成同一主体新视角\n自由缩放\n允许自由调整宽高\n提示词\n复制提示词\n复制生成该图片的提示词\n反推提示词\n创建文字和文本生成配置节点\n素材\n替换图片\n从本地选择文件并写入当前节点\n查看大图\n打开全屏预览\n下载\n下载当前节点文件\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "image-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "主视觉参考\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n主视觉参考\n\n图片 · 已完成\n\n已完成\n基础信息\n节点 ID\nnode-image\n画布尺寸\n320 × 210\n原始尺寸\n640 × 420\n位置\n480, 105\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n已完成\n资源\n图片地址\ndata:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iNDIwIj48cmVjdCB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQyMCIgZmlsbD0iI2RiZTdlYyIvPjxjaXJjbGUgY3g9IjQ1MCIgY3k9IjEyMCIgcj0iMTUwIiBmaWxsPSIjYWRjNmJjIi8+PHBhdGggZD0iTTAgNDIwTDIyMCAxMjBMNDYwIDQyMFoiIGZpbGw9IiM0ZDczODEiLz48L3N2"
+      },
+      {
+        "view": "desktop",
+        "state": "video",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "品牌短片\n参数\n操作\n详情\nsora-2\n提示词\n生成参数\n0 秒\n摄像机\n视频时长\n选择秒数\n\n请输入当前模型支持的时长\n\n参考素材\n按类型分别传入\n\n图片参考用于图生视频；视频参考用于视频生视频。两者共用模型、尺寸、时长和清晰度参数，但提交给厂商的参考字段不同。\n\n上传参考图\n上传参考视频\n上传参考音频\n参考图片 URL\n参考视频 URL\n上传视频\n开始生成"
+      },
+      {
+        "view": "desktop",
+        "state": "video-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "品牌短片\n参数\n操作\n详情\n素材\n上传视频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "video-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "品牌短片\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n品牌短片\n\n视频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-video\n画布尺寸\n320 × 220\n位置\n880, 100\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "desktop",
+        "state": "audio",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "旁白配音\n参数\n操作\n详情\ntts-1\n提示词\n声音\nalloy\n格式\nmp3\n语速\n声音指令\n上传音频\n开始生成"
+      },
+      {
+        "view": "desktop",
+        "state": "audio-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "旁白配音\n参数\n操作\n详情\n素材\n上传音频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "audio-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "旁白配音\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n旁白配音\n\n音频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-audio\n画布尺寸\n320 × 220\n位置\n80, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "desktop",
+        "state": "panorama",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "全景场景\n参数\n操作\n详情\ngpt-image-1\n提示词\n生成参数\n1 张\n画面质量\n自动\n高\n中\n低\n生成数量\n张\n替换图片\n开始生成"
+      },
+      {
+        "view": "desktop",
+        "state": "panorama-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "全景场景\n参数\n操作\n详情\n素材\n上传全景图\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "panorama-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "全景场景\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n全景场景\n\n全景图 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-panorama\n画布尺寸\n320 × 220\n位置\n480, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "desktop",
+        "state": "config",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 862,
+        "text": "生成配置\n参数\n操作\n详情\n\n组装提示词\n\n输入 @ 引用已连接资源，发送时按当前连接编号。\n\n用柔和自然光呈现品牌主题。\ngpt-image-1\n生成模式\n图片\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "desktop",
+        "state": "config-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "生成配置\n参数\n操作\n详情\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "desktop",
+        "state": "config-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "生成配置\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n生成配置\n\n生成配置 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-config\n画布尺寸\n320 × 220\n位置\n80, 760\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n组装提示词\n用柔和自然光呈现品牌主题。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "desktop",
+        "state": "agent",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 854
+      },
+      {
+        "view": "tablet",
+        "state": "canvas",
+        "body": 1024,
+        "window": 1024,
+        "dock": true
+      },
+      {
+        "view": "tablet",
+        "state": "text",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "创意文案\n参数\n操作\n详情\n27 字\n提示词\n字号\n14px"
+      },
+      {
+        "view": "tablet",
+        "state": "text-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "创意文案\n参数\n操作\n详情\n文字操作\n生成图片\n用当前文字创建并连接生成配置\n复制文字\n复制当前文字内容\n素材\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "text-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "创意文案\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n创意文案\n\n文字 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-text\n画布尺寸\n320 × 220\n位置\n80, 100\n字号\n14px\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "tablet",
+        "state": "image",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "主视觉参考\n参数\n操作\n详情\n请输入你想要把这张图修改成什么\ngpt-image-1\n提示词\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "tablet",
+        "state": "image-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "主视觉参考\n参数\n操作\n详情\n图片编辑\n局部编辑\n涂抹区域并用 AI 定向修改\n裁剪\n裁剪后生成独立图片节点\n切图\n按行列切分并连接子节点\n放大\n提升分辨率并保留原节点\n多角度\n基于原图生成同一主体新视角\n自由缩放\n允许自由调整宽高\n提示词\n复制提示词\n复制生成该图片的提示词\n反推提示词\n创建文字和文本生成配置节点\n素材\n替换图片\n从本地选择文件并写入当前节点\n查看大图\n打开全屏预览\n下载\n下载当前节点文件\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "image-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "主视觉参考\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n主视觉参考\n\n图片 · 已完成\n\n已完成\n基础信息\n节点 ID\nnode-image\n画布尺寸\n320 × 210\n原始尺寸\n640 × 420\n位置\n480, 105\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n已完成\n资源\n图片地址\ndata:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iNDIwIj48cmVjdCB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQyMCIgZmlsbD0iI2RiZTdlYyIvPjxjaXJjbGUgY3g9IjQ1MCIgY3k9IjEyMCIgcj0iMTUwIiBmaWxsPSIjYWRjNmJjIi8+PHBhdGggZD0iTTAgNDIwTDIyMCAxMjBMNDYwIDQyMFoiIGZpbGw9IiM0ZDczODEiLz48L3N2"
+      },
+      {
+        "view": "tablet",
+        "state": "video",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "品牌短片\n参数\n操作\n详情\nsora-2\n提示词\n生成参数\n0 秒\n摄像机\n视频时长\n选择秒数\n\n请输入当前模型支持的时长\n\n参考素材\n按类型分别传入\n\n图片参考用于图生视频；视频参考用于视频生视频。两者共用模型、尺寸、时长和清晰度参数，但提交给厂商的参考字段不同。\n\n上传参考图\n上传参考视频\n上传参考音频\n参考图片 URL\n参考视频 URL\n上传视频\n开始生成"
+      },
+      {
+        "view": "tablet",
+        "state": "video-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "品牌短片\n参数\n操作\n详情\n素材\n上传视频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "video-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "品牌短片\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n品牌短片\n\n视频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-video\n画布尺寸\n320 × 220\n位置\n880, 100\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "tablet",
+        "state": "audio",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "旁白配音\n参数\n操作\n详情\ntts-1\n提示词\n声音\nalloy\n格式\nmp3\n语速\n声音指令\n上传音频\n开始生成"
+      },
+      {
+        "view": "tablet",
+        "state": "audio-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "旁白配音\n参数\n操作\n详情\n素材\n上传音频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "audio-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "旁白配音\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n旁白配音\n\n音频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-audio\n画布尺寸\n320 × 220\n位置\n80, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "tablet",
+        "state": "panorama",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "全景场景\n参数\n操作\n详情\ngpt-image-1\n提示词\n生成参数\n1 张\n画面质量\n自动\n高\n中\n低\n生成数量\n张\n替换图片\n开始生成"
+      },
+      {
+        "view": "tablet",
+        "state": "panorama-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "全景场景\n参数\n操作\n详情\n素材\n上传全景图\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "panorama-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "全景场景\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n全景场景\n\n全景图 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-panorama\n画布尺寸\n320 × 220\n位置\n480, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "tablet",
+        "state": "config",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 592,
+        "text": "生成配置\n参数\n操作\n详情\n\n组装提示词\n\n输入 @ 引用已连接资源，发送时按当前连接编号。\n\n用柔和自然光呈现品牌主题。\ngpt-image-1\n生成模式\n图片\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "tablet",
+        "state": "config-操作",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "生成配置\n参数\n操作\n详情\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "tablet",
+        "state": "config-详情",
+        "width": 418,
+        "scrollWidth": 418,
+        "text": "生成配置\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n生成配置\n\n生成配置 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-config\n画布尺寸\n320 × 220\n位置\n80, 760\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n组装提示词\n用柔和自然光呈现品牌主题。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "tablet",
+        "state": "agent",
+        "width": 418,
+        "scrollWidth": 418,
+        "height": 584
+      },
+      {
+        "view": "mobile",
+        "state": "canvas",
+        "body": 390,
+        "window": 390,
+        "dock": true
+      },
+      {
+        "view": "mobile",
+        "state": "text",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "创意文案\n参数\n操作\n详情\n27 字\n提示词\n字号\n14px"
+      },
+      {
+        "view": "mobile",
+        "state": "text-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "创意文案\n参数\n操作\n详情\n文字操作\n生成图片\n用当前文字创建并连接生成配置\n复制文字\n复制当前文字内容\n素材\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "text-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "创意文案\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n创意文案\n\n文字 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-text\n画布尺寸\n320 × 220\n位置\n80, 100\n字号\n14px\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "mobile",
+        "state": "image",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "主视觉参考\n参数\n操作\n详情\n请输入你想要把这张图修改成什么\ngpt-image-1\n提示词\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "mobile",
+        "state": "image-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "主视觉参考\n参数\n操作\n详情\n图片编辑\n局部编辑\n涂抹区域并用 AI 定向修改\n裁剪\n裁剪后生成独立图片节点\n切图\n按行列切分并连接子节点\n放大\n提升分辨率并保留原节点\n多角度\n基于原图生成同一主体新视角\n自由缩放\n允许自由调整宽高\n提示词\n复制提示词\n复制生成该图片的提示词\n反推提示词\n创建文字和文本生成配置节点\n素材\n替换图片\n从本地选择文件并写入当前节点\n查看大图\n打开全屏预览\n下载\n下载当前节点文件\n存入我的素材\n保存并同步到当前账号\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "image-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "主视觉参考\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n主视觉参考\n\n图片 · 已完成\n\n已完成\n基础信息\n节点 ID\nnode-image\n画布尺寸\n320 × 210\n原始尺寸\n640 × 420\n位置\n480, 105\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n已完成\n资源\n图片地址\ndata:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iNDIwIj48cmVjdCB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQyMCIgZmlsbD0iI2RiZTdlYyIvPjxjaXJjbGUgY3g9IjQ1MCIgY3k9IjEyMCIgcj0iMTUwIiBmaWxsPSIjYWRjNmJjIi8+PHBhdGggZD0iTTAgNDIwTDIyMCAxMjBMNDYwIDQyMFoiIGZpbGw9IiM0ZDczODEiLz48L3N2"
+      },
+      {
+        "view": "mobile",
+        "state": "video",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "品牌短片\n参数\n操作\n详情\nsora-2\n提示词\n生成参数\n0 秒\n摄像机\n视频时长\n选择秒数\n\n请输入当前模型支持的时长\n\n参考素材\n按类型分别传入\n\n图片参考用于图生视频；视频参考用于视频生视频。两者共用模型、尺寸、时长和清晰度参数，但提交给厂商的参考字段不同。\n\n上传参考图\n上传参考视频\n上传参考音频\n参考图片 URL\n参考视频 URL\n上传视频\n开始生成"
+      },
+      {
+        "view": "mobile",
+        "state": "video-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "品牌短片\n参数\n操作\n详情\n素材\n上传视频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "video-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "品牌短片\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n品牌短片\n\n视频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-video\n画布尺寸\n320 × 220\n位置\n880, 100\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "mobile",
+        "state": "audio",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "旁白配音\n参数\n操作\n详情\ntts-1\n提示词\n声音\nalloy\n格式\nmp3\n语速\n声音指令\n上传音频\n开始生成"
+      },
+      {
+        "view": "mobile",
+        "state": "audio-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "旁白配音\n参数\n操作\n详情\n素材\n上传音频\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "audio-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "旁白配音\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n旁白配音\n\n音频 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-audio\n画布尺寸\n320 × 220\n位置\n80, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "mobile",
+        "state": "panorama",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "全景场景\n参数\n操作\n详情\ngpt-image-1\n提示词\n生成参数\n1 张\n画面质量\n自动\n高\n中\n低\n生成数量\n张\n替换图片\n开始生成"
+      },
+      {
+        "view": "mobile",
+        "state": "panorama-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "全景场景\n参数\n操作\n详情\n素材\n上传全景图\n从本地选择文件并写入当前节点\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "panorama-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "全景场景\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n全景场景\n\n全景图 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-panorama\n画布尺寸\n320 × 220\n位置\n480, 430\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "mobile",
+        "state": "config",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681,
+        "text": "生成配置\n参数\n操作\n详情\n\n组装提示词\n\n输入 @ 引用已连接资源，发送时按当前连接编号。\n\n用柔和自然光呈现品牌主题。\ngpt-image-1\n生成模式\n图片\n生成参数\n1024×1024 · 1 张\n画面质量\n自动\n高\n中\n低\n自定义尺寸\n对齐至 16 倍数\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动\n生成数量\n张\n摄像机\n开始生成"
+      },
+      {
+        "view": "mobile",
+        "state": "config-操作",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "生成配置\n参数\n操作\n详情\n节点\n复制节点\n复制节点内容和参数"
+      },
+      {
+        "view": "mobile",
+        "state": "config-详情",
+        "width": 338,
+        "scrollWidth": 338,
+        "text": "生成配置\n参数\n操作\n详情\n\n节点数据\n\n信息\nJSON\n\n生成配置\n\n生成配置 · 待生成\n\n待生成\n基础信息\n节点 ID\nnode-config\n画布尺寸\n320 × 220\n位置\n80, 760\n内容\n提示词\n用柔和自然光呈现品牌主题，保持构图清晰，注重画面层次。\n组装提示词\n用柔和自然光呈现品牌主题。\n生成信息\n模型\ngpt-image-1\n状态\n待生成"
+      },
+      {
+        "view": "mobile",
+        "state": "agent",
+        "width": 338,
+        "scrollWidth": 338,
+        "height": 681
+      }
+    ],
+    "errors": []
+  },
+  "director_checks": {
+    "checks": [
+      {
+        "width": 320,
+        "state": "scene",
+        "w": 320,
+        "html": 320,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "state": "objects",
+        "w": 320,
+        "html": 320,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": true,
+            "x": 0,
+            "y": 56,
+            "w": 320,
+            "h": 736,
+            "scroll": 319,
+            "client": 319
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "state": "inspector",
+        "w": 320,
+        "html": 320,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": true,
+            "x": 0,
+            "y": 56,
+            "w": 320,
+            "h": 736,
+            "scroll": 319,
+            "client": 319
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "state": "toolbar",
+        "w": 320,
+        "html": 320,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "state": "scene",
+        "w": 390,
+        "html": 390,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "state": "objects",
+        "w": 390,
+        "html": 390,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": true,
+            "x": 0,
+            "y": 56,
+            "w": 360,
+            "h": 736,
+            "scroll": 359,
+            "client": 359
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "state": "inspector",
+        "w": 390,
+        "html": 390,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": true,
+            "x": 30,
+            "y": 56,
+            "w": 360,
+            "h": 736,
+            "scroll": 359,
+            "client": 359
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "state": "toolbar",
+        "w": 390,
+        "html": 390,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 768,
+        "state": "scene",
+        "w": 768,
+        "html": 768,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 768,
+        "state": "objects",
+        "w": 768,
+        "html": 768,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": true,
+            "x": 0,
+            "y": 56,
+            "w": 360,
+            "h": 736,
+            "scroll": 359,
+            "client": 359
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 768,
+        "state": "inspector",
+        "w": 768,
+        "html": 768,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": true,
+            "x": 408,
+            "y": 56,
+            "w": 360,
+            "h": 736,
+            "scroll": 359,
+            "client": 359
+          }
+        ]
+      },
+      {
+        "width": 768,
+        "state": "toolbar",
+        "w": 768,
+        "html": 768,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": false,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "scroll": 0,
+            "client": 0
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "state": "scene",
+        "w": 1440,
+        "html": 1440,
+        "h": 844,
+        "panels": [
+          {
+            "class": "left-sidebar director-sidebar",
+            "shown": true,
+            "x": 0,
+            "y": 70,
+            "w": 220,
+            "h": 774,
+            "scroll": 219,
+            "client": 219
+          },
+          {
+            "class": "right-sidebar director-sidebar",
+            "shown": true,
+            "x": 1140,
+            "y": 70,
+            "w": 300,
+            "h": 774,
+            "scroll": 299,
+            "client": 299
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "canvas_tool_agent_checks": {
+    "checks": [
+      {
+        "view": 390,
+        "name": "image-裁剪",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 142.875,
+            "w": 358,
+            "h": 558.25,
+            "sw": 356,
+            "cw": 356,
+            "text": "裁剪图片\n\n拖动裁剪框选择要保留的区域。\n\n裁剪尺寸：486 × 319\n原图：640 × 420\n自由比例\n重置\n取消\n确认裁剪\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "image-切图",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 16,
+            "w": 358,
+            "h": 812,
+            "sw": 356,
+            "cw": 356,
+            "text": "切分图片\n\n生成 4 个图片子节点，并按原图网格排列到画布右侧。\n\n原图：640 × 420\n\n行数\n列数\n横向线\n纵向线\n删除线\n重置线\n切片数量\n4 个\n平均约\n320 × 210\n取消\n生成子节点\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "image-放大",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 18.40625,
+            "w": 358,
+            "h": 807.1875,
+            "sw": 356,
+            "cw": 356,
+            "text": "图片放大\n\n生成更大尺寸的独立图片节点。\n\n源图\n640 × 420 px\n\n目标像素\n1K · 1024px\n2K · 2048px\n4K · 4096px\n放大算法\n高清插值\n适合照片和细节图\n双线性\n平滑、速度快\n最近邻\n适合像素风格\n输出尺寸\n1024 × 672 px\n取消\n生成放大图\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "image-多角度",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 118,
+            "w": 358,
+            "h": 608,
+            "sw": 356,
+            "cw": 356,
+            "text": "AI 多角度\n\n基于原图生成同一主体的新视角。\n\n左右角度\n0°\n俯仰角度\n9°\n镜头距离\n4.8\n镜头\n标准\n广角\n\nAI 多角度：正面视角，俯视 9 度，镜头距离 4.8，标准镜头\n\n取消\nAI 生成\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "image-局部编辑",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 16,
+            "w": 358,
+            "h": 812,
+            "sw": 356,
+            "cw": 356,
+            "text": "局部遮罩编辑\n\n涂抹需要修改的区域，蓝色仅作为编辑位置标记。\n\n画笔\n擦除\n笔刷大小\n100px\n修改要求\n模型\ngpt-image-1\n重置蒙版\n取消\nAI 修改\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "camera",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 8,
+            "y": 241,
+            "w": 374,
+            "h": 455,
+            "sw": 372,
+            "cw": 372,
+            "text": "摄像机控制\n\n选择相机与镜头，启用后将这些参数加入生成提示词。\n\n相机\n潘那维申 DXL2 · Panavision DXL2\n镜头\n阿莱大师定焦 · ARRI Signature Prime\n焦距\n50mm · 标准\n光圈\nf/4 · 中光圈\n未启用 · 标准 · 中光圈"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "agent suggestion fills and focuses input without submission"
+      },
+      {
+        "view": 390,
+        "name": "agent-settings",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 62,
+            "y": 357,
+            "w": 320,
+            "h": 360,
+            "sw": 318,
+            "cw": 318,
+            "text": "运行设置\n\n自动生成媒体\n\n关闭时仅创建节点和参数，由你确认后生成。\n\n请求协议\nChat\n流式响应\n\n分段接收模型响应，完成后展示回复并执行工具。\n\n深入思考\n\n仅支持 Responses 协议，Chat 模式下不可用。"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "agent-图片参数",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 8,
+            "y": 243,
+            "w": 358,
+            "h": 514,
+            "sw": 356,
+            "cw": 356,
+            "text": "图片参数\n\n画面质量\n自动\n高\n中\n低\n自定义尺寸\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "agent-视频参数",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 24,
+            "y": 351,
+            "w": 358,
+            "h": 406.5,
+            "sw": 356,
+            "cw": 356,
+            "text": "视频参数\n\n清晰度\n768P\n画幅比例\n1366×768\n自动\n自动匹配\n宽银幕\n21:9\n横屏\n16:9\n标准横屏\n4:3\n方形\n1:1\n标准竖屏\n3:4\n竖屏\n9:16"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "agent-history",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "view": 390,
+        "name": "skill-picker",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 45,
+            "y": 575,
+            "w": 320,
+            "h": 142,
+            "sw": 318,
+            "cw": 318,
+            "text": "创作 Skill\n管理\n\n最多选 5 个，优先采用所选创作规则。\n\n暂无可用 Skill，点击管理可新建或导入创作规则。"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "skill-manager",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 45,
+            "y": 575,
+            "w": 320,
+            "h": 142,
+            "sw": 318,
+            "cw": 318,
+            "text": "创作 Skill\n管理\n\n最多选 5 个，优先采用所选创作规则。\n\n暂无可用 Skill，点击管理可新建或导入创作规则。"
+          },
+          {
+            "x": 16,
+            "y": 253,
+            "w": 358,
+            "h": 338,
+            "sw": 356,
+            "cw": 356,
+            "text": "Skill 管理\n\n维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。\n\n个人\n系统\n新建\n导入 Markdown\n\n暂无 Skill，可以新建或导入 Markdown。\n\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "skill-editor",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 42,
+            "w": 358,
+            "h": 760,
+            "sw": 356,
+            "cw": 356,
+            "text": "Skill 管理\n\n维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。\n\n个人\n系统\n新建\n导入 Markdown\n名称（必填）\n说明\n创作规则（必填）\n启用\n取消\n保存\nClose"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "canvas-assets",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "view": 390,
+        "name": "agent mobile backdrop closes panel"
+      },
+      {
+        "view": 390,
+        "name": "/workflows-form",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 7.8046875,
+            "y": 33.765625,
+            "w": 374.390625,
+            "h": 776.46875,
+            "sw": 372,
+            "cw": 372,
+            "text": "新建工作流\n单图生成\n2 个变量\n\n工作流信息、输入变量、提示词与创作参数\n\n1\n基本信息\n工作流名称\n分类\n生成方式\n单图生成\n可见范围\n个人工作流\n适用场景\n2\n风格模板图\n0\n\n按详情页顺序添加优秀成品图。生成时只迁移版式和视觉风格，商品外观以运行时实拍图为准。\n\n我的素材\n上传模板图\n还没有模板图\n3\n输入变量\n2\n添加变量\n变量 1\n必填\n变量名\n显示名称\n输入类型\n短文本\n默认值\n输入"
+          }
+        ]
+      },
+      {
+        "view": 390,
+        "name": "/assets-form",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 11.703125,
+            "y": 33.765625,
+            "w": 366.59375,
+            "h": 776.46875,
+            "sw": 365,
+            "cw": 365,
+            "text": "新增素材\n\n保存可重复使用的文本、图片、视频或音频。\n\n类型\n文本\n图片\n视频\n音频\n标题（必填）\n可见范围\n个人\n公开\n封面\n上传\n来源\n备注\n文本内容（必填）\n\n预览\n\n文本内容预览\n\n未命名素材\n\n手动添加\n\n取消\n保存\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "image-裁剪",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 250,
+            "y": 29.2109375,
+            "w": 780,
+            "h": 661.578125,
+            "sw": 778,
+            "cw": 778,
+            "text": "裁剪图片\n\n拖动裁剪框选择要保留的区域。\n\n裁剪尺寸：486 × 319\n原图：640 × 420\n自由比例\n重置\n取消\n确认裁剪\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "image-切图",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 230,
+            "y": 100.3125,
+            "w": 820,
+            "h": 519.375,
+            "sw": 818,
+            "cw": 818,
+            "text": "切分图片\n\n生成 4 个图片子节点，并按原图网格排列到画布右侧。\n\n原图：640 × 420\n\n行数\n列数\n横向线\n纵向线\n删除线\n重置线\n切片数量\n4 个\n平均约\n320 × 210\n取消\n生成子节点\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "image-放大",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 230,
+            "y": 102,
+            "w": 820,
+            "h": 516,
+            "sw": 818,
+            "cw": 818,
+            "text": "图片放大\n\n生成更大尺寸的独立图片节点。\n\n源图\n640 × 420 px\n\n目标像素\n1K · 1024px\n2K · 2048px\n4K · 4096px\n放大算法\n高清插值\n适合照片和细节图\n双线性\n平滑、速度快\n最近邻\n适合像素风格\n输出尺寸\n1024 × 672 px\n取消\n生成放大图\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "image-多角度",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 210,
+            "y": 131,
+            "w": 860,
+            "h": 458,
+            "sw": 858,
+            "cw": 858,
+            "text": "AI 多角度\n\n基于原图生成同一主体的新视角。\n\n左右角度\n0°\n俯仰角度\n9°\n镜头距离\n4.8\n镜头\n标准\n广角\n\nAI 多角度：正面视角，俯视 9 度，镜头距离 4.8，标准镜头\n\n取消\nAI 生成\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "image-局部编辑",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 150,
+            "y": 70.5,
+            "w": 980,
+            "h": 579,
+            "sw": 978,
+            "cw": 978,
+            "text": "局部遮罩编辑\n\n涂抹需要修改的区域，蓝色仅作为编辑位置标记。\n\n画笔\n擦除\n笔刷大小\n100px\n修改要求\n模型\ngpt-image-1\n重置蒙版\n取消\nAI 修改\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "camera",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 538,
+            "y": 268,
+            "w": 680,
+            "h": 299,
+            "sw": 678,
+            "cw": 678,
+            "text": "摄像机控制\n\n选择相机与镜头，启用后将这些参数加入生成提示词。\n\n相机\n潘那维申 DXL2 · Panavision DXL2\n镜头\n阿莱大师定焦 · ARRI Signature Prime\n焦距\n50mm · 标准\n光圈\nf/4 · 中光圈\n未启用 · 标准 · 中光圈"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "agent suggestion fills and focuses input without submission"
+      },
+      {
+        "view": 1280,
+        "name": "agent-settings",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 913,
+            "y": 225,
+            "w": 320,
+            "h": 360,
+            "sw": 318,
+            "cw": 318,
+            "text": "运行设置\n\n自动生成媒体\n\n关闭时仅创建节点和参数，由你确认后生成。\n\n请求协议\nChat\n流式响应\n\n分段接收模型响应，完成后展示回复并执行工具。\n\n深入思考\n\n仅支持 Responses 协议，Chat 模式下不可用。"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "agent-图片参数",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 770,
+            "y": 119,
+            "w": 368,
+            "h": 506,
+            "sw": 366,
+            "cw": 366,
+            "text": "图片参数\n\n画面质量\n自动\n高\n中\n低\n自定义尺寸\nW\nH\n宽高比\n1024×1024\n1:1\n3:2\n2:3\n4:3\n3:4\n16:9\n9:16\n21:9\n1:1(2k)\n16:9(2k)\n9:16(2k)\n21:9(2k)\n16:9(4k)\n9:16(4k)\n21:9(4k)\n自动"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "agent-视频参数",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 904,
+            "y": 219,
+            "w": 368,
+            "h": 406.5,
+            "sw": 366,
+            "cw": 366,
+            "text": "视频参数\n\n清晰度\n768P\n画幅比例\n1366×768\n自动\n自动匹配\n宽银幕\n21:9\n横屏\n16:9\n标准横屏\n4:3\n方形\n1:1\n标准竖屏\n3:4\n竖屏\n9:16"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "agent-history",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      },
+      {
+        "view": 1280,
+        "name": "skill-picker",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 839,
+            "y": 443,
+            "w": 320,
+            "h": 142,
+            "sw": 318,
+            "cw": 318,
+            "text": "创作 Skill\n管理\n\n最多选 5 个，优先采用所选创作规则。\n\n暂无可用 Skill，点击管理可新建或导入创作规则。"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "skill-manager",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 839,
+            "y": 443,
+            "w": 320,
+            "h": 142,
+            "sw": 318,
+            "cw": 318,
+            "text": "创作 Skill\n管理\n\n最多选 5 个，优先采用所选创作规则。\n\n暂无可用 Skill，点击管理可新建或导入创作规则。"
+          },
+          {
+            "x": 256,
+            "y": 223,
+            "w": 768,
+            "h": 274,
+            "sw": 766,
+            "cw": 766,
+            "text": "Skill 管理\n\n维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。\n\n个人\n系统\n新建\n导入 Markdown\n\n暂无 Skill，可以新建或导入 Markdown。\n\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "skill-editor",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 256,
+            "y": 17,
+            "w": 768,
+            "h": 686,
+            "sw": 766,
+            "cw": 766,
+            "text": "Skill 管理\n\n维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。\n\n个人\n系统\n新建\n导入 Markdown\n名称（必填）\n说明\n创作规则（必填）\n启用\n取消\n保存\nClose"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "canvas-assets",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      },
+      {
+        "view": 1280,
+        "name": "/workflows-form",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 50,
+            "y": 28.8046875,
+            "w": 1180,
+            "h": 662.390625,
+            "sw": 1178,
+            "cw": 1178,
+            "text": "新建工作流\n单图生成\n2 个变量\n\n工作流信息、输入变量、提示词与创作参数\n\n1\n基本信息\n工作流名称\n分类\n生成方式\n单图生成\n可见范围\n个人工作流\n适用场景\n2\n风格模板图\n0\n\n按详情页顺序添加优秀成品图。生成时只迁移版式和视觉风格，商品外观以运行时实拍图为准。\n\n我的素材\n上传模板图\n还没有模板图\n3\n输入变量\n2\n添加变量\n变量 1\n必填\n变量名\n显示名称\n输入类型\n短文本\n默认值\n输入"
+          }
+        ]
+      },
+      {
+        "view": 1280,
+        "name": "/assets-form",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 190,
+            "y": 28.8046875,
+            "w": 900,
+            "h": 662.390625,
+            "sw": 898,
+            "cw": 898,
+            "text": "新增素材\n\n保存可重复使用的文本、图片、视频或音频。\n\n类型\n文本\n图片\n视频\n音频\n标题（必填）\n可见范围\n个人\n公开\n封面\n上传\n来源\n备注\n文本内容（必填）\n\n预览\n\n文本内容预览\n\n未命名素材\n\n手动添加\n\n取消\n保存\nClose"
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "form_settings_checks": {
+    "checks": [
+      {
+        "width": 320,
+        "name": "workflow-variable-types",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-asset-picker",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          },
+          {
+            "x": 16,
+            "y": 36.40625,
+            "w": 288,
+            "h": 667.1875,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-series-runner",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-editor",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-added-variable",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-agent",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 16,
+            "w": 288,
+            "h": 708,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-history",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 170.75,
+            "w": 307.1875,
+            "h": 398.5,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "workflow-result",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 29.6015625,
+            "w": 307.1875,
+            "h": 680.796875,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "asset-文本",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 29.6015625,
+            "w": 300.796875,
+            "h": 680.796875,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "asset-图片",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 29.6015625,
+            "w": 300.796875,
+            "h": 680.796875,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "asset-视频",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 29.6015625,
+            "w": 300.796875,
+            "h": 680.796875,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "asset-音频",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 29.6015625,
+            "w": 300.796875,
+            "h": 680.796875,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "image-model-definition",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 37,
+            "w": 288,
+            "h": 666,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "image-model-validation",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 37,
+            "w": 288,
+            "h": 666,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "video-contract-editor",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 37,
+            "w": 307.1875,
+            "h": 666,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "video-contract-simulation",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 6.40625,
+            "y": 37,
+            "w": 307.1875,
+            "h": 666,
+            "sw": 305,
+            "cw": 305
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "video-contract-import-review",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 190,
+            "w": 288,
+            "h": 360,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "storage-keyboard",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": []
+      },
+      {
+        "width": 320,
+        "name": "announcement-editor",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 69,
+            "w": 288,
+            "h": 602,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "prompt-source-content",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 44.40625,
+            "w": 300.796875,
+            "h": 651.1875,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "prompt-source-detail",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 9.6015625,
+            "y": 44.40625,
+            "w": 300.796875,
+            "h": 651.1875,
+            "sw": 299,
+            "cw": 299
+          },
+          {
+            "x": 9.6015625,
+            "y": 37,
+            "w": 300.796875,
+            "h": 666,
+            "sw": 299,
+            "cw": 299
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "announcement-list",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 8,
+            "y": 63,
+            "w": 296,
+            "h": 467,
+            "sw": 294,
+            "cw": 294
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "announcement-detail",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 70,
+            "w": 288,
+            "h": 600,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "name": "task-queue-data",
+        "w": 320,
+        "h": 740,
+        "sw": 320,
+        "dialogs": [
+          {
+            "x": 8,
+            "y": 63,
+            "w": 288,
+            "h": 237,
+            "sw": 286,
+            "cw": 286
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-variable-types",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 160,
+            "y": 36,
+            "w": 1120,
+            "h": 828,
+            "sw": 1118,
+            "cw": 1118
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-asset-picker",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 160,
+            "y": 36,
+            "w": 1120,
+            "h": 828,
+            "sw": 1118,
+            "cw": 1118
+          },
+          {
+            "x": 270,
+            "y": 78,
+            "w": 900,
+            "h": 744,
+            "sw": 898,
+            "cw": 898
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-series-runner",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 160,
+            "y": 36,
+            "w": 1120,
+            "h": 828,
+            "sw": 1118,
+            "cw": 1118
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-editor",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 130,
+            "y": 36,
+            "w": 1180,
+            "h": 828,
+            "sw": 1178,
+            "cw": 1178
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-added-variable",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 130,
+            "y": 36,
+            "w": 1180,
+            "h": 828,
+            "sw": 1178,
+            "cw": 1178
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-agent",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 230,
+            "y": 150,
+            "w": 980,
+            "h": 600,
+            "sw": 978,
+            "cw": 978
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-history",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 260,
+            "y": 293.25,
+            "w": 920,
+            "h": 313.5,
+            "sw": 918,
+            "cw": 918
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "workflow-result",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 260,
+            "y": 293.25,
+            "w": 920,
+            "h": 313.5,
+            "sw": 918,
+            "cw": 918
+          },
+          {
+            "x": 130,
+            "y": 36,
+            "w": 1180,
+            "h": 828,
+            "sw": 1178,
+            "cw": 1178
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "asset-文本",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 270,
+            "y": 36,
+            "w": 900,
+            "h": 828,
+            "sw": 898,
+            "cw": 898
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "asset-图片",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 270,
+            "y": 79,
+            "w": 900,
+            "h": 742,
+            "sw": 898,
+            "cw": 898
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "asset-视频",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 270,
+            "y": 79,
+            "w": 900,
+            "h": 742,
+            "sw": 898,
+            "cw": 898
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "asset-音频",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 270,
+            "y": 79,
+            "w": 900,
+            "h": 742,
+            "sw": 898,
+            "cw": 898
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "image-model-definition",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 440,
+            "y": 92.5,
+            "w": 560,
+            "h": 715,
+            "sw": 558,
+            "cw": 558
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "image-model-validation",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 440,
+            "y": 72.5,
+            "w": 560,
+            "h": 755,
+            "sw": 558,
+            "cw": 558
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "video-contract-editor",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 80,
+            "y": 45,
+            "w": 1280,
+            "h": 810,
+            "sw": 1278,
+            "cw": 1278
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "video-contract-simulation",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 80,
+            "y": 45,
+            "w": 1280,
+            "h": 810,
+            "sw": 1278,
+            "cw": 1278
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "video-contract-import-review",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 464,
+            "y": 292,
+            "w": 512,
+            "h": 316,
+            "sw": 510,
+            "cw": 510
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "storage-keyboard",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": []
+      },
+      {
+        "width": 1440,
+        "name": "announcement-editor",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 440,
+            "y": 183,
+            "w": 560,
+            "h": 534,
+            "sw": 558,
+            "cw": 558
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "prompt-source-content",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 130,
+            "y": 60,
+            "w": 1180,
+            "h": 780,
+            "sw": 1178,
+            "cw": 1178
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "prompt-source-detail",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 130,
+            "y": 60,
+            "w": 1180,
+            "h": 780,
+            "sw": 1178,
+            "cw": 1178
+          },
+          {
+            "x": 260,
+            "y": 110,
+            "w": 920,
+            "h": 680,
+            "sw": 918,
+            "cw": 918
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "announcement-list",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 853,
+            "y": 71,
+            "w": 360,
+            "h": 467,
+            "sw": 358,
+            "cw": 358
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "announcement-detail",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 853,
+            "y": 71,
+            "w": 360,
+            "h": 467,
+            "sw": 358,
+            "cw": 358
+          },
+          {
+            "x": 460,
+            "y": 122,
+            "w": 520,
+            "h": 656,
+            "sw": 518,
+            "cw": 518
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "name": "task-queue-data",
+        "w": 1440,
+        "h": 900,
+        "sw": 1440,
+        "dialogs": [
+          {
+            "x": 755,
+            "y": 73,
+            "w": 420,
+            "h": 217,
+            "sw": 418,
+            "cw": 418
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "workflow_draft_config_checks": {
+    "checks": [
+      {
+        "width": 390,
+        "name": "batch-four-drafts",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 7.8046875,
+            "y": 33.765625,
+            "w": 374.390625,
+            "h": 776.46875,
+            "sw": 372,
+            "cw": 372
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "name": "batch reorder append delete"
+      },
+      {
+        "width": 390,
+        "name": "agent-generated-draft",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 16,
+            "w": 358,
+            "h": 812,
+            "sw": 356,
+            "cw": 356
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "name": "agent-draft-editor",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 7.8046875,
+            "y": 33.765625,
+            "w": 374.390625,
+            "h": 776.46875,
+            "sw": 372,
+            "cw": 372
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "name": "project-rename",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 16,
+            "y": 277,
+            "w": 358,
+            "h": 290,
+            "sw": 356,
+            "cw": 356
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "name": "camera-parameters",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": [
+          {
+            "x": 8,
+            "y": 228,
+            "w": 374,
+            "h": 455,
+            "sw": 372,
+            "cw": 372
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "name": "config-视频",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "width": 390,
+        "name": "config-音频",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "width": 390,
+        "name": "config-文本",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "width": 390,
+        "name": "image-lightbox-return",
+        "w": 390,
+        "h": 844,
+        "sw": 390,
+        "dialogs": []
+      },
+      {
+        "width": 1280,
+        "name": "batch-four-drafts",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 80,
+            "y": 28.8046875,
+            "w": 1120,
+            "h": 662.390625,
+            "sw": 1118,
+            "cw": 1118
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "batch reorder append delete"
+      },
+      {
+        "width": 1280,
+        "name": "agent-generated-draft",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 150,
+            "y": 60,
+            "w": 980,
+            "h": 600,
+            "sw": 978,
+            "cw": 978
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "agent-draft-editor",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 150,
+            "y": 60,
+            "w": 980,
+            "h": 600,
+            "sw": 978,
+            "cw": 978
+          },
+          {
+            "x": 50,
+            "y": 28.8046875,
+            "w": 1180,
+            "h": 662.390625,
+            "sw": 1178,
+            "cw": 1178
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "project-rename",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 420,
+            "y": 237,
+            "w": 440,
+            "h": 246,
+            "sw": 438,
+            "cw": 438
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "camera-parameters",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": [
+          {
+            "x": 525,
+            "y": 255,
+            "w": 680,
+            "h": 299,
+            "sw": 678,
+            "cw": 678
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "config-视频",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      },
+      {
+        "width": 1280,
+        "name": "config-音频",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      },
+      {
+        "width": 1280,
+        "name": "config-文本",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      },
+      {
+        "width": 1280,
+        "name": "image-lightbox-return",
+        "w": 1280,
+        "h": 720,
+        "sw": 1280,
+        "dialogs": []
+      }
+    ],
+    "errors": []
+  },
+  "media_permission_checks": {
+    "checks": [
+      {
+        "width": 320,
+        "name": "audio-trim",
+        "scroll": 320
+      },
+      {
+        "width": 320,
+        "name": "panorama-viewer",
+        "scroll": 320
+      },
+      {
+        "width": 320,
+        "name": "permissions-long-path",
+        "scroll": 320
+      },
+      {
+        "width": 320,
+        "name": "permission paths wrap within cards",
+        "metrics": [
+          {
+            "cw": 204,
+            "sw": 204
+          },
+          {
+            "cw": 204,
+            "sw": 204
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "name": "audio-trim",
+        "scroll": 1280
+      },
+      {
+        "width": 1280,
+        "name": "panorama-viewer",
+        "scroll": 1280
+      },
+      {
+        "width": 1280,
+        "name": "permissions-long-path",
+        "scroll": 1280
+      },
+      {
+        "width": 1280,
+        "name": "permission paths wrap within cards",
+        "metrics": [
+          {
+            "cw": 255,
+            "sw": 255
+          },
+          {
+            "cw": 255,
+            "sw": 255
+          }
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "final_theme_layout_checks": {
+    "checks": [
+      {
+        "width": 320,
+        "dark": false,
+        "state": "video-footer",
+        "boxes": [
+          {
+            "w": 82,
+            "sw": 82,
+            "t": "取消"
+          },
+          {
+            "w": 82,
+            "sw": 82,
+            "t": "校验配置"
+          },
+          {
+            "w": 82,
+            "sw": 82,
+            "t": "添加并发布"
+          }
+        ]
+      },
+      {
+        "width": 320,
+        "dark": false,
+        "state": "canvas-theme"
+      },
+      {
+        "width": 1440,
+        "dark": true,
+        "state": "video-footer",
+        "boxes": [
+          {
+            "w": 70,
+            "sw": 70,
+            "t": "取消"
+          },
+          {
+            "w": 112,
+            "sw": 112,
+            "t": "校验配置"
+          },
+          {
+            "w": 126,
+            "sw": 126,
+            "t": "添加并发布"
+          }
+        ]
+      },
+      {
+        "width": 1440,
+        "dark": true,
+        "state": "canvas-theme"
+      },
+      {
+        "width": 390,
+        "dark": true,
+        "state": "video-footer",
+        "boxes": [
+          {
+            "w": 104,
+            "sw": 104,
+            "t": "取消"
+          },
+          {
+            "w": 104,
+            "sw": 104,
+            "t": "校验配置"
+          },
+          {
+            "w": 104,
+            "sw": 104,
+            "t": "添加并发布"
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "dark": true,
+        "state": "canvas-theme"
+      }
+    ],
+    "errors": []
+  },
+  "module_check_count": 190,
+  "verification": {
+    "frontend_tests": 1001,
+    "lint": "0 warnings, 0 errors",
+    "build": "passed; existing >500 kB chunk warnings remain",
+    "go_test": "passed",
+    "git_diff_check": "passed",
+    "live_generation": false,
+    "live_business_mutations": false,
+    "runtime": "reused Vite 8002 and Go source 8090; all review browsers closed"
+  }
+}

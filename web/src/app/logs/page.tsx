@@ -13,10 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 import { logCursorForPage, recordLogPageCursor, resetLogCursorStack } from "./log-pagination";
@@ -499,21 +501,12 @@ function LogsContent() {
   }, [isDefaultLogViewReady, loadFirstLogPage, pageSize, query]);
 
   return (
-    <ManagementPage data-logs-layout>
+    <ManagementPage data-logs-layout title="请求日志" description="追踪调用状态、用量和耗时，快速定位异常请求。">
       <ManagementPanel className="flex-1">
         <ManagementToolbar className="max-h-[38dvh] overflow-y-auto overscroll-contain">
           <form className="space-y-3" onSubmit={handleSearch}>
             <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:flex-wrap 2xl:items-center">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label="搜索日志摘要或接口"
-                  className="pl-9"
-                  placeholder="搜索摘要或接口"
-                  value={filters.summary || ""}
-                  onChange={(event) => updateFilter("summary", event.target.value)}
-                />
-              </div>
+              <SearchInput aria-label="搜索日志摘要或接口" placeholder="搜索摘要或接口" value={filters.summary || ""} onValueChange={(value) => updateFilter("summary", value)} containerClassName="flex-1" />
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
                   <SelectTrigger className="w-full sm:w-[150px]" aria-label="日志视图"><SelectValue /></SelectTrigger>
@@ -631,7 +624,7 @@ function LogsContent() {
         </div>
 
           <ScrollArea className="min-h-0 flex-1">
-            <Table className="min-w-[1040px] table-fixed">
+            <Table aria-label="请求日志" aria-busy={isLoading} className="min-w-[1040px] table-fixed">
               <TableHeader className="sticky top-0 z-10 shadow-sm">
                 <TableRow>
                   <TableHead className="w-[150px]">时间</TableHead>
@@ -851,7 +844,7 @@ function LogsContent() {
 export default function LogsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/logs");
   if (isCheckingAuth || !session) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
+    return <LoadingState label="正在加载请求日志" />;
   }
   return <LogsContent key={session.key} />;
 }

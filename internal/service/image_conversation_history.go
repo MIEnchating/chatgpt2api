@@ -96,6 +96,10 @@ func normalizeImageConversationHistoryItem(raw map[string]any) (map[string]any, 
 	if _, ok := item["turns"].([]any); !ok {
 		return nil, fmt.Errorf("conversation turns are required")
 	}
+	delete(item, "historySummaryOnly")
+	delete(item, "history_summary_only")
+	delete(item, "historySummary")
+	delete(item, "history_summary")
 	item["id"] = id
 	item["updatedAt"] = updatedAt
 	item["revision"] = normalizeImageConversationRevision(item["revision"])

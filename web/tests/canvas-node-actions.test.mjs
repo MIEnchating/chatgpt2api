@@ -282,8 +282,8 @@ test("Agent entry names are consistent across canvas and workflows", () => {
   assert.match(workflowSource, /<Bot \/>Agent<\/Button>/);
 });
 
-test("Agent node references do not open the node drawer and new chat stays available when idle", () => {
-  assert.match(pageSource, /if \(agentOpen\) \{\s*setPanelNodeID\(""\);\s*return;/);
+test("Agent allows node settings while preserving references and idle new chat", () => {
+  assert.match(pageSource, /panelNodeID=\{panelNodeID\} nodePanelReturnsToAgent=\{agentOpen\}/);
   assert.match(pageSource, /onClick=\{\(\) => \{\s*setPanelNodeID\(""\);\s*setAgentOpen\(true\)/);
   assert.match(agentPanelSource, /aria-label="新对话" disabled=\{busy\}/);
   assert.doesNotMatch(agentPanelSource, /aria-label="新对话" disabled=\{!activeSession\.messages\.length\}/);

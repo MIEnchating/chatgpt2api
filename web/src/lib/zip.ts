@@ -5,15 +5,19 @@ type ZipFile = {
 
 type ZipWorkerResult = Uint8Array<ArrayBuffer> | [string, Uint8Array<ArrayBuffer>][];
 
-function runZipWorker<T extends ZipWorkerResult>(request: ZipWorkerRequest, transfer: ArrayBuffer[]) {
+function runZipWorker<T extends ZipWorkerResult>(request: ZipWorkerRequest, transfer: ArrayBuffer[], signal?: AbortSignal) {
   return new Promise<T>((resolve, reject) => {
+    signal?.throwIfAborted();
     const worker = new Worker(new URL("./zip-worker.ts", import.meta.url), { type: "module" });
     const finish = () => {
       worker.onmessage = null;
       worker.onerror = null;
       worker.onmessageerror = null;
       worker.terminate();
+      signal?.removeEventListener("abort", abort);
     };
+    const abort = () => { finish(); reject(new DOMException("Operation aborted", "AbortError")); };
+    signal?.addEventListener("abort", abort, { once: true });
     worker.onmessage = (event: MessageEvent<{ result?: T; error?: string }>) => {
       finish();
       if (event.data.error) reject(new Error(event.data.error));
@@ -38,7 +42,8 @@ function runZipWorker<T extends ZipWorkerResult>(request: ZipWorkerRequest, tran
   });
 }
 
-export async function createZip(files: ZipFile[]) {
+export async function createZip(files: ZipFile[], signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (files.length > MAX_ZIP_ENTRIES) throw new Error("项目压缩包文件数量超过限制");
   const names = new Set<string>();
   let total = 0;
@@ -53,7 +58,8 @@ export async function createZip(files: ZipFile[]) {
   const entries = await Promise.all(blobs.map(async ({ name, blob }): Promise<[string, Uint8Array<ArrayBuffer>]> => {
     return [name, new Uint8Array(await blob.arrayBuffer())];
   }));
-  const data = await runZipWorker<Uint8Array<ArrayBuffer>>({ operation: "create", entries }, entries.map(([, data]) => data.buffer));
+  signal?.throwIfAborted();
+  const data = await runZipWorker<Uint8Array<ArrayBuffer>>({ operation: "create", entries }, entries.map(([, data]) => data.buffer), signal);
   return new Blob([data], { type: "application/zip" });
 }
 

@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+
+import { stopCreationTasks } from "@/lib/stop-creation-tasks";
+import { createMaskEditTurn } from "@/lib/image-mask-edit";
+import { fetchStoredMedia } from "@/services/stored-media-download";
+import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
+
+const WorkbenchMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasMaskDialog })));
 
 import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
@@ -59,6 +66,7 @@ import {
   effectiveTaskOutputStatus,
   hasFinalTaskOutput,
   imageConversationDisplaySnapshot,
+  imageConversationHasActiveTurn,
   isTaskActive,
   mergeCreationTaskList,
   mergeCreationTaskSnapshot,
@@ -143,6 +151,7 @@ import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { ensureGeneratedMediaAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
@@ -1450,7 +1459,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const conversationHistoryGenerationRef = useRef<string | null>(null);
   const conversationHistoryHasMoreRef = useRef(false);
   const conversationHistoryLoadMoreRef = useRef(false);
-  const conversationHistoryDetailRecoveryRef = useRef(new Set<string>());
   const historySyncErrorShownAtRef = useRef(0);
   const resultsViewportRef = useRef<ScrollAreaHandle>(null);
   const resultsContentRef = useRef<HTMLDivElement>(null);
@@ -1481,6 +1489,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     isRetryableError: isRetryableTaskPollError,
   });
 
+  const [maskEdit, setMaskEdit] = useState<{ conversationId: string; turnId: string; sourceURL: string; model: string } | null>(null);
+  const [maskEditBusy, setMaskEditBusy] = useState(false);
+  const maskOperationRef = useRef(false);
+  const maskSourceControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => maskSourceControllerRef.current?.abort(), [session.key]);
+  const maskEditSourceURL = maskEdit?.sourceURL;
+  useEffect(() => () => {
+    if (maskEditSourceURL) URL.revokeObjectURL(maskEditSourceURL);
+  }, [maskEditSourceURL]);
   const [imagePrompt, setImagePrompt] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
   const [imageModel, setImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
@@ -1659,7 +1676,20 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [referenceImages, setReferenceImages] = useState<StoredReferenceImage[]>([]);
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const composerSubmissionState = {
+    selectedConversationId, composerMode, imagePrompt, imageModel, videoModel, referenceImages,
+    imageCount, imageOutputFormat, imageOutputCompression, defaultImageVisibility, imageCustomWidth, imageCustomHeight,
+    videoFirstFrameURL, videoLastFrameURL, videoReferenceImageURLs, videoReferenceVideoURLs, videoReferenceAudioURLs,
+  };
+  const composerSubmissionStateRef = useRef(composerSubmissionState);
+  useLayoutEffect(() => {
+    composerSubmissionStateRef.current = composerSubmissionState;
+  });
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [conversationDetailId, setConversationDetailId] = useState<string | null>(null);
+  const [conversationDetailError, setConversationDetailError] = useState("");
+  const [conversationDetailRetryVersion, setConversationDetailRetryVersion] = useState(0);
+  const [isSubmitDispatching, setIsSubmitDispatching] = useState(false);
   const [isLoadingMoreHistory, setIsLoadingMoreHistory] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [lightboxImages, setLightboxImages] = useState<ImageLightboxItem[]>([]);
@@ -1705,7 +1735,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       conversationHistoryGenerationRef.current = null;
       conversationHistoryHasMoreRef.current = false;
       conversationHistoryLoadMoreRef.current = false;
-      conversationHistoryDetailRecoveryRef.current.clear();
       taskSnapshotsRef.current.clear();
       setHasMoreHistory(false);
       setIsLoadingMoreHistory(false);
@@ -1828,6 +1857,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const selectedConversationNeedsDetail = Boolean(
+    selectedConversationId && (!selectedConversation || isImageConversationHistorySummaryOnly(selectedConversation)),
+  );
+  const selectedConversationHasActiveTurn = Boolean(
+    selectedConversation && imageConversationHasActiveTurn(selectedConversation),
+  );
   const displayedConversation = imageConversationDisplaySnapshot(
     selectedConversation,
     selectedConversationId ? fullConversationSnapshotsRef.current.get(selectedConversationId) ?? null : null,
@@ -1838,6 +1873,22 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
   }, [selectedConversation]);
   const activeRelayTokenKind: CreationRelayTokenKind = composerMode === "video" ? "video" : "image";
+  const activeModelRoute = routeForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
+  const submitDisabledReason = isSubmitDispatching
+    ? "正在提交任务，请稍候"
+    : isLoadingHistory
+      ? "正在读取历史记录，请稍候"
+      : selectedConversationNeedsDetail
+        ? "请先读取完整会话详情"
+        : selectedConversationHasActiveTurn
+          ? "当前会话正在生成，请等待完成后再发送"
+          : activeModelRoute.status === "loading"
+            ? "正在读取所选 Key 的模型列表"
+            : activeModelRoute.status === "model-list-error"
+              ? "所选 Key 的模型列表读取失败，请重试连接"
+              : activeModelRoute.status === "model-unavailable"
+                ? "所选 Key 不支持当前模型，请切换模型或 Key"
+                : "";
   const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => nextTokenNameForModel(kind, model), [nextTokenNameForModel]);
   const requireRelayToken = useCallback((kind: CreationRelayTokenKind, model: string) => {
     const route = routeForModel(kind, model);
@@ -2422,55 +2473,50 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
-    const selectedConversation = selectedConversationId
-      ? conversations.find((conversation) => conversation.id === selectedConversationId) ?? null
-      : null;
-    const needsSelectedConversationDetail = isImageConversationHistorySummaryOnly(selectedConversation);
-    if (
-      !selectedConversationId ||
-      isLoadingHistory ||
-      (selectedConversation && !needsSelectedConversationDetail) ||
-      deletedConversationIdsRef.current.has(selectedConversationId) ||
-      conversationHistoryDetailRecoveryRef.current.has(selectedConversationId)
-    ) {
+    setConversationDetailId(selectedConversationId);
+    setConversationDetailError("");
+    if (!selectedConversationId || isLoadingHistory || !selectedConversationNeedsDetail
+      || deletedConversationIdsRef.current.has(selectedConversationId)) {
       return;
     }
     const conversationID = selectedConversationId;
-    conversationHistoryDetailRecoveryRef.current.add(conversationID);
     let cancelled = false;
     void getImageConversation(conversationID)
       .then((conversation) => {
-        if (cancelled || !pageActiveRef.current || selectedConversationId !== conversationID) {
+        if (cancelled || !pageActiveRef.current || deletedConversationIdsRef.current.has(conversationID)) {
           return;
         }
-        if (conversation) {
-          const mergedItems = mergeImageConversationItems(conversationsRef.current, [conversation]);
-          conversationsRef.current = mergedItems;
-          setConversations(mergedItems);
+        if (!conversation) {
+          setSelectedConversationId(pickFallbackConversationId(
+            conversationsRef.current.filter((item) => item.id !== conversationID),
+          ));
           return;
         }
-        setSelectedConversationId(pickFallbackConversationId(conversationsRef.current));
+        const mergedItems = mergeImageConversationItems(conversationsRef.current, [conversation]);
+        const merged = mergedItems.find((item) => item.id === conversationID);
+        if (!merged || isImageConversationHistorySummaryOnly(merged)) {
+          throw new Error("会话详情尚未同步，请重试读取");
+        }
+        conversationsRef.current = mergedItems;
+        setConversations(mergedItems);
       })
       .catch((error) => {
+        if (cancelled || !pageActiveRef.current) return;
         const status = typeof error === "object" && error !== null && "status" in error
           ? Number((error as { status?: unknown }).status)
           : Number.NaN;
-        if (
-          !cancelled &&
-          pageActiveRef.current &&
-          selectedConversationId === conversationID &&
-            shouldFallbackToImageConversationHistoryDetail(status)
-        ) {
-          setSelectedConversationId(pickFallbackConversationId(conversationsRef.current));
+        if (shouldFallbackToImageConversationHistoryDetail(status)) {
+          setSelectedConversationId(pickFallbackConversationId(
+            conversationsRef.current.filter((item) => item.id !== conversationID),
+          ));
+          return;
         }
-      })
-      .finally(() => {
-        conversationHistoryDetailRecoveryRef.current.delete(conversationID);
+        setConversationDetailError(error instanceof Error ? error.message : "会话详情读取失败，请重试");
       });
     return () => {
       cancelled = true;
     };
-  }, [conversations, isLoadingHistory, selectedConversationId]);
+  }, [isLoadingHistory, selectedConversationId, selectedConversationNeedsDetail, conversationDetailRetryVersion]);
 
   const finishConversationWrite = useCallback(() => {
     conversationPendingWritesRef.current = Math.max(0, conversationPendingWritesRef.current - 1);
@@ -2951,7 +2997,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       conversationHistoryNextCursorRef.current = null;
       conversationHistoryGenerationRef.current = null;
       conversationHistoryHasMoreRef.current = false;
-      conversationHistoryDetailRecoveryRef.current.clear();
       setHasMoreHistory(false);
       conversationsRef.current = [];
       setConversations([]);
@@ -3099,6 +3144,33 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     setComposerMode(mode);
   }, [imageModel]);
+
+  useEffect(() => { setMaskEdit(null); }, [session.key]);
+
+  const handleOpenMaskEdit = async (conversationId: string, turnId: string, image: StoredImage) => {
+    if (maskOperationRef.current) return;
+    maskOperationRef.current = true;
+    const toastId = toast.loading("正在读取原图");
+    try {
+      assertPageSessionCurrent();
+      const source = conversationsRef.current.find((item) => item.id === conversationId)?.turns.find((turn) => turn.id === turnId);
+      if (!source) throw new Error("原生成记录已不存在");
+      const model = imageCreationModelOptions.find((option) => option.value === source.model && imageWorkbenchAcceptsReferenceImages(option.value))?.value
+        || imageCreationModelOptions.find((option) => imageWorkbenchAcceptsReferenceImages(option.value))?.value;
+      if (!model) throw new Error("请先启用支持参考图的图片模型");
+      const controller = new AbortController();
+      maskSourceControllerRef.current = controller;
+      const blob = await fetchStoredMedia(image, controller.signal);
+      controller.signal.throwIfAborted();
+      assertPageSessionCurrent();
+      setMaskEdit({ conversationId, turnId, sourceURL: URL.createObjectURL(blob), model });
+      toast.dismiss(toastId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "读取原图失败", { id: toastId });
+    } finally {
+      maskOperationRef.current = false;
+    }
+  };
 
   const handleContinueEdit = useCallback(
     async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
@@ -3403,6 +3475,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const runnerSessionEpoch = pageSessionEpochRef.current;
       const expectedSessionKey = session.key;
       if (
+        !imageModelConfigReady ||
         !pageActiveRef.current ||
         !canStartImageConversationQueueRunner(activeConversationQueueIdsRef.current, conversationId)
       ) {
@@ -4139,6 +4212,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       creationTaskRequestOptions,
       imageCodexCLICompatibility,
       imageGenerationPreferences.system_prompt,
+      imageModelConfigReady,
       imageResponseFormatB64JSON,
       reportHistorySyncError,
       session.key,
@@ -4229,9 +4303,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
 
-      const results = await Promise.allSettled(
-        taskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)),
-      );
+      let results: Awaited<ReturnType<typeof stopCreationTasks>>;
+      try {
+        results = await stopCreationTasks(taskIds, creationTaskRequestOptions, session.key);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          toast.error(error instanceof Error ? error.message : "停止生成失败");
+        }
+        return;
+      }
       if (!pageActiveRef.current) {
         return;
       }
@@ -4275,13 +4355,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         };
       });
 
-      if (failedRequests > 0) {
-        toast.error(`部分终止请求失败：${failedRequests}/${taskIds.length}`);
-      } else {
-        toast.success("已终止生成任务");
-      }
     },
-    [clearTurnProgress, creationTaskRequestOptions, updateConversation],
+    [clearTurnProgress, creationTaskRequestOptions, session.key, updateConversation],
   );
 
   const handleRetryImage = useCallback(
@@ -4302,8 +4377,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前站点只支持图片生成");
         return;
       }
-      if (isTurnInProgress(targetTurn)) {
-        toast.error("当前轮次正在处理，稍后再重试");
+      if (imageConversationHasActiveTurn(targetConversation)) {
+        toast.error("当前会话正在生成，请等待完成后再重试");
         return;
       }
       if (!targetTurn.prompt.trim()) {
@@ -4348,6 +4423,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       try {
         const retryPersisted = await updateConversation(conversationId, (current) => {
           const conversation = current ?? targetConversation;
+          if (isImageConversationHistorySummaryOnly(conversation) || imageConversationHasActiveTurn(conversation)) {
+            throw new Error("会话正在同步或生成，请稍后再试");
+          }
           return {
             ...conversation,
             updatedAt: now,
@@ -4439,8 +4517,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("请输入提示词");
         return;
       }
-      if (isTurnInProgress(targetTurn)) {
-        toast.error("当前轮次正在处理，稍后再重新生成");
+      if (imageConversationHasActiveTurn(targetConversation)) {
+        toast.error("当前会话正在生成，请等待完成后再重新生成");
         return;
       }
       const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
@@ -4476,6 +4554,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       try {
         const regenerationPersisted = await updateConversation(conversationId, (current) => {
           const conversation = current ?? targetConversation;
+          if (isImageConversationHistorySummaryOnly(conversation) || imageConversationHasActiveTurn(conversation)) {
+            throw new Error("会话正在同步或生成，请稍后再试");
+          }
           const isFirstTurn = conversation.turns[0]?.id === turnId;
           return {
             ...conversation,
@@ -4521,7 +4602,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (!regenerationPersisted) {
           return;
         }
-      } catch {
+      } catch (error) {
+        if (pageActiveRef.current) toast.error(formatCreationTaskError(error, "提交重新生成失败"));
         return;
       } finally {
         queueingTurnIdsRef.current.delete(turnQueueKey);
@@ -4566,8 +4648,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前站点只支持图片生成");
         return;
       }
-      if (isTurnInProgress(targetTurn)) {
-        toast.error("当前轮次正在处理，稍后再编辑");
+      if (isTurnInProgress(targetTurn) || (regenerate && imageConversationHasActiveTurn(targetConversation))) {
+        toast.error("当前会话正在生成，请等待完成后再编辑");
         return;
       }
       if (regenerate && !isConfiguredCreationModel(draft.mode, draft.model)) {
@@ -4645,6 +4727,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       try {
         const editPersisted = await updateConversation(draft.conversationId, (current) => {
           const conversation = current ?? targetConversation;
+          if (isImageConversationHistorySummaryOnly(conversation) || (regenerate && imageConversationHasActiveTurn(conversation))) {
+            throw new Error("会话正在同步或生成，请稍后再试");
+          }
           const isFirstTurn = conversation.turns[0]?.id === draft.turnId;
           return {
             ...conversation,
@@ -4703,7 +4788,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (!editPersisted) {
           return;
         }
-      } catch {
+      } catch (error) {
+        if (pageActiveRef.current) toast.error(formatCreationTaskError(error, "保存编辑失败"));
         return;
       } finally {
         queueingTurnIdsRef.current.delete(turnQueueKey);
@@ -4730,8 +4816,62 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     ],
   );
 
+  const handleMaskEdit = async (payload: CanvasMaskEditPayload) => {
+    if (!maskEdit || maskOperationRef.current) return;
+    assertPageSessionCurrent();
+    if (!imageCreationModelOptions.some((option) => option.value === payload.model) || !imageWorkbenchAcceptsReferenceImages(payload.model)) {
+      throw new Error("请选择已启用且支持参考图的模型");
+    }
+    if (!requireRelayToken("image", payload.model)) throw new Error("请先配置图片渠道");
+    const { conversationId, turnId } = maskEdit;
+    maskOperationRef.current = true;
+    setMaskEditBusy(true);
+    try {
+      const reference = await ensureReferenceImageAsset({
+        name: "mask-reference.png", type: "image/png", dataUrl: payload.markedDataURL, source: "conversation",
+      }, "conversation", assertPageSessionCurrent);
+      assertPageSessionCurrent();
+      if (!reference) throw new Error("标记参考图上传失败");
+      const now = new Date().toISOString();
+      const id = createId();
+      const saved = await updateConversation(conversationId, (current) => {
+        if (!current || isImageConversationHistorySummaryOnly(current)) throw new Error("请先加载原会话详情");
+        if (imageConversationHasActiveTurn(current)) throw new Error("当前会话正在生成，请稍后再试");
+        const source = current.turns.find((turn) => turn.id === turnId);
+        if (!source) throw new Error("原生成记录已不存在");
+        const next = createMaskEditTurn(source, id, payload.prompt, payload.model, reference, now);
+        if (source.model !== payload.model) {
+          next.tokenGroup = undefined;
+          next.tokenName = nextTokenNameForModel("image", payload.model) || undefined;
+          next.outputFormat = imageOutputFormatForModel(payload.model, source.outputFormat || "png");
+          next.outputCompression = next.outputFormat === undefined ? undefined : imageOutputCompressionForModel(payload.model, next.outputFormat, source.outputCompression || "");
+        }
+        return { ...current, updatedAt: now, turns: [...current.turns, next] };
+      }, { persist: "durable" });
+      assertPageSessionCurrent();
+      if (!saved) throw new Error("保存局部重绘任务失败");
+      setMaskEdit(null);
+      setSelectedConversationId(conversationId);
+      void runConversationQueue(conversationId);
+    } finally {
+      maskOperationRef.current = false;
+      if (pageActiveRef.current) setMaskEditBusy(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (isSubmitDispatchingRef.current) {
+      return;
+    }
+    const targetConversation = selectedConversationId
+      ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
+      : null;
+    if (isLoadingHistory || (selectedConversationId && (!targetConversation || isImageConversationHistorySummaryOnly(targetConversation)))) {
+      toast.error("请等待会话详情读取完成后再发送");
+      return;
+    }
+    if (targetConversation && imageConversationHasActiveTurn(targetConversation)) {
+      toast.error("当前会话正在生成，请等待完成后再发送");
       return;
     }
     if (referenceUploadPendingCountRef.current > 0 || videoFrameUploadsRef.current.size > 0
@@ -4874,6 +5014,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       ? videoTurnFieldsFromNormalizedRequest(normalizedVideoParameters)
       : undefined;
     isSubmitDispatchingRef.current = true;
+    setIsSubmitDispatching(true);
+    const submittedComposerState = composerSubmissionStateRef.current;
     let draftProgressTarget: { conversationId: string; turnId: string } | null = null;
 
     try {
@@ -4925,9 +5067,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : imageOutputCompressionForModel(effectiveModel, effectiveOutputFormat, imageOutputCompression);
       const effectiveImageQuality = videoMode ? undefined : imageQualityForRequest(imageQuality);
       const effectiveImageStream = !videoMode && imageStreamEnabled;
-      const targetConversation = selectedConversationId
-        ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
-        : null;
       const now = new Date().toISOString();
       const conversationId = targetConversation?.id ?? createId();
       const turnId = createId();
@@ -4999,20 +5138,31 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         detail: "正在保存提示词和生成参数",
         startedAt: Date.parse(now),
       });
-      const draftPersisted = await updateConversation(conversationId, () => baseConversation, { persist: "durable" });
+      const draftPersisted = await updateConversation(conversationId, (current) => {
+        if (current && (isImageConversationHistorySummaryOnly(current) || imageConversationHasActiveTurn(current))) {
+          throw new Error("会话正在同步或生成，请稍后再发送");
+        }
+        return current
+          ? { ...current, updatedAt: now, turns: [...current.turns, draftTurn] }
+          : baseConversation;
+      }, { persist: "durable" });
       if (!draftPersisted) {
         clearTurnProgress(conversationId, turnId);
         return;
       }
-      setSelectedConversationId(conversationId);
-      if (currentSelectionChanged && currentSelection) {
-        setImageCustomWidth(currentSelection.customWidth);
-        setImageCustomHeight(currentSelection.customHeight);
-      }
-      if (videoMode) {
-        setImagePrompt("");
-      } else {
-        clearComposerInputs();
+      const composerUnchanged = (Object.keys(submittedComposerState) as (keyof typeof submittedComposerState)[])
+        .every((key) => composerSubmissionStateRef.current[key] === submittedComposerState[key]);
+      if (composerUnchanged) {
+        setSelectedConversationId(conversationId);
+        if (currentSelectionChanged && currentSelection) {
+          setImageCustomWidth(currentSelection.customWidth);
+          setImageCustomHeight(currentSelection.customHeight);
+        }
+        if (videoMode) {
+          setImagePrompt("");
+        } else {
+          clearComposerInputs();
+        }
       }
       void runConversationQueue(conversationId);
     } catch (error) {
@@ -5024,13 +5174,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
     } finally {
       isSubmitDispatchingRef.current = false;
+      if (pageActiveRef.current) setIsSubmitDispatching(false);
     }
   };
 
   return (
     <>
-      <section data-image-workbench-layout className="grid h-full min-h-0 w-full grid-cols-1 gap-2 px-0 pb-[env(safe-area-inset-bottom)] sm:gap-3 sm:px-3 sm:pb-0 lg:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="hidden h-full min-h-0 border-r border-border pr-3 lg:block">
+      <section data-image-workbench-layout className="grid h-full min-h-0 w-full grid-cols-1 gap-3 pb-[env(safe-area-inset-bottom)] sm:gap-4 sm:pb-0 lg:grid-cols-[232px_minmax(0,1fr)] 2xl:grid-cols-[256px_minmax(0,1fr)]">
+        <div className="hidden h-full min-h-0 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)] lg:block">
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
@@ -5425,7 +5576,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </Dialog>
         ) : null}
 
-        <div className="relative flex min-h-0 flex-col gap-2 sm:gap-4">
+        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/15 shadow-[var(--shadow-card)]">
           {imageModelConfigError ? (
             <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300">
               <CircleAlert className="size-4 shrink-0" />
@@ -5435,26 +5586,34 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </Button>
             </div>
           ) : null}
-          <div className="flex items-center justify-between gap-2 px-1 sm:px-4">
-            <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-3 py-3 sm:px-5">
+            <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
+              <h1 className="shrink-0 text-sm font-semibold tracking-tight sm:text-base">{composerMode === "video" ? "视频创作" : "创作台"}</h1>
+              <p className="mt-0.5 min-w-0 max-w-lg truncate text-xs text-muted-foreground sm:mt-0">{selectedConversation?.title || (composerMode === "video" ? "从一个画面开始，让灵感动起来" : "描述灵感，开始新的创作")}</p>
+            </div>
+            <span className="hidden items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 py-1.5 text-[11px] text-muted-foreground lg:inline-flex">{selectedConversationHasActiveTurn ? <LoaderCircle className="size-3 animate-spin text-brand" /> : <Plus className="size-3" />}{selectedConversationHasActiveTurn ? "生成进行中" : "随时开始创作"}</span>
+            <div className="flex shrink-0 items-center gap-2 lg:hidden">
               <Button
                 variant="outline"
-                className="h-10 min-w-0 flex-1 shrink rounded-full border-border bg-card text-muted-foreground shadow-sm"
+                className="size-9 rounded-xl border-border bg-card p-0 text-xs text-muted-foreground shadow-none sm:w-auto sm:px-3"
+                aria-label={`历史记录 (${conversations.length})`}
                 onClick={() => setIsHistoryOpen(true)}
               >
                 <History className="size-4" />
-                <span className="truncate">历史记录 ({conversations.length})</span>
+                <span className="hidden sm:inline">历史记录 ({conversations.length})</span>
               </Button>
               <Button
-                className="h-10 rounded-full shadow-sm"
+                className="size-9 rounded-xl p-0 text-xs shadow-none sm:w-auto sm:px-3"
+                aria-label="新建对话"
                 onClick={handleCreateDraft}
               >
                 <Plus className="size-4" />
-                新建对话
+                <span className="hidden sm:inline">新建对话</span>
               </Button>
               <Button
                 variant="outline"
-                className="h-10 rounded-full border-border bg-card px-3 text-muted-foreground shadow-sm"
+                className="h-9 rounded-xl border-border bg-card px-3 text-muted-foreground shadow-none"
+                aria-label="清空会话记录"
                 onClick={openClearHistoryConfirm}
                 disabled={conversations.length === 0}
               >
@@ -5464,33 +5623,36 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </div>
 
           <div
-            className="min-h-0 flex-1 px-1 pt-2 pb-[14rem] sm:px-4 sm:pt-4 sm:pb-[15rem]"
-            style={composerDockHeight > 0 ? { paddingBottom: composerDockHeight + 24 } : undefined}
+            className="min-h-0 flex-1 px-3 pt-3 sm:px-6"
           >
             <ScrollArea
               ref={resultsViewportRef}
               className="size-full"
               onScroll={handleResultsViewportScroll}
             >
-            <div ref={resultsContentRef} className="min-h-full">
-              <ImageResults
-                selectedConversation={displayedConversation}
-                isLoadingHistory={isLoadingHistory}
-                progressByTurnKey={progressByTurnKey}
-                progressNow={progressNow}
-                promptPresets={IMAGE_PROMPT_PRESETS}
-                onOpenLightbox={openLightbox}
-                onApplyPromptPreset={handleApplyPromptPreset}
-                onContinueEdit={handleContinueEdit}
-                onEditTurn={openEditTurnDialog}
-                onCancelTurn={handleCancelTurn}
-                onRegenerateTurn={handleRegenerateTurn}
-                onRetryImage={handleRetryImage}
-                onImageVisibilityChange={handleImageVisibilityChange}
-                visibilityMutatingImageKey={visibilityMutatingImageKey}
-                formatConversationTime={formatConversationTime}
-              />
-            </div>
+              <div ref={resultsContentRef} className="min-h-full" style={{ paddingBottom: composerDockHeight > 0 ? composerDockHeight + 32 : 240 }}>
+                <ImageResults
+                  selectedConversation={displayedConversation}
+                  isLoadingHistory={isLoadingHistory}
+                  isLoadingConversationDetail={selectedConversationNeedsDetail}
+                  conversationDetailError={conversationDetailId === selectedConversationId ? conversationDetailError : ""}
+                  onRetryConversationDetail={() => setConversationDetailRetryVersion((version) => version + 1)}
+                  progressByTurnKey={progressByTurnKey}
+                  progressNow={progressNow}
+                  promptPresets={IMAGE_PROMPT_PRESETS}
+                  onOpenLightbox={openLightbox}
+                  onApplyPromptPreset={handleApplyPromptPreset}
+                  onContinueEdit={handleContinueEdit}
+                  onMaskEdit={handleOpenMaskEdit}
+                  onEditTurn={openEditTurnDialog}
+                  onCancelTurn={handleCancelTurn}
+                  onRegenerateTurn={handleRegenerateTurn}
+                  onRetryImage={handleRetryImage}
+                  onImageVisibilityChange={handleImageVisibilityChange}
+                  visibilityMutatingImageKey={visibilityMutatingImageKey}
+                  formatConversationTime={formatConversationTime}
+                />
+              </div>
             </ScrollArea>
           </div>
 
@@ -5511,7 +5673,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
           <div
             ref={composerDockRef}
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-1 pb-[env(safe-area-inset-bottom)] sm:px-4 sm:pb-0"
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-2 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4"
             style={
               {
                 "--image-composer-dock-height": `${composerDockHeight}px`,
@@ -5519,7 +5681,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             }
           >
             <div className="pointer-events-auto mx-auto w-full max-w-[900px] xl:max-w-[1080px] 2xl:max-w-[1180px]">
+              {submitDisabledReason ? (
+                <div role="status" className={cn("mb-2 flex items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3 py-2 text-xs text-muted-foreground", activeModelRoute.status === "model-list-error" && "border-destructive/20 text-destructive")}>
+                  {selectedConversationHasActiveTurn || isSubmitDispatching || isLoadingHistory ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand" /> : <CircleAlert className="size-3.5 shrink-0" />}
+                  <span className="min-w-0 flex-1 leading-5">{submitDisabledReason}</span>
+                  {activeModelRoute.status === "model-list-error" ? (
+                    <Button type="button" size="sm" variant="outline" onClick={refreshTokenModels}>重试连接</Button>
+                  ) : null}
+                </div>
+              ) : null}
               <ImageComposer
+                submitDisabled={Boolean(submitDisabledReason)}
+                submitDisabledReason={submitDisabledReason}
                 composerMode={composerMode}
                 prompt={imagePrompt}
                 imageCount={imageCount}
@@ -5606,6 +5779,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         onApplyPrompt={handleApplyMarketPrompt}
       />
 
+      {maskEdit ? <Suspense fallback={null}>
+        <WorkbenchMaskDialog
+          sourceURL={maskEdit.sourceURL}
+          open
+          busy={maskEditBusy}
+          model={maskEdit.model}
+          models={imageCreationModelOptions.filter((option) => imageWorkbenchAcceptsReferenceImages(option.value)).map((option) => option.value)}
+          onModelChange={(model) => setMaskEdit((current) => current ? { ...current, model } : null)}
+          onClose={() => { if (!maskOperationRef.current) setMaskEdit(null); }}
+          onConfirm={handleMaskEdit}
+        />
+      </Suspense> : null}
       <ImageLightbox
         images={lightboxImages}
         currentIndex={lightboxIndex}
@@ -5710,9 +5895,7 @@ export default function ImagePage() {
 
   if (isCheckingAuth || !session) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      <LoadingState label="正在加载创作台" />
     );
   }
 

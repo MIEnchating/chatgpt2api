@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Video, X } from "lucide-react";
+import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Trash2, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
@@ -17,11 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { deleteManagedImages, fetchManagedImages, updateManagedImageVisibility } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission, type StoredAuthSession } from "@/lib/auth-session";
@@ -48,7 +49,7 @@ const visibilityOptions: Array<{ value: "all" | MyAssetVisibility; label: string
 export default function AssetsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/assets");
   const sessionRevision = useAuthSessionRevision();
-  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在加载我的素材...</div>;
+  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) return <LoadingState label="正在加载我的素材..." />;
   return <AssetsContent key={`${session.key}:${sessionRevision}`} session={session} />;
 }
 
@@ -365,13 +366,13 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   };
 
   return (
-    <ManagementPage data-assets-layout>
+    <ManagementPage data-assets-layout title="我的素材" description="收纳图片、视频和文字，让每一次创作都能接着用。">
       <ManagementPanel className="flex-1">
         <ManagementToolbar>
-        <div data-asset-filter-bar className="flex w-full flex-wrap items-center gap-2">
-          <div className="relative min-w-0 basis-full flex-1 lg:basis-60"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索标题、标签、内容、来源或备注" className="pl-9" /></div>
-          <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{kindOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setKind(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", kind === option.value && "bg-card text-foreground shadow-sm")}>{option.value === "all" ? null : <Icon className="size-3.5" />}{option.label}</button>; })}</div>
-          <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{visibilityOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setVisibility(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", visibility === option.value && "bg-card text-foreground shadow-sm")}>{Icon ? <Icon className="size-3.5" /> : null}{option.label}</button>; })}</div>
+        <div data-asset-filter-bar className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:flex lg:flex-wrap">
+          <SearchInput value={keyword} onValueChange={setKeyword} placeholder="搜索标题、标签、内容、来源或备注" containerClassName="col-span-2 w-full lg:w-auto lg:min-w-60 lg:flex-1" />
+          <div role="group" aria-label="素材类型" className="hide-scrollbar col-span-2 flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{kindOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setKind(option.value)} aria-pressed={kind === option.value} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition sm:px-2.5", kind === option.value && "bg-card text-foreground shadow-sm")}>{option.value === "all" ? null : <Icon className="hidden size-3.5 min-[360px]:block" />}{option.label}</button>; })}</div>
+          <div role="group" aria-label="素材可见范围" className="hide-scrollbar flex w-fit min-w-0 max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1 lg:shrink-0">{visibilityOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setVisibility(option.value)} aria-pressed={visibility === option.value} className={cn("inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-medium text-muted-foreground transition sm:flex-none sm:px-2.5", visibility === option.value && "bg-card text-foreground shadow-sm")}>{Icon ? <Icon className="hidden size-3.5 min-[360px]:block" /> : null}{option.label}</button>; })}</div>
           <Button type="button" className="ml-auto shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>
         </div>
         </ManagementToolbar>
@@ -384,7 +385,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
               <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 rounded-md" onClick={() => setSelectedKeys(new Set())} aria-label="清空选择" title="清空选择"><X className="size-3.5" /></Button>
             </div>
           ) : <span className="shrink-0 px-1 text-xs text-muted-foreground">未选择素材</span>}
-          <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+          <div className={cn("ml-auto min-w-0 flex-wrap items-center gap-2", selectedAssets.length ? "flex" : "hidden sm:flex")}>
             <Select value={selectedVisibility} disabled={!visibilityManageableAssets.length || bulkActionBusy} onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}>
               <SelectTrigger className="h-9 w-[128px] shrink-0 px-2.5 text-xs" aria-label="设置所选素材可见范围">
                 <SelectValue placeholder="可见范围" className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap [&>svg]:shrink-0" />
@@ -401,7 +402,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
         <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
         <div data-asset-content className="flex min-w-0 w-full flex-col gap-[var(--page-section-gap)]">
           {managedError ? <div role="alert" className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
-          {!initialLoadComplete ? <div role="status" className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
+          {!initialLoadComplete ? <div role="status" className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" action={allAssets.length ? <Button variant="outline" onClick={() => { setKeyword(""); setKind("all"); setVisibility("all"); setGroupFilter("all"); }}>清除筛选</Button> : <Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>} />}
         </div>
         </ScrollArea>
         {!initialLoadComplete ? <div className="min-h-14 shrink-0 border-t border-border" /> : <ManagementPagination

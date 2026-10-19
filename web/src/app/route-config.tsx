@@ -45,7 +45,7 @@ export const appRoutes: AppRouteConfig[] = [
   lazyRoute("/settings", () => import("@/app/settings/page"), "/settings"),
   lazyRoute("/studio", () => import("@/app/image/page"), "/studio"),
   { path: "/image", element: <LegacyImageRoute /> },
-  lazyRoute("*", () => import("@/app/page")),
+  lazyRoute("*", () => import("@/app/not-found")),
 ];
 
 export function preloadRoute(pathname: string): void {

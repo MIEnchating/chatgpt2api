@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SearchInput } from "@/components/ui/search-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CanvasAgentImageSettings,
@@ -53,8 +54,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const [projects, setProjects] = useState<CanvasProjectSummary[]>([]);
   const [activeProjectID, setActiveProjectID] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [query, setQuery] = useState("");
+  const visibleProjects = projects.filter((project) => (project.title || "未命名画布").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const [busy, setBusy] = useState(false);
   const [selectedProjectIDs, setSelectedProjectIDs] = useState<Set<string>>(new Set());
+  const allVisibleSelected = visibleProjects.length > 0 && visibleProjects.every((project) => selectedProjectIDs.has(project.id));
   const [agentPrompt, setAgentPrompt] = useState("");
   const [pendingAssets, setPendingAssets] = useState<CanvasPendingAgentAsset[]>([]);
   const [uploadingAsset, setUploadingAsset] = useState(false);
@@ -70,6 +76,8 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setLoadError("");
     void fetchCanvasDocument()
       .then((workspace) => {
         if (!active) return;
@@ -78,13 +86,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
         setSelectedProjectIDs(new Set());
       })
       .catch((error) => {
-        if (active) toast.error(error instanceof Error ? error.message : "画布库加载失败");
+        if (active) setLoadError(error instanceof Error ? error.message : "画布库加载失败");
       })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [session.key]);
+  }, [session.key, reloadKey]);
 
   useEffect(() => {
     if (!imageGenerationPreferencesReady) return;
@@ -235,7 +243,14 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }
 
   function toggleAllProjects() {
-    setSelectedProjectIDs((current) => current.size === projects.length ? new Set() : new Set(projects.map((project) => project.id)));
+    setSelectedProjectIDs((current) => {
+      const next = new Set(current);
+      for (const project of visibleProjects) {
+        if (allVisibleSelected) next.delete(project.id);
+        else next.add(project.id);
+      }
+      return next;
+    });
   }
 
   async function exportSelectedProjects() {
@@ -356,10 +371,12 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   return (
     <section className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
       <PageHeader
+        title="无限画布"
+        description="把灵感、素材和生成任务放在同一个创作空间。"
+        meta={loading ? undefined : `${projects.length} 个画布`}
         actions={
           <>
             <Button type="button" variant="outline" disabled={busy} onClick={() => importInputRef.current?.click()}><FileUp />导入画布</Button>
-            {projects.length ? <Button type="button" variant="ghost" disabled={busy} onClick={toggleAllProjects}><CheckSquare />{selectedProjectIDs.size === projects.length ? "取消全选" : "全选"}</Button> : null}
             {selectedProjectIDs.size ? <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => void exportSelectedProjects()}><Download />导出选中 ({selectedProjectIDs.size})</Button>
               <Button type="button" variant="outline" className="text-destructive hover:text-destructive dark:text-rose-300 dark:hover:text-rose-300" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
@@ -370,13 +387,21 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
           </>
         }
       />
-      <ScrollArea className="card-surface min-h-0 flex-1 rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
+      <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5">
+          <SearchInput value={query} onValueChange={setQuery} placeholder="搜索画布名称" containerClassName="min-w-40 flex-1 sm:max-w-sm" />
+          <span className="ml-auto text-xs tabular-nums text-muted-foreground" role="status">{loading ? "正在加载" : `共 ${visibleProjects.length} 个画布`}</span>
+          {projects.length ? <Button type="button" variant="ghost" size="sm" disabled={busy || !visibleProjects.length} onClick={toggleAllProjects}><CheckSquare />{allVisibleSelected ? "取消全选" : "全选当前结果"}</Button> : null}
+        </div>
+      <ScrollArea className="min-h-0 flex-1">
         <div data-canvas-project-content className="w-full p-4 sm:p-5">
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载画布...</div>
-        ) : projects.length ? (
+        ) : loadError ? (
+          <EmptyState icon={FolderOpen} title="画布加载失败" description={loadError} className="min-h-72" action={<Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>重新加载</Button>} />
+        ) : visibleProjects.length ? (
           <div data-canvas-project-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <div key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} data-interaction="trigger" className="interactive-card group flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)]">
                 <div className="mb-3 flex min-h-5 items-center justify-between gap-3">
                   <label data-disabled={busy} className="selection-trigger flex items-center gap-2 text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}>
@@ -407,12 +432,15 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               </div>
             ))}
           </div>
+        ) : query.trim() ? (
+          <EmptyState icon={FolderOpen} title="没有找到匹配的画布" description="试试其他名称，或清除搜索查看所有画布。" className="min-h-72" action={<Button variant="outline" onClick={() => setQuery("")}>清除搜索</Button>} />
         ) : (
           <EmptyState icon={Sparkles} title="还没有画布" description="新建一个画布开始你的创作。" className="min-h-72" action={<Button type="button" disabled={busy} onClick={() => void createAndOpen()}><Plus />新建画布</Button>} />
         )}
         <input ref={importInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importProjects(event.target.files?.[0])} />
         </div>
       </ScrollArea>
+      </div>
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
         <DialogContent scrollable={false} className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
           <DialogHeader>

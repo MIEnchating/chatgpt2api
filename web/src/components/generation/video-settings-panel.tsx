@@ -100,16 +100,16 @@ export function VideoSettingsPanel({
   const disabled = (field: "size" | "resolution" | "duration" | "generate_audio" | "watermark") => contractUI.disabled.has(field);
 
   return (
-    <div className="flex flex-col gap-3.5">
-      {!hidden("resolution") && resolutionOptions.length > 0 ? <section className="order-10 space-y-1.5">
+    <div className="flex flex-col gap-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3.5">
+      {!hidden("resolution") && resolutionOptions.length > 0 ? <section className="order-10 space-y-2.5">
         <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
-        <div className={cn("grid gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cn("grid gap-1 rounded-xl bg-muted/70 p-1", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {resolutionOptions.map((resolution) => <button key={resolution} type="button" disabled={disabled("resolution")} aria-pressed={displayResolution === resolution} className={imageParameterChoiceClass(displayResolution === resolution, "h-8 uppercase")} onClick={() => onChange({ resolution })}>{resolution}</button>)}
         </div>
         {!resolutionValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">当前模型不支持该清晰度</p> : null}
       </section> : null}
 
-      {!hidden("size") && (sizeOptions.length > 0 || usesDimensionInputs) ? <section className="order-20 space-y-1.5">
+      {!hidden("size") && (sizeOptions.length > 0 || usesDimensionInputs) ? <section className="order-20 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <ImageParameterLabel help={usesDimensionInputs ? "输入视频宽高，或从下方选择画幅比例。" : "选择视频输出的画幅比例。"}>画幅比例</ImageParameterLabel>
           <GenerationSizeBadge>{videoSizePreview}</GenerationSizeBadge>
@@ -119,8 +119,8 @@ export function VideoSettingsPanel({
         </div> : <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="视频画幅比例">{sizeOptions.map((size) => { const ratio = videoWorkbenchRatioForSize(size); return <AspectRatioOptionButton key={size} active={displaySize === size} disabled={disabled("size")} label={videoComposerSizeLabel(size)} description={ratio === "adaptive" ? "自动匹配" : ratio} ratio={videoComposerAspectRatio(size)} onClick={() => onChange({ size })} />; })}</div>}
       </section> : null}
 
-      {!coreOnly && !hidden("duration") ? <section className="order-30 space-y-1.5">
-        <ImageParameterLabel help="视频生成所需时间会随秒数增加。">秒数</ImageParameterLabel>
+      {!coreOnly && !hidden("duration") ? <section className="order-30 space-y-2.5">
+        <ImageParameterLabel help="时长越长，通常需要更久的生成时间。">视频时长</ImageParameterLabel>
         <div className={cn("grid gap-2", allowsCustomDuration ? "grid-cols-[minmax(0,1fr)_6.5rem]" : "grid-cols-1")}>
           <Select value={secondsPresets.includes(Number(displaySeconds)) ? displaySeconds : undefined} disabled={disabled("duration")} onValueChange={(seconds) => onChange({ seconds })}><SelectTrigger className="h-8 min-w-0 rounded-lg border-border bg-card px-2 text-xs font-medium text-foreground shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频秒数"><SelectValue placeholder="选择秒数" /></SelectTrigger><SelectContent>{(secondsPresets.length > 0 ? secondsPresets : secondsOptions).map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select>
           {allowsCustomDuration ? <VideoDurationInput value={displaySeconds === "-1" ? "" : displaySeconds} min={minimumSeconds} max={maximumSeconds} disabled={disabled("duration")} placeholder={displaySeconds === "-1" ? "智能" : `${minimumSeconds}-${maximumSeconds}`} onChange={(seconds) => onChange({ seconds })} /> : null}
@@ -128,13 +128,13 @@ export function VideoSettingsPanel({
         {!secondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
       </section> : null}
 
-      {showTaskCount ? <section className="order-35 space-y-1.5">
-        <ImageParameterLabel help="一次创建多个相同参数的独立视频任务。">任务</ImageParameterLabel>
-        <NumberInput value={taskCount} min={1} max={6} controlsLayout="split" suffix="个" aria-label="视频任务数" className="h-8" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ taskCount: Math.max(1, Math.min(6, Math.round(next))) }); }} />
+      {showTaskCount ? <section className="order-35 flex items-center justify-between gap-3">
+        <div className="min-w-0"><ImageParameterLabel help="一次创建多个相同参数的独立视频任务。">生成数量</ImageParameterLabel><p className="mt-1 text-[11px] leading-5 text-muted-foreground">每个视频独立生成</p></div>
+        <NumberInput value={taskCount} min={1} max={6} controlsLayout="split" suffix="个" aria-label="视频任务数" className="h-9 w-32 shrink-0" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ taskCount: Math.max(1, Math.min(6, Math.round(next))) }); }} />
       </section> : null}
 
-      {!coreOnly && showAudio && !hidden("generate_audio") ? <section className="order-40 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border"><ImageParameterLabel help="为支持该能力的模型生成与视频同步的音频。">音频生成</ImageParameterLabel><Switch checked={audioControl === "always" || (value.generateAudio && !audioDisabled)} disabled={audioDisabled || disabled("generate_audio")} onCheckedChange={(generateAudio) => onChange({ generateAudio })} /></section> : null}
-      {!coreOnly && showWatermark && !hidden("watermark") ? <section className="order-50 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border"><ImageParameterLabel help="在生成的视频中添加供应商水印。">添加水印</ImageParameterLabel><Switch checked={value.watermark} disabled={disabled("watermark")} onCheckedChange={(watermark) => onChange({ watermark })} /></section> : null}
+      {!coreOnly && showAudio && !hidden("generate_audio") ? <section className="order-40 flex items-center justify-between gap-3"><div><ImageParameterLabel>同步生成声音</ImageParameterLabel><p className="mt-1 text-[11px] leading-5 text-muted-foreground">{audioDisabled ? "当前模型默认生成声音" : "为画面添加同步音频"}</p></div><Switch aria-label="同步生成声音" checked={audioControl === "always" || (value.generateAudio && !audioDisabled)} disabled={audioDisabled || disabled("generate_audio")} onCheckedChange={(generateAudio) => onChange({ generateAudio })} /></section> : null}
+      {!coreOnly && showWatermark && !hidden("watermark") ? <section className="order-50 flex items-center justify-between gap-3"><div><ImageParameterLabel>添加水印</ImageParameterLabel><p className="mt-1 text-[11px] leading-5 text-muted-foreground">在视频中保留供应商水印</p></div><Switch aria-label="添加水印" checked={value.watermark} disabled={disabled("watermark")} onCheckedChange={(watermark) => onChange({ watermark })} /></section> : null}
     </div>
   );
 }

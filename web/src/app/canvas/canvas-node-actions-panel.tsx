@@ -297,7 +297,7 @@ function ActionSection({ title, children }: { title: string; children: ReactNode
   return (
     <section className="space-y-2">
       <h3 className="flex items-center gap-2 px-0.5 text-[11px] font-semibold text-muted-foreground">{title}<span className="h-px flex-1 bg-border/70" /></h3>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-2">{children}</div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,148px),1fr))] gap-2">{children}</div>
     </section>
   );
 }

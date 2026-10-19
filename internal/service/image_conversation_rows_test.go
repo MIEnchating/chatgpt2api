@@ -434,3 +434,47 @@ var _ storage.Backend = (*deleteImageConversationAfterLoadBackend)(nil)
 var _ storage.ImageConversationBackend = (*deleteImageConversationAfterLoadBackend)(nil)
 var _ storage.ImageConversationBackend = (*tracingImageConversationBatchBackend)(nil)
 var _ storage.ImageConversationBackend = (*conflictOnceImageConversationBatchBackend)(nil)
+
+func TestImageConversationRowsRejectSummaryWritesWithoutChangingHistory(t *testing.T) {
+	history := NewImageConversationHistoryService(newTestStorageBackend(t))
+	ctx := context.Background()
+	ownerID := "summary-write-owner"
+	original := imageConversationRowTestItem("conversation", 1, "2026-07-19T10:00:00Z", "success")
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(ctx, ownerID, []map[string]any{original}); err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"historySummaryOnly", "history_summary_only"} {
+		incoming := imageConversationRowTestItem("conversation", 2, "2026-07-19T11:00:00Z", "success")
+		incoming[marker] = true
+		incoming["turns"] = []any{}
+		_, _, err := history.MergeWithAcknowledgementsMinimal(ctx, ownerID, []map[string]any{incoming})
+		var validation ImageConversationHistoryValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("summary write error=%v, want validation error", err)
+		}
+	}
+	detail, _, _, err := history.GetItem(ctx, ownerID, "conversation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageConversationRevision(detail) != 1 || len(detail["turns"].([]any)) != 1 {
+		t.Fatalf("summary write changed history: %#v", detail)
+	}
+}
+
+func TestImageConversationRecordDetailStripsSummaryMetadataAndPreservesTurns(t *testing.T) {
+	item := imageConversationRowTestItem("conversation", 3, "2026-07-19T10:00:00Z", "success")
+	item["historySummaryOnly"] = true
+	item["historySummary"] = map[string]any{"turnCount": 1}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := imageConversationItemFromRecord(storage.ImageConversationRecord{ID: "conversation", Revision: 3, Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail["turns"].([]any)) != 1 || detail["historySummaryOnly"] != nil || detail["historySummary"] != nil {
+		t.Fatalf("full detail contains summary metadata or lost turns: %#v", detail)
+	}
+}

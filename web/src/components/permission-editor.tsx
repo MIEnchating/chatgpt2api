@@ -118,7 +118,7 @@ export function PermissionEditor({
               {menuPermissions.map((item) => {
                 const checked = selectedMenuPaths.includes(item.path);
                 return (
-                  <label key={item.path} data-selected={checked} className="flex min-h-[58px] cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 data-[selected=true]:bg-primary/[0.045]">
+                  <label key={item.path} data-selected={checked} className="flex min-h-[58px] cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring hover:bg-muted/50 data-[selected=true]:bg-primary/[0.045]">
                     <Checkbox checked={checked} disabled={disabled} onCheckedChange={(value) => onMenuPathsChange(toggleListValue(selectedMenuPaths, item.path, Boolean(value)))} />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-foreground">{item.label}</div>
@@ -166,14 +166,14 @@ export function PermissionEditor({
                       {group.items.map((permission) => {
                         const checked = selectedApiPermissions.includes(permission.key);
                         return (
-                          <label key={permission.key} data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-background/35 px-3.5 py-3 transition-colors hover:border-primary/35 hover:bg-muted/50 hover:shadow-sm data-[selected=true]:border-primary/45 data-[selected=true]:bg-primary/[0.06]">
+                          <label key={permission.key} data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-background/35 px-3.5 py-3 transition-colors hover:border-primary/35 hover:bg-muted/50 hover:shadow-sm focus-within:ring-2 focus-within:ring-ring data-[selected=true]:border-primary/45 data-[selected=true]:bg-primary/[0.06]">
                             <Checkbox checked={checked} disabled={disabled} className="mt-0.5" onCheckedChange={(value) => onApiPermissionsChange(toggleListValue(selectedApiPermissions, permission.key, Boolean(value)))} />
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">
                                 <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none", apiMethodClass(permission.method))}>{permission.method}</span>
-                                <span className="truncate text-xs font-medium text-foreground">{permission.label}</span>
+                                <span className="text-xs font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{permission.label}</span>
                               </div>
-                              <code className="mt-1.5 block truncate font-mono text-[11px] text-muted-foreground">{permission.path}{permission.subtree ? "/*" : ""}</code>
+                              <code className="mt-1.5 block font-mono text-[11px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">{permission.path}{permission.subtree ? "/*" : ""}</code>
                             </div>
                           </label>
                         );

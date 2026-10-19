@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,28 @@ const relayTaskCredentialKey = "relay_task_credential"
 // The private Go type cannot be supplied through a JSON or multipart request.
 // It freezes the selected endpoint, credentials and rules before a task queues.
 type frozenTaskCredential struct{ credential relayCredential }
+
+func (a *App) handleValidateParameterTranslation(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	if identity.Role != service.AuthRoleAdmin {
+		util.WriteError(w, http.StatusForbidden, "仅管理员可以校验默认渠道参数转换")
+		return
+	}
+	body, err := readJSONMap(r)
+	if err != nil {
+		util.WriteError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	models, err := translation.Models(util.Clean(body["source"]))
+	if err != nil {
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"models": models})
+}
 
 func (a *App) freezeRelayCredentialForTask(ctx context.Context, identity service.Identity, body map[string]any) error {
 	delete(body, relayTaskCredentialKey)
@@ -72,6 +95,12 @@ func (a *App) relayTranslatedMedia(ctx context.Context, payload map[string]any, 
 	}
 	data := make([]map[string]any, 0, len(result.URLs))
 	for _, value := range result.URLs {
+		if kind == "video" && strings.HasPrefix(value, "data:") {
+			value, err = a.storeTranslatedVideo(value)
+			if err != nil {
+				return nil, true, err
+			}
+		}
 		if kind == "audio" && strings.HasPrefix(value, "data:") {
 			parts := strings.SplitN(value, ",", 2)
 			if len(parts) != 2 {
@@ -115,7 +144,7 @@ func translationVariables(p map[string]any, images []protocol.UploadedImage, kin
 			out[key] = value
 		}
 	}
-	out["aspectRatio"] = firstNonEmpty(util.Clean(p["aspect_ratio"]), util.Clean(p["ratio"]), util.Clean(p["size"]))
+	out["aspectRatio"] = translationAspectRatio(p)
 	out["images"] = util.AsStringSlice(p["reference_image_urls"])
 	if len(images) > 0 {
 		out["images"] = imageReferenceURLs(images)
@@ -126,4 +155,41 @@ func translationVariables(p map[string]any, images []protocol.UploadedImage, kin
 		out["prompt"] = firstNonEmpty(util.Clean(p["input"]), util.Clean(p["prompt"]))
 	}
 	return out
+}
+
+func translationAspectRatio(p map[string]any) string {
+	value := strings.ToLower(firstNonEmpty(util.Clean(p["aspect_ratio"]), util.Clean(p["ratio"]), util.Clean(p["size"])))
+	parts := strings.FieldsFunc(value, func(r rune) bool { return r == 'x' || r == '×' || r == ':' })
+	if len(parts) != 2 {
+		return ""
+	}
+	w, errW := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, errH := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errW != nil || errH != nil || w <= 0 || h <= 0 {
+		return ""
+	}
+	a, b := w, h
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return fmt.Sprintf("%d:%d", w/a, h/a)
+}
+
+// Persist binary video outputs before the task result is serialized to storage.
+func (a *App) storeTranslatedVideo(value string) (string, error) {
+	if a == nil || strings.TrimSpace(a.videoDir) == "" {
+		return "", fmt.Errorf("video storage is unavailable")
+	}
+	header, encoded, ok := strings.Cut(value, ",")
+	extensions := map[string]string{"data:video/mp4;base64": ".mp4", "data:video/webm;base64": ".webm", "data:video/quicktime;base64": ".mov"}
+	extension := extensions[strings.ToLower(header)]
+	if !ok || extension == "" {
+		return "", fmt.Errorf("视频数据格式无效")
+	}
+	name := util.NewUUID() + extension
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
+	if err := storeRelayVideoStream(a.videoDir, name, decoder, 512<<20); err != nil {
+		return "", err
+	}
+	return "/videos/" + name, nil
 }

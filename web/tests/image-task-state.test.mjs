@@ -9,6 +9,7 @@ import {
   effectiveStoredImageLoadingPhase,
   hasFinalTaskOutput,
   imageConversationDisplaySnapshot,
+  imageConversationHasActiveTurn,
   mergeImageConversationLists,
   mergeImageConversationSnapshot,
   mergeCreationTaskList,
@@ -607,4 +608,20 @@ test("equal timestamps use the conversation id as a stable page ordering tie-bre
   });
   const merged = mergeImageConversationLists([], [left, right]);
   assert.deepEqual(merged.map((item) => item.id), ["image-z", "image-a"]);
+});
+
+
+test("conversation submission stays locked for queued turns and incomplete output slots", () => {
+  for (const status of ["queued", "generating"]) {
+    assert.equal(imageConversationHasActiveTurn(conversation({ status: "success" }, {
+      turns: [{ status, images: [] }],
+    })), true);
+  }
+  assert.equal(imageConversationHasActiveTurn(conversation({ status: "loading" })), true);
+  for (const status of ["success", "error", "cancelled", "message"]) {
+    assert.equal(imageConversationHasActiveTurn(conversation({ status })), false);
+  }
+  for (const [queued, running, active] of [[1, 0, true], [0, 1, true], [0, 0, false]]) {
+    assert.equal(imageConversationHasActiveTurn({ historySummaryOnly: true, historySummary: { queued, running }, turns: [] }), active);
+  }
 });

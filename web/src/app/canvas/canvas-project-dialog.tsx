@@ -45,7 +45,15 @@ export function CanvasProjectDialog({
           <DialogTitle>{mode === "create" ? "新建画布" : mode === "rename" ? "重命名画布" : "删除画布？"}</DialogTitle>
           <DialogDescription>{description || (editable ? "输入画布名称。" : `确定删除“${title}”吗？此操作不可恢复。`)}</DialogDescription>
         </DialogHeader>
-        {editable ? <Input value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (isCanvasPromptSubmitKey(event)) { event.preventDefault(); submit(); } }} placeholder="画布名称" maxLength={200} /> : null}
+        {editable ? (
+          <label className="grid gap-2 text-sm">
+            <span className="flex items-center justify-between gap-3">
+              <span className="font-medium">画布名称 <span className="text-destructive">*</span></span>
+              <span className="text-xs tabular-nums text-muted-foreground">{draft.length}/200</span>
+            </span>
+            <Input value={draft} required disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (isCanvasPromptSubmitKey(event)) { event.preventDefault(); submit(); } }} placeholder="例如：春季品牌视觉" maxLength={200} />
+          </label>
+        ) : null}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>取消</Button>
           <Button type="button" variant={editable ? "default" : "destructive"} disabled={busy || editable && !draft.trim()} onClick={submit}>{busy ? "处理中…" : mode === "create" ? "创建" : mode === "rename" ? "保存" : "删除"}</Button>

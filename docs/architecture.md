@@ -10,7 +10,7 @@
 | `internal/protocol` | 无状态的上游请求合同、厂家传输驱动和结果归一化 | `util` |
 | `internal/storage` | SQLite/PostgreSQL/MySQL 持久化与并发控制 | `model` |
 | `internal/config` | 环境变量、在线配置、存储后端装配和敏感配置边界 | `model`、`storage`、`translation`、`util` |
-| `internal/service` | 账号、任务、画布、工作流、素材和对象存储等业务规则 | `model`、`storage`、`translation`、`util` |
+| `internal/service` | 账号、任务、画布、工作流、素材和对象存储等业务规则 | `model`、`storage`、`util` |
 | `internal/videocontract` | 视频模型契约的草稿、版本、发布、持久化和运行时注册 | `protocol`、`storage`、`util` |
 | `internal/httpapi` | 路由、Cookie 鉴权、RBAC、请求解码、应用编排和 HTTP 响应 | 上述应用与基础层 |
 | `internal/web` | 嵌入已构建的前端静态文件 | 无 |

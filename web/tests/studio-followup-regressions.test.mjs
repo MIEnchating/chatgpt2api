@@ -7,7 +7,7 @@ import contractDocument from "../../internal/protocol/video_model_contracts.json
 import { activeVideoModelContracts, installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
 import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
-import { canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
+import { imageConversationHasActiveTurn, canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
 import { DEFAULT_PROMPT_MARKET_SOURCES, normalizePromptMarketSources } from "../src/app/image/banana-prompts.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -58,6 +58,21 @@ for (const name of ["buildReferenceImagesFromUrls", "buildReferenceImageFromStor
     assert.equal(uploads, 0);
   });
 }
+
+test("queue recovery waits for model contracts before touching active tasks", async () => {
+  const runners = new Set();
+  const queue = extract("runConversationQueue", {
+    imageModelConfigReady: false,
+    pageSessionEpochRef: { current: 0 },
+    session: { key: "a" },
+    pageActiveRef: { current: true },
+    activeConversationQueueIdsRef: { current: runners },
+    canStartImageConversationQueueRunner: () => assert.fail("Queue started before model contracts loaded"),
+    conversationsRef: { get current() { return assert.fail("Active tasks read before model contracts loaded"); } },
+  });
+  await queue("conversation");
+  assert.equal(runners.size, 0);
+});
 
 test("history recovery stops between saves after an account change", async () => {
   const saved = [];
@@ -113,7 +128,7 @@ test("video queue does not upload a reference downloaded by an expired session",
   class Aborted extends Error {}
   const turn = { id: "turn", mode: "video", status: "queued", referenceImages: [{ dataUrl: "/assets/ref.png" }], images: [{ status: "loading", taskId: "task" }] };
   const queue = extract("runConversationQueue", {
-    pageActiveRef: active, pageSessionEpochRef: epoch, session: { key: "a" },
+    imageModelConfigReady: true, pageActiveRef: active, pageSessionEpochRef: epoch, session: { key: "a" },
     activeConversationQueueIdsRef: { current: new Set() }, conversationsRef: { current: [{ id: "conversation", turns: [turn] }] },
     cancelledTurnIdsRef: { current: new Set() }, deletedConversationIdsRef: { current: new Set() },
     canDispatchImageTurn, canStartImageConversationQueueRunner, imageTurnProgressKey: () => "turn-key",
@@ -141,7 +156,7 @@ test("video queue forwards public reference URLs without downloading them", asyn
   class Aborted extends Error {}
   const turn = { id: "turn", mode: "video", status: "queued", referenceImages: [{ dataUrl: "https://example.test/ref.png" }], images: [{ status: "loading", taskId: "task" }] };
   const queue = extract("runConversationQueue", {
-    pageActiveRef: active, pageSessionEpochRef: epoch, session: { key: "a" },
+    imageModelConfigReady: true, pageActiveRef: active, pageSessionEpochRef: epoch, session: { key: "a" },
     activeConversationQueueIdsRef: { current: new Set() }, conversationsRef: { current: [{ id: "conversation", turns: [turn] }] },
     cancelledTurnIdsRef: { current: new Set() }, deletedConversationIdsRef: { current: new Set() },
     canDispatchImageTurn, canStartImageConversationQueueRunner, imageTurnProgressKey: () => "turn-key",
@@ -164,6 +179,7 @@ test("video queue forwards public reference URLs without downloading them", asyn
 test("video submit reports unsupported contracts without rejecting the event handler", async () => {
   const errors = [];
   const submit = extract("handleSubmit", {
+    selectedConversationId: null, isLoadingHistory: false,
     isSubmitDispatchingRef: { current: false }, referenceUploadPendingCountRef: { current: 0 },
     videoFrameUploadsRef: { current: new Map() }, videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
     composerMode: "video", imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
@@ -350,6 +366,7 @@ function retryFixture(mode = "generate", status = "message") {
       pageActiveRef: { current: true }, conversationsRef: { current: [conversation] },
       retryingImageIdsRef: { current: new Set() }, queueingTurnIdsRef: { current: new Set() },
       isTurnInProgress: () => false, isConfiguredCreationModel: () => true,
+      imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: item => item?.historySummaryOnly === true,
       imageTurnReferenceValidationError: () => "", requireRelayToken: () => true,
       imageModel: "new-image", videoModel: "new-video", imageTurnProgressKey: () => "turn-key",
       createId: () => "new", imageTaskBatchId: () => "new-task", deriveTurnStatus: () => ({ status: "queued" }),

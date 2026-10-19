@@ -43,7 +43,14 @@ export function CanvasCameraControl({
           <Camera />摄像机
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-[min(760px,calc(100vw-1rem))] p-4">
+      <PopoverContent side="top" align="end" className="max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(680px,calc(100vw-1rem))] overflow-y-auto p-4">
+        <div className="mb-4 flex items-start justify-between gap-4 border-b border-border pb-3">
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-sm font-semibold">摄像机控制</h3>
+            <p className="text-xs leading-5 text-muted-foreground">选择相机与镜头，启用后将这些参数加入生成提示词。</p>
+          </div>
+          <Switch className="mt-1 shrink-0" checked={control.enabled} aria-label="摄像机控制" onCheckedChange={(enabled) => update({ enabled })} />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <CameraSelect
             label="相机"
@@ -86,14 +93,8 @@ export function CanvasCameraControl({
             }))}
           />
         </div>
-        <div className="mt-4 flex items-center justify-between border-t pt-4">
-          <div className="min-w-0 text-xs text-muted-foreground">
-            {focalMeta?.zhName} · {apertureMeta?.zhName}
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <span>{control.enabled ? "开启" : "关闭"}</span>
-            <Switch checked={control.enabled} aria-label="摄像机控制" onCheckedChange={(enabled) => update({ enabled })} />
-          </label>
+        <div className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground" aria-live="polite">
+          {control.enabled ? "已启用" : "未启用"} · {focalMeta?.zhName} · {apertureMeta?.zhName}
         </div>
       </PopoverContent>
     </Popover>

@@ -392,14 +392,23 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
     toast.error(result === "missing-model" ? (agentMode === "codex" ? "请先连接本地 Codex 并选择模型" : "请先配置文本模型") : "请先在个人中心选择文本生成密钥");
   }, [agentMode, busy, codex.connected, codex.model, initialRequest, model, relayPreferencesReady, relayTokenName]);
 
-  return <aside
+  return <>
+    {open ? <button
+      type="button"
+      data-canvas-agent-backdrop
+      style={{ bottom: "var(--canvas-dock-clearance)" }}
+      className="pointer-events-auto absolute inset-0 z-30 bg-slate-950/20 backdrop-blur-[1px] md:hidden"
+      aria-label="关闭 Agent"
+      onClick={onClose}
+    /> : null}
+    <aside
     ref={panelRef}
     aria-label="Agent 对话面板"
     aria-hidden={!open}
     inert={!open}
     data-canvas-agent-panel
     data-state={open ? "open" : "closed"}
-    className="absolute inset-y-3 right-3 z-40 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)] [container-name:agent] [container-type:size] motion-reduce:!transition-none sm:inset-y-4 sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:z-[45]"
+    className="absolute top-3 bottom-[var(--canvas-dock-clearance)] right-3 z-40 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)] [container-name:agent] [container-type:size] motion-reduce:!transition-none sm:top-4 sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]"
     style={{
       width: `min(${width}px, calc(100% - 12px))`,
       transform: open ? "translateX(0)" : "translateX(calc(100% + 16px))",
@@ -440,7 +449,7 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
       <Button size="sm" className="h-7 gap-1 px-2 text-[11px]" variant="ghost" aria-label="删除所选对话" disabled={busy || !checkedSessionIDs.length} onClick={() => setDeleteSessionIDs(checkedSessionIDs)}><Trash2 className="size-3" />删除所选</Button>
       <Button size="sm" className="h-7 px-2 text-[11px]" variant="ghost" aria-label="删除全部对话" disabled={busy || !historySessions.length} onClick={() => setDeleteSessionIDs(historySessions.map((item) => item.id))}>清空</Button>
     </div> : null}
-    <ScrollArea className="min-h-0 flex-1" viewportRef={messageListRef} viewportClassName="p-3"><div className="space-y-3">{view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <AssistantMessages messages={activeSession.messages} nodes={nodes} onFocusNode={onFocusNode} onRetry={retryMessage} /> : <div className="flex min-h-[min(18rem,46cqh)] flex-col items-center justify-center px-4 py-5 text-center"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand"><Sparkles className="size-5" /></div><div className="mt-3 text-sm font-medium">从一个想法开始</div><div className="mt-1.5 max-w-[260px] text-xs leading-5 text-muted-foreground">描述创作目标，Agent 会与你沟通并直接操作当前画布</div></div>}</div></ScrollArea>
+    <ScrollArea className="min-h-0 flex-1" viewportRef={messageListRef} viewportClassName="p-3"><div className="space-y-3">{view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <AssistantMessages messages={activeSession.messages} nodes={nodes} onFocusNode={onFocusNode} onRetry={retryMessage} /> : <div className="flex min-h-[min(18rem,46cqh)] flex-col items-center justify-center px-4 py-5 text-center"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand"><Sparkles className="size-5" /></div><div className="mt-3 text-sm font-medium">从一个想法开始</div><div className="mt-1.5 max-w-[260px] text-xs leading-5 text-muted-foreground">描述创作目标，Agent 会与你沟通并直接操作当前画布</div>{!input.trim() ? <div className="mt-4 grid w-full gap-2 text-left">{["帮我整理当前画布的创作思路", "规划一组风格统一的品牌海报", "把当前创意拆解成分镜方案"].map((suggestion) => <button key={suggestion} type="button" className="rounded-lg border border-border bg-card px-3 py-2.5 text-xs leading-5 text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setInput(suggestion); requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]')?.focus()); }}>{suggestion}</button>)}</div> : null}</div>}</div></ScrollArea>
     {view === "chat" ? <div className="max-h-[60%] shrink-0 overflow-y-auto overscroll-contain border-t bg-muted/15 p-2">
       {pendingDelete ? <div className="mb-2 overflow-hidden rounded-lg border"><div className="px-3 py-2"><p className="truncate text-xs font-medium">删除“{pendingDelete.title}”？</p><p className="mt-1 text-[11px] text-muted-foreground">相关连线和任务记录将按现有逻辑清理</p></div><div className="grid grid-cols-2 border-t"><button type="button" className="h-8 text-xs hover:bg-muted" onClick={() => settleDeleteConfirmation(false)}>取消</button><button type="button" className="h-8 border-l text-xs font-medium text-destructive hover:bg-muted dark:text-rose-300" onClick={() => settleDeleteConfirmation(true)}>确认删除</button></div></div> : null}
       <div className="rounded-xl border border-border bg-card p-2.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
@@ -512,7 +521,8 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
     </div> : null}
     <Dialog open={deleteSessionIDs.length > 0} onOpenChange={(open) => !open && setDeleteSessionIDs([])}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除对话记录？</DialogTitle><DialogDescription>将删除 {deleteSessionIDs.length} 条对话记录，此操作不可撤销。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setDeleteSessionIDs([])}>取消</Button><Button type="button" variant="destructive" disabled={busy} onClick={() => { if (busy) return; removeSessions(deleteSessionIDs); setDeleteSessionIDs([]); }}>删除</Button></DialogFooter></DialogContent></Dialog>
     {codexApproval.dialog}
-  </aside>;
+    </aside>
+  </>;
 }
 
 function AgentAssetMenu({ onOpenUpload, onOpenAssets }: { onOpenUpload: () => void; onOpenAssets: () => void }) {

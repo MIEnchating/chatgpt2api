@@ -12,7 +12,7 @@ import type { CanvasNode } from "@/services/api/canvas";
 
 export type CanvasCreatableNodeType = Exclude<CanvasNode["type"], "group">;
 
-export const CANVAS_DOCK_BREAKPOINT = 1100;
+export const CANVAS_DOCK_BREAKPOINT = 560;
 export const CANVAS_DOCK_COMPACT_WIDTH = 268;
 export const CANVAS_DOCK_WIDTH = 500;
 
@@ -79,8 +79,8 @@ export function CanvasWorkspaceControls(props: CanvasWorkspaceControlsProps) {
   const compact = props.width < CANVAS_DOCK_BREAKPOINT;
   const create = (type: CanvasCreatableNodeType) => { setCreateOpen(false); props.onCreate(type); };
   return (
-    <div data-canvas-controls className="pointer-events-none absolute inset-x-3 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-30 flex justify-center">
-      <div data-canvas-workspace-dock style={{ width: compact ? CANVAS_DOCK_COMPACT_WIDTH : CANVAS_DOCK_WIDTH }} className={cn("pointer-events-auto flex max-w-full items-center justify-center rounded-lg border border-border/80 bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl", compact ? "flex-col" : "flex-row")}>
+    <div data-canvas-controls className="pointer-events-none absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center">
+      <div data-canvas-workspace-dock style={{ width: compact ? CANVAS_DOCK_COMPACT_WIDTH : CANVAS_DOCK_WIDTH }} className={cn("pointer-events-auto flex max-w-full items-center justify-center rounded-2xl border border-border/80 bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl", compact ? "flex-col" : "flex-row")}>
       <div data-canvas-view-controls role="group" aria-label="画布视图" className="flex h-11 shrink-0 items-center gap-0.5 px-1.5">
         <ControlButton label="适应画布" disabled={!props.hasNodes} onClick={props.onFit}><Focus /></ControlButton>
         <ControlButton label="缩小画布" disabled={props.zoom <= CANVAS_MIN_ZOOM} onClick={() => props.onZoom(props.zoom / 1.2)}><Minus /></ControlButton>

@@ -104,7 +104,7 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /<ManagementPagination/);
   assert.match(workflowsSource, /visibleWorkflows\.map/);
   assert.doesNotMatch(workflowsSource, /<h1 className="text-base font-semibold">创意工作流|个工作流\{/);
-  assert.match(workflowsSource, /<ManagementPage>/);
+  assert.match(workflowsSource, /<ManagementPage title=\{embedded \? undefined : "工作流"\}/);
   assert.match(workflowsSource, /<ManagementPanel[\s\S]*embedded && "rounded-none border-0 bg-transparent shadow-none"/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
   assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);

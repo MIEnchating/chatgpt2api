@@ -74,10 +74,10 @@ export function CanvasAudioTrimDialog({ node, busy, onClose, onTrim }: {
         if (!Number.isFinite(length) || length <= 0) { setError("无法读取音频时长"); return; }
         setDuration(length); setRange({ start: 0, end: length });
       }} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onError={() => setError("当前浏览器无法播放该音频")} /> : null}
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : <div className="space-y-5 py-2">
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : <div className="space-y-5 rounded-xl border border-border bg-muted/20 p-4">
         <label className="grid gap-2 text-sm"><span className="flex justify-between"><span>开始</span><span>{range.start.toFixed(2)} 秒</span></span><Slider aria-label="音频开始时间" min={0} max={Math.max(0, range.end - 0.5)} step="0.01" value={range.start} disabled={busy || duration < 0.5} onChange={(event) => updateRange({ ...range, start: event.currentTarget.valueAsNumber })} /></label>
         <label className="grid gap-2 text-sm"><span className="flex justify-between"><span>结束</span><span>{range.end.toFixed(2)} 秒</span></span><Slider aria-label="音频结束时间" min={range.start + 0.5} max={Math.max(range.start + 0.5, duration)} step="0.01" value={range.end} disabled={busy || duration < 0.5} onChange={(event) => updateRange({ ...range, end: event.currentTarget.valueAsNumber })} /></label>
-        <div className="flex items-center justify-between text-sm text-muted-foreground"><span>{duration ? `选中 ${(range.end - range.start).toFixed(2)} 秒 / 总计 ${duration.toFixed(2)} 秒` : "正在读取音频…"}</span><Button type="button" variant="outline" size="sm" disabled={busy || !valid} onClick={() => {
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4 text-xs tabular-nums text-muted-foreground"><span>{duration ? `选中 ${(range.end - range.start).toFixed(2)} 秒 / 总计 ${duration.toFixed(2)} 秒` : "正在读取音频…"}</span><Button type="button" variant="outline" size="sm" disabled={busy || !valid} onClick={() => {
           const audio = audioRef.current;
           if (!audio) return;
           if (!audio.paused) { audio.pause(); return; }

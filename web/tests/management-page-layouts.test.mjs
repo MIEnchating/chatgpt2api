@@ -50,7 +50,7 @@ test("assets, users, and logs use the same responsive pagination contract", () =
   assert.match(managementSource, /data-management-pagination/);
   assert.match(
     managementSource,
-    /grid-cols-\[1fr_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
+    /grid-cols-\[minmax\(0,1fr\)_auto_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
   );
   assert.match(
     managementSource,

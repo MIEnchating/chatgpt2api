@@ -617,8 +617,8 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),420px)] overflow-hidden rounded-lg p-0">
-        <div className="flex items-center justify-between gap-3 border-b border-[#f2f3f5] px-4 py-3 dark:border-border">
+      <PopoverContent scrollable={false} align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),420px)] overflow-hidden rounded-2xl p-0">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand dark:bg-sky-950/30 dark:text-sky-300">
               <ClipboardList className="size-4" />
@@ -637,7 +637,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
         </div>
 
         {queueItems.length > 0 || recentCompletions.length > 0 || canvasTasks.length > 0 ? (
-          <ScrollArea aria-live="polite" className="max-h-[min(68vh,520px)] bg-background">
+          <ScrollArea aria-live="polite" className="min-h-0 max-h-[min(68dvh,520px)] flex-1 bg-background">
             <div className="flex flex-col">
               {queueItems.map((item) => (
                 <QueueItem
