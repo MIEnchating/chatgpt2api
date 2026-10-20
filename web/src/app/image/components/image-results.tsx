@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
+import { AlertCircle, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles, UserRound } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
@@ -676,31 +676,42 @@ export function ImageResults({
           ) : null;
 
         return (
-          <div key={turn.id} className={cn("flex min-w-0 flex-col gap-4", isVideoTurn && "mx-auto w-full max-w-[960px]")}>
-            <div className="flex justify-end">
-              <article className={cn(
-                "w-full min-w-0 rounded-2xl border border-border/70 bg-card px-4 py-4 text-left text-sm leading-7 text-foreground shadow-xs sm:px-5 sm:text-[15px]",
-                isVideoTurn ? "max-w-[960px]" : "max-w-[min(94%,760px)]",
-              )}>
-                <div className="mb-3 flex items-start justify-between gap-3 border-b border-border/60 pb-3">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-muted-foreground">
-                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">第 {turnIndex + 1} 轮</span>
-                    {turn.workflowName ? (
-                      <span className="max-w-full rounded-full bg-brand-soft px-2.5 py-0.5 text-brand ring-1 ring-brand-border [overflow-wrap:anywhere] dark:bg-sky-950/35 dark:text-sky-300 dark:ring-sky-800/70">
-                        工作流 {turn.workflowName}
-                      </span>
-                    ) : null}
-                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">{getTurnModeLabel(turn)}</span>
-                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">{turn.model}</span>
-                    {turn.mode === "video" ? (
-                      <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
-                        {videoResolutionLabel} · {videoDurationLabel} · {videoAudioLabel}
-                      </span>
-                    ) : null}
-                    <span className={cn("max-w-full rounded-full px-2.5 py-0.5 [overflow-wrap:anywhere]", getStatusChipClass(effectiveStatus))}>
-                      {getTurnStatusLabel(effectiveStatus)}
-                    </span>
-                    <span className="px-1 text-muted-foreground">{formatConversationTime(turn.createdAt)}</span>
+          <div key={turn.id} data-conversation-turn className={cn("flex min-w-0 flex-col gap-6 sm:gap-7", isVideoTurn && "mx-auto w-full max-w-[960px]")}>
+            <section data-message-role="user" aria-label="你的消息" className="flex min-w-0 flex-col items-end gap-2 pl-6 sm:pl-16">
+              <div className="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                <span>第 {turnIndex + 1} 轮 · {formatConversationTime(turn.createdAt)}</span>
+                <span className="font-semibold text-foreground">你</span>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><UserRound className="size-4" /></span>
+              </div>
+              <article className="w-fit min-w-0 max-w-full rounded-2xl rounded-tr-sm border border-brand-border bg-brand-soft px-4 py-3 text-left text-sm leading-7 text-foreground sm:max-w-[760px] sm:px-5 sm:text-[15px]">
+                <div>
+                  <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.prompt}</div>
+                  {displayedReferenceImages.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap justify-start gap-2">
+                      {displayedReferenceImages.map((image, index) => (
+                        <button
+                          key={`${turn.id}-${image.name}-${index}`}
+                          type="button"
+                          onClick={() => onOpenLightbox(referenceLightboxImages, index)}
+                          className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-border/80 bg-muted/60 text-left transition hover:border-border sm:size-24"
+                          aria-label={`预览参考图 ${image.name || index + 1}`}
+                        >
+                          <AuthenticatedImage
+                            src={image.dataUrl}
+                            alt={image.name || `参考图 ${index + 1}`}
+                            className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                            placeholderClassName="min-h-0"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-brand-border/60 pt-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-muted-foreground">
+                    <span>{getTurnModeLabel(turn)}</span>
+                    {turn.workflowName ? <span className="text-brand [overflow-wrap:anywhere]">工作流 {turn.workflowName}</span> : null}
+                    {isVideoTurn ? <span>{videoResolutionLabel} · {videoDurationLabel} · {videoAudioLabel}</span> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {turnBusy ? (
@@ -744,48 +755,25 @@ export function ImageResults({
                     )}
                   </div>
                 </div>
-                <div>
-                  <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.prompt}</div>
-                  {displayedReferenceImages.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap justify-start gap-2">
-                      {displayedReferenceImages.map((image, index) => (
-                        <button
-                          key={`${turn.id}-${image.name}-${index}`}
-                          type="button"
-                          onClick={() => onOpenLightbox(referenceLightboxImages, index)}
-                          className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-border/80 bg-muted/60 text-left transition hover:border-border sm:size-24"
-                          aria-label={`预览参考图 ${image.name || index + 1}`}
-                        >
-                          <AuthenticatedImage
-                            src={image.dataUrl}
-                            alt={image.name || `参考图 ${index + 1}`}
-                            className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
-                            placeholderClassName="min-h-0"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
               </article>
-            </div>
+            </section>
 
             <div className="flex justify-start">
-              <section className={cn("w-full min-w-0", isVideoTurn && "mx-auto max-w-[960px]")}>
+              <section data-message-role="assistant" aria-label="模型回复" className={cn("w-full min-w-0", isVideoTurn && "max-w-[960px]")}>
+                <div className="mb-3 flex min-w-0 items-start gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-foreground" aria-hidden="true"><Sparkles className="size-4" /></span>
+                  <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <span className="text-sm font-semibold text-foreground">模型回复</span>
+                    <span className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">{turn.model}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-[11px]", getStatusChipClass(effectiveStatus))}>{getTurnStatusLabel(effectiveStatus)}</span>
+                  </div>
+                </div>
                 {showResultSummary ? (
                   <div
                     data-video-result-summary={isVideoTurn || undefined}
-                    className={cn(
-                      "mb-3 flex items-center gap-3 sm:mb-4",
-                      isVideoTurn
-                        ? "flex-wrap rounded-2xl border border-border/70 bg-card px-4 py-3"
-                        : "hide-scrollbar overflow-x-auto border-b border-border pb-3",
-                    )}
+                    className="mb-3 flex flex-wrap items-center gap-3 border-b border-border/60 pb-3 sm:mb-4"
                   >
-                    <div className={cn(
-                      "flex items-center gap-3 text-[11px] text-muted-foreground sm:text-xs",
-                      isVideoTurn ? "min-w-0 flex-1 flex-wrap" : "shrink-0 whitespace-nowrap",
-                    )}>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-muted-foreground sm:text-xs">
                       {isVideoTurn ? (
                         <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
                           <Clapperboard className="size-4 text-primary" />
@@ -841,11 +829,6 @@ export function ImageResults({
                         </span>
                       ) : null}
                       {resultCompletedAt ? <span>{resultCompletedAt}</span> : null}
-                      {effectiveStatus !== "success" ? (
-                        <span className={cn("rounded-full px-3 py-1", getStatusChipClass(effectiveStatus))}>
-                          {getTurnStatusLabel(effectiveStatus)}
-                        </span>
-                      ) : null}
                     </div>
                     {turnBusy || downloadActions ? (
                       <div className="ml-auto flex shrink-0 items-center justify-end gap-2">

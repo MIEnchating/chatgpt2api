@@ -37,7 +37,7 @@ test("video generation results use a dedicated compact result workspace", () => 
   assert.match(imageResultsSource, /data-video-result-summary/);
   assert.match(imageResultsSource, /data-video-result-card/);
   assert.match(imageResultsSource, /下载全部视频/);
-  assert.match(imageResultsSource, /isVideoTurn \? "max-w-\[960px\]"/);
+  assert.match(imageResultsSource, /isVideoTurn && "max-w-\[960px\]"/);
   assert.match(imageResultsSource, /!isVideoTurn && successfulVisualImages\.length > 0/);
   assert.match(imageResultsSource, /视频 \{index \+ 1\}/);
   assert.match(imageResultsSource, /<MediaVideoPlayer/);
@@ -53,8 +53,8 @@ test("video generation results use a dedicated compact result workspace", () => 
   assert.match(mediaVideoPlayerSource, /toggleMode: "click"/);
   assert.match(mediaVideoPlayerSource, /\{ rate: 1, text: "正常", iconText: "1x" \}/);
   assert.match(mediaVideoPlayerSource, /download: true/);
-  assert.match(mediaVideoPlayerSource, /controls: \{\s*autoHide: false,\s*initShow: true,/);
-  assert.match(mediaVideoPlayerSource, /cssFullscreen: true/);
+  assert.match(mediaVideoPlayerSource, /controls: \{\s*autoHide: true,\s*initShow: true,/);
+  assert.match(mediaVideoPlayerSource, /cssFullscreen: false/);
   assert.match(mediaVideoPlayerSource, /enableContextmenu: false/);
   assert.match(mediaVideoPlayerSource, /videoFillMode: "contain"/);
   assert.match(mediaVideoPlayerSource, /playedColor: "#1456f0"/);

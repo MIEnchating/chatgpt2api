@@ -58,6 +58,7 @@ export function CanvasVideoNodePlayer({
         aria-label={title}
         tabIndex={-1}
         playsInline
+        disablePictureInPicture
         preload="metadata"
         className="size-full object-contain outline-none"
         onLoadStart={() => { setCurrentTime(0); setDuration(0); setPlaying(false); }}
@@ -179,6 +180,7 @@ export function CanvasVideoPreview({
           aria-label={title}
           tabIndex={-1}
           playsInline
+          disablePictureInPicture
           preload="metadata"
           className="block max-h-[85vh] max-w-[85vw] object-contain outline-none"
           onLoadStart={() => {

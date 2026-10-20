@@ -1,0 +1,400 @@
+[
+  {
+    "name": "grok-imagine-video text",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true
+    },
+    "request": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true
+    }
+  },
+  {
+    "name": "grok-imagine-video frames",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "first_frame_url": "https://media.example/first.png",
+      "last_frame_url": "https://media.example/last.png"
+    },
+    "request": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "image": "https://media.example/first.png",
+      "last_frame": "https://media.example/last.png"
+    }
+  },
+  {
+    "name": "grok-imagine-video references",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "reference_mode": "reference",
+      "reference_image_urls": [
+        "https://media.example/one.png",
+        "https://media.example/two.png"
+      ]
+    },
+    "request": {
+      "model": "grok-imagine-video",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "reference_images": [
+        "https://media.example/one.png",
+        "https://media.example/two.png"
+      ]
+    }
+  },
+  {
+    "name": "grok-imagine-video-1.5 text",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true
+    },
+    "request": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true
+    }
+  },
+  {
+    "name": "grok-imagine-video-1.5 frames",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "first_frame_url": "https://media.example/first.png",
+      "last_frame_url": "https://media.example/last.png"
+    },
+    "request": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "image": "https://media.example/first.png",
+      "last_frame": "https://media.example/last.png"
+    }
+  },
+  {
+    "name": "grok-imagine-video-1.5 references",
+    "plugin": "xai",
+    "input": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "reference_mode": "reference",
+      "reference_image_urls": [
+        "https://media.example/one.png",
+        "https://media.example/two.png"
+      ]
+    },
+    "request": {
+      "model": "grok-imagine-video-1.5",
+      "prompt": "A paper boat on a lake",
+      "duration": 8,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "reference_images": [
+        "https://media.example/one.png",
+        "https://media.example/two.png"
+      ]
+    }
+  },
+  {
+    "name": "seedance2.0 text",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-0-260128",
+    "input": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false
+    },
+    "request": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false
+      }
+    }
+  },
+  {
+    "name": "seedance2.0 frames",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-0-260128",
+    "input": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false,
+      "first_frame_url": "https://media.example/first_frame.png",
+      "last_frame_url": "https://media.example/last_frame.png"
+    },
+    "request": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false,
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/first_frame.png"
+            },
+            "role": "first_frame"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/last_frame.png"
+            },
+            "role": "last_frame"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "seedance2.0 references",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-0-260128",
+    "input": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false,
+      "reference_mode": "reference",
+      "reference_image_urls": [
+        "https://media.example/reference.png"
+      ],
+      "reference_video_urls": [
+        "https://media.example/reference.mp4"
+      ],
+      "reference_audio_urls": [
+        "https://media.example/reference.mp3"
+      ]
+    },
+    "request": {
+      "model": "seedance2.0",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false,
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/reference.png"
+            },
+            "role": "reference_image"
+          },
+          {
+            "type": "video_url",
+            "video_url": {
+              "url": "https://media.example/reference.mp4"
+            },
+            "role": "reference_video"
+          },
+          {
+            "type": "audio_url",
+            "audio_url": {
+              "url": "https://media.example/reference.mp3"
+            },
+            "role": "reference_audio"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "seedance2.5 text",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-5-260628",
+    "input": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false
+    },
+    "request": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false
+      }
+    }
+  },
+  {
+    "name": "seedance2.5 frames",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-5-260628",
+    "input": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false,
+      "first_frame_url": "https://media.example/first_frame.png",
+      "last_frame_url": "https://media.example/last_frame.png"
+    },
+    "request": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false,
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/first_frame.png"
+            },
+            "role": "first_frame"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/last_frame.png"
+            },
+            "role": "last_frame"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "seedance2.5 references",
+    "plugin": "doubao",
+    "upstream_model": "doubao-seedance-2-5-260628",
+    "input": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "size": "16:9",
+      "resolution": "720p",
+      "generate_audio": true,
+      "watermark": false,
+      "reference_mode": "reference",
+      "reference_image_urls": [
+        "https://media.example/reference.png"
+      ],
+      "reference_video_urls": [
+        "https://media.example/reference.mp4"
+      ],
+      "reference_audio_urls": [
+        "https://media.example/reference.mp3"
+      ]
+    },
+    "request": {
+      "model": "seedance2.5",
+      "prompt": "A paper boat on a lake",
+      "seconds": 8,
+      "metadata": {
+        "ratio": "16:9",
+        "resolution": "720p",
+        "generate_audio": true,
+        "watermark": false,
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://media.example/reference.png"
+            },
+            "role": "reference_image"
+          },
+          {
+            "type": "video_url",
+            "video_url": {
+              "url": "https://media.example/reference.mp4"
+            },
+            "role": "reference_video"
+          },
+          {
+            "type": "audio_url",
+            "audio_url": {
+              "url": "https://media.example/reference.mp3"
+            },
+            "role": "reference_audio"
+          }
+        ]
+      }
+    }
+  }
+]

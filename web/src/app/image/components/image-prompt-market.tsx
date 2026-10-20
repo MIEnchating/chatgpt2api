@@ -37,7 +37,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { PageHeader } from "@/components/page-header";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
@@ -511,14 +510,21 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
         </DialogHeader> : null}
 
         <div className="border-b border-border px-4 py-2.5 sm:px-6 sm:py-3">
-          <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_minmax(220px,340px)_150px]">
+          <div data-prompt-library-toolbar className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
               <SearchInput
                 value={keyword}
                 onValueChange={setKeyword}
                 placeholder="搜索标题或提示词"
               />
             {renderCategoryFilters()}
-            {renderFavoriteTabs("w-full min-w-0")}
+            <div className="flex min-w-0 items-center gap-3">
+              {renderFavoriteTabs("min-w-0 flex-1 md:w-[150px] md:flex-none")}
+              {presentation === "page" ? (
+                <span data-prompt-library-count className="shrink-0 text-xs tabular-nums text-muted-foreground" role="status">
+                  {isLoading || (favoriteFilter === "favorites" && isLoadingFavorites) ? "正在加载" : `${filteredPrompts.length} 条提示词`}
+                </span>
+              ) : null}
+            </div>
           </div>
           {tags.length > 0 ? (
             <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-start">
@@ -774,7 +780,11 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   );
 
   if (presentation === "page") {
-    return <section data-prompt-library-layout className="flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)]"><PageHeader title="提示词库" description="发现灵感，收藏常用提示词，一键套用到创作台。" meta={isLoading ? undefined : `${filteredPrompts.length} 条提示词`} /><div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</div></section>;
+    return (
+      <section data-prompt-library-layout aria-label="提示词库" className="flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)]">
+        <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</div>
+      </section>
+    );
   }
 
   return (

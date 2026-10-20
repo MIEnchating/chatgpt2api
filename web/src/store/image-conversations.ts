@@ -51,6 +51,7 @@ import type {
   StoredReferenceImage,
 } from "@/lib/image-conversation-types";
 import { normalizeStoredVideoSeconds } from "@/lib/video-request-normalizer";
+import { normalizeVideoTaskContractReference } from "@/lib/video-task-contract";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 import {
@@ -537,6 +538,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
   const taskRevision = Number(image.taskRevision);
   const normalized = {
     ...image,
+    videoContract: normalizeVideoTaskContractReference(image.videoContract),
     mediaType: image.mediaType === "video" || image.videoUrl || image.mimeType?.startsWith("video/") ? "video" as const : "image" as const,
     videoUrl: typeof image.videoUrl === "string" && image.videoUrl ? image.videoUrl : undefined,
     mimeType: typeof image.mimeType === "string" && image.mimeType ? image.mimeType : undefined,

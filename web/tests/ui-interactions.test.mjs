@@ -231,7 +231,7 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.match(videoContractsSource, /value=\{normalizeTags\(value\)\}/);
   assert.match(videoContractsSource, /<Field className="self-start">[\s\S]*?<InputTag[\s\S]*?className="min-h-11"/);
   assert.match(videoContractsSource, /grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3/);
-  assert.match(videoContractsSource, /contract\.capability\.seconds = normalizeTags\(draft\.seconds\)/);
+  assert.match(videoContractsSource, /profile\.capability\.seconds = normalizeTags\(draft\.seconds\)/);
   assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
   assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
   assert.match(videoContractsSource, /navigator\.clipboard\.writeText\(contractJSON\)/);
@@ -313,13 +313,14 @@ test("video contract document import reviews and publishes split contracts one b
   assert.match(apiSource, /VideoModelContractImportResult = \{[\s\S]*?contracts: VideoModelContract\[\]/);
   assert.match(videoContractsSource, /Array\.isArray\(data\.contracts\)[\s\S]*?data\.contracts\.map\(normalizeVideoModelContractCollections\)/);
   assert.match(videoContractsSource, /<DialogTitle>审核生成的契约<\/DialogTitle>/);
-  assert.match(videoContractsSource, /maxHeight="min\(60dvh, 560px\)"/);
-  assert.match(videoContractsSource, /ariaLabel="生成的契约草稿"/);
-  assert.match(videoContractsSource, /viewClass="divide-y divide-border"/);
+  assert.match(videoContractsSource, /aria-label="生成的契约草稿"/);
   assert.match(videoContractsSource, /const publishAllGeneratedContracts = async \(\) =>/);
   assert.match(videoContractsSource, /contracts: contracts\.map\(\(contract\) => \(\{ contract, enabled: true \}\)\)/);
-  assert.match(videoContractsSource, /校验、发布并启用全部草稿/);
-  assert.match(videoContractsSource, /CheckCheck className="size-4"[\s\S]{0,100}全部审核/);
+  assert.match(videoContractsSource, /await createVideoModelContractBatch\(/);
+  assert.match(apiSource, /video-model-contracts\/batch/);
+  assert.match(videoContractsSource, /发布全部（\$\{generatedContracts.length\}）/);
+  assert.match(videoContractsSource, /aria-label="文档分析提示"/);
+  assert.match(videoContractsSource, /setGeneratedPublishError\(message\)/);
   assert.match(videoContractsSource, /openGeneratedContract\(index\)/);
   assert.match(videoContractsSource, /generatedContracts\.filter\(\(_, index\) => index !== generatedEditingIndex\)/);
   assert.match(videoContractsSource, /契约已发布，剩余 \$\{remaining\.length\} 份待审核/);
@@ -713,7 +714,8 @@ test("video progress hover does not resize or shift the progress track", () => {
 
 test("video playback rate and download controls use the localized player treatment", () => {
   assert.match(globalStylesSource, /\.xgplayer-playbackrate \.btn-text span/);
-  assert.match(globalStylesSource, /\.xg-options-list li\.selected\s*\{[^}]*background-color:\s*rgba\(20, 86, 240, 0\.24\)/s);
+  assert.match(globalStylesSource, /\.xg-options-list li\.selected\s*\{[^}]*background-color:\s*rgba\(255, 255, 255, 0\.055\)/s);
+  assert.match(globalStylesSource, /\.xg-options-list li\.selected::after\s*\{[^}]*content:/s);
   assert.match(globalStylesSource, /\.xgplayer-download\s*\{/);
 });
 

@@ -663,7 +663,7 @@ function UsersContent() {
   };
 
   return (
-    <ManagementPage data-users-layout title="用户管理" description="管理账号、角色与额度，查看用户的使用情况。">
+    <ManagementPage data-users-layout aria-label="用户管理">
       <ManagementPanel className="flex-1">
           <ManagementToolbar>
             <div data-user-toolbar className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(12rem,1fr)_140px_140px_auto_auto]">

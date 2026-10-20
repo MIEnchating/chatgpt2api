@@ -23,6 +23,11 @@ import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-se
 import { RelayTokenPreferencesContext } from "@/lib/use-relay-token-preferences";
 import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preference-mutations";
 import {
+  createRelayTokenModelLoader,
+  EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT,
+  RELAY_TOKEN_MODELS_REFRESH_MS,
+} from "@/lib/relay-token-models";
+import {
   dismissImageGenerationPreferencesLoadError,
   IMAGE_GENERATION_PREFERENCES_RETRY_EVENT,
   showImageGenerationPreferencesLoadError,
@@ -35,10 +40,11 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   const lastTokenByModelRef = useRef(new Map<string, string>());
   const tokenNamesRef = useRef<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const [preferencesReady, setPreferencesReady] = useState(false);
-  const [routingReady, setRoutingReady] = useState(false);
-  const [modelsByToken, setModelsByToken] = useState<Record<string, string[]>>({});
-  const [failedModelTokenNames, setFailedModelTokenNames] = useState<string[]>([]);
-  const [modelRefreshVersion, setModelRefreshVersion] = useState(0);
+  const modelScope = JSON.stringify([sessionKey, preferencesReady, tokenNames]);
+  const [modelState, setModelState] = useState({ scope: "", snapshot: EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT });
+  const modelLoaderRef = useRef<ReturnType<typeof createRelayTokenModelLoader> | null>(null);
+  const modelSnapshot = modelState.scope === modelScope ? modelState.snapshot : EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT;
+  const { modelsByToken, failedModelTokenNames, ready: routingReady, refreshing: modelsRefreshing } = modelSnapshot;
   const [preferencesLoadVersion, setPreferencesLoadVersion] = useState(0);
   const [mutationTracker] = useState(() => new RelayTokenPreferenceMutationTracker());
 
@@ -73,9 +79,7 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   useEffect(() => {
     let ignore = false;
     setPreferencesReady(false);
-    setRoutingReady(false);
-    setModelsByToken({});
-    setFailedModelTokenNames([]);
+    setModelState({ scope: "", snapshot: EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT });
     tokenNamesRef.current = EMPTY_RELAY_TOKEN_NAMES;
     setSelectedTokenNames(EMPTY_RELAY_TOKEN_NAMES);
     if (!sessionKey) {
@@ -102,33 +106,33 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   }, [preferencesLoadVersion, sessionKey]);
 
   useEffect(() => {
-    if (!preferencesReady) return;
+    if (!preferencesReady || !sessionKey) return;
     const names = Array.from(new Set(Object.values(tokenNames).flat()));
-    let ignore = false;
-    setRoutingReady(false);
-    setFailedModelTokenNames([]);
-    if (names.length === 0) {
-      setModelsByToken({});
-      setRoutingReady(true);
-      return () => { ignore = true; };
-    }
-    void Promise.all(names.map(async (name) => {
-      try {
-        const response = await fetchRelayModels({ tokenName: name });
-        return { failed: false, models: (response.data || []).map((model) => String(model.id || "").trim()).filter(Boolean), name };
-      } catch {
-        return { failed: true, models: [] as string[], name };
-      }
-    })).then((entries) => {
-      if (!ignore) {
-        setModelsByToken(Object.fromEntries(entries.map((entry) => [entry.name, entry.models])));
-        setFailedModelTokenNames(entries.filter((entry) => entry.failed).map((entry) => entry.name));
-      }
-    }).finally(() => {
-      if (!ignore) setRoutingReady(true);
+    const loader = createRelayTokenModelLoader({
+      tokenNames: names,
+      load: fetchRelayModels,
+      onChange: (snapshot) => setModelState({ scope: modelScope, snapshot }),
     });
-    return () => { ignore = true; };
-  }, [modelRefreshVersion, preferencesReady, tokenNames]);
+    modelLoaderRef.current = loader;
+    void loader.refresh();
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible" && names.length > 0) void loader.refresh(true);
+    };
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && names.length > 0) void loader.refresh();
+    }, RELAY_TOKEN_MODELS_REFRESH_MS / 4);
+    window.addEventListener("focus", refreshOnReturn);
+    window.addEventListener("online", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      loader.dispose();
+      if (modelLoaderRef.current === loader) modelLoaderRef.current = null;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshOnReturn);
+      window.removeEventListener("online", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
+  }, [modelScope, preferencesReady, sessionKey, tokenNames]);
 
   const setTokenNames = useCallback(async (kind: RelayTokenKind, names: string[]) => {
     mutationTracker.activateSession(sessionKey);
@@ -165,10 +169,14 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
     return name;
   }, [modelsByToken]);
 
-  const refreshTokenModels = useCallback(() => setModelRefreshVersion((version) => version + 1), []);
-  const routeForModel = useCallback((kind: RelayTokenKind, model: string) => (
-    relayTokenRouteForModel(tokenNamesRef.current[kind], model, modelsByToken, failedModelTokenNames, preferencesReady && routingReady)
-  ), [failedModelTokenNames, modelsByToken, preferencesReady, routingReady]);
+  const refreshTokenModels = useCallback(() => { void modelLoaderRef.current?.refresh(true); }, []);
+  const routeForModel = useCallback((kind: RelayTokenKind, model: string) => {
+    const route = relayTokenRouteForModel(tokenNamesRef.current[kind], model, modelsByToken, failedModelTokenNames, preferencesReady && routingReady);
+    if (modelsRefreshing && (route.status === "model-list-error" || route.status === "model-unavailable")) {
+      return { status: "loading" as const, tokenName: "" };
+    }
+    return route;
+  }, [failedModelTokenNames, modelsByToken, modelsRefreshing, preferencesReady, routingReady]);
 
   return (
     <RelayTokenPreferencesContext.Provider value={{ failedModelTokenNames, isReady: preferencesReady && routingReady, modelsByToken, nextTokenNameForModel, refreshTokenModels, routeForModel, setTokenNames, tokenNames, tokenNameForModel }}>

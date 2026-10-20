@@ -238,30 +238,9 @@ export function videoComposerSizeLabel(size: string) {
   return labels[size] || videoSizeLabel(size);
 }
 
-export function videoComposerPixelLabel(resolution: string, size: string) {
-  if (size === "adaptive" || size === "auto") return "自动匹配";
-  const pixels: Record<string, Record<string, string>> = {
-    "480p": { "16:9": "864x496", "4:3": "752x560", "1:1": "640x640", "3:4": "560x752", "9:16": "496x864", "21:9": "992x432" },
-    "720p": { "16:9": "1280x720", "4:3": "1112x834", "1:1": "960x960", "3:4": "834x1112", "9:16": "720x1280", "21:9": "1470x630" },
-    "768p": { "16:9": "1366x768", "4:3": "1024x768", "1:1": "768x768", "3:4": "768x1024", "9:16": "768x1366", "21:9": "1792x768" },
-    "1080p": { "16:9": "1920x1080", "4:3": "1664x1248", "1:1": "1440x1440", "3:4": "1248x1664", "9:16": "1080x1920", "21:9": "2206x946" },
-    "2k": { "16:9": "2560x1440", "4:3": "2224x1668", "1:1": "1920x1920", "3:4": "1668x2224", "9:16": "1440x2560", "21:9": "2940x1260" },
-    "4k": { "16:9": "3840x2160", "4:3": "3328x2496", "1:1": "2880x2880", "3:4": "2496x3328", "9:16": "2160x3840", "21:9": "4412x1892" },
-  };
-  return pixels[normalizeVideoWorkbenchResolutionToken(resolution)]?.[size] || size;
-}
-
-function normalizeVideoWorkbenchResolutionToken(resolution: string) {
-  const value = String(resolution || "").trim().toLowerCase();
-  if (/^\d{3,5}$/.test(value)) return `${value}p`;
-  return value;
-}
-
-const VIDEO_WORKBENCH_RATIO_OPTIONS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"] as const;
-
 function closestVideoWorkbenchRatio(size: string) {
   if (size === "auto" || size === "adaptive") return "adaptive";
-  if ((VIDEO_WORKBENCH_RATIO_OPTIONS as readonly string[]).includes(size)) return size;
+  if (/^[1-9]\d*:[1-9]\d*$/.test(size)) return size;
   const dimensions = size.match(/^(\d+)x(\d+)$/i);
   if (!dimensions) return "16:9";
   const ratio = Number(dimensions[1]) / Number(dimensions[2]);

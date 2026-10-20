@@ -501,7 +501,7 @@ function LogsContent() {
   }, [isDefaultLogViewReady, loadFirstLogPage, pageSize, query]);
 
   return (
-    <ManagementPage data-logs-layout title="请求日志" description="追踪调用状态、用量和耗时，快速定位异常请求。">
+    <ManagementPage data-logs-layout aria-label="请求日志">
       <ManagementPanel className="flex-1">
         <ManagementToolbar className="max-h-[38dvh] overflow-y-auto overscroll-contain">
           <form className="space-y-3" onSubmit={handleSearch}>

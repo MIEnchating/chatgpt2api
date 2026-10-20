@@ -2,6 +2,10 @@
 
 视频生成请求发送到配置的中转地址（通常是 NewAPI），但 NewAPI 只是网关，不是视频协议。本项目按模型契约明确选择接口协议，不根据模型名称或厂家猜测协议；NewAPI 再根据模型和渠道配置完成实际上游路由。
 
+最新版官方 QuantumNous/new-api 的具体核验版本、四个已配置模型的字段差异及可导入样例见 [New API 视频接入核验](newapi-video-compatibility.md)。
+
+同一接口协议的模型可以共用一条契约，通过 `model_profiles` 分别配置完整的参数范围、生成模式和条件规则。模型未单独配置时使用顶层通用能力；请求字段、传输、轮询和下载仍共用。编辑、预览和实际提交都按所选模型解析，任务保存解析后的能力快照。实例见 [Dramaya Grok 视频契约](dramaya-grok-video.md)。
+
 ## 职责边界
 
 - 全局模型设置决定用户可见、可选择的视频模型 ID。
@@ -45,7 +49,8 @@
 
 除 Kling 原生入口外，当前 NewAPI 厂家驱动都从 `POST /v1/videos` 创建并从 `GET /v1/videos/{task_id}` 查询。驱动仍需分开声明，因为各厂家读取的请求参数不同，例如 Gemini/Vertex、火山和万相会从 `metadata` 中读取厂家参数。请求字段映射支持 `metadata.durationSeconds` 这类嵌套路径。
 
-- `xai-videos` 使用 NewAPI 的 `/v1/videos` 兼容入口；当前配套 NewAPI 尚未提供独立的 xAI 视频任务适配器，实际接入时需要使用已支持 Grok 视频的聚合渠道，或等待上游补齐 xAI 视频任务适配器。
+- `xai-videos` 使用 NewAPI 的 `/v1/videos` 入口；最新版官方 NewAPI 已有 xAI 任务插件，仍需启用插件并正确配置模型与渠道。
+- `volcengine-video` 使用 NewAPI 的 Doubao 任务插件，驱动把首尾帧和参考素材转换为带类型与角色的 `metadata.content`，只支持 URL 素材。`ark-seedance` 用于直连方舟原生入口，两者不能混用。
 - `kling-video` 使用 `/kling/v1/videos/text2video` 或 `/kling/v1/videos/image2video` 原生入口。
 - `kie-video` 和 `apimart-video` 仍调用 NewAPI 的 `/v1/videos`，由其 Sora 任务适配器转换为聚合平台协议。
 
@@ -91,3 +96,7 @@ NewAPI 的 `/v1/videos` 对外状态为 `unknown`、`queued`、`in_progress`、`
 4. 保存并启用契约后再提交测试任务。
 
 文档分析结果只是草稿，管理员必须核对模型匹配规则、字段映射、状态枚举和结果路径后才能保存。鉴权和厂家路由不属于视频模型契约。
+
+链接分析会保留入口正文，并按需补充相关页面；入口已经完整时可以不补读。模型输出中的素材模式或数量约束有冲突时会反馈给模型修正，不通过删除素材约束来接受结果。
+
+文档生成的草稿通过 `POST /api/admin/video-model-contracts/batch` 一次性新增并发布。名称或模型冲突会使整批操作失败，已有契约及其待发布草稿保持原样。生成警告和发布错误会保留在审核窗口中。文件形式的 JSON 导入仍有独立的同名更新确认流程。

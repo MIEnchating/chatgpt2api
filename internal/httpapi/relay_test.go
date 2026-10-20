@@ -537,7 +537,7 @@ func TestDeclaredVideoContractKeepsPublicURLsAsJSON(t *testing.T) {
 		"reference_mode":       "reference",
 		"reference_image_urls": []string{"https://cdn.example.com/reference.png"},
 	}, contract)
-	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract)
+	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract, "reference")
 	if err != nil {
 		t.Fatalf("relayVideoSubmitAt() error = %v", err)
 	}
@@ -769,7 +769,7 @@ func TestDeclaredVideoContractForwardsLocalMixedMaterialsAsMultipart(t *testing.
 		"reference_video_urls": []string{app.signedReferenceURL(platformBaseURL+"/video-references/"+expected[1].name, time.Now().Add(time.Hour))},
 		"reference_audio_urls": []string{app.signedReferenceURL(platformBaseURL+"/audio-references/"+expected[2].name, time.Now().Add(time.Hour))},
 	}, contract)
-	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract)
+	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract, "reference")
 	if err != nil {
 		t.Fatalf("relayVideoSubmitAt() error = %v", err)
 	}
@@ -812,7 +812,7 @@ func TestDeclaredVideoContractForwardsRelativeLocalMaterialAsMultipart(t *testin
 		"prompt":          "relative local material",
 		"first_frame_url": app.signedReferenceURL("/video-image-references/"+name, time.Now().Add(time.Hour)),
 	}, contract)
-	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract)
+	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract, "image")
 	if err != nil {
 		t.Fatalf("relayVideoSubmitAt() error = %v", err)
 	}
@@ -827,12 +827,12 @@ func TestRelativeLocalVideoMaterialRequiresMultipartContract(t *testing.T) {
 	request := declaredVideoContractRequestPayload(map[string]any{
 		"model": "minimax-h3-768p", "prompt": "animate", "first_frame_url": localPath,
 	}, contract)
-	if err := validateVideoReferencePayloadURLs(request, contract); err != nil {
+	if err := validateVideoReferencePayloadURLs(request, contract, "image"); err != nil {
 		t.Fatalf("declared multipart model rejected relative local material: %v", err)
 	}
 	urlContract := contract
 	urlContract.Transport.LocalMaterial = "url"
-	if err := validateVideoReferencePayloadURLs(map[string]any{"model": "missing-contract", "image_url": localPath}, urlContract); err == nil {
+	if err := validateVideoReferencePayloadURLs(map[string]any{"model": "missing-contract", "image_url": localPath}, urlContract, "image"); err == nil {
 		t.Fatal("model without a multipart contract accepted relative local material")
 	}
 }

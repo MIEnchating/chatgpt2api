@@ -1583,7 +1583,7 @@ function CreativeWorkflowWorkspaceContent({
   );
 
   return (
-    <ManagementPage title={embedded ? undefined : "工作流"} description={embedded ? undefined : "把重复的创作步骤整理成模板，随时复用与运行。"}>
+    <ManagementPage aria-label="工作流">
       <ManagementPanel className={cn("flex-1", embedded && "rounded-none border-0 bg-transparent shadow-none")}>
         <header className={cn("shrink-0 border-b border-border p-4 sm:px-5", embedded && "pr-14 sm:pr-14")}>
           <div data-workflow-toolbar className="flex w-full flex-wrap items-center gap-3">

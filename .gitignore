@@ -16,6 +16,12 @@ docs/*
 !docs/image-generation-api.md
 !docs/grok-gemini-image-api.md
 !docs/video-generation-api.md
+!docs/newapi-video-compatibility.md
+!docs/examples/
+docs/examples/*
+!docs/examples/dramaya-grok-video-contract.json
+!docs/dramaya-grok-video.md
+!docs/examples/newapi-video-contracts.json
 !docs/windows-desktop.md
 !docs/canvas-alignment.md
 !docs/channel-parameter-translation.md

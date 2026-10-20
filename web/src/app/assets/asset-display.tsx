@@ -154,7 +154,7 @@ function AssetVideoThumbnail({ src, eager }: { src: string; eager: boolean }) {
     return () => observer.disconnect();
   }, [eager, isVisible]);
 
-  return <video ref={videoRef} data-asset-video-thumbnail src={shouldLoad ? `${src}#t=0.1` : undefined} muted playsInline preload={shouldLoad ? "metadata" : "none"} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />;
+  return <video ref={videoRef} data-asset-video-thumbnail src={shouldLoad ? `${src}#t=0.1` : undefined} muted playsInline disablePictureInPicture preload={shouldLoad ? "metadata" : "none"} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />;
 }
 
 function Info({ label, value, className = "" }: { label: string; value: string; className?: string }) {

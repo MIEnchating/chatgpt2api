@@ -8,7 +8,7 @@ const assetsSource = readFileSync(new URL("../src/app/assets/page.tsx", import.m
 const usersSource = readFileSync(new URL("../src/app/users/page.tsx", import.meta.url), "utf8");
 const rbacSource = readFileSync(new URL("../src/app/rbac/page.tsx", import.meta.url), "utf8");
 const managementPageSource = readFileSync(new URL("../src/components/management-page.tsx", import.meta.url), "utf8");
-const pageHeaderSource = readFileSync(new URL("../src/components/page-header.tsx", import.meta.url), "utf8");
+const logsSource = readFileSync(new URL("../src/app/logs/page.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
 test("every page shares the same full-width application shell", () => {
@@ -17,7 +17,7 @@ test("every page shares the same full-width application shell", () => {
   assert.doesNotMatch(appShellSource, /useLocation/);
 });
 
-test("navigation and page action rows share one vertical spacing token", () => {
+test("navigation and content sections share one vertical spacing token", () => {
   assert.match(globalStylesSource, /--page-section-gap: 1rem/);
   for (const pageSource of [source, managementPageSource]) {
     assert.match(pageSource, /flex h-full min-h-0(?: min-w-0)? flex-col gap-\[var\(--page-section-gap\)\]/);
@@ -25,7 +25,27 @@ test("navigation and page action rows share one vertical spacing token", () => {
   for (const pageSource of [assetsSource, usersSource, rbacSource]) {
     assert.match(pageSource, /<ManagementPage/);
   }
-  assert.match(pageHeaderSource, /min-w-0 shrink-0 flex-wrap/);
+});
+
+test("management pages use navigation labels without duplicate page headers", () => {
+  for (const pageSource of [assetsSource, usersSource, rbacSource, logsSource]) {
+    assert.match(pageSource, /<ManagementPage[^>]+aria-label=/);
+    assert.doesNotMatch(pageSource, /<ManagementPage[^>]+\btitle=/);
+  }
+  assert.doesNotMatch(managementPageSource, /PageHeader|data-page-header/);
+  assert.match(managementPageSource, /\{\.\.\.props\}\s*>\s*\{children\}/);
+});
+
+test("canvas project actions and counts stay inside the search toolbar", () => {
+  assert.doesNotMatch(source, /PageHeader|data-page-header/);
+  const toolbar = source.slice(source.indexOf("data-canvas-project-toolbar"), source.indexOf('<ScrollArea className="min-h-0 flex-1">'));
+  assert.match(toolbar, /min-w-0 shrink-0 flex-wrap/);
+  assert.match(toolbar, /placeholder="搜索画布名称"/);
+  assert.match(toolbar, /共 \$\{visibleProjects.length\} 个画布/);
+  assert.match(toolbar, /data-canvas-project-actions className="ml-auto flex min-w-0 flex-wrap/);
+  for (const action of ["导入画布", "导出选中", "删除选中", "取消选择", "Agent", "新建画布", "全选当前结果"]) {
+    assert.ok(toolbar.includes(action), `Missing canvas toolbar action: ${action}`);
+  }
 });
 
 test("canvas project cards use a stable responsive four-column wide-screen grid", () => {

@@ -49,6 +49,7 @@ function DialogContent({
   showCloseButton = true,
   scrollable = true,
   onCloseAutoFocus,
+  onInteractOutside,
   ...props
 }: DialogContentProps) {
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
@@ -65,6 +66,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         tabIndex={-1}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event);
+          if (event.target instanceof Element && event.target.closest("[data-sonner-toaster]")) {
+            event.preventDefault();
+          }
+        }}
         onOpenAutoFocus={(event) => {
           returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           event.preventDefault();

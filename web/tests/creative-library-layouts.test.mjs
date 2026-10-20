@@ -104,7 +104,8 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /<ManagementPagination/);
   assert.match(workflowsSource, /visibleWorkflows\.map/);
   assert.doesNotMatch(workflowsSource, /<h1 className="text-base font-semibold">创意工作流|个工作流\{/);
-  assert.match(workflowsSource, /<ManagementPage title=\{embedded \? undefined : "工作流"\}/);
+  assert.match(workflowsSource, /<ManagementPage aria-label="工作流">/);
+  assert.doesNotMatch(workflowsSource, /<ManagementPage[^>]+\btitle=/);
   assert.match(workflowsSource, /<ManagementPanel[\s\S]*embedded && "rounded-none border-0 bg-transparent shadow-none"/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
   assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);
@@ -124,13 +125,21 @@ test("prompt filters match the reference category and tag taxonomy", () => {
   assert.match(promptsSource, /sourceConfigs\.filter\(\(item\) => item\.enabled\)/);
   assert.match(promptsSource, /data-prompt-category-select/);
   assert.match(promptsSource, /placeholder="搜索分类"/);
-  assert.match(promptsSource, /md:grid-cols-\[minmax\(180px,1fr\)_minmax\(220px,340px\)_150px\]/);
+  assert.match(promptsSource, /md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,0\.8fr\)_auto\]/);
   assert.match(promptsSource, /<DialogHeader className="block border-b border-border[^"]*pr-20/);
   assert.match(promptsSource, /min-w-0 flex-1 break-words/);
   assert.doesNotMatch(promptsSource, /作者：|UserRound|selectedPrompt\?\.author/);
   assert.match(promptsSource, /\{tags\.map\(\(tag\) => \(/);
   assert.match(promptsSource, /tagsExpanded \? "收起" : "展开"/);
   assert.doesNotMatch(promptsSource, /ALL_CATEGORY_VALUE|setCategory\(|placeholder="来源"|slice\(0, 60\)/);
+});
+
+test("prompt pages keep result counts in filters and titles only in dialogs", () => {
+  assert.doesNotMatch(promptsSource, /PageHeader|data-page-header/);
+  assert.match(promptsSource, /data-prompt-library-layout aria-label="提示词库"/);
+  assert.match(promptsSource, /data-prompt-library-toolbar[\s\S]*data-prompt-library-count/);
+  assert.match(promptsSource, /data-prompt-library-count[^>]+role="status"/);
+  assert.match(promptsSource, /presentation === "dialog" \? <DialogHeader/);
 });
 
 test("prompt libraries load source configuration without settings permission", () => {

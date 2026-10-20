@@ -288,7 +288,7 @@ function RBACContent() {
   };
 
   return (
-    <ManagementPage data-rbac-layout title="角色权限" description="先选择角色，再配置可访问的页面和接口。">
+    <ManagementPage data-rbac-layout aria-label="角色权限">
       <div className="grid min-h-0 min-w-0 flex-1 content-start gap-[var(--page-section-gap)] overflow-y-auto xl:content-stretch xl:grid-cols-[300px_minmax(0,1fr)] xl:overflow-hidden 2xl:grid-cols-[340px_minmax(0,1fr)]">
         <ManagementPanel className="h-56 min-h-48 sm:h-64 xl:h-auto xl:min-h-0">
             <ManagementToolbar className="flex items-center gap-2 bg-muted/20 px-4 py-3">

@@ -366,7 +366,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   };
 
   return (
-    <ManagementPage data-assets-layout title="我的素材" description="收纳图片、视频和文字，让每一次创作都能接着用。">
+    <ManagementPage data-assets-layout aria-label="我的素材">
       <ManagementPanel className="flex-1">
         <ManagementToolbar>
         <div data-asset-filter-bar className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:flex lg:flex-wrap">

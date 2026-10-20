@@ -4,7 +4,6 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -369,13 +368,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
-      <PageHeader
-        title="无限画布"
-        description="把灵感、素材和生成任务放在同一个创作空间。"
-        meta={loading ? undefined : `${projects.length} 个画布`}
-        actions={
-          <>
+    <section aria-label="无限画布" className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
+      <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
+        <div data-canvas-project-toolbar className="flex min-w-0 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5">
+          <SearchInput value={query} onValueChange={setQuery} placeholder="搜索画布名称" containerClassName="min-w-40 flex-1 sm:max-w-sm" />
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground" role="status">{loading ? "正在加载" : `共 ${visibleProjects.length} 个画布`}</span>
+          {projects.length ? <Button type="button" variant="ghost" size="sm" disabled={busy || !visibleProjects.length} onClick={toggleAllProjects}><CheckSquare />{allVisibleSelected ? "取消全选" : "全选当前结果"}</Button> : null}
+          <div data-canvas-project-actions className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
             <Button type="button" variant="outline" disabled={busy} onClick={() => importInputRef.current?.click()}><FileUp />导入画布</Button>
             {selectedProjectIDs.size ? <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => void exportSelectedProjects()}><Download />导出选中 ({selectedProjectIDs.size})</Button>
@@ -384,14 +383,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             </> : null}
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAgentStarterOpen(true)}><Bot />Agent</Button>
             <Button type="button" disabled={busy} onClick={() => void createAndOpen()}>{busy ? <LoaderCircle className="animate-spin" /> : <Plus />}新建画布</Button>
-          </>
-        }
-      />
-      <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5">
-          <SearchInput value={query} onValueChange={setQuery} placeholder="搜索画布名称" containerClassName="min-w-40 flex-1 sm:max-w-sm" />
-          <span className="ml-auto text-xs tabular-nums text-muted-foreground" role="status">{loading ? "正在加载" : `共 ${visibleProjects.length} 个画布`}</span>
-          {projects.length ? <Button type="button" variant="ghost" size="sm" disabled={busy || !visibleProjects.length} onClick={toggleAllProjects}><CheckSquare />{allVisibleSelected ? "取消全选" : "全选当前结果"}</Button> : null}
+          </div>
         </div>
       <ScrollArea className="min-h-0 flex-1">
         <div data-canvas-project-content className="w-full p-4 sm:p-5">

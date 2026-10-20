@@ -254,6 +254,9 @@ func TestSupportedVideoContractDrivers(t *testing.T) {
 	for _, driver := range SupportedVideoContractDrivers() {
 		contract := base
 		contract.Driver = driver
+		if driver == VideoContractDriverVolcengine {
+			contract.Transport.LocalMaterial = "url"
+		}
 		if driver == VideoContractDriverKling {
 			contract.Generation.Modes = contract.Generation.Modes[:2]
 		}

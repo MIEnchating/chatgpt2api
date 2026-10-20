@@ -387,17 +387,8 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 		t.Fatal("default contract must exercise image and reference material normalization")
 	}
 	mixedData, _ := json.Marshal(mixedMaterialsContract)
-	normalizedMixed, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(mixedData)+`]}`, "model: document/video-v1")
-	if err != nil || len(normalizedMixed) != 1 {
-		t.Fatalf("mixed mode materials were not normalized: %#v, %v", normalizedMixed, err)
-	}
-	for _, mode := range normalizedMixed[0].Generation.Modes {
-		if mode.Kind == "image" && mode.Materials.Image.Max+mode.Materials.Video.Max+mode.Materials.Audio.Max != 0 {
-			t.Fatalf("image mode retained ordinary reference materials: %#v", mode.Materials)
-		}
-		if mode.Kind == "reference" && mode.Materials.FirstFrame.Max+mode.Materials.LastFrame.Max != 0 {
-			t.Fatalf("reference mode retained frame materials: %#v", mode.Materials)
-		}
+	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(mixedData)+`]}`, "model: document/video-v1"); err == nil {
+		t.Fatal("mixed mode materials were silently removed instead of rejected")
 	}
 	withUnknown := strings.TrimSuffix(string(data), "}") + `,"unexpected":true}`
 	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+withUnknown+`]}`, "document/video-v1"); err == nil || !strings.Contains(err.Error(), `未知字段 "unexpected"`) {

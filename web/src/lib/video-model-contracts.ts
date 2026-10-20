@@ -40,6 +40,7 @@ export type VideoModelContract = {
   name: string;
   models: string[];
   priority: number;
+  model_profiles?: VideoModelContractProfile[];
   driver:
     | "openai-videos"
     | "xai-videos"
@@ -120,6 +121,26 @@ export type VideoModelContract = {
   };
 };
 
+export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "validation" | "generation" | "rules"> & { model: string };
+
+export function videoModelProfile(contract: VideoModelContract, model: string): VideoModelContractProfile {
+  const { capability, validation, generation, rules } = contract;
+  return structuredClone({ model, capability, validation, generation, rules });
+}
+
+export function resolveVideoModelContract(contract: VideoModelContract, model: string): VideoModelContract {
+  const resolved = cloneVideoModelContract(contract);
+  const profile = resolved.model_profiles?.find((item) => item.model.toLowerCase() === model.trim().toLowerCase());
+  if (profile) {
+    resolved.capability = profile.capability;
+    resolved.validation = profile.validation;
+    resolved.generation = profile.generation;
+    resolved.rules = profile.rules;
+  }
+  delete resolved.model_profiles;
+  return resolved;
+}
+
 export function cloneVideoModelContract(contract: VideoModelContract): VideoModelContract {
   return structuredClone(contract);
 }
@@ -179,10 +200,18 @@ export function activeVideoModelContracts() {
 }
 
 export function videoModelContract(model: string) {
+  return lookupVideoModelContract(contractIndex, model);
+}
+
+export function matchVideoModelContract(contracts: VideoModelContract[], model: string) {
+  return lookupVideoModelContract(indexContracts(contracts), model);
+}
+
+function lookupVideoModelContract(index: ReturnType<typeof indexContracts>, model: string) {
   const key = String(model || "").trim().toLowerCase();
-  const matched = contractIndex.exact.get(key)
-    || contractIndex.wildcards.find((candidate) => globMatches(candidate.pattern, key))?.contract;
-  return matched ? cloneVideoModelContract(matched) : undefined;
+  const matched = index.exact.get(key)
+    || index.wildcards.find((candidate) => globMatches(candidate.pattern, key))?.contract;
+  return matched ? resolveVideoModelContract(matched, model) : undefined;
 }
 
 export function videoContractGenerationMode(contract: VideoModelContract, kind: VideoModelGenerationMode["kind"]) {
@@ -225,7 +254,10 @@ function contractRuleValueCount(value: unknown) {
 }
 
 function contractRuleMatches(rule: VideoModelContractRule, values: VideoModelContractRuleValues) {
-  const value = values[rule.when.field];
+  const raw = values[rule.when.field];
+  const value = ["first_frame", "last_frame", "reference_image", "reference_video", "reference_audio"].includes(rule.when.field)
+    ? contractRuleValueCount(raw)
+    : raw;
   return rule.when.operator === "present"
     ? contractRuleValueCount(value) > 0
     : String(value ?? "").trim().toLowerCase() === String(rule.when.value || "").trim().toLowerCase();
@@ -233,6 +265,8 @@ function contractRuleMatches(rule: VideoModelContractRule, values: VideoModelCon
 
 export function videoContractRuleError(contract: VideoModelContract, values: VideoModelContractRuleValues) {
   const effectiveValues = applyVideoContractForcedValues(contract, values);
+  if (contract.capability.audio_control !== "toggle") effectiveValues.generate_audio = contract.capability.audio_control === "always";
+  if (!contract.capability.watermark) effectiveValues.watermark = false;
   for (const rule of contract.rules || []) {
     if (!contractRuleMatches(rule, effectiveValues)) continue;
     if ((rule.require || []).some((field) => contractRuleValueCount(effectiveValues[field]) === 0)) return rule.message;
@@ -269,7 +303,7 @@ function parseVideoContractForcedValue(field: VideoModelContractRuleField, value
     if (["0", "f", "false"].includes(parsed)) return { valid: true, value: false };
     return { valid: false };
   }
-  return normalized ? { valid: true, value: normalized } : { valid: false };
+  return (field === "size" || field === "resolution") && normalized ? { valid: true, value: normalized } : { valid: false };
 }
 
 export function videoContractUIState(contract: VideoModelContract | null | undefined, values: VideoModelContractRuleValues): VideoModelContractUIState {

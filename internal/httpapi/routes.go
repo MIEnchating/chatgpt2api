@@ -1567,73 +1567,27 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("视频模型 %q 未配置启用的视频模型契约", model))
 			return
 		}
-		refs := util.AsStringSlice(body["reference_image_urls"])
-		frameRefs := videoFrameAliases(body)
-		refs = removeVideoFrameAliases(refs, frameRefs)
+		if err := normalizeVideoContractInput(body, contract); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		refs := removeVideoFrameAliases(util.AsStringSlice(body["reference_image_urls"]), videoFrameAliases(body))
 		referenceVideoURLs := util.AsStringSlice(body["reference_video_urls"])
 		referenceAudioURLs := util.AsStringSlice(body["reference_audio_urls"])
-		generationKind, valid := videoContractGenerationKind(body, contract)
-		if !valid {
-			util.WriteError(w, http.StatusBadRequest, "generation_mode 不属于当前视频模型契约")
-			return
-		}
-		generationMode, supported := protocol.VideoContractModeForKind(contract, generationKind)
-		if !supported {
-			util.WriteError(w, http.StatusBadRequest, "当前模型不支持所选生成模式")
-			return
-		}
-		body["generation_mode"] = firstNonEmpty(generationMode.RequestValue, generationMode.ID)
-		referenceMode := "first-frame"
-		if generationKind == "reference" {
-			referenceMode = "reference"
-		}
-		body["reference_mode"] = referenceMode
-		counts := videoContractMaterialCounts(generationKind, body, refs, referenceVideoURLs, referenceAudioURLs)
-		if err := protocol.ValidateVideoContractModeMaterials(contract, generationKind, counts); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		ruleValues := videoContractRuleValues(body)
-		protocol.ApplyVideoContractForcedValues(contract, ruleValues)
-		if err := protocol.ValidateVideoContractRuleValues(contract, ruleValues); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		for field, bodyField := range map[string]string{
-			"duration": "seconds", "size": "size", "resolution": "resolution",
-			"generate_audio": "generate_audio", "watermark": "watermark",
-		} {
-			if value, exists := ruleValues[field]; exists {
-				body[bodyField] = value
-			}
-		}
+		referenceMode := util.Clean(body["reference_mode"])
 		seconds := util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
-		if strings.TrimSpace(util.Clean(body["prompt"])) == "" {
-			util.WriteError(w, http.StatusBadRequest, "请输入视频提示词")
-			return
-		}
-		if utf8.RuneCountInString(util.Clean(body["prompt"])) > contract.Validation.MaxPromptCharacters {
-			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("当前视频模型提示词最多支持 %d 个字符", contract.Validation.MaxPromptCharacters))
-			return
-		}
-		switch contract.Capability.AudioControl {
-		case "none":
-			body["generate_audio"] = false
-		case "always":
-			body["generate_audio"] = true
-		}
-		if !contract.Capability.Watermark {
-			body["watermark"] = false
-		}
-		if !protocol.VideoContractSupports(contract, util.Clean(body["size"]), seconds, util.Clean(body["resolution"])) {
-			util.WriteError(w, http.StatusBadRequest, "当前视频模型不支持所选视频参数")
-			return
-		}
 		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, videoTaskRequestMetadata(body, contract))
+		contractReference, err := a.videoContracts.ReferenceForContract(contract, model)
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "读取视频契约版本失败")
+			return
+		}
+		metadata := videoTaskRequestMetadata(body, contract)
+		metadata["video_contract"] = contractReference
+		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, metadata)
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

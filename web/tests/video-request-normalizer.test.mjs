@@ -161,3 +161,94 @@ test("keeps shared prompt and stored-duration normalization deterministic", () =
   assert.equal(composeVideoPrompt("user", "system"), "system\n\nuser");
   assert.equal(normalizeStoredVideoSeconds(4000), 3600);
 });
+
+
+test("validates cross-field rules using all request parameters and capability defaults", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.capability.audio_control = "toggle";
+  contract.request.generate_audio_field = "generate_audio";
+  contract.rules = [
+    { when: { field: "first_frame", operator: "present" }, require: ["generate_audio", "duration", "size", "resolution"], message: "首帧需要声音和完整参数" },
+    { when: { field: "generate_audio", operator: "present" }, require_any: ["first_frame", "reference_image"], message: "声音需要图片" },
+  ];
+  try {
+    installVideoModelContracts([contract]);
+    const input = { model: contract.models[0], firstFrameURL: "https://cdn.example.com/first.png", generateAudio: true };
+    assert.equal(videoReferenceCombinationError(input), "");
+    assert.equal(videoReferenceCombinationError({ ...input, generateAudio: false }), "首帧需要声音和完整参数");
+    assert.throws(() => videoGenerationTaskRequestBody({ ...input, generateAudio: false, clientTaskId: "invalid", prompt: "animate" }), /首帧需要声音/);
+    assert.equal(videoGenerationTaskRequestBody({ ...input, clientTaskId: "valid", prompt: "animate" }).generate_audio, true);
+    contract.capability.audio_control = "always";
+    installVideoModelContracts([contract]);
+    assert.equal(videoReferenceCombinationError({ ...input, generateAudio: undefined }), "");
+    assert.equal(videoReferenceCombinationError({ model: contract.models[0], referenceMode: "reference", ordinaryReferenceImageCount: 1 }), "");
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
+
+test("counts pending local reference images before upload", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.rules = [];
+  try {
+    installVideoModelContracts([contract]);
+    const input = { model: contract.models[0], ordinaryReferenceImageCount: 1 };
+    assert.equal(videoReferenceCombinationError(input), "");
+    assert.doesNotThrow(() => normalizeVideoRequest({ ...input, referenceMode: "reference" }));
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
+
+test("validates hidden duration using the default that the server receives", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.rules = [
+    { when: { field: "first_frame", operator: "present" }, ui: { hide: ["duration"] }, message: "hide duration" },
+    { when: { field: "duration", operator: "equals", value: "8" }, require: ["reference_video"], message: "eight requires video" },
+  ];
+  try {
+    installVideoModelContracts([contract]);
+    const request = videoGenerationTaskRequestBody({ model: contract.models[0], clientTaskId: "hidden-duration", prompt: "boat", seconds: 8, firstFrameURL: "https://media.example/first.png" });
+    assert.equal(request.seconds, undefined);
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
+
+test("does not count an explicit frame alias as an ordinary image", () => {
+  const input = {
+    model: contractDocument.contracts[0].models[0], firstFrameURL: "https://media.example/first.png",
+    referenceImageURLs: ["https://media.example/first.png"],
+  };
+  assert.equal(videoReferenceCombinationError(input), "");
+  assert.deepEqual(normalizeVideoRequest(input).referenceImageURLs, []);
+});
+
+test("uses one visibility snapshot for validation and the submitted request", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.capability.audio_control = "toggle";
+  contract.request.generate_audio_field = "generate_audio";
+  contract.rules = [
+    { when: { field: "duration", operator: "equals", value: "8" }, ui: { hide: ["duration"] }, message: "hide selected duration" },
+    { when: { field: "duration", operator: "equals", value: "5" }, ui: { hide: ["generate_audio"] }, message: "hide audio for the default duration" },
+    { when: { field: "first_frame", operator: "present" }, require: ["generate_audio"], message: "frame requires audio" },
+  ];
+  try {
+    installVideoModelContracts([contract]);
+    const input = {
+      model: contract.models[0], clientTaskId: "visibility-snapshot", prompt: "animate",
+      seconds: 8, generateAudio: true, firstFrameURL: "https://media.example/first.png",
+    };
+    assert.equal(videoReferenceCombinationError(input), "");
+    const request = videoGenerationTaskRequestBody(input);
+    assert.equal(request.seconds, undefined);
+    assert.equal(request.generate_audio, true);
+    assert.equal(request.first_frame_url, input.firstFrameURL);
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});

@@ -1,0 +1,888 @@
+{
+  "version": 4,
+  "contracts": [
+    {
+      "contract": {
+        "name": "New API grok-imagine-video",
+        "models": [
+          "grok-imagine-video"
+        ],
+        "priority": 0,
+        "driver": "xai-videos",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
+          ],
+          "seconds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "resolutions": [
+            "480p",
+            "720p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 8,
+          "default_resolution": "480p",
+          "references": {
+            "image": 7,
+            "video": 0,
+            "audio": 0,
+            "total": 7
+          },
+          "first_frame_image_limit": 2,
+          "reference_mode": true,
+          "audio_control": "toggle",
+          "watermark": false
+        },
+        "validation": {
+          "max_prompt_characters": 5000
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "text-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "image-to-video",
+              "label": "图生视频",
+              "kind": "image",
+              "request_value": "image-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 1
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 2
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "reference-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 1,
+                  "max": 7
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 7
+                }
+              }
+            }
+          ]
+        },
+        "rules": [],
+        "request": {
+          "duration_field": "duration",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "aspect_ratio",
+          "resolution_field": "resolution",
+          "generate_audio_field": "generate_audio",
+          "watermark_field": "",
+          "generation_mode_field": "",
+          "first_frame_field": "image",
+          "last_frame_field": "last_frame",
+          "reference_images_field": "reference_images",
+          "reference_videos_field": "",
+          "reference_audios_field": ""
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 900,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": []
+        }
+      },
+      "enabled": true
+    },
+    {
+      "contract": {
+        "name": "New API grok-imagine-video-1.5",
+        "models": [
+          "grok-imagine-video-1.5"
+        ],
+        "priority": 0,
+        "driver": "xai-videos",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
+          ],
+          "seconds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "resolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 8,
+          "default_resolution": "480p",
+          "references": {
+            "image": 7,
+            "video": 0,
+            "audio": 0,
+            "total": 7
+          },
+          "first_frame_image_limit": 2,
+          "reference_mode": true,
+          "audio_control": "toggle",
+          "watermark": false
+        },
+        "validation": {
+          "max_prompt_characters": 5000
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "text-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "image-to-video",
+              "label": "图生视频",
+              "kind": "image",
+              "request_value": "image-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 1
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 2
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "reference-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 1,
+                  "max": 7
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 7
+                }
+              }
+            }
+          ]
+        },
+        "rules": [
+          {
+            "when": {
+              "field": "resolution",
+              "operator": "equals",
+              "value": "1080p"
+            },
+            "forbid": [
+              "reference_image"
+            ],
+            "message": "Grok 参考图生成仅支持 480p 或 720p"
+          }
+        ],
+        "request": {
+          "duration_field": "duration",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "aspect_ratio",
+          "resolution_field": "resolution",
+          "generate_audio_field": "generate_audio",
+          "watermark_field": "",
+          "generation_mode_field": "",
+          "first_frame_field": "image",
+          "last_frame_field": "last_frame",
+          "reference_images_field": "reference_images",
+          "reference_videos_field": "",
+          "reference_audios_field": ""
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 900,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": []
+        }
+      },
+      "enabled": true
+    },
+    {
+      "contract": {
+        "name": "New API seedance2.0（核对渠道映射后启用）",
+        "models": [
+          "seedance2.0",
+          "doubao-seedance-2-0-260128"
+        ],
+        "priority": 0,
+        "driver": "volcengine-video",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "seconds": [
+            5,
+            8,
+            10
+          ],
+          "resolutions": [
+            "480p",
+            "720p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 8,
+          "default_resolution": "720p",
+          "references": {
+            "image": 1,
+            "video": 1,
+            "audio": 1,
+            "total": 3
+          },
+          "first_frame_image_limit": 2,
+          "reference_mode": true,
+          "audio_control": "toggle",
+          "watermark": true
+        },
+        "validation": {
+          "max_prompt_characters": 5000
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "text-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "image-to-video",
+              "label": "图生视频",
+              "kind": "image",
+              "request_value": "image-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 1
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 2
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "reference-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 1
+                },
+                "video": {
+                  "min": 0,
+                  "max": 1
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 1
+                },
+                "total": {
+                  "min": 1,
+                  "max": 3
+                }
+              }
+            }
+          ]
+        },
+        "rules": [
+          {
+            "when": {
+              "field": "reference_audio",
+              "operator": "present"
+            },
+            "require_any": [
+              "reference_image",
+              "reference_video"
+            ],
+            "message": "参考音频需要同时提供参考图片或视频"
+          }
+        ],
+        "request": {
+          "duration_field": "seconds",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "metadata.ratio",
+          "resolution_field": "metadata.resolution",
+          "generate_audio_field": "metadata.generate_audio",
+          "watermark_field": "metadata.watermark",
+          "generation_mode_field": "",
+          "first_frame_field": "first_frame_url",
+          "last_frame_field": "last_frame_url",
+          "reference_images_field": "reference_image_urls",
+          "reference_videos_field": "reference_video_urls",
+          "reference_audios_field": "reference_audio_urls"
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 900,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": []
+        }
+      },
+      "enabled": false
+    },
+    {
+      "contract": {
+        "name": "New API seedance2.5（核对渠道映射后启用）",
+        "models": [
+          "seedance2.5",
+          "doubao-seedance-2-5-260628"
+        ],
+        "priority": 0,
+        "driver": "volcengine-video",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "seconds": [
+            5,
+            8,
+            10
+          ],
+          "resolutions": [
+            "480p",
+            "720p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 8,
+          "default_resolution": "720p",
+          "references": {
+            "image": 1,
+            "video": 1,
+            "audio": 1,
+            "total": 3
+          },
+          "first_frame_image_limit": 2,
+          "reference_mode": true,
+          "audio_control": "toggle",
+          "watermark": true
+        },
+        "validation": {
+          "max_prompt_characters": 5000
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "text-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "image-to-video",
+              "label": "图生视频",
+              "kind": "image",
+              "request_value": "image-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 1
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 1,
+                  "max": 2
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "reference-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 1
+                },
+                "video": {
+                  "min": 0,
+                  "max": 1
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 1
+                },
+                "total": {
+                  "min": 1,
+                  "max": 3
+                }
+              }
+            }
+          ]
+        },
+        "rules": [
+          {
+            "when": {
+              "field": "reference_audio",
+              "operator": "present"
+            },
+            "require_any": [
+              "reference_image",
+              "reference_video"
+            ],
+            "message": "参考音频需要同时提供参考图片或视频"
+          }
+        ],
+        "request": {
+          "duration_field": "seconds",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "metadata.ratio",
+          "resolution_field": "metadata.resolution",
+          "generate_audio_field": "metadata.generate_audio",
+          "watermark_field": "metadata.watermark",
+          "generation_mode_field": "",
+          "first_frame_field": "first_frame_url",
+          "last_frame_field": "last_frame_url",
+          "reference_images_field": "reference_image_urls",
+          "reference_videos_field": "reference_video_urls",
+          "reference_audios_field": "reference_audio_urls"
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 900,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": []
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

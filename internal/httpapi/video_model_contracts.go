@@ -114,6 +114,14 @@ func (a *App) handleAdminVideoModelContracts(w http.ResponseWriter, r *http.Requ
 		a.handleVideoModelContractJSONImport(w, r)
 		return
 	}
+	if r.URL.Path == base+"/batch" {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.handleVideoModelContractBatchCreate(w, r)
+		return
+	}
 	if r.URL.Path == base+"/preview" {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -309,7 +317,19 @@ func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Req
 		return
 	}
 	input["model"] = model
-	requestBody := declaredVideoContractRequestPayload(input, contract)
+	contract, _ = protocol.ResolveVideoModelContract(contract, model)
+	if err := normalizeVideoContractInput(input, contract); err != nil {
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	requestBody := declaredCanonicalVideoContractRequestPayload(input, contract)
+	if contract.Driver == protocol.VideoContractDriverVolcengine {
+		requestBody, err = newAPIDoubaoVideoRequest(requestBody, input, contract)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	if contract.Driver == protocol.VideoContractDriverArk {
 		contract = arkVideoPollingContract(contract)
 		requestBody, err = arkVideoRequest(input, contract)
@@ -354,6 +374,21 @@ func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Req
 		result["query"] = query
 	}
 	util.WriteJSON(w, http.StatusOK, result)
+}
+
+func (a *App) handleVideoModelContractBatchCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Contracts []videocontract.ImportedVideoModelContract `json:"contracts"`
+	}
+	if err := decodeStrictJSON(http.MaxBytesReader(w, r.Body, maxVideoContractImportJSONBytes), &body); err != nil {
+		util.WriteError(w, http.StatusBadRequest, "批量发布内容不是有效的视频契约 JSON")
+		return
+	}
+	if err := a.videoContracts.CreateBatch(body.Contracts); err != nil {
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	a.writeAdminVideoModelContracts(w, nil)
 }
 
 func (a *App) handleVideoModelContractJSONImport(w http.ResponseWriter, r *http.Request) {
@@ -1146,7 +1181,6 @@ func decodeGeneratedVideoModelContractJSON(data []byte) (protocol.VideoModelCont
 		return protocol.VideoModelContract{}, errors.New("契约中包含多个 JSON 对象")
 	}
 	contract = normalizeGeneratedVideoContractRuleUI(contract)
-	contract = normalizeGeneratedVideoContractModeMaterials(contract)
 	normalized, err := protocol.NormalizeVideoModelContract(contract)
 	if err != nil {
 		return protocol.VideoModelContract{}, fmt.Errorf("未通过校验: %w", err)
@@ -1155,6 +1189,10 @@ func decodeGeneratedVideoModelContractJSON(data []byte) (protocol.VideoModelCont
 }
 
 func normalizeGeneratedVideoContractRuleUI(contract protocol.VideoModelContract) protocol.VideoModelContract {
+	for index, profile := range contract.ModelProfiles {
+		value := normalizeGeneratedVideoContractRuleUI(protocol.VideoModelContract{Rules: profile.Rules})
+		contract.ModelProfiles[index].Rules = value.Rules
+	}
 	for index := range contract.Rules {
 		ruleUI := &contract.Rules[index].UI
 		hidden := make(map[string]struct{}, len(ruleUI.Hide))
@@ -1168,54 +1206,6 @@ func normalizeGeneratedVideoContractRuleUI(contract protocol.VideoModelContract)
 			}
 		}
 		ruleUI.Disable = filtered
-	}
-	return contract
-}
-
-func normalizeGeneratedVideoContractModeMaterials(contract protocol.VideoModelContract) protocol.VideoModelContract {
-	zero := protocol.VideoModelMaterialRange{}
-	for index := range contract.Generation.Modes {
-		materials := &contract.Generation.Modes[index].Materials
-		switch strings.ToLower(strings.TrimSpace(contract.Generation.Modes[index].Kind)) {
-		case "text":
-			materials.FirstFrame = zero
-			materials.LastFrame = zero
-			materials.Image = zero
-			materials.Video = zero
-			materials.Audio = zero
-		case "image":
-			materials.Image = zero
-			materials.Video = zero
-			materials.Audio = zero
-		case "reference":
-			materials.FirstFrame = zero
-			materials.LastFrame = zero
-		default:
-			continue
-		}
-
-		ranges := []protocol.VideoModelMaterialRange{
-			materials.FirstFrame,
-			materials.LastFrame,
-			materials.Image,
-			materials.Video,
-			materials.Audio,
-		}
-		materialMin := 0
-		materialMax := 0
-		largestMax := 0
-		for _, item := range ranges {
-			materialMin += item.Min
-			materialMax += item.Max
-			largestMax = max(largestMax, item.Max)
-		}
-		if materialMax == 0 {
-			materials.Total = zero
-			continue
-		}
-		materials.Total.Min = min(max(materials.Total.Min, materialMin), materialMax)
-		minimumTotalMax := max(largestMax, materialMin, materials.Total.Min)
-		materials.Total.Max = min(max(materials.Total.Max, minimumTotalMax), materialMax)
 	}
 	return contract
 }

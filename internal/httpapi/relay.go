@@ -1043,10 +1043,17 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if err := validateVideoReferencePayloadURLs(request, contract); err != nil {
+	kind, _ := videoContractGenerationKind(payload, contract)
+	if err := validateVideoReferencePayloadURLs(request, contract, kind); err != nil {
 		return nil, err
 	}
-	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, createPath, request, contract)
+	if contract.Driver == protocol.VideoContractDriverVolcengine && util.Clean(payload["relay_protocol"]) != "ark" {
+		request, err = newAPIDoubaoVideoRequest(request, payload, contract)
+		if err != nil {
+			return nil, err
+		}
+	}
+	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, createPath, request, contract, kind)
 	if a.logger != nil {
 		a.logger.Debug("video upstream submit", "method", http.MethodPost, "path", createPath, "model", model, "request_fields", sortedMapKeys(request), "response_fields", sortedMapKeys(created), "error", errorText(err), "task_id", videoContractFirstString(created, contract.Polling.TaskIDFields))
 	}
@@ -1085,6 +1092,11 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		relayVideoTaskProgress(payload, state, contract)
 		status := videoRelayTaskStatusForContract(state, contract)
 		if status == "completed" {
+			// New API can settle a charged xAI task as completed while exposing
+			// an explicit error instead of a retrievable video artifact.
+			if detail := util.StringMap(state["error"]); util.Clean(detail["code"]) != "" && util.Clean(detail["message"]) != "" {
+				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: util.Clean(detail["message"])}
+			}
 			videoURL, videoAuth, artifactErr := videoArtifactURLForContract(state, baseURL, taskID, contract)
 			if artifactErr != nil {
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: artifactErr.Error()}
@@ -1187,18 +1199,12 @@ func videoContractTaskPath(template, taskID string) string {
 	return strings.Replace(template, "{task_id}", url.PathEscape(taskID), 1)
 }
 
-func validateVideoReferencePayloadURLs(request map[string]any, contract protocol.VideoModelContract) error {
+func validateVideoReferencePayloadURLs(request map[string]any, contract protocol.VideoModelContract, kind string) error {
 	allowLocalMaterial := contract.Transport.LocalMaterial == "multipart"
-	fields := []string{
-		contract.Request.FirstFrameField,
-		contract.Request.LastFrameField,
-		contract.Request.ReferenceImagesField,
-		contract.Request.ReferenceVideosField,
-		contract.Request.ReferenceAudiosField,
-	}
+	fields := videoContractMaterialFields(contract, kind)
 	seen := make(map[string]struct{}, len(fields))
-	for _, field := range fields {
-		field = strings.TrimSpace(field)
+	for _, material := range fields {
+		field := strings.TrimSpace(material.name)
 		if field == "" {
 			continue
 		}
@@ -1222,9 +1228,9 @@ func validateVideoReferencePayloadURLs(request map[string]any, contract protocol
 	}
 	return nil
 }
-func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey, createPath string, request map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
+func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey, createPath string, request map[string]any, contract protocol.VideoModelContract, kind string) (map[string]any, error) {
 	if contract.Transport.LocalMaterial == "multipart" {
-		files, hasExternalURLs, err := a.extractContractLocalVideoMaterials(request, contract)
+		files, hasExternalURLs, err := a.extractContractLocalVideoMaterials(request, contract, kind)
 		if err != nil {
 			return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 		}
@@ -1241,19 +1247,10 @@ func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey, createPat
 	return a.relayJSONAt(ctx, baseURL, http.MethodPost, createPath, apiKey, request)
 }
 
-func (a *App) extractContractLocalVideoMaterials(request map[string]any, contract protocol.VideoModelContract) ([]videoMultipartFile, bool, error) {
+func (a *App) extractContractLocalVideoMaterials(request map[string]any, contract protocol.VideoModelContract, kind string) ([]videoMultipartFile, bool, error) {
 	files := make([]videoMultipartFile, 0)
 	hasExternalURLs := false
-	fields := []struct {
-		name   string
-		scalar bool
-	}{
-		{contract.Request.FirstFrameField, true},
-		{contract.Request.LastFrameField, true},
-		{contract.Request.ReferenceImagesField, false},
-		{contract.Request.ReferenceVideosField, false},
-		{contract.Request.ReferenceAudiosField, false},
-	}
+	fields := videoContractMaterialFields(contract, kind)
 	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
 		if field.name == "" {
@@ -1312,13 +1309,13 @@ func (a *App) relayVideoMultipart(ctx context.Context, baseURL, apiKey, createPa
 }
 
 func declaredVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
-	ruleValues := videoContractRuleValues(payload)
+	ruleValues := videoContractRuleValues(payload, contract)
 	protocol.ApplyVideoContractForcedValues(contract, ruleValues)
 	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, ruleValues)
 }
 
 func declaredCanonicalVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
-	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, videoContractRuleValues(payload))
+	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, videoContractRuleValues(payload, contract))
 }
 
 func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, contract protocol.VideoModelContract, ruleValues map[string]any) map[string]any {
@@ -1526,13 +1523,16 @@ func inferredVideoContractGenerationKind(payload map[string]any) string {
 	return "text"
 }
 
-func videoContractRuleValues(payload map[string]any) map[string]any {
+func videoContractRuleValues(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
+	kind, _ := videoContractGenerationKind(payload, contract)
+	images := removeVideoFrameAliases(util.AsStringSlice(payload["reference_image_urls"]), videoFrameAliases(payload))
+	counts := videoContractMaterialCounts(kind, payload, images, util.AsStringSlice(payload["reference_video_urls"]), util.AsStringSlice(payload["reference_audio_urls"]))
 	values := map[string]any{
-		"first_frame":     videoFirstFrameAlias(payload),
-		"last_frame":      videoLastFrameAlias(payload),
-		"reference_image": util.AsStringSlice(payload["reference_image_urls"]),
-		"reference_video": util.AsStringSlice(payload["reference_video_urls"]),
-		"reference_audio": util.AsStringSlice(payload["reference_audio_urls"]),
+		"first_frame":     counts.FirstFrame,
+		"last_frame":      counts.LastFrame,
+		"reference_image": counts.Image,
+		"reference_video": counts.Video,
+		"reference_audio": counts.Audio,
 	}
 	for ruleField, requestFields := range map[string][]string{
 		"generate_audio": {"generate_audio", "video_generate_audio"},

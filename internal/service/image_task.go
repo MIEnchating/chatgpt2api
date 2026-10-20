@@ -383,7 +383,7 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 	if len(requested) == 0 {
 		for _, task := range s.tasks {
 			if task["owner_id"] == owner {
-				items = append(items, publicTask(task))
+				items = append(items, publicTask(task, identity))
 			}
 		}
 		sort.Slice(items, func(i, j int) bool { return util.Clean(items[i]["updated_at"]) > util.Clean(items[j]["updated_at"]) })
@@ -393,7 +393,7 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 			if task == nil {
 				missing = append(missing, id)
 			} else {
-				items = append(items, publicTask(task))
+				items = append(items, publicTask(task, identity))
 			}
 		}
 	}
@@ -479,7 +479,7 @@ func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (m
 		cancel = s.cancels[key]
 		delete(s.cancels, key)
 		saveErr := s.saveWithRetryLocked()
-		result := publicTask(task)
+		result := publicTask(task, identity)
 		s.mu.Unlock()
 		if cancel != nil {
 			cancel()
@@ -489,7 +489,7 @@ func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (m
 		}
 		return result, nil
 	}
-	result := publicTask(task)
+	result := publicTask(task, identity)
 	s.mu.Unlock()
 	return result, nil
 }
@@ -606,7 +606,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		if cleaned {
 			_ = s.saveWithRetryLocked()
 		}
-		result := publicTask(existing)
+		result := publicTask(existing, identity)
 		s.mu.Unlock()
 		return result, nil
 	}
@@ -631,6 +631,9 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		task["storage_references"] = references
 	}
 	if mode == "video" {
+		if reference := videoTaskContractReference(payload["video_contract"]); reference != nil {
+			task["video_contract"] = reference
+		}
 		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
 			if payload[key] != nil {
 				task[key] = payload[key]
@@ -675,12 +678,12 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	if !inserted {
 		delete(s.cancels, key)
 		s.rollbackUserSubmitTimeLocked(owner, submittedAt)
-		result := publicTask(existing)
+		result := publicTask(existing, identity)
 		s.mu.Unlock()
 		cancel()
 		return result, nil
 	}
-	result := publicTask(s.tasks[key])
+	result := publicTask(s.tasks[key], identity)
 	s.taskWorkers.Add(1)
 	s.startRemoteMonitorLocked()
 	s.mu.Unlock()
@@ -1318,6 +1321,9 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		mergeMediaTaskFields(normalized, task, mode)
 		mergePublicImageToolTaskFields(normalized, task)
 		if mode == "video" {
+			if reference := videoTaskContractReference(task["video_contract"]); reference != nil {
+				normalized["video_contract"] = reference
+			}
 			if timeoutSeconds := util.ToInt(task[VideoTaskTimeoutSecondsPayloadKey], 0); timeoutSeconds > 0 {
 				normalized[VideoTaskTimeoutSecondsPayloadKey] = timeoutSeconds
 			}
@@ -1761,7 +1767,7 @@ func mergeMediaTaskFields(target, source map[string]any, mode string) {
 	}
 }
 
-func publicTask(task map[string]any) map[string]any {
+func publicTask(task map[string]any, identity Identity) map[string]any {
 	mode := util.Clean(task["mode"])
 	item := map[string]any{"id": task["id"], "status": task["status"], "mode": task["mode"], "model": task["model"], "size": task["size"], "count": imageTaskCount(task), "revision": task["revision"], "created_at": task["created_at"], "updated_at": task["updated_at"]}
 	if quality := util.Clean(task["quality"]); quality != "" {
@@ -1777,6 +1783,11 @@ func publicTask(task map[string]any) map[string]any {
 	}
 	mergePublicImageToolTaskFields(item, task)
 	mergeMediaTaskFields(item, task, mode)
+	if mode == "video" && identity.Role == AuthRoleAdmin {
+		if reference := videoTaskContractReference(task["video_contract"]); reference != nil {
+			item["video_contract"] = reference
+		}
+	}
 	if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
 		item["workflow_context"] = workflowContext
 	}
@@ -1939,6 +1950,9 @@ func normalizedFallbackReferenceImage(value any) map[string]any {
 }
 
 func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	if reference := videoTaskContractReference(metadata["video_contract"]); reference != nil {
+		payload["video_contract"] = reference
+	}
 	if value, ok := metadata["relay_task_credential"]; ok {
 		payload["relay_task_credential"] = value
 	}

@@ -36,13 +36,14 @@ export function MediaVideoPlayer({
         autoplay: false,
         playsinline: true,
         controls: {
-          autoHide: false,
+          autoHide: true,
           initShow: true,
         },
         videoFillMode: "contain",
         fitVideoSize: "fixed",
-        pip: true,
-        cssFullscreen: true,
+        pip: false,
+        ignores: ["pip"],
+        cssFullscreen: false,
         playbackRate: {
           toggleMode: "click",
           list: [
@@ -62,6 +63,7 @@ export function MediaVideoPlayer({
         mini: false,
         videoAttributes: {
           preload: "metadata",
+          disablePictureInPicture: true,
         },
         commonStyle: {
           playedColor: "#1456f0",
@@ -81,15 +83,16 @@ export function MediaVideoPlayer({
 
   return (
     <div
-      ref={containerRef}
       data-app-video-player
       className={cn(
-        "w-full overflow-hidden rounded-lg bg-[#080b10] text-white",
+        "relative w-full overflow-hidden rounded-lg bg-[#080b10] text-white",
         className,
       )}
       style={{ aspectRatio }}
       role="group"
       aria-label={title}
-    />
+    >
+      <div ref={containerRef} className="absolute inset-0" />
+    </div>
   );
 }

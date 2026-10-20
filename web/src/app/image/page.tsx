@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,6 +12,8 @@ import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
 const WorkbenchMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasMaskDialog })));
 
 import { ImageComposer } from "@/app/image/components/image-composer";
+import { VideoTaskContractsProvider } from "@/app/image/components/video-task-contract";
+import { videoTaskContractReferencesEqual } from "@/lib/video-task-contract";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Switch } from "@/components/ui/switch";
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
@@ -77,7 +79,7 @@ import {
 } from "@/lib/image-task-state";
 import { isRetryableTaskPollError, normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
-import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -155,7 +157,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { ensureGeneratedMediaAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
-import { normalizeVideoRequest, videoAudioGenerationError, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
+import { normalizeVideoRequest, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { audioReferenceMetadataError, type AudioReferenceFileMetadata } from "@/lib/video-reference-validation";
 import {
   imageTurnReferenceValidationError,
@@ -368,11 +370,7 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function isNearResultsBottom(element: HTMLElement | ScrollAreaHandle) {
-  const customMetrics = (element as ScrollAreaHandle).getScrollMetrics?.();
-  if (customMetrics) {
-    return customMetrics.scrollHeight - customMetrics.scrollTop - customMetrics.clientHeight <= RESULTS_BOTTOM_STICKY_THRESHOLD;
-  }
+function isNearResultsBottom(element: HTMLElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= RESULTS_BOTTOM_STICKY_THRESHOLD;
 }
 
@@ -650,6 +648,7 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "taskRevision",
   "taskStatus",
   "taskProgress",
+  "videoContract",
   "status",
   "path",
   "visibility",
@@ -673,7 +672,9 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
 
 function updateStoredImage(image: StoredImage, updates: Partial<StoredImage>): StoredImage {
   const next = { ...image, ...updates };
-  return STORED_IMAGE_FIELDS.every((field) => image[field] === next[field]) ? image : next;
+  return STORED_IMAGE_FIELDS.every((field) => field === "videoContract"
+    ? videoTaskContractReferencesEqual(image.videoContract, next.videoContract)
+    : image[field] === next[field]) ? image : next;
 }
 
 function normalizeImageQualityCheck(value: unknown): ImageQualityCheck | undefined {
@@ -750,6 +751,7 @@ function parseCreationTaskTime(value: string | undefined) {
 
 function creationTaskMetadataUpdates(task: CreationTask, completed: boolean): Partial<StoredImage> {
   const updates: Partial<StoredImage> = {
+    videoContract: task.video_contract,
     taskCreatedAt: task.created_at,
     taskUpdatedAt: task.updated_at,
     taskProgress: task.mode === "video" ? task.status === "success" ? 100 : normalizeGenerationProgress(task.progress) : undefined,
@@ -1312,6 +1314,7 @@ async function recoverConversationHistory(
             ...image,
             taskId: image.id,
             taskRevision: undefined,
+            videoContract: undefined,
             taskStatus: "queued" as const,
             taskProgress: undefined,
             taskCreatedAt: undefined,
@@ -1327,6 +1330,7 @@ async function recoverConversationHistory(
             ...image,
             taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
             taskRevision: undefined,
+            videoContract: undefined,
             taskStatus: "queued" as const,
             taskProgress: undefined,
             taskCreatedAt: undefined,
@@ -1460,7 +1464,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const conversationHistoryHasMoreRef = useRef(false);
   const conversationHistoryLoadMoreRef = useRef(false);
   const historySyncErrorShownAtRef = useRef(0);
-  const resultsViewportRef = useRef<ScrollAreaHandle>(null);
+  const resultsViewportRef = useRef<HTMLDivElement>(null);
   const resultsContentRef = useRef<HTMLDivElement>(null);
   const shouldStickToResultsBottomRef = useRef(true);
   const referenceImagesRef = useRef<StoredReferenceImage[]>([]);
@@ -1476,7 +1480,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     conversationId: null,
     turnCount: 0,
   });
-  const composerDockRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -1702,7 +1705,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     getImageTurnProgressSnapshot,
   );
   const [progressNow, setProgressNow] = useState(Date.now());
-  const [composerDockHeight, setComposerDockHeight] = useState(0);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [visibilityMutatingImageKey, setVisibilityMutatingImageKey] = useState("");
   const [publishImageTarget, setPublishImageTarget] = useState<PublishImageTarget | null>(null);
@@ -1887,7 +1889,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             : activeModelRoute.status === "model-list-error"
               ? "所选 Key 的模型列表读取失败，请重试连接"
               : activeModelRoute.status === "model-unavailable"
-                ? "所选 Key 不支持当前模型，请切换模型或 Key"
+                ? "所选 Key 的模型列表中未找到当前模型，请刷新列表或切换模型、Key"
                 : "";
   const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => nextTokenNameForModel(kind, model), [nextTokenNameForModel]);
   const requireRelayToken = useCallback((kind: CreationRelayTokenKind, model: string) => {
@@ -1903,7 +1905,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return false;
     }
     if (route.status === "model-unavailable") {
-      toast.error(`已选择的 Key 均未提供模型 ${model}，请检查 Key 的模型权限或调整选择顺序`);
+      refreshTokenModels();
+      toast.info(`正在重新检查所选 Key 是否提供模型 ${model}，请稍候再试`);
       return false;
     }
     setRelayTokenDialogKind(kind);
@@ -1932,38 +1935,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     referenceImagesRef.current = referenceImages;
   }, [referenceImages]);
 
-  useEffect(() => {
-    const node = composerDockRef.current;
-    if (!node) {
-      return;
-    }
-
-    const updateComposerHeight = () => {
-      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
-      setComposerDockHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
-    };
-
-    updateComposerHeight();
-    const observer = new ResizeObserver(updateComposerHeight);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
   const scrollResultsToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const viewport = resultsViewportRef.current;
     if (!viewport) {
       return;
     }
-    if (viewport.setScrollTop) {
-      viewport.setScrollTop(Number.POSITIVE_INFINITY);
-    } else {
-      viewport.scrollTo({
-        top: viewport.scrollHeight,
-        behavior,
-      });
-    }
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior,
+    });
     shouldStickToResultsBottomRef.current = true;
     setShowScrollToBottom(false);
   }, []);
@@ -1987,6 +1967,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     let frame = 0;
     const observer = new ResizeObserver(() => {
       if (!shouldStickToResultsBottomRef.current) {
+        handleResultsViewportScroll();
         return;
       }
       window.cancelAnimationFrame(frame);
@@ -1994,11 +1975,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     });
 
     observer.observe(content);
+    if (resultsViewportRef.current) observer.observe(resultsViewportRef.current);
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [scrollResultsToBottom, selectedConversationId]);
+  }, [handleResultsViewportScroll, scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2302,7 +2284,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [composerDockHeight, displayedConversation, progressByTurnKey, scrollResultsToBottom, selectedConversationId]);
+  }, [displayedConversation, progressByTurnKey, scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -3715,6 +3697,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (activeTurn.mode === "video") {
           const referenceError = videoReferenceCombinationError({
             model: activeTurn.model,
+            size: activeTurn.size,
+            seconds: activeTurn.videoSeconds,
+            resolution: activeTurn.videoResolution,
+            generateAudio: activeTurn.videoGenerateAudio,
+            watermark: activeTurn.videoWatermark,
             referenceMode: activeTurn.videoReferenceMode,
             firstFrameURL: activeTurn.videoFirstFrameURL,
             lastFrameURL: activeTurn.videoLastFrameURL,
@@ -4079,6 +4066,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                   ...image,
                                   taskId: recoveryTaskId,
                                   taskRevision: undefined,
+                                  videoContract: undefined,
                                   taskStatus: "queued" as const,
                                   taskProgress: undefined,
                                   b64_json: undefined,
@@ -4440,6 +4428,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       taskId: retryTaskId,
                       storageKey: undefined,
                       taskRevision: undefined,
+                      videoContract: undefined,
                       taskStatus: "queued" as const,
                       taskProgress: undefined,
                       status: "loading" as const,
@@ -4943,17 +4932,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(referenceLimitError);
       return;
     }
-    const audioGenerationError = videoMode ? videoAudioGenerationError(
-      effectiveModel,
-      videoGenerateAudio,
-      ordinaryVideoReferenceCount,
-    ) : "";
-    if (audioGenerationError) {
-      toast.error(audioGenerationError);
-      return;
-    }
     const videoReferenceError = videoMode ? videoReferenceCombinationError({
       model: effectiveModel,
+      size: videoSize,
+      seconds: selectedVideoSeconds,
+      resolution: videoResolution,
+      generateAudio: videoGenerateAudio,
+      watermark: videoWatermark,
       referenceMode: effectiveVideoReferenceMode,
       firstFrameURL: normalizedFirstFrameURL,
       lastFrameURL: normalizedLastFrameURL,
@@ -5003,6 +4988,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           firstFrameURL: normalizedFirstFrameURL || undefined,
           lastFrameURL: normalizedLastFrameURL || undefined,
           referenceImageURLs: normalizedVideoReferenceImages,
+          ordinaryReferenceImageCount: ordinaryVideoReferenceCount,
           referenceVideoURLs: normalizedVideoReferenceVideos,
           referenceAudioURLs: normalizedVideoReferenceAudios,
         }) : undefined;
@@ -5179,7 +5165,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   };
 
   return (
-    <>
+    <VideoTaskContractsProvider
+      key={session.key}
+      session={session}
+      enabled={composerMode === "video"}
+      onPublished={() => setImageModelConfigReloadKey((value) => value + 1)}
+    >
       <section data-image-workbench-layout className="grid h-full min-h-0 w-full grid-cols-1 gap-3 pb-[env(safe-area-inset-bottom)] sm:gap-4 sm:pb-0 lg:grid-cols-[232px_minmax(0,1fr)] 2xl:grid-cols-[256px_minmax(0,1fr)]">
         <div className="hidden h-full min-h-0 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)] lg:block">
           <ImageSidebar
@@ -5586,12 +5577,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </Button>
             </div>
           ) : null}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-3 py-3 sm:px-5">
-            <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
-              <h1 className="shrink-0 text-sm font-semibold tracking-tight sm:text-base">{composerMode === "video" ? "视频创作" : "创作台"}</h1>
-              <p className="mt-0.5 min-w-0 max-w-lg truncate text-xs text-muted-foreground sm:mt-0">{selectedConversation?.title || (composerMode === "video" ? "从一个画面开始，让灵感动起来" : "描述灵感，开始新的创作")}</p>
-            </div>
-            <span className="hidden items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 py-1.5 text-[11px] text-muted-foreground lg:inline-flex">{selectedConversationHasActiveTurn ? <LoaderCircle className="size-3 animate-spin text-brand" /> : <Plus className="size-3" />}{selectedConversationHasActiveTurn ? "生成进行中" : "随时开始创作"}</span>
+          <div className="flex shrink-0 justify-end border-b border-border bg-card px-3 py-2 sm:px-5 lg:hidden" aria-label="会话操作">
             <div className="flex shrink-0 items-center gap-2 lg:hidden">
               <Button
                 variant="outline"
@@ -5623,14 +5609,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </div>
 
           <div
-            className="min-h-0 flex-1 px-3 pt-3 sm:px-6"
+            data-creation-results
+            className="relative min-h-0 flex-1 px-3 pt-3 sm:px-6"
           >
             <ScrollArea
-              ref={resultsViewportRef}
+              viewportRef={resultsViewportRef}
               className="size-full"
               onScroll={handleResultsViewportScroll}
             >
-              <div ref={resultsContentRef} className="min-h-full" style={{ paddingBottom: composerDockHeight > 0 ? composerDockHeight + 32 : 240 }}>
+              <div ref={resultsContentRef} className="min-h-full pb-4">
                 <ImageResults
                   selectedConversation={displayedConversation}
                   isLoadingHistory={isLoadingHistory}
@@ -5654,39 +5641,36 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 />
               </div>
             </ScrollArea>
+
+            {showScrollToBottom ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute bottom-3 left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-brand-border bg-card/95 text-brand shadow-[var(--shadow-elevated)] backdrop-blur hover:bg-brand-soft dark:bg-card/95"
+                onClick={() => scrollResultsToBottom("smooth")}
+                aria-label="滚动到底部"
+                title="滚动到底部"
+              >
+                <ArrowDownToLine className="size-4" />
+              </Button>
+            ) : null}
+
           </div>
 
-          {showScrollToBottom ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="absolute left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-brand-border bg-card/95 text-brand shadow-[var(--shadow-elevated)] backdrop-blur hover:bg-brand-soft dark:bg-card/95"
-              style={{ bottom: composerDockHeight > 0 ? composerDockHeight + 20 : 160 }}
-              onClick={() => scrollResultsToBottom("smooth")}
-              aria-label="滚动到底部"
-              title="滚动到底部"
-            >
-              <ArrowDownToLine className="size-4" />
-            </Button>
-          ) : null}
-
           <div
-            ref={composerDockRef}
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-2 pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4"
-            style={
-              {
-                "--image-composer-dock-height": `${composerDockHeight}px`,
-              } as CSSProperties
-            }
+            data-creation-composer
+            className="relative z-30 shrink-0 bg-background/95 px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4"
           >
-            <div className="pointer-events-auto mx-auto w-full max-w-[900px] xl:max-w-[1080px] 2xl:max-w-[1180px]">
-              {submitDisabledReason ? (
+            <div className="mx-auto w-full max-w-[900px] xl:max-w-[1080px] 2xl:max-w-[1180px]">
+              {submitDisabledReason && !selectedConversationHasActiveTurn ? (
                 <div role="status" className={cn("mb-2 flex items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3 py-2 text-xs text-muted-foreground", activeModelRoute.status === "model-list-error" && "border-destructive/20 text-destructive")}>
-                  {selectedConversationHasActiveTurn || isSubmitDispatching || isLoadingHistory ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand" /> : <CircleAlert className="size-3.5 shrink-0" />}
+                  {isSubmitDispatching || isLoadingHistory ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand" /> : <CircleAlert className="size-3.5 shrink-0" />}
                   <span className="min-w-0 flex-1 leading-5">{submitDisabledReason}</span>
-                  {activeModelRoute.status === "model-list-error" ? (
-                    <Button type="button" size="sm" variant="outline" onClick={refreshTokenModels}>重试连接</Button>
+                  {activeModelRoute.status === "model-list-error" || activeModelRoute.status === "model-unavailable" ? (
+                    <Button type="button" size="sm" variant="outline" onClick={refreshTokenModels}>
+                      {activeModelRoute.status === "model-list-error" ? "重试连接" : "刷新模型列表"}
+                    </Button>
                   ) : null}
                 </div>
               ) : null}
@@ -5886,7 +5870,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </DialogContent>
         </Dialog>
       ) : null}
-    </>
+    </VideoTaskContractsProvider>
   );
 }
 

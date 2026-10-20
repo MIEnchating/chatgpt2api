@@ -149,18 +149,19 @@ type VideoModelContractArtifact struct {
 }
 
 type VideoModelContract struct {
-	Name       string                       `json:"name"`
-	Models     []string                     `json:"models"`
-	Priority   int                          `json:"priority"`
-	Driver     string                       `json:"driver"`
-	Transport  VideoModelContractTransport  `json:"transport"`
-	Artifact   VideoModelContractArtifact   `json:"artifact"`
-	Capability VideoModelContractCapability `json:"capability"`
-	Validation VideoModelContractValidation `json:"validation"`
-	Generation VideoModelContractGeneration `json:"generation"`
-	Rules      []VideoModelContractRule     `json:"rules"`
-	Request    VideoModelContractRequest    `json:"request"`
-	Polling    VideoModelContractPolling    `json:"polling"`
+	Name          string                       `json:"name"`
+	Models        []string                     `json:"models"`
+	Priority      int                          `json:"priority"`
+	Driver        string                       `json:"driver"`
+	Transport     VideoModelContractTransport  `json:"transport"`
+	Artifact      VideoModelContractArtifact   `json:"artifact"`
+	Capability    VideoModelContractCapability `json:"capability"`
+	Validation    VideoModelContractValidation `json:"validation"`
+	Generation    VideoModelContractGeneration `json:"generation"`
+	Rules         []VideoModelContractRule     `json:"rules"`
+	Request       VideoModelContractRequest    `json:"request"`
+	Polling       VideoModelContractPolling    `json:"polling"`
+	ModelProfiles []VideoModelContractProfile  `json:"model_profiles,omitempty"`
 }
 
 type videoModelContractDocument struct {
@@ -313,6 +314,11 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	if err := ValidateVideoModelContract(contract); err != nil {
 		return VideoModelContract{}, err
 	}
+	profiles, err := normalizeVideoModelProfiles(contract)
+	if err != nil {
+		return VideoModelContract{}, err
+	}
+	contract.ModelProfiles = profiles
 	return contract, nil
 }
 
@@ -524,7 +530,7 @@ func validateVideoContractRules(rules []VideoModelContractRule) error {
 				return fmt.Errorf("条件规则 %d 的强制字段值无效", index+1)
 			}
 			if _, ok := ParseVideoContractForcedValue(field, value); !ok {
-				return fmt.Errorf("条件规则 %d 的强制字段值无效", index+1)
+				return fmt.Errorf("条件规则 %d 的强制字段值无效，仅支持时长、画幅、清晰度、音频开关和水印", index+1)
 			}
 		}
 		shown := make(map[string]struct{}, len(rule.UI.Show))
@@ -674,13 +680,19 @@ func ParseVideoContractForcedValue(field, value string) (any, bool) {
 	case "generate_audio", "watermark":
 		parsed, err := strconv.ParseBool(value)
 		return parsed, err == nil
-	default:
+	case "size", "resolution":
 		return value, value != ""
+	default:
+		return nil, false
 	}
 }
 
 func videoContractRuleMatches(condition VideoModelContractRuleCondition, values map[string]any) bool {
 	value := values[condition.Field]
+	switch condition.Field {
+	case "first_frame", "last_frame", "reference_image", "reference_video", "reference_audio":
+		value = videoContractValueCount(value)
+	}
 	if condition.Operator == "present" {
 		return videoContractValuePresent(value)
 	}
@@ -733,6 +745,9 @@ func videoGenerationKindLabel(kind string) string {
 }
 
 func ValidateVideoModelContract(contract VideoModelContract) error {
+	if _, err := normalizeVideoModelProfiles(contract); err != nil {
+		return err
+	}
 	if length := len([]rune(contract.Name)); length < 1 || length > 100 {
 		return fmt.Errorf("契约名称必须为 1-100 个字符")
 	}
@@ -763,6 +778,9 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	}
 	if !stringSliceContains([]string{"response_url", "task_content"}, contract.Artifact.Mode) {
 		return fmt.Errorf("视频产物获取方式仅支持 response_url 或 task_content")
+	}
+	if contract.Driver == VideoContractDriverVolcengine && contract.Transport.LocalMaterial != "url" {
+		return fmt.Errorf("New API Seedance 素材必须使用 URL，不能使用文件直传")
 	}
 	if !stringSliceContains([]string{"none", "relay"}, contract.Artifact.Auth) {
 		return fmt.Errorf("视频产物鉴权仅支持 none 或 relay")
@@ -889,6 +907,9 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 			return fmt.Errorf("请求字段 %q 格式无效", field.name)
 		}
 	}
+	if err := validateVideoContractRequestPathConflicts(contract); err != nil {
+		return err
+	}
 	responseFields := append([]string{}, contract.Polling.TaskIDFields...)
 	responseFields = append(responseFields, contract.Polling.StatusFields...)
 	responseFields = append(responseFields, contract.Polling.ProgressFields...)
@@ -991,11 +1012,11 @@ func VideoContractForModel(model string) (VideoModelContract, bool) {
 	videoModelContractsMu.RLock()
 	defer videoModelContractsMu.RUnlock()
 	if contract, ok := videoModelContracts.exact[key]; ok {
-		return cloneVideoContract(contract), true
+		return ResolveVideoModelContract(contract, model)
 	}
 	for _, candidate := range videoModelContracts.wildcards {
 		if videoContractGlobMatches(candidate.pattern, key) {
-			return cloneVideoContract(candidate.contract), true
+			return ResolveVideoModelContract(candidate.contract, model)
 		}
 	}
 	return VideoModelContract{}, false
@@ -1178,6 +1199,11 @@ func cloneVideoContracts(contracts []VideoModelContract) []VideoModelContract {
 }
 
 func cloneVideoContract(contract VideoModelContract) VideoModelContract {
+	contract.ModelProfiles = slices.Clone(contract.ModelProfiles)
+	for index, profile := range contract.ModelProfiles {
+		value := cloneVideoContract(VideoModelContract{Capability: profile.Capability, Validation: profile.Validation, Generation: profile.Generation, Rules: profile.Rules})
+		contract.ModelProfiles[index] = videoModelProfileFromContract(profile.Model, value)
+	}
 	contract.Models = slices.Clone(contract.Models)
 	contract.Artifact.AllowedHosts = slices.Clone(contract.Artifact.AllowedHosts)
 	contract.Capability.Sizes = slices.Clone(contract.Capability.Sizes)

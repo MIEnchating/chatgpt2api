@@ -19,15 +19,6 @@ export function videoWorkbenchReferenceLimitError(model: string, imageCount: num
   return "";
 }
 
-export function videoAudioGenerationError(model: string, enabled: boolean, imageCount: number) {
-  const contract = videoModelContract(model);
-  if (!contract) return "";
-  return videoContractRuleError(contract, {
-    generate_audio: enabled,
-    reference_image: imageCount,
-  });
-}
-
 export type VideoRequestInput = {
   model?: string;
   size?: string;
@@ -66,49 +57,52 @@ export type NormalizedVideoRequest = {
   referenceAudioURLs: string[];
 };
 
-export type VideoReferenceCombinationInput = Pick<
-  VideoRequestInput,
-  "model" | "referenceMode" | "firstFrameURL" | "lastFrameURL" | "referenceImageURLs" | "referenceVideoURLs" | "referenceAudioURLs"
-> & { ordinaryReferenceImageCount?: number };
+export type VideoReferenceCombinationInput = VideoRequestInput & { ordinaryReferenceImageCount?: number };
 
 function cleanURLs(values: string[] | undefined) {
   return (values || []).map((value) => String(value || "").trim()).filter(Boolean);
 }
 
-function videoRequestRuleValues(input: VideoRequestInput & { ordinaryReferenceImageCount?: number }) {
+function videoRequestRuleValues(input: VideoReferenceCombinationInput, contract: VideoModelContract) {
+  const counts = contractMaterialCounts(input, inferredGenerationKind(input));
+  const capability = contract.capability;
   return {
-    first_frame: String(input.firstFrameURL || "").trim(),
-    last_frame: String(input.lastFrameURL || "").trim(),
-    reference_image: Math.max(0, Math.floor(input.ordinaryReferenceImageCount ?? cleanURLs(input.referenceImageURLs).length)),
-    reference_video: cleanURLs(input.referenceVideoURLs).length,
-    reference_audio: cleanURLs(input.referenceAudioURLs).length,
-    generate_audio: Boolean(input.generateAudio),
-    size: String(input.size || "").trim(),
-    resolution: String(input.resolution || "").trim(),
-    duration: Number(input.seconds),
-    watermark: Boolean(input.watermark),
+    first_frame: counts.first_frame,
+    last_frame: counts.last_frame,
+    reference_image: counts.image,
+    reference_video: counts.video,
+    reference_audio: counts.audio,
+    generate_audio: capability.audio_control === "always" || (capability.audio_control === "toggle" && Boolean(input.generateAudio)),
+    size: selectedOption(capability.sizes, input.size, capability.default_size),
+    resolution: selectedOption(capability.resolutions, input.resolution, capability.default_resolution),
+    duration: selectedOption(capability.seconds, Math.round(Number(input.seconds)), capability.default_seconds),
+    watermark: capability.watermark && Boolean(input.watermark),
   };
 }
 
-function visibleVideoRequestInput<T extends VideoRequestInput & { ordinaryReferenceImageCount?: number }>(input: T, contract: VideoModelContract): T {
-  const state = videoContractUIState(contract, videoRequestRuleValues(input));
+function resolveVisibleVideoRequest<T extends VideoReferenceCombinationInput>(input: T, contract: VideoModelContract) {
+  const state = videoContractUIState(contract, videoRequestRuleValues(input, contract));
   return {
-    ...input,
-    ...(state.hidden.has("first_frame") ? { firstFrameURL: "" } : {}),
-    ...(state.hidden.has("last_frame") ? { lastFrameURL: "" } : {}),
-    ...(state.hidden.has("reference_image") ? { referenceImageURLs: [], ordinaryReferenceImageCount: 0 } : {}),
-    ...(state.hidden.has("reference_video") ? { referenceVideoURLs: [] } : {}),
-    ...(state.hidden.has("reference_audio") ? { referenceAudioURLs: [] } : {}),
-    ...(state.hidden.has("size") ? { size: "" } : {}),
-    ...(state.hidden.has("resolution") ? { resolution: "" } : {}),
-    ...(state.hidden.has("generate_audio") ? { generateAudio: undefined } : {}),
-    ...(state.hidden.has("watermark") ? { watermark: undefined } : {}),
+    input: {
+      ...input,
+      ...(state.hidden.has("first_frame") ? { firstFrameURL: "" } : {}),
+      ...(state.hidden.has("last_frame") ? { lastFrameURL: "" } : {}),
+      ...(state.hidden.has("reference_image") ? { referenceImageURLs: [], ordinaryReferenceImageCount: 0 } : {}),
+      ...(state.hidden.has("reference_video") ? { referenceVideoURLs: [] } : {}),
+      ...(state.hidden.has("reference_audio") ? { referenceAudioURLs: [] } : {}),
+      ...(state.hidden.has("size") ? { size: "" } : {}),
+      ...(state.hidden.has("resolution") ? { resolution: "" } : {}),
+      ...(state.hidden.has("duration") ? { seconds: undefined } : {}),
+      ...(state.hidden.has("generate_audio") ? { generateAudio: undefined } : {}),
+      ...(state.hidden.has("watermark") ? { watermark: undefined } : {}),
+    },
+    uiState: state,
   };
 }
 
 function inferredGenerationKind(input: VideoReferenceCombinationInput): VideoModelGenerationMode["kind"] {
   const hasFrames = Boolean(String(input.firstFrameURL || "").trim() || String(input.lastFrameURL || "").trim());
-  const images = cleanURLs(input.referenceImageURLs).length;
+  const images = input.ordinaryReferenceImageCount ?? cleanURLs(input.referenceImageURLs).length;
   const videos = cleanURLs(input.referenceVideoURLs).length;
   const audios = cleanURLs(input.referenceAudioURLs).length;
   if (input.referenceMode === "reference" || videos + audios > 0) return "reference";
@@ -142,21 +136,28 @@ function contractMaterialCounts(input: VideoReferenceCombinationInput, kind: Vid
   };
 }
 
+function removeFrameAliases<T extends VideoReferenceCombinationInput>(input: T): T {
+  const frames = new Set([String(input.firstFrameURL || "").trim(), String(input.lastFrameURL || "").trim()]);
+  const images = cleanURLs(input.referenceImageURLs);
+  const ordinaryImages = images.filter((url) => !frames.has(url));
+  return {
+    ...input,
+    referenceImageURLs: ordinaryImages,
+    ...(input.ordinaryReferenceImageCount === undefined ? {} : {
+      ordinaryReferenceImageCount: Math.max(0, input.ordinaryReferenceImageCount - (images.length - ordinaryImages.length)),
+    }),
+  };
+}
+
 export function videoReferenceCombinationError(input: VideoReferenceCombinationInput) {
   const contract = videoModelContract(input.model || "");
   if (!contract) return `视频模型 ${String(input.model || "").trim() || "未选择"} 未配置启用的视频模型契约`;
-  const visibleInput = visibleVideoRequestInput(input, contract);
+  const { input: visibleInput } = resolveVisibleVideoRequest(removeFrameAliases(input), contract);
   const kind = inferredGenerationKind(visibleInput);
   const counts = contractMaterialCounts(visibleInput, kind);
   const materialError = videoContractMaterialError(contract, kind, counts);
   if (materialError) return materialError;
-  return videoContractRuleError(contract, {
-    first_frame: counts.first_frame,
-    last_frame: counts.last_frame,
-    reference_image: counts.image,
-    reference_video: counts.video,
-    reference_audio: counts.audio,
-  });
+  return videoContractRuleError(contract, videoRequestRuleValues(visibleInput, contract));
 }
 
 export function composeVideoPrompt(prompt: string, systemPrompt?: string) {
@@ -179,13 +180,17 @@ function modeLimit(contract: VideoModelContract, kind: VideoModelGenerationMode[
   return videoContractGenerationMode(contract, kind)?.materials[field].max || 0;
 }
 
-export function normalizeVideoRequest(input: VideoRequestInput): NormalizedVideoRequest {
+export function normalizeVideoRequest(input: VideoReferenceCombinationInput): NormalizedVideoRequest {
   const model = String(input.model || "").trim();
   const contract = videoModelContract(model);
   if (!contract) {
     throw new Error(`视频模型 ${model || "未选择"} 未配置启用的视频模型契约`);
   }
-  const visibleInput = visibleVideoRequestInput(input, contract);
+  const { input: visibleInput } = resolveVisibleVideoRequest(removeFrameAliases(input), contract);
+  return normalizeVisibleVideoRequest(visibleInput, contract);
+}
+
+function normalizeVisibleVideoRequest(visibleInput: VideoReferenceCombinationInput, contract: VideoModelContract): NormalizedVideoRequest {
   const kind = inferredGenerationKind(visibleInput);
   const images = cleanURLs(visibleInput.referenceImageURLs);
   const videos = cleanURLs(visibleInput.referenceVideoURLs);
@@ -215,7 +220,7 @@ export function normalizeVideoRequest(input: VideoRequestInput): NormalizedVideo
   const normalizedAudios = audios.slice(0, modeLimit(contract, normalizedKind, "audio"));
   const audioControl = capability.audio_control;
   return {
-    model,
+    model: String(visibleInput.model || "").trim(),
     ...(size ? { size } : {}),
     seconds,
     ...(resolution ? { resolution } : {}),
@@ -234,8 +239,11 @@ export function videoGenerationTaskRequestBody(input: VideoGenerationTaskRequest
   const model = String(input.model || "").trim();
   const contract = videoModelContract(model);
   if (!contract) throw new Error(`视频模型 ${model || "未选择"} 未配置启用的视频模型契约`);
-  const normalized = normalizeVideoRequest(input);
-  const uiState = videoContractUIState(contract, videoRequestRuleValues(normalized));
+  // Visibility is evaluated once, before hidden values are reset to defaults.
+  const { input: visibleInput, uiState } = resolveVisibleVideoRequest(removeFrameAliases(input), contract);
+  const normalized = normalizeVisibleVideoRequest(visibleInput, contract);
+  const validationError = videoContractRuleError(contract, videoRequestRuleValues(normalized, contract));
+  if (validationError) throw new Error(validationError);
   const kind = inferredGenerationKind(normalized);
   const generationMode = videoContractGenerationMode(contract, kind);
   if (!generationMode) throw new Error("当前视频模型不支持所选生成模式");

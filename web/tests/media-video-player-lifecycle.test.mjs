@@ -14,6 +14,7 @@ function setup({ fail = false } = {}) {
   let imports = 0;
   let instances = 0;
   let destroyed = 0;
+  let config;
   const errors = [];
   const exports = {};
   vm.runInNewContext(compiled, {
@@ -28,7 +29,7 @@ function setup({ fail = false } = {}) {
         imports++;
         if (fail) throw new Error("module unavailable");
         return { default: class {
-          constructor() { instances++; }
+          constructor(options) { instances++; config = options; }
           destroy() { destroyed++; }
         } };
       }
@@ -36,9 +37,10 @@ function setup({ fail = false } = {}) {
     },
   });
   return {
-    render(src = "/video.mp4") { exports.MediaVideoPlayer({ src }); },
+    render(src = "/video.mp4") { return exports.MediaVideoPlayer({ src }); },
     mount() { return effect(); },
     counts: () => ({ imports, instances, destroyed }),
+    config: () => config,
     errors,
   };
 }
@@ -76,5 +78,18 @@ test("a failed library download is handled without an unhandled rejection", asyn
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(player.errors.length, 1);
   assert.equal(player.counts().instances, 0);
+  dispose();
+});
+
+test("video controls stay inside the styled wrapper and exclude picture in picture", async () => {
+  const player = setup();
+  const wrapper = player.render();
+  const dispose = player.mount();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(Object.hasOwn(wrapper.props, "data-app-video-player"));
+  assert.equal(player.config().el, wrapper.props.children.props.ref.current);
+  assert.equal(player.config().pip, false);
+  assert.ok(player.config().ignores.includes("pip"));
+  assert.equal(player.config().videoAttributes.disablePictureInPicture, true);
   dispose();
 });

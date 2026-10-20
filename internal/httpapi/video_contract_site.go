@@ -145,9 +145,9 @@ func fetchSelectedVideoContractDocuments(ctx context.Context, initialContent str
 	if failed > 0 {
 		source.Warnings = append(source.Warnings, fmt.Sprintf("有 %d 个分析模型选择的页面读取失败或超出总大小限制", failed))
 	}
-	source.Name = fmt.Sprintf("%s（%d 个相关页面）", source.Site.baseURL.Hostname(), len(sections))
+	source.Name = fmt.Sprintf("%s（入口及 %d 个相关页面）", source.Site.baseURL.Hostname(), len(sections))
 	source.Site = nil
-	return strings.Join(sections, "\n\n"), source, nil
+	return "## 入口文档\n\n" + initialContent + "\n\n" + strings.Join(sections, "\n\n"), source, nil
 }
 
 func fetchVideoContractURL(ctx context.Context, value string, limit int, client videoContractHTTPClient) (fetchedVideoContractDocument, error) {

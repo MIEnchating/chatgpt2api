@@ -1,0 +1,384 @@
+{
+  "version": 4,
+  "contracts": [
+    {
+      "contract": {
+        "name": "Dramaya Grok 视频",
+        "models": [
+          "grok-imagine-video",
+          "grok-imagine-video-1.5"
+        ],
+        "priority": 0,
+        "driver": "custom-video",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
+          ],
+          "seconds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "resolutions": [
+            "480p",
+            "720p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 8,
+          "default_resolution": "480p",
+          "references": {
+            "image": 0,
+            "video": 0,
+            "audio": 0,
+            "total": 0
+          },
+          "first_frame_image_limit": 0,
+          "reference_mode": false,
+          "audio_control": "none",
+          "watermark": false
+        },
+        "validation": {
+          "max_prompt_characters": 5000
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            }
+          ]
+        },
+        "rules": [],
+        "request": {
+          "duration_field": "duration",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "aspect_ratio",
+          "resolution_field": "resolution",
+          "generate_audio_field": "",
+          "watermark_field": "",
+          "generation_mode_field": "",
+          "first_frame_field": "",
+          "last_frame_field": "",
+          "reference_images_field": "image_urls",
+          "reference_videos_field": "",
+          "reference_audios_field": ""
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 1800,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message",
+            "error",
+            "errorCode"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "running",
+            "in_progress",
+            "processing",
+            "pending",
+            "cancel_requested"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed",
+            "cancelled",
+            "expired"
+          ],
+          "result_fields": []
+        },
+        "model_profiles": [
+          {
+            "model": "grok-imagine-video",
+            "capability": {
+              "sizes": [
+                "16:9",
+                "9:16",
+                "1:1",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3"
+              ],
+              "seconds": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p"
+              ],
+              "default_size": "16:9",
+              "default_seconds": 8,
+              "default_resolution": "480p",
+              "references": {
+                "image": 0,
+                "video": 0,
+                "audio": 0,
+                "total": 0
+              },
+              "first_frame_image_limit": 0,
+              "reference_mode": false,
+              "audio_control": "none",
+              "watermark": false
+            },
+            "validation": {
+              "max_prompt_characters": 5000
+            },
+            "generation": {
+              "selection": "infer",
+              "default_mode": "text-to-video",
+              "modes": [
+                {
+                  "id": "text-to-video",
+                  "label": "文生视频",
+                  "kind": "text",
+                  "request_value": "",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 0,
+                      "max": 0
+                    }
+                  }
+                }
+              ]
+            },
+            "rules": []
+          },
+          {
+            "model": "grok-imagine-video-1.5",
+            "capability": {
+              "sizes": [
+                "16:9",
+                "9:16",
+                "1:1",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3"
+              ],
+              "seconds": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ],
+              "default_size": "16:9",
+              "default_seconds": 8,
+              "default_resolution": "480p",
+              "references": {
+                "image": 1,
+                "video": 0,
+                "audio": 0,
+                "total": 1
+              },
+              "first_frame_image_limit": 0,
+              "reference_mode": true,
+              "audio_control": "none",
+              "watermark": false
+            },
+            "validation": {
+              "max_prompt_characters": 5000
+            },
+            "generation": {
+              "selection": "infer",
+              "default_mode": "text-to-video",
+              "modes": [
+                {
+                  "id": "text-to-video",
+                  "label": "文生视频",
+                  "kind": "text",
+                  "request_value": "",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 0,
+                      "max": 0
+                    }
+                  }
+                },
+                {
+                  "id": "reference-to-video",
+                  "label": "参考图生视频",
+                  "kind": "reference",
+                  "request_value": "",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 1,
+                      "max": 1
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 1,
+                      "max": 1
+                    }
+                  }
+                }
+              ]
+            },
+            "rules": []
+          }
+        ]
+      },
+      "enabled": true
+    }
+  ]
+}

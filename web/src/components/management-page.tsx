@@ -1,7 +1,6 @@
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,18 +11,9 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-type ManagementPageProps = ComponentProps<"section"> & {
-  title?: string;
-  description?: string;
-  meta?: ReactNode;
-  actions?: ReactNode;
-};
+type ManagementPageProps = ComponentProps<"section">;
 
 function ManagementPage({
-  title,
-  description,
-  meta,
-  actions,
   children,
   className,
   ...props
@@ -37,7 +27,6 @@ function ManagementPage({
       )}
       {...props}
     >
-      {title || actions ? <PageHeader title={title} description={description} meta={meta} actions={actions} /> : null}
       {children}
     </section>
   );

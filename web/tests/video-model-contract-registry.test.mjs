@@ -237,3 +237,32 @@ test("enforces per-material and total minimums in backend order", () => {
     "",
   );
 });
+
+
+test("material equality conditions compare counts for URLs and arrays", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  for (const field of ["first_frame", "last_frame", "reference_image", "reference_video", "reference_audio"]) {
+    contract.rules = [{ when: { field, operator: "equals", value: "1" }, force_values: { duration: "8" }, message: "one material fixes duration" }];
+    for (const value of [1, "https://example.com/media", ["https://example.com/media"]]) {
+      assert.equal(applyVideoContractForcedValues(contract, { [field]: value, duration: 5 }).duration, 8);
+    }
+  }
+});
+
+test("validates rules against mandatory capability values after forced values", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.capability.audio_control = "always";
+  contract.capability.watermark = false;
+  contract.rules = [
+    { when: { field: "duration", operator: "present" }, force_values: { generate_audio: "false", watermark: "true" }, message: "force values" },
+    { when: { field: "generate_audio", operator: "equals", value: "false" }, require: ["reference_video"], message: "needs video" },
+    { when: { field: "watermark", operator: "equals", value: "true" }, require: ["reference_image"], message: "needs image" },
+  ];
+  assert.equal(videoContractRuleError(contract, { duration: 5 }), "");
+});
+
+test("forced values cannot fabricate material presence", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.rules = [{ when: { field: "duration", operator: "present" }, force_values: { reference_video: "1" }, require: ["reference_video"], message: "video input is required" }];
+  assert.equal(videoContractRuleError(contract, { duration: 5, reference_video: 0 }), "video input is required");
+});

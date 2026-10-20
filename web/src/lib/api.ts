@@ -26,6 +26,7 @@ import {
   type VideoModelContract,
 } from "@/lib/video-model-contracts";
 import { createExpiringRequestCache } from "@/lib/expiring-request-cache";
+import type { VideoTaskContractReference } from "@/lib/video-task-contract";
 
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
@@ -607,6 +608,7 @@ export type CreationTaskData = {
 
 export type CreationTask = {
   id: string;
+  video_contract?: VideoTaskContractReference;
   /** Monotonic server-side task revision when available. */
   revision?: number | string;
   status: GenerationTaskStatus;
@@ -1556,6 +1558,15 @@ export async function importVideoModelContractJSON(document: VideoModelContractT
   }>("/api/admin/video-model-contracts/import-json", {
     method: "POST",
     body: document,
+  });
+  clearModelConfigCache();
+  return response;
+}
+
+export async function createVideoModelContractBatch(input: { contracts: VideoModelContractTransferDocument["contracts"] }) {
+  const response = await httpRequest<{ items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts/batch", {
+    method: "POST",
+    body: input,
   });
   clearModelConfigCache();
   return response;

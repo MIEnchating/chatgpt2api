@@ -136,6 +136,33 @@ func (s *VideoModelContractService) Create(contract protocol.VideoModelContract,
 	return ManagedVideoModelContract{}, fmt.Errorf("保存视频模型契约失败")
 }
 
+// CreateBatch publishes new contracts atomically and never replaces an existing contract.
+func (s *VideoModelContractService) CreateBatch(values []ImportedVideoModelContract) error {
+	if len(values) == 0 || len(values) > maxVideoModelContracts {
+		return fmt.Errorf("单次发布需要 1-%d 个视频模型契约", maxVideoModelContracts)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.mutateLocked(refreshActiveVideoModelContracts, "批量发布视频契约失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
+		if len(items)+len(values) > maxVideoModelContracts {
+			return nil, false, fmt.Errorf("视频模型契约最多支持 %d 个", maxVideoModelContracts)
+		}
+		now := util.NowISO()
+		for _, value := range values {
+			contract, err := validateVideoModelContractCandidate(items, "", value.Contract)
+			if err != nil {
+				return nil, false, err
+			}
+			items = append(items, ManagedVideoModelContract{
+				ID: util.NewUUID(), Contract: contract, Enabled: value.Enabled, Revision: 1,
+				Versions: appendVideoContractVersion(nil, 1, contract, now), CreatedAt: now, UpdatedAt: now,
+			})
+		}
+		return items, true, nil
+	})
+	return err
+}
+
 func (s *VideoModelContractService) Import(values []ImportedVideoModelContract) (int, int, error) {
 	if len(values) == 0 {
 		return 0, 0, fmt.Errorf("导入文件中没有视频模型契约")

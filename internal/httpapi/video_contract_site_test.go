@@ -55,7 +55,7 @@ func TestFetchVideoContractDocumentSetUsesLLMSIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch selected documents: %v", err)
 	}
-	for _, marker := range []string{"alpha-video-v1", "GET /v1/videos/{task_id}"} {
+	for _, marker := range []string{"alpha-video-current", "alpha-video-v1", "GET /v1/videos/{task_id}"} {
 		if !strings.Contains(content, marker) {
 			t.Errorf("document set is missing %q: %s", marker, content)
 		}
@@ -176,16 +176,20 @@ func TestFetchVideoContractDocumentSetKeepsSingleMarkdownIsolated(t *testing.T) 
 }
 
 func TestDecodeVideoContractDocumentPlanIsStrict(t *testing.T) {
+	if selected, err := decodeVideoContractDocumentPlan(`{"selected":[]}`, 2); err != nil || len(selected) != 0 {
+		t.Fatalf("an entry needing no supplementary pages was rejected: %v", err)
+	}
 	selected, err := decodeVideoContractDocumentPlan(`{"selected":[3,1]}`, 4)
 	if err != nil || len(selected) != 2 || selected[0] != 3 || selected[1] != 1 {
 		t.Fatalf("decoded document plan = %#v, error = %v", selected, err)
 	}
 	for name, content := range map[string]string{
-		"empty selection": `{"selected":[]}`,
-		"unknown field":   `{"selected":[1],"url":"https://example.com/private"}`,
-		"unknown id":      `{"selected":[5]}`,
-		"duplicate id":    `{"selected":[1,1]}`,
-		"multiple plans":  `{"selected":[1]} {"selected":[2]}`,
+		"missing selection": `{}`,
+		"null selection":    `{"selected":null}`,
+		"unknown field":     `{"selected":[1],"url":"https://example.com/private"}`,
+		"unknown id":        `{"selected":[5]}`,
+		"duplicate id":      `{"selected":[1,1]}`,
+		"multiple plans":    `{"selected":[1]} {"selected":[2]}`,
 	} {
 		if _, err := decodeVideoContractDocumentPlan(content, 4); err == nil {
 			t.Errorf("%s document plan was accepted", name)
@@ -197,12 +201,39 @@ func TestDecodeVideoContractDocumentPlanIsStrict(t *testing.T) {
 		t.Fatalf("document plan response format = %#v", format)
 	}
 	encoded, _ := json.Marshal(jsonSchema["schema"])
-	if !strings.Contains(string(encoded), `"minItems":1`) || !strings.Contains(string(encoded), `"maxItems":24`) || !strings.Contains(string(encoded), `"uniqueItems":true`) {
+	if !strings.Contains(string(encoded), `"minItems":0`) || !strings.Contains(string(encoded), `"maxItems":24`) || !strings.Contains(string(encoded), `"uniqueItems":true`) {
 		t.Fatalf("document plan schema = %s", encoded)
 	}
-	for _, requirement := range []string{"只能返回候选列表中已有的整数 id", "入口摘录只用于辅助判断", "不可信资料", "视频编辑", "任务查询"} {
+	for _, requirement := range []string{"只能返回候选列表中已有的整数 id", "入口正文会完整保留", "不可信资料", "视频编辑", "任务查询"} {
 		if !strings.Contains(videoContractDocumentPlannerPrompt, requirement) {
 			t.Errorf("document planner prompt is missing %q", requirement)
 		}
+	}
+}
+
+func TestVideoContractDocumentsRetainEntryWithQuerySupplement(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		switch r.URL.Path {
+		case "/create":
+			fmt.Fprint(w, `<p>model: entry-video-v1; POST /v1/videos; duration: 5</p><a href="/query">Query task</a>`)
+		case "/query":
+			fmt.Fprint(w, `<p>GET /v1/videos/{task_id}; status: completed</p>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	initial, source, err := fetchVideoContractDocumentSet(context.Background(), server.URL+"/create", server.Client())
+	if err != nil || source.Site == nil {
+		t.Fatalf("discover entry: %v", err)
+	}
+	content, _, err := fetchSelectedVideoContractDocuments(context.Background(), initial, source, []int{1}, server.Client())
+	if err != nil || !strings.Contains(content, "entry-video-v1") || !strings.Contains(content, "GET /v1/videos/{task_id}") {
+		t.Fatalf("entry and supplement must both reach extraction: %q, %v", content, err)
+	}
+	content, _, err = fetchSelectedVideoContractDocuments(context.Background(), initial, source, []int{}, server.Client())
+	if err != nil || content != initial {
+		t.Fatalf("empty supplementary selection lost entry: %q, %v", content, err)
 	}
 }

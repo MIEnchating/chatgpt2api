@@ -14,7 +14,6 @@ import {
   videoAllowsCustomDuration,
   videoAudioControl,
   videoComposerAspectRatio,
-  videoComposerPixelLabel,
   videoComposerSizeLabel,
   videoComposerWatermarkSupported,
   videoResolutionIsValid,
@@ -75,7 +74,7 @@ export function VideoSettingsPanel({
   const displayResolution = videoWorkbenchDisplayResolution(capabilitySource, value.resolution);
   const videoSizePreview = displayRatio === "adaptive"
     ? "自动"
-    : (/^\d+x\d+$/i.test(displaySize) ? displaySize : videoComposerPixelLabel(displayResolution, displayRatio)).replace(/x/gi, "×");
+    : (/^\d+x\d+$/i.test(displaySize) ? displaySize : [displayResolution, displayRatio].filter(Boolean).join(" · ")).replace(/x/gi, "×");
   const allowsCustomDuration = videoAllowsCustomDuration(capabilitySource);
   const minimumSeconds = positiveSeconds[0] || 1;
   const maximumSeconds = positiveSeconds.at(-1) || minimumSeconds;

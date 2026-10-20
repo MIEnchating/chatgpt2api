@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { Toaster } from "sonner";
 
 import { AppShell } from "@/app/app-shell";
@@ -10,7 +11,10 @@ export default function App() {
   return (
     <TooltipProvider>
       <TooltipDomBridge />
-      <Toaster closeButton theme={theme} position="top-center" richColors expand visibleToasts={5} gap={12} offset={56} toastOptions={{ classNames: { toast: "font-sans rounded-xl" } }} />
+      {createPortal(
+        <Toaster closeButton theme={theme} position="top-center" richColors expand visibleToasts={5} gap={12} offset={56} toastOptions={{ classNames: { toast: "font-sans rounded-xl" }, style: { pointerEvents: "auto" } }} />,
+        document.body,
+      )}
       <AppShell />
     </TooltipProvider>
   );

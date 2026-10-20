@@ -8,6 +8,7 @@ import type {
   ImageVisibility,
 } from "@/lib/api";
 import type { GenerationMediaType, GenerationTaskStatus } from "@/lib/generation-task-contract";
+import type { VideoTaskContractReference } from "@/lib/video-task-contract";
 
 export type ImageConversationMode = "chat" | "generate" | "image" | "edit" | "video";
 type StoredReferenceImageSource = "upload" | "conversation";
@@ -23,6 +24,7 @@ export type StoredReferenceImage = {
 
 export type StoredImage = {
   id: string;
+  videoContract?: VideoTaskContractReference;
   taskId?: string;
   taskRevision?: number;
   status?: "loading" | "success" | "error" | "cancelled" | "message";

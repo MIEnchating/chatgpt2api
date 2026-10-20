@@ -137,20 +137,11 @@ func (a *App) handleRunningHubWorkflows(w http.ResponseWriter, r *http.Request) 
 
 func arkVideoRequest(payload map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
-	refs := protocol.ArkVideoReferences{}
-	refs.FirstFrame = util.Clean(videoJSONPathValue(request, contract.Request.FirstFrameField))
-	refs.LastFrame = util.Clean(videoJSONPathValue(request, contract.Request.LastFrameField))
-	refs.Images = util.AsStringSlice(videoJSONPathValue(request, contract.Request.ReferenceImagesField))
-	refs.Videos = util.AsStringSlice(videoJSONPathValue(request, contract.Request.ReferenceVideosField))
-	refs.Audio = util.AsStringSlice(videoJSONPathValue(request, contract.Request.ReferenceAudiosField))
+	kind, _ := videoContractGenerationKind(payload, contract)
+	refs := videoContractArkReferences(request, contract, kind)
 	content, err := protocol.ArkVideoContent(util.Clean(payload["prompt"]), refs)
 	if err != nil {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
-	}
-	for _, field := range []string{contract.Request.FirstFrameField, contract.Request.LastFrameField, contract.Request.ReferenceImagesField, contract.Request.ReferenceVideosField, contract.Request.ReferenceAudiosField, contract.Request.GenerationModeField} {
-		if field != "" {
-			videoDeleteObjectPath(request, field)
-		}
 	}
 	result := map[string]any{"model": payload["model"], "content": content}
 	for source, target := range map[string]string{"seconds": "duration", "size": "ratio", "resolution": "resolution", "generate_audio": "generate_audio", "watermark": "watermark"} {
