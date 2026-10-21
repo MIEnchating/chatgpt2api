@@ -1,15 +1,14 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import "./image-workbench.css";
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { createMaskEditTurn } from "@/lib/image-mask-edit";
-import { fetchStoredMedia } from "@/services/stored-media-download";
-import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
-
-const WorkbenchMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasMaskDialog })));
+import { CanvasMaskDialog as WorkbenchMaskDialog, type CanvasMaskEditPayload } from "@/app/canvas/canvas-mask-dialog";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
 import { VideoTaskContractsProvider } from "@/app/image/components/video-task-contract";
@@ -1495,12 +1494,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [maskEdit, setMaskEdit] = useState<{ conversationId: string; turnId: string; sourceURL: string; model: string } | null>(null);
   const [maskEditBusy, setMaskEditBusy] = useState(false);
   const maskOperationRef = useRef(false);
-  const maskSourceControllerRef = useRef<AbortController | null>(null);
-  useEffect(() => () => maskSourceControllerRef.current?.abort(), [session.key]);
-  const maskEditSourceURL = maskEdit?.sourceURL;
-  useEffect(() => () => {
-    if (maskEditSourceURL) URL.revokeObjectURL(maskEditSourceURL);
-  }, [maskEditSourceURL]);
   const [imagePrompt, setImagePrompt] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
   const [imageModel, setImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
@@ -1869,6 +1862,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     selectedConversation,
     selectedConversationId ? fullConversationSnapshotsRef.current.get(selectedConversationId) ?? null : null,
   );
+  const displayedTurnCount = displayedConversation && !isImageConversationHistorySummaryOnly(displayedConversation)
+    ? displayedConversation.turns.length
+    : 0;
   useLayoutEffect(() => {
     if (selectedConversation && !isImageConversationHistorySummaryOnly(selectedConversation)) {
       fullConversationSnapshotsRef.current.set(selectedConversation.id, selectedConversation);
@@ -1881,7 +1877,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     : isLoadingHistory
       ? "正在读取历史记录，请稍候"
       : selectedConversationNeedsDetail
-        ? "请先读取完整会话详情"
+        ? "正在读取会话详情"
         : selectedConversationHasActiveTurn
           ? "当前会话正在生成，请等待完成后再发送"
           : activeModelRoute.status === "loading"
@@ -1955,12 +1951,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     const nearBottom = isNearResultsBottom(viewport);
     shouldStickToResultsBottomRef.current = nearBottom;
-    setShowScrollToBottom(!nearBottom && viewport.scrollHeight > viewport.clientHeight + RESULTS_BOTTOM_STICKY_THRESHOLD);
-  }, []);
+    setShowScrollToBottom(Boolean(selectedConversationId) && !nearBottom && viewport.scrollHeight > viewport.clientHeight + RESULTS_BOTTOM_STICKY_THRESHOLD);
+  }, [selectedConversationId]);
 
   useEffect(() => {
     const content = resultsContentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") {
+    if (!content || !selectedConversationId || typeof ResizeObserver === "undefined") {
       return;
     }
 
@@ -2248,7 +2244,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [creationTaskRequestOptions, session.key]);
 
   useLayoutEffect(() => {
-    const turnCount = displayedConversation?.turns.length ?? 0;
+    const turnCount = displayedTurnCount;
     const previousTarget = lastResultsScrollTargetRef.current;
     const conversationChanged = previousTarget.conversationId !== selectedConversationId;
     const turnAdded = !conversationChanged && turnCount > previousTarget.turnCount;
@@ -2259,7 +2255,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     };
 
     if (!selectedConversationId) {
-      shouldStickToResultsBottomRef.current = true;
+      shouldStickToResultsBottomRef.current = false;
+      resultsViewportRef.current?.scrollTo({ top: 0, behavior: "instant" });
       setShowScrollToBottom(false);
       return;
     }
@@ -2269,11 +2266,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
     shouldStickToResultsBottomRef.current = true;
     setShowScrollToBottom(false);
-    const frame = window.requestAnimationFrame(() => scrollResultsToBottom(conversationChanged ? "auto" : "smooth"));
+    const frame = window.requestAnimationFrame(() => scrollResultsToBottom("instant"));
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [displayedConversation?.turns.length, scrollResultsToBottom, selectedConversationId]);
+  }, [displayedTurnCount, scrollResultsToBottom, selectedConversationId]);
 
   useLayoutEffect(() => {
     if (!selectedConversationId || !shouldStickToResultsBottomRef.current) {
@@ -3129,10 +3126,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   useEffect(() => { setMaskEdit(null); }, [session.key]);
 
-  const handleOpenMaskEdit = async (conversationId: string, turnId: string, image: StoredImage) => {
+  const handleOpenMaskEdit = (conversationId: string, turnId: string, sourceURL: string) => {
     if (maskOperationRef.current) return;
-    maskOperationRef.current = true;
-    const toastId = toast.loading("正在读取原图");
     try {
       assertPageSessionCurrent();
       const source = conversationsRef.current.find((item) => item.id === conversationId)?.turns.find((turn) => turn.id === turnId);
@@ -3140,17 +3135,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const model = imageCreationModelOptions.find((option) => option.value === source.model && imageWorkbenchAcceptsReferenceImages(option.value))?.value
         || imageCreationModelOptions.find((option) => imageWorkbenchAcceptsReferenceImages(option.value))?.value;
       if (!model) throw new Error("请先启用支持参考图的图片模型");
-      const controller = new AbortController();
-      maskSourceControllerRef.current = controller;
-      const blob = await fetchStoredMedia(image, controller.signal);
-      controller.signal.throwIfAborted();
-      assertPageSessionCurrent();
-      setMaskEdit({ conversationId, turnId, sourceURL: URL.createObjectURL(blob), model });
-      toast.dismiss(toastId);
+      if (!sourceURL) throw new Error("未找到可用的原图地址");
+      setMaskEdit({ conversationId, turnId, sourceURL, model });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取原图失败", { id: toastId });
-    } finally {
-      maskOperationRef.current = false;
+      toast.error(error instanceof Error ? error.message : "打开局部重绘失败");
     }
   };
 
@@ -3525,27 +3513,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : `准备处理 ${activeTurn.images.filter((image) => image.status === "loading").length || activeTurn.count} 张图片`,
         startedAt: activeTurnStartedAt,
       });
-      const applyTasks = async (tasks: CreationTask[]) => {
-        const persistenceFailures: CreationTaskOutputPersistenceFailure[] = [];
-        tasks = await Promise.all(tasks.map((task) => persistCreationTaskOutputs(task, {
-          assetContext: {
-            prompt: activeTurn.prompt,
-            source: activeTurn.source === "workflow" ? "工作流" : "生成视频",
-            ...(activeTurn.source === "workflow" ? {
-              metadata: { workflowId: activeTurn.workflowId, workflowName: activeTurn.workflowName },
-            } : {}),
-          },
-          expectedSessionKey,
-          onError: (failure) => persistenceFailures.push(failure),
-        })));
-        if (persistenceFailures.length > 0) {
-          const first = persistenceFailures[0];
-          const kind = { image: "图片", video: "视频", audio: "音频" }[first.kind];
-          const detail = first.error instanceof Error ? first.error.message : String(first.error || "未知错误");
-          const reason = detail === "Failed to fetch"
-            ? "浏览器无法下载结果，请检查结果地址的跨域访问策略"
-            : detail;
-          toast.warning(`${kind}已生成，但保存到素材库失败：${reason}`);
+      const applyTaskSnapshots = async (tasks: CreationTask[], persistSnapshot: boolean) => {
+        if (
+          !pageActiveRef.current ||
+          runnerSessionEpoch !== pageSessionEpochRef.current ||
+          getCachedAuthSession()?.key !== expectedSessionKey ||
+          deletedConversationIdsRef.current.has(conversationId) ||
+          cancelledTurnIdsRef.current.has(activeTurnKey)
+        ) {
+          return;
         }
         const taskMap = new Map<string, CreationTask>();
         for (const task of mergeCreationTaskList(tasks)) {
@@ -3632,7 +3608,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             conversationChanged = true;
             return nextTurn;
           });
-          if (!conversationChanged) {
+          // A displayed video may already match the final result when asset storage fails.
+          if (!conversationChanged && !(persistSnapshot && shouldPersistTaskSnapshot)) {
             return conversation;
           }
           const nextConversation = {
@@ -3645,7 +3622,37 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 updatedAt: new Date().toISOString(),
               }
             : nextConversation;
-        }, { persist: shouldPersistTaskSnapshot ? "coalesced" : false });
+        }, { persist: persistSnapshot && shouldPersistTaskSnapshot ? "coalesced" : false });
+      };
+      const applyTasks = async (tasks: CreationTask[]) => {
+        const readyVideos = tasks.filter((task) => task.mode === "video" && task.status === "success" &&
+          task.data?.some((item) => Boolean(item.video_url || item.url)));
+        if (readyVideos.length > 0) {
+          // Display playable results before downloading and uploading the asset-library copy.
+          await applyTaskSnapshots(readyVideos, false);
+        }
+        const persistenceFailures: CreationTaskOutputPersistenceFailure[] = [];
+        const persistedTasks = await Promise.all(tasks.map((task) => persistCreationTaskOutputs(task, {
+          assetContext: {
+            prompt: activeTurn.prompt,
+            source: activeTurn.source === "workflow" ? "工作流" : "生成视频",
+            ...(activeTurn.source === "workflow" ? {
+              metadata: { workflowId: activeTurn.workflowId, workflowName: activeTurn.workflowName },
+            } : {}),
+          },
+          expectedSessionKey,
+          onError: (failure) => persistenceFailures.push(failure),
+        })));
+        if (persistenceFailures.length > 0) {
+          const first = persistenceFailures[0];
+          const kind = { image: "图片", video: "视频", audio: "音频" }[first.kind];
+          const detail = first.error instanceof Error ? first.error.message : String(first.error || "未知错误");
+          const reason = detail === "Failed to fetch"
+            ? "浏览器无法下载结果，请检查结果地址的跨域访问策略"
+            : detail;
+          toast.warning(`${kind}已生成，但保存到素材库失败：${reason}`);
+        }
+        await applyTaskSnapshots(persistedTasks, true);
       };
 
       let pollingUnavailable = false;
@@ -5171,8 +5178,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       enabled={composerMode === "video"}
       onPublished={() => setImageModelConfigReloadKey((value) => value + 1)}
     >
-      <section data-image-workbench-layout className="grid h-full min-h-0 w-full grid-cols-1 gap-3 pb-[env(safe-area-inset-bottom)] sm:gap-4 sm:pb-0 lg:grid-cols-[232px_minmax(0,1fr)] 2xl:grid-cols-[256px_minmax(0,1fr)]">
-        <div className="hidden h-full min-h-0 rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-card)] lg:block">
+      <section data-image-workbench-layout aria-label="创作台" className="grid h-full min-h-0 w-full grid-cols-1 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-card)] lg:grid-cols-[232px_minmax(0,1fr)] 2xl:grid-cols-[256px_minmax(0,1fr)]">
+        <div className="hidden h-full min-h-0 border-r border-border/70 bg-muted/25 p-3 lg:block 2xl:p-4">
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
@@ -5567,7 +5574,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </Dialog>
         ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/15 shadow-[var(--shadow-card)]">
+        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
           {imageModelConfigError ? (
             <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300">
               <CircleAlert className="size-4 shrink-0" />
@@ -5577,11 +5584,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </Button>
             </div>
           ) : null}
-          <div className="flex shrink-0 justify-end border-b border-border bg-card px-3 py-2 sm:px-5 lg:hidden" aria-label="会话操作">
-            <div className="flex shrink-0 items-center gap-2 lg:hidden">
+          <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2 sm:px-6 sm:py-3" aria-label="当前会话">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="hidden size-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand sm:flex"><Sparkles className="size-4" /></span>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold" title={displayedConversation?.title}>{displayedConversation?.title || "新建创作"}</h1>
+                <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">{displayedConversation ? `${displayedConversation.turns.length} 轮创作 · 继续探索你的想法` : "让每一个想法，都有画面"}</p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 lg:hidden" aria-label="会话操作">
               <Button
                 variant="outline"
-                className="size-9 rounded-xl border-border bg-card p-0 text-xs text-muted-foreground shadow-none sm:w-auto sm:px-3"
+                className="size-8 rounded-lg border-border/70 bg-card p-0 text-xs text-muted-foreground shadow-none sm:h-9 sm:w-auto sm:px-3"
                 aria-label={`历史记录 (${conversations.length})`}
                 onClick={() => setIsHistoryOpen(true)}
               >
@@ -5589,7 +5603,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 <span className="hidden sm:inline">历史记录 ({conversations.length})</span>
               </Button>
               <Button
-                className="size-9 rounded-xl p-0 text-xs shadow-none sm:w-auto sm:px-3"
+                className="size-8 rounded-lg p-0 text-xs shadow-none sm:h-9 sm:w-auto sm:px-3"
                 aria-label="新建对话"
                 onClick={handleCreateDraft}
               >
@@ -5598,7 +5612,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </Button>
               <Button
                 variant="outline"
-                className="h-9 rounded-xl border-border bg-card px-3 text-muted-foreground shadow-none"
+                className="size-8 rounded-lg border-border/70 bg-card p-0 text-muted-foreground shadow-none sm:size-9"
                 aria-label="清空会话记录"
                 onClick={openClearHistoryConfirm}
                 disabled={conversations.length === 0}
@@ -5606,18 +5620,20 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 <Trash2 className="size-4" />
               </Button>
             </div>
-          </div>
+          </header>
 
           <div
             data-creation-results
-            className="relative min-h-0 flex-1 px-3 pt-3 sm:px-6"
+            className="studio-results relative min-h-0 flex-1 px-3 pt-4 sm:px-6 sm:pt-6"
           >
             <ScrollArea
               viewportRef={resultsViewportRef}
               className="size-full"
+              viewClass="flex flex-col"
+              viewStyle={{ minHeight: "100%" }}
               onScroll={handleResultsViewportScroll}
             >
-              <div ref={resultsContentRef} className="min-h-full pb-4">
+              <div ref={resultsContentRef} className="flex min-h-full flex-1 flex-col pb-4">
                 <ImageResults
                   selectedConversation={displayedConversation}
                   isLoadingHistory={isLoadingHistory}
@@ -5660,10 +5676,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
           <div
             data-creation-composer
-            className="relative z-30 shrink-0 bg-background/95 px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4"
+            className="relative z-30 shrink-0 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-5"
           >
             <div className="mx-auto w-full max-w-[900px] xl:max-w-[1080px] 2xl:max-w-[1180px]">
-              {submitDisabledReason && !selectedConversationHasActiveTurn ? (
+              {submitDisabledReason && !isLoadingHistory && !selectedConversationNeedsDetail && !selectedConversationHasActiveTurn ? (
                 <div role="status" className={cn("mb-2 flex items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3 py-2 text-xs text-muted-foreground", activeModelRoute.status === "model-list-error" && "border-destructive/20 text-destructive")}>
                   {isSubmitDispatching || isLoadingHistory ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand" /> : <CircleAlert className="size-3.5 shrink-0" />}
                   <span className="min-w-0 flex-1 leading-5">{submitDisabledReason}</span>
@@ -5763,7 +5779,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         onApplyPrompt={handleApplyMarketPrompt}
       />
 
-      {maskEdit ? <Suspense fallback={null}>
+      {maskEdit ?
         <WorkbenchMaskDialog
           sourceURL={maskEdit.sourceURL}
           open
@@ -5774,7 +5790,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           onClose={() => { if (!maskOperationRef.current) setMaskEdit(null); }}
           onConfirm={handleMaskEdit}
         />
-      </Suspense> : null}
+      : null}
       <ImageLightbox
         images={lightboxImages}
         currentIndex={lightboxIndex}

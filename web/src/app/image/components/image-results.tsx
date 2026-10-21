@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles, UserRound } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles, UserRound } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
 import { GenerationProgress } from "@/components/generation/generation-progress";
+import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { videoTaskErrorMessage } from "@/lib/video-task-error";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,7 @@ type ImageResultsProps = {
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
   onApplyPromptPreset: (preset: ImagePromptPreset) => void | Promise<void>;
   onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
-  onMaskEdit: (conversationId: string, turnId: string, image: StoredImage) => void;
+  onMaskEdit: (conversationId: string, turnId: string, sourceURL: string) => void;
   onEditTurn: (conversationId: string, turnId: string) => void;
   onCancelTurn: (conversationId: string, turnId: string) => void | Promise<void>;
   onRegenerateTurn: (conversationId: string, turnId: string) => void | Promise<void>;
@@ -298,6 +299,12 @@ async function fetchImageSizeLabel(src: string) {
   }
 }
 
+function GeneratedVideoPlayer({ src, aspectRatio, title }: { src: string; aspectRatio: string; title: string }) {
+  // Saving a durable copy must not reset playback of this result.
+  const [playbackSrc] = useState(src);
+  return <MediaVideoPlayer src={playbackSrc} aspectRatio={aspectRatio} title={title} className="rounded-none" />;
+}
+
 export function ImageResults({
   selectedConversation,
   isLoadingHistory,
@@ -406,8 +413,8 @@ export function ImageResults({
 
   if (isLoadingHistory) {
     return (
-      <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+      <div role="status" className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
+        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin text-brand" />
           正在读取历史记录
         </div>
@@ -417,7 +424,7 @@ export function ImageResults({
 
   if (conversationDetailError) {
     return (
-      <div className="flex h-full min-h-[300px] items-center justify-center px-4 py-3 text-center sm:min-h-[420px] sm:py-6">
+      <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
         <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
           <span className="flex size-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span>
           <p className="text-sm font-semibold">暂时无法读取会话</p>
@@ -430,8 +437,8 @@ export function ImageResults({
 
   if (isLoadingConversationDetail || selectedConversation?.historySummaryOnly === true) {
     return (
-      <div data-image-conversation-detail-loading className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+      <div data-image-conversation-detail-loading role="status" className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
+        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin text-brand" />
           正在读取会话详情
         </div>
@@ -441,42 +448,51 @@ export function ImageResults({
 
   if (!selectedConversation) {
     return (
-      <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6">
-          <div className="space-y-2 text-center"><span className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-brand/15 bg-brand-soft text-brand"><Plus className="size-5" /></span><h2 className="pt-2 text-xl font-semibold tracking-tight">今天，想创作什么？</h2><p className="text-sm leading-6 text-muted-foreground">写下你的想法，或选择一个灵感开始。</p></div>
-          <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
-            {promptPresets.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className="group w-[250px] shrink-0 overflow-hidden rounded-[22px] border border-border bg-card transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)] sm:w-auto"
-                onClick={() => void onApplyPromptPreset(preset)}
-                aria-label={`套用预设：${preset.title}`}
-              >
-                <div className="relative aspect-[16/9] overflow-hidden bg-muted">
-                  <img
-                    src={preset.previewSrc}
-                    alt={preset.title}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
-                    <span className="rounded-full bg-card/95 px-2 py-0.5 text-[11px] font-medium text-foreground shadow-sm">
-                      {preset.size || "自动"}
-                    </span>
-                    <span className="rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm backdrop-blur">
-                      {preset.count} 张
-                    </span>
+      <div className="studio-welcome flex flex-1 items-center justify-center py-3 sm:py-5">
+        <div className="studio-welcome-content mx-auto flex w-full min-w-0 max-w-[1120px] flex-col gap-5 sm:gap-7">
+          <div className="studio-welcome-intro space-y-2 text-center">
+            <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">今天，想创作什么？</h2>
+            <p className="text-xs leading-6 text-muted-foreground sm:text-sm">写下你的想法，或选择一个灵感开始。</p>
+          </div>
+          <div className="space-y-3">
+            <div className="studio-preset-heading flex items-center justify-between px-1 text-[11px] text-muted-foreground"><span className="font-medium">灵感起点</span><span>选择预设，开启创作</span></div>
+            <div className="hide-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 text-left sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-3">
+              {promptPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="group w-[220px] shrink-0 snap-start overflow-hidden rounded-xl border border-border/70 bg-card text-left transition-[border-color,box-shadow] hover:border-brand-border hover:shadow-[var(--shadow-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:w-auto"
+                  onClick={() => void onApplyPromptPreset(preset)}
+                  aria-label={`套用预设：${preset.title}`}
+                >
+                  <div className="studio-preset-preview relative aspect-[16/9] overflow-hidden bg-muted">
+                    <img
+                      src={preset.previewSrc}
+                      alt={preset.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover transition-transform duration-300 motion-safe:group-hover:scale-[1.03]"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
+                      <span className="rounded-full bg-card/95 px-2 py-0.5 text-[11px] font-medium text-foreground shadow-sm">
+                        {preset.size || "自动"}
+                      </span>
+                      <span className="rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm backdrop-blur">
+                        {preset.count} 张
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-col gap-2 px-4 py-3.5">
-                  <div className="font-display text-sm font-semibold text-foreground">{preset.title}</div>
-                  <div className="line-clamp-2 text-sm leading-6 text-muted-foreground">{preset.hint}</div>
-                  <div className="border-t border-border pt-2 text-xs font-medium text-brand">套用这个预设</div>
-                </div>
-              </button>
-            ))}
+                  <div className="flex flex-col gap-1.5 p-3 sm:p-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{preset.title}</span>
+                      <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-brand" />
+                    </div>
+                    <div className="studio-preset-hint line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{preset.hint}</div>
+                    <div className="studio-preset-action mt-1 text-[11px] font-medium text-brand">套用预设</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -895,14 +911,14 @@ export function ImageResults({
                         <figure
                           key={image.id}
                           data-video-result-card
-                          className="group relative mx-auto w-full min-w-0 max-w-[960px] overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm"
-                          style={{ maxWidth: `min(${turnVideoFrameMaxWidth}, calc(56dvh * ${turnFrameAspectRatio}))` }}
+                          className="group relative mx-auto w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm"
+                          style={{ maxWidth: turnVideoFrameMaxWidth }}
                         >
-                          <MediaVideoPlayer
+                          <GeneratedVideoPlayer
+                            key={`${image.id}:${image.taskId || ""}`}
                             aspectRatio={turnFrameAspectRatio}
                             src={imageSrc}
                             title={`生成视频 ${index + 1}`}
-                            className="rounded-none"
                           />
                           <figcaption className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
                             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -936,6 +952,7 @@ export function ImageResults({
                       const cancelled = image.status === "cancelled";
                       const phase = getStoredImageLoadingPhase(image, turn);
                       const running = phase === "running";
+                      const waitingForVideoResult = running && normalizeGenerationProgress(image.taskProgress) === 100;
                       const errorMessage = videoTaskErrorMessage(image.error);
                       return (
                         <div key={image.id} data-video-task-state={image.status} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs" role={failed ? "alert" : undefined}>
@@ -943,7 +960,7 @@ export function ImageResults({
                             <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", failed ? "bg-destructive/10 text-destructive" : cancelled ? "bg-muted text-muted-foreground" : "bg-brand-soft text-brand")}>
                               {failed ? <AlertCircle className="size-4" /> : cancelled ? <CircleStop className="size-4" /> : running ? <LoaderCircle className="size-4 animate-spin" /> : <Clock3 className="size-4" />}
                             </span>
-                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{failed ? "视频生成失败" : cancelled ? "视频生成已终止" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
+                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在准备视频" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
                             {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
                           </div>
                           {failed || cancelled ? (
@@ -959,9 +976,16 @@ export function ImageResults({
                           ) : (
                             <div className="flex min-h-52 flex-col items-center justify-center gap-3 bg-gradient-to-b from-muted/25 to-transparent px-5 py-7 text-center">
                               <span className="flex size-14 items-center justify-center rounded-2xl border border-brand/15 bg-brand-soft text-brand"><Clapperboard className="size-6" /></span>
-                              <p className="text-sm font-medium">{running ? "正在把你的想法变成动态画面" : "等待任务开始"}</p>
-                              <p className="max-w-sm text-xs leading-6 text-muted-foreground">{running ? "视频生成需要一些时间，结果会自动出现在这里。" : "轮到此任务时将自动开始生成。"}</p>
-                              {running ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mt-1 max-w-64" /> : null}
+                              <p className="text-sm font-medium">{waitingForVideoResult ? "上游生成进度已到 100%" : running ? "正在把你的想法变成动态画面" : "等待任务开始"}</p>
+                              <p className="flex min-h-12 max-w-sm items-center text-xs leading-6 text-muted-foreground">{waitingForVideoResult ? "视频仍需返回或保存，就绪后会自动显示播放器。" : running ? "视频生成需要一些时间，结果会自动出现在这里。" : "轮到此任务时将自动开始生成。"}</p>
+                              <div className="mt-1 flex h-10 w-full max-w-64 items-center justify-center">
+                                {waitingForVideoResult ? (
+                                  <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <LoaderCircle className="size-3.5 animate-spin text-brand" />
+                                    正在等待视频结果
+                                  </div>
+                                ) : running ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" /> : null}
+                              </div>
                             </div>
                           )}
                           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-4 py-3">
@@ -1084,7 +1108,7 @@ export function ImageResults({
                               </TooltipButton>
                               <TooltipButton
                                 type="button"
-                                onClick={() => onMaskEdit(selectedConversation.id, turn.id, image)}
+                                onClick={() => onMaskEdit(selectedConversation.id, turn.id, imageSrc)}
                                 disabled={turnBusy}
                                 className="inline-flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground shadow-sm transition hover:bg-card disabled:opacity-50"
                                 aria-label="局部重绘"

@@ -99,7 +99,7 @@ export function PermissionEditor({
       aria-busy={disabled}
     >
       <section className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
-        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
+        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <Menu className="size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
@@ -121,8 +121,8 @@ export function PermissionEditor({
                   <label key={item.path} data-selected={checked} className="flex min-h-[58px] cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring hover:bg-muted/50 data-[selected=true]:bg-primary/[0.045]">
                     <Checkbox checked={checked} disabled={disabled} onCheckedChange={(value) => onMenuPathsChange(toggleListValue(selectedMenuPaths, item.path, Boolean(value)))} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-foreground">{item.label}</div>
-                      <code className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">{item.path}</code>
+                      <div className="break-words text-sm font-medium leading-5 text-foreground">{item.label}</div>
+                      <code className="mt-0.5 block font-mono [overflow-wrap:anywhere] text-[11px] text-muted-foreground">{item.path}</code>
                     </div>
                   </label>
                 );
@@ -133,7 +133,7 @@ export function PermissionEditor({
       </section>
 
       <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
+        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <KeyRound className="size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
@@ -155,7 +155,7 @@ export function PermissionEditor({
                 const groupChecked = selectedCount === groupKeys.length ? true : selectedCount > 0 ? "indeterminate" : false;
                 return (
                   <section key={group.group} className="min-w-0">
-                    <div className="mb-3 flex items-center justify-between gap-3 rounded-lg bg-muted/35 px-2.5 py-2">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-2">
                       <label className="flex min-w-0 cursor-pointer items-center gap-2.5">
                         <Checkbox checked={groupChecked} disabled={disabled} onCheckedChange={(value) => onApiPermissionsChange(toggleListValues(selectedApiPermissions, groupKeys, Boolean(value)))} />
                         <h4 className="truncate text-xs font-semibold text-foreground">{group.group}</h4>

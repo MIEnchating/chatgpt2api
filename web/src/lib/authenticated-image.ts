@@ -5,6 +5,7 @@ const MAX_CACHED_AUTHENTICATED_IMAGE_ENTRIES = 320;
 const MAX_CACHED_AUTHENTICATED_IMAGE_BYTES = 160 * 1024 * 1024;
 
 type CachedAuthenticatedImage = {
+  blob: Blob;
   objectURL: string;
   byteSize: number;
   references: number;
@@ -98,7 +99,7 @@ function trimAuthenticatedImageCache() {
 function storeAuthenticatedImageCacheEntry(
   key: string,
   objectURL: string,
-  byteSize: number,
+  blob: Blob,
   trim = true,
 ) {
   const existing = authenticatedImageCache.get(key);
@@ -108,13 +109,14 @@ function storeAuthenticatedImageCacheEntry(
     return existing;
   }
   const entry = {
+    blob,
     objectURL,
-    byteSize,
+    byteSize: blob.size,
     references: 0,
     lastUsedAt: Date.now(),
   };
   authenticatedImageCache.set(key, entry);
-  authenticatedImageCacheBytes += byteSize;
+  authenticatedImageCacheBytes += blob.size;
   if (trim) {
     trimAuthenticatedImageCache();
   }
@@ -174,6 +176,12 @@ export function shouldUseAuthenticatedImageFallback(src: string) {
 }
 
 export async function fetchAuthenticatedImageBlob(src: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const cached = authenticatedImageCache.get(authenticatedImageCacheKey(src));
+  if (cached) {
+    touchCachedAuthenticatedImage(cached);
+    return cached.blob;
+  }
   const requestURL = resolveImageRequestURL(src);
   const managedImage = isManagedImageURL(src);
 
@@ -184,7 +192,9 @@ export async function fetchAuthenticatedImageBlob(src: string, signal?: AbortSig
   if (!response.ok) {
     throw new Error(`读取图片失败 (${response.status})`);
   }
-  return response.blob();
+  const blob = await response.blob();
+  signal?.throwIfAborted();
+  return blob;
 }
 
 export function retainCachedAuthenticatedImage(src: string): RetainedAuthenticatedImage | null {
@@ -214,7 +224,7 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
           // The new entry has no external reference until the awaiting caller
           // resumes. Trimming here can evict that same entry when every older
           // cache entry is retained.
-          const entry = storeAuthenticatedImageCacheEntry(key, objectURL, blob.size, false);
+          const entry = storeAuthenticatedImageCacheEntry(key, objectURL, blob, false);
           reservePendingAuthenticatedImage(key, entry);
           return { key, objectURL, byteSize: blob.size };
         } catch (error) {
@@ -254,7 +264,7 @@ export async function primeAuthenticatedImageCache(src: string, blob: Blob) {
     if (generation !== authenticatedImageCacheGeneration) {
       throw new Error("图片缓存已重置");
     }
-    storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
+    storeAuthenticatedImageCacheEntry(key, objectURL, blob);
   } catch (error) {
     if (objectURL) URL.revokeObjectURL(objectURL);
     throw error;

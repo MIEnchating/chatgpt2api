@@ -105,7 +105,7 @@ export function ImageSettingsPanel({
       </section> : null}
 
       {showSize && (!definition || definition.exact_dimensions) ? <section className="order-3 space-y-2.5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>对齐至 16 倍数</span>
@@ -157,9 +157,9 @@ export function ImageSettingsPanel({
         onChange={onChange}
       /> : null}
 
-      {showCount ? <section className="order-4 flex items-center justify-between gap-3">
+      {showCount ? <section className="order-4 flex min-w-0 flex-wrap items-center justify-between gap-2">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>
-        <NumberInput disabled={disabled} value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-8 w-32" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
+        <NumberInput disabled={disabled} value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-10 w-36" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
       </section> : null}
     </div>
   );
@@ -190,7 +190,7 @@ function DimensionInput({
   return (
     <label
       className={cn(
-        "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+        "grid h-10 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
         disabled
           ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
           : "border-border bg-card dark:border-border dark:bg-background/70",
@@ -219,7 +219,7 @@ function DimensionInput({
           setEditing(false);
           onBlur(draft);
         }}
-        className="h-7 rounded-none border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
+        className="h-9 rounded-none border-0 bg-transparent px-0 text-base sm:text-sm font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
       />
     </label>
   );

@@ -8,10 +8,10 @@ export function GenerationProgress({ progress, label = "生成进度", className
 }) {
   const value = normalizeGenerationProgress(progress);
   return (
-    <div className={cn("w-full space-y-1.5", className)}>
-      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>{label}</span>
-        <span className="tabular-nums">{value === undefined ? "等待进度更新" : `${value}%`}</span>
+    <div className={cn("min-w-0 w-full space-y-2", className)}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="min-w-0 break-words">{label}</span>
+        <span className="shrink-0 tabular-nums">{value === undefined ? "等待进度更新" : `${value}%`}</span>
       </div>
       <div
         role="progressbar"
@@ -20,7 +20,7 @@ export function GenerationProgress({ progress, label = "生成进度", className
         aria-valuemax={100}
         aria-valuenow={value}
         aria-valuetext={value === undefined ? "等待进度更新" : `${value}%`}
-        className="h-1.5 overflow-hidden rounded-full bg-foreground/15 ring-1 ring-inset ring-foreground/10"
+        className="h-1.5 overflow-hidden rounded-full bg-muted-foreground/20"
       >
         <div
           className={cn(

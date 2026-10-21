@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Brush, Camera, Check, Eraser, Grid2X2, ListRestart, Lock, LockOpen, PanelTop, RotateCcw, Rows3, Trash2, WandSparkles, X, ZoomIn } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Camera, Check, Grid2X2, ListRestart, Lock, LockOpen, PanelTop, RotateCcw, Rows3, Trash2, X, ZoomIn } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useEditableImageSource } from "@/components/use-editable-image-source";
+import { EditableImageFrame } from "@/components/editable-image-frame";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
 import { buildCanvasGridLines, canvasImageAngleLabel, clampCanvasGrid, CANVAS_MAX_UPSCALE_LONG_EDGE, findCanvasGridLineSpot, nextCanvasUpscaleTarget, resolveCanvasUpscaleSize, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleAlgorithm, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
 
 const defaultCrop: CanvasImageCropRect = { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
@@ -14,13 +14,16 @@ const cropHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 
 function useWindowPointerDrag() {
   const cleanupRef = useRef<(() => void) | null>(null);
+  const [dragCursor, setDragCursor] = useState("");
   const stopDragging = useCallback(() => {
     cleanupRef.current?.();
     cleanupRef.current = null;
   }, []);
-  const startDragging = useCallback((move: (event: PointerEvent) => void) => {
+  const startDragging = useCallback((move: (event: PointerEvent) => void, cursor: string) => {
     stopDragging();
+    setDragCursor(cursor);
     const end = () => {
+      setDragCursor("");
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
@@ -34,24 +37,25 @@ function useWindowPointerDrag() {
     window.addEventListener("blur", end);
   }, [stopDragging]);
   useEffect(() => stopDragging, [stopDragging]);
-  return { startDragging, stopDragging };
+  return { startDragging, stopDragging, dragCursor };
 }
 
-export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void }) {
+export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect, sourceURL: string) => void }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [crop, setCrop] = useState(defaultCrop);
   const [locked, setLocked] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const { startDragging, stopDragging } = useWindowPointerDrag();
+  const source = useEditableImageSource(sourceURL, open);
+  const dimensions = source;
+  const { startDragging, stopDragging, dragCursor } = useWindowPointerDrag();
 
   useEffect(() => {
     stopDragging();
-    if (open) setCrop(defaultCrop);
+    if (open) { setCrop(defaultCrop); setLocked(false); }
   }, [open, sourceURL, stopDragging]);
 
   function startDrag(mode: "move" | "resize", event: ReactPointerEvent, handle = "se") {
     const frame = frameRef.current?.getBoundingClientRect();
-    if (!frame) return;
+    if (!frame || busy || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     const start = { x: event.clientX, y: event.clientY, crop };
@@ -60,7 +64,7 @@ export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: 
       const dy = (nextEvent.clientY - start.y) / frame.height;
       setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle, locked, frame));
     };
-    startDragging(move);
+    startDragging(move, mode === "move" ? "grabbing" : `${handle}-resize`);
   }
 
   const cropWidth = dimensions.width ? Math.round(crop.width * dimensions.width) : 0;
@@ -68,35 +72,38 @@ export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: 
   if (!sourceURL) return null;
   return (
     <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}>
-      <DialogContent className="w-[min(94vw,780px)]">
+      <DialogContent className={`w-[min(94vw,780px)] ${dragCursor ? "tool-dragging" : ""}`} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
         <DialogHeader><DialogTitle>裁剪图片</DialogTitle><DialogDescription>拖动裁剪框选择要保留的区域。</DialogDescription></DialogHeader>
         <div className="space-y-4">
+          <EditableImageFrame source={source} className="h-[38dvh] sm:h-[58dvh]">
           <div ref={frameRef} className="relative mx-auto w-fit max-w-full overflow-hidden rounded-xl bg-black/90">
-            <img src={sourceURL} alt="" className="block max-h-[38dvh] sm:max-h-[58dvh] max-w-full select-none object-contain opacity-90" draggable={false} onLoad={(event) => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
+            <img src={source.url} alt="" className="block max-h-[38dvh] sm:max-h-[58dvh] max-w-full select-none object-contain opacity-90" draggable={false} />
             <div className="pointer-events-none absolute inset-x-0 top-0 bg-black/55" style={{ height: `${crop.y * 100}%` }} />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/55" style={{ height: `${(1 - crop.y - crop.height) * 100}%` }} />
             <div className="pointer-events-none absolute bg-black/55" style={{ left: 0, top: `${crop.y * 100}%`, width: `${crop.x * 100}%`, height: `${crop.height * 100}%` }} />
             <div className="pointer-events-none absolute bg-black/55" style={{ right: 0, top: `${crop.y * 100}%`, width: `${(1 - crop.x - crop.width) * 100}%`, height: `${crop.height * 100}%` }} />
-            <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.4)]" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }} onPointerDown={(event) => startDrag("move", event)}>
+            <div className="absolute cursor-grab touch-none border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.4)]" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }} onPointerDown={(event) => startDrag("move", event)}>
               <div className="pointer-events-none absolute inset-x-0 top-1/3 border-t border-white/50" /><div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-white/50" /><div className="pointer-events-none absolute inset-y-0 left-1/3 border-l border-white/50" /><div className="pointer-events-none absolute inset-y-0 left-2/3 border-l border-white/50" />
-              {cropHandles.map((handle) => <button key={handle} type="button" aria-label="调整裁剪框" className="pointer-events-auto absolute size-3 rounded-full border border-black bg-white" style={cropHandleStyle(handle)} onPointerDown={(event) => startDrag("resize", event, handle)} />)}
+              {cropHandles.map((handle) => <button key={handle} type="button" aria-label="调整裁剪框" className="pointer-events-auto absolute touch-none size-3 rounded-full border border-black bg-white" style={cropHandleStyle(handle)} onPointerDown={(event) => startDrag("resize", event, handle)} />)}
             </div>
           </div>
+          </EditableImageFrame>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground"><span>裁剪尺寸：{cropWidth && cropHeight ? `${cropWidth} × ${cropHeight}` : "读取中"}</span><span>原图：{dimensions.width ? `${dimensions.width} × ${dimensions.height}` : "读取中"}</span><Button type="button" variant="outline" size="sm" onClick={() => setLocked((value) => !value)}>{locked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}{locked ? "锁定比例" : "自由比例"}</Button></div>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setCrop(defaultCrop)}><RotateCcw />重置</Button><Button type="button" variant="outline" disabled={busy} onClick={onClose}><X />取消</Button><Button type="button" disabled={busy} onClick={() => onConfirm(crop)}>{busy ? "处理中" : <><Check />确认裁剪</>}</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setCrop(defaultCrop)}><RotateCcw />重置</Button><Button type="button" variant="outline" disabled={busy} onClick={onClose}><X />取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(crop, source.url)}>{busy ? "处理中" : <><Check />确认裁剪</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (params: CanvasImageSplitParams) => void }) {
+export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (params: CanvasImageSplitParams, sourceURL: string) => void }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [horizontalLines, setHorizontalLines] = useState([0.5]);
   const [verticalLines, setVerticalLines] = useState([0.5]);
   const [activeLine, setActiveLine] = useState<{ axis: "horizontal" | "vertical"; index: number } | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const { startDragging, stopDragging } = useWindowPointerDrag();
+  const source = useEditableImageSource(sourceURL, open);
+  const dimensions = source;
+  const { startDragging, stopDragging, dragCursor } = useWindowPointerDrag();
   const rows = horizontalLines.length + 1;
   const columns = verticalLines.length + 1;
 
@@ -106,7 +113,6 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
     setHorizontalLines([0.5]);
     setVerticalLines([0.5]);
     setActiveLine(null);
-    setDimensions({ width: 0, height: 0 });
   }, [open, sourceURL, stopDragging]);
 
   function updateGrid(axis: "rows" | "columns", value: string) {
@@ -134,7 +140,7 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
 
   function startLine(axis: "horizontal" | "vertical", index: number, event: ReactPointerEvent) {
     const frame = frameRef.current?.getBoundingClientRect();
-    if (!frame) return;
+    if (!frame || busy || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     setActiveLine({ axis, index });
@@ -143,7 +149,7 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
       if (axis === "horizontal") setHorizontalLines((lines) => updateLine(lines, index, value));
       else setVerticalLines((lines) => updateLine(lines, index, value));
     };
-    startDragging(move);
+    startDragging(move, axis === "horizontal" ? "ns-resize" : "ew-resize");
   }
 
   const total = rows * columns;
@@ -153,19 +159,19 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
   if (!sourceURL) return null;
   return (
     <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}>
-      <DialogContent className="w-[min(94vw,820px)]">
+      <DialogContent className={`w-[min(94vw,820px)] ${dragCursor ? "tool-dragging" : ""}`} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
         <DialogHeader><DialogTitle>切分图片</DialogTitle><DialogDescription>生成 {total} 个图片子节点，并按原图网格排列到画布右侧。</DialogDescription></DialogHeader>
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,260px)]">
           <div className="rounded-xl border border-border p-3">
-            <div className="grid min-h-40 sm:min-h-[280px] place-items-center rounded-lg bg-black/10">
+            <EditableImageFrame source={source} className="h-[30dvh] sm:h-[48dvh]">
               <div ref={frameRef} className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black shadow-xl">
-                <img src={sourceURL} alt="" className="block max-h-[30dvh] sm:max-h-[48dvh] max-w-full object-contain opacity-95" draggable={false} onLoad={(event) => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
+                <img src={source.url} alt="" className="block max-h-[30dvh] sm:max-h-[48dvh] max-w-full object-contain opacity-95" draggable={false} />
                 <div className="pointer-events-none absolute inset-0">
-                  {verticalLines.map((line, index) => <div key={`v-${index}`} className="pointer-events-auto absolute inset-y-0 -ml-2 w-4 cursor-ew-resize" style={{ left: `${line * 100}%` }} onPointerDown={(event) => startLine("vertical", index, event)}><div className={activeLine?.axis === "vertical" && activeLine.index === index ? "absolute left-1/2 h-full border-l-2 border-amber-300 shadow" : "absolute left-1/2 h-full border-l-2 border-white shadow"} /></div>)}
-                  {horizontalLines.map((line, index) => <div key={`h-${index}`} className="pointer-events-auto absolute inset-x-0 -mt-2 h-4 cursor-ns-resize" style={{ top: `${line * 100}%` }} onPointerDown={(event) => startLine("horizontal", index, event)}><div className={activeLine?.axis === "horizontal" && activeLine.index === index ? "absolute top-1/2 w-full border-t-2 border-amber-300 shadow" : "absolute top-1/2 w-full border-t-2 border-white shadow"} /></div>)}
+                  {verticalLines.map((line, index) => <div key={`v-${index}`} className="pointer-events-auto absolute inset-y-0 -ml-2 w-4 touch-none cursor-ew-resize" style={{ left: `${line * 100}%` }} onPointerDown={(event) => startLine("vertical", index, event)}><div className={activeLine?.axis === "vertical" && activeLine.index === index ? "absolute left-1/2 h-full border-l-2 border-amber-300 shadow" : "absolute left-1/2 h-full border-l-2 border-white shadow"} /></div>)}
+                  {horizontalLines.map((line, index) => <div key={`h-${index}`} className="pointer-events-auto absolute inset-x-0 -mt-2 h-4 touch-none cursor-ns-resize" style={{ top: `${line * 100}%` }} onPointerDown={(event) => startLine("horizontal", index, event)}><div className={activeLine?.axis === "horizontal" && activeLine.index === index ? "absolute top-1/2 w-full border-t-2 border-amber-300 shadow" : "absolute top-1/2 w-full border-t-2 border-white shadow"} /></div>)}
                 </div>
               </div>
-            </div>
+            </EditableImageFrame>
             <p className="mt-2 text-xs text-muted-foreground">原图：{dimensions.width ? `${dimensions.width} × ${dimensions.height}` : "读取中"}</p>
           </div>
           <div className="space-y-4">
@@ -183,18 +189,20 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
             </div>
           </div>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy} onClick={() => onConfirm({ rows, columns, horizontalLines, verticalLines })}>{busy ? "处理中" : <><Grid2X2 />生成子节点</>}</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm({ rows, columns, horizontalLines, verticalLines }, source.url)}>{busy ? "处理中" : <><Grid2X2 />生成子节点</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (params: CanvasImageUpscaleParams) => void }) {
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [target, setTarget] = useState(2048);
+export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (params: CanvasImageUpscaleParams, sourceURL: string) => void }) {
+  const source = useEditableImageSource(sourceURL, open);
+  const dimensions = source;
+  const [selectedTarget, setTarget] = useState<number | null>(null);
   const [algorithm, setAlgorithm] = useState<CanvasImageUpscaleAlgorithm>("high");
-  useEffect(() => { if (open) { setTarget(2048); setAlgorithm("high"); setDimensions({ width: 0, height: 0 }); } }, [open, sourceURL]);
+  useEffect(() => { if (open) { setTarget(null); setAlgorithm("high"); } }, [open, sourceURL]);
   const sourceLong = Math.max(dimensions.width, dimensions.height);
+  const target = selectedTarget ?? (sourceLong ? nextCanvasUpscaleTarget(sourceLong) : 2048);
   const outputSize = dimensions.width ? resolveCanvasUpscaleSize(dimensions.width, dimensions.height, target) : null;
   const disabled = !sourceLong || sourceLong >= target || sourceLong >= CANVAS_MAX_UPSCALE_LONG_EDGE;
   if (!sourceURL) return null;
@@ -209,19 +217,14 @@ export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm 
         <DialogHeader><DialogTitle>图片放大</DialogTitle><DialogDescription>生成更大尺寸的独立图片节点。</DialogDescription></DialogHeader>
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
           <div className="rounded-xl border border-border p-3">
-            <div className="grid min-h-40 sm:min-h-[280px] place-items-center rounded-lg bg-black/10">
+            <EditableImageFrame source={source} className="h-[30dvh] sm:h-[42dvh]">
               <img
-                src={sourceURL}
+                src={source.url}
                 alt=""
                 className="max-h-[30dvh] sm:max-h-[42dvh] max-w-full rounded-lg object-contain shadow-xl"
                 draggable={false}
-                onLoad={(event) => {
-                  const next = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
-                  setDimensions(next);
-                  setTarget(nextCanvasUpscaleTarget(Math.max(next.width, next.height)));
-                }}
               />
-            </div>
+            </EditableImageFrame>
             <p className="mt-2 flex justify-between text-xs text-muted-foreground"><span>源图</span><strong className="text-foreground">{dimensions.width ? `${dimensions.width} × ${dimensions.height} px` : "读取中"}</strong></p>
           </div>
           <div className="space-y-5 py-1">
@@ -237,151 +240,23 @@ export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm 
             <div className="rounded-xl border border-border px-3 py-3 text-sm"><span className="text-muted-foreground">输出尺寸</span><strong className="float-right">{outputSize ? `${outputSize.width} × ${outputSize.height} px` : "读取中"}</strong></div>
           </div>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={disabled || busy} onClick={() => onConfirm({ targetLongEdge: target, algorithm })}>{busy ? "处理中" : <><ZoomIn />生成放大图</>}</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={disabled || busy} onClick={() => onConfirm({ targetLongEdge: target, algorithm }, source.url)}>{busy ? "处理中" : <><ZoomIn />生成放大图</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export type CanvasMaskEditPayload = { prompt: string; markedDataURL: string; model: string };
-
-export function CanvasMaskDialog({ sourceURL, open, busy, model, models, onModelChange, onClose, onConfirm }: {
-  sourceURL: string;
-  open: boolean;
-  busy: boolean;
-  model: string;
-  models: string[];
-  onModelChange: (model: string) => void;
-  onClose: () => void;
-  onConfirm: (payload: CanvasMaskEditPayload) => void | Promise<void>;
-}) {
-  const maskRef = useRef<HTMLCanvasElement | null>(null);
-  const previewRef = useRef<HTMLCanvasElement | null>(null);
-  const drawingRef = useRef<{ active: boolean; last: { x: number; y: number } | null }>({ active: false, last: null });
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [prompt, setPrompt] = useState("");
-  const [brushSize, setBrushSize] = useState(100);
-  const [mode, setMode] = useState<"paint" | "erase">("paint");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const modelOptions = Array.from(new Set(models.map((value) => value.trim()).filter(Boolean)));
-  const modelAvailable = modelOptions.includes(model.trim());
-  useEffect(() => { if (open) { setPrompt(""); setBrushSize(100); setMode("paint"); setError(""); setSubmitting(false); setDimensions({ width: 0, height: 0 }); } }, [open, sourceURL]);
-  useEffect(() => { clearCanvas(maskRef.current); clearCanvas(previewRef.current); }, [dimensions]);
-  function draw(event: ReactPointerEvent<HTMLCanvasElement>) {
-    const canvas = maskRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
-    const point = canvasPoint(event.currentTarget, event.clientX, event.clientY);
-    context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = brushSize; context.globalCompositeOperation = mode === "paint" ? "source-over" : "destination-out"; context.strokeStyle = "#000"; context.fillStyle = "#000";
-    const previous = drawingRef.current.last || point; maskStroke(context, previous, point, brushSize); drawingRef.current.last = point; renderMask(canvas, previewRef.current); if (mode === "paint") setError("");
-  }
-  function startDraw(event: ReactPointerEvent<HTMLCanvasElement>) { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); drawingRef.current = { active: true, last: null }; draw(event); }
-  function stopDraw() { drawingRef.current = { active: false, last: null }; if (maskRef.current) renderMask(maskRef.current, previewRef.current, true); }
-  async function submit() {
-    const canvas = maskRef.current;
-    if (!prompt.trim()) return setError("请输入修改要求");
-    if (!canvas || !hasMask(canvas)) return setError("请先涂抹局部区域");
-    if (!modelAvailable) return setError("请选择全局模型设置中已启用的图片模型");
-    setSubmitting(true);
-    try {
-      await onConfirm({ prompt: prompt.trim(), markedDataURL: await buildMarkedReference(sourceURL, canvas), model: model.trim() });
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "局部编辑失败");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-  if (!sourceURL) return null;
-  const disabled = busy || submitting;
-  return <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !disabled && onClose()}><DialogContent className="w-[min(94vw,980px)]"><DialogHeader><DialogTitle>局部遮罩编辑</DialogTitle><DialogDescription>涂抹需要修改的区域，蓝色仅作为编辑位置标记。</DialogDescription></DialogHeader><div className="grid gap-5 lg:grid-cols-[minmax(360px,1fr)_280px]"><div className="flex min-h-44 sm:min-h-[320px] items-center justify-center rounded-xl border border-border bg-black/5"><div className="relative inline-block max-w-full overflow-hidden rounded-lg"><img src={sourceURL} alt="" className="block max-h-[38dvh] sm:max-h-[60dvh] max-w-full" draggable={false} onLoad={(event) => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />{dimensions.width ? <><canvas ref={maskRef} width={dimensions.width} height={dimensions.height} className="hidden" /><canvas ref={previewRef} width={dimensions.width} height={dimensions.height} className="absolute inset-0 size-full cursor-crosshair touch-none" onPointerDown={startDraw} onPointerMove={(event) => drawingRef.current.active && draw(event)} onPointerUp={stopDraw} onPointerCancel={stopDraw} /></> : null}</div></div><div className="flex flex-col gap-4"><div className="grid grid-cols-2 gap-2"><Button type="button" aria-pressed={mode === "paint"} variant={mode === "paint" ? "default" : "outline"} onClick={() => setMode("paint")}><Brush />画笔</Button><Button type="button" aria-pressed={mode === "erase"} variant={mode === "erase" ? "default" : "outline"} onClick={() => setMode("erase")}><Eraser />擦除</Button></div><label className="space-y-2 text-sm"><span className="flex justify-between"><span>笔刷大小</span><strong>{brushSize}px</strong></span><Slider min="8" max="160" step="2" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} aria-label="笔刷大小" /></label><label className="space-y-2 text-sm"><span>修改要求</span><Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(""); }} placeholder="例如：把选中区域改成金属材质，保持原图光影" className="min-h-32 resize-y" /></label><label className="space-y-2 text-sm"><span>模型</span><Select value={modelAvailable ? model : ""} disabled={modelOptions.length === 0} onValueChange={onModelChange}><SelectTrigger><SelectValue placeholder={modelOptions.length ? "选择图片模型" : "暂无可用模型"} /></SelectTrigger><SelectContent>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></label>{error ? <p className="text-xs font-medium text-destructive dark:text-rose-300">{error}</p> : null}<Button type="button" variant="outline" disabled={disabled} onClick={() => { clearCanvas(maskRef.current); clearCanvas(previewRef.current); setError(""); }}><RotateCcw />重置蒙版</Button></div></div><DialogFooter><Button type="button" variant="outline" disabled={disabled} onClick={onClose}><X />取消</Button><Button type="button" disabled={disabled || !modelAvailable} onClick={() => void submit()}>{disabled ? "处理中" : <><WandSparkles />AI 修改</>}</Button></DialogFooter></DialogContent></Dialog>;
-}
-
 export function CanvasAngleDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (params: CanvasImageAngleParams) => void }) {
+  const source = useEditableImageSource(sourceURL, open);
   const [params, setParams] = useState<CanvasImageAngleParams>({ horizontalAngle: 0, pitchAngle: 9, cameraDistance: 4.8, wideAngle: false });
   useEffect(() => { if (open) setParams({ horizontalAngle: 0, pitchAngle: 9, cameraDistance: 4.8, wideAngle: false }); }, [open, sourceURL]);
   const update = <K extends keyof CanvasImageAngleParams>(key: K, value: CanvasImageAngleParams[K]) => setParams((current) => ({ ...current, [key]: value }));
   if (!sourceURL) return null;
-  return <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}><DialogContent className="w-[min(94vw,860px)]"><DialogHeader><DialogTitle>AI 多角度</DialogTitle><DialogDescription>基于原图生成同一主体的新视角。</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]"><div className="flex min-h-40 sm:min-h-[280px] items-center justify-center rounded-xl border border-border bg-black/5"><img src={sourceURL} alt="" className="size-40 rounded-2xl sm:size-52 object-contain shadow-xl" draggable={false} style={{ transform: anglePreviewTransform(params) }} /></div><div className="space-y-5"><AngleControl label="左右角度" value={params.horizontalAngle} min={-60} max={60} step={1} suffix="°" onChange={(value) => update("horizontalAngle", value)} /><AngleControl label="俯仰角度" value={params.pitchAngle} min={-45} max={45} step={1} suffix="°" onChange={(value) => update("pitchAngle", value)} /><AngleControl label="镜头距离" value={params.cameraDistance} min={1} max={10} step={0.1} suffix="" onChange={(value) => update("cameraDistance", value)} /><div className="flex items-center justify-between gap-3 text-sm"><span>镜头</span><div className="flex gap-1.5"><Button type="button" size="sm" aria-pressed={!params.wideAngle} variant={!params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", false)}>标准</Button><Button type="button" size="sm" aria-pressed={params.wideAngle} variant={params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", true)}>广角</Button></div></div><p className="text-xs text-muted-foreground">{canvasImageAngleLabel(params)}</p></div></div><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy} onClick={() => onConfirm(params)}>{busy ? "处理中" : <><Camera />AI 生成</>}</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}><DialogContent className="w-[min(94vw,860px)]"><DialogHeader><DialogTitle>AI 多角度</DialogTitle><DialogDescription>基于原图生成同一主体的新视角。</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]"><EditableImageFrame source={source} className="h-40 sm:h-[280px]"><img src={source.url} alt="" className="size-40 rounded-2xl sm:size-52 object-contain shadow-xl" draggable={false} style={{ transform: anglePreviewTransform(params) }} /></EditableImageFrame><div className="space-y-5"><AngleControl label="左右角度" value={params.horizontalAngle} min={-60} max={60} step={1} suffix="°" onChange={(value) => update("horizontalAngle", value)} /><AngleControl label="俯仰角度" value={params.pitchAngle} min={-45} max={45} step={1} suffix="°" onChange={(value) => update("pitchAngle", value)} /><AngleControl label="镜头距离" value={params.cameraDistance} min={1} max={10} step={0.1} suffix="" onChange={(value) => update("cameraDistance", value)} /><div className="flex items-center justify-between gap-3 text-sm"><span>镜头</span><div className="flex gap-1.5"><Button type="button" size="sm" aria-pressed={!params.wideAngle} variant={!params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", false)}>标准</Button><Button type="button" size="sm" aria-pressed={params.wideAngle} variant={params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", true)}>广角</Button></div></div><p className="text-xs text-muted-foreground">{canvasImageAngleLabel(params)}</p></div></div><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(params)}>{busy ? "处理中" : <><Camera />AI 生成</>}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function AngleControl({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <label className="grid grid-cols-[64px_minmax(0,1fr)_48px] items-center gap-3 text-sm"><span>{label}</span><Slider min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label} /><strong className="text-right">{Number.isInteger(value) ? value : value.toFixed(1)}{suffix}</strong></label>; }
 function anglePreviewTransform(params: CanvasImageAngleParams) { const scale = 1.08 - params.cameraDistance * 0.035 + (params.wideAngle ? -0.08 : 0); return `perspective(520px) rotateY(${params.horizontalAngle * -0.45}deg) rotateX(${params.pitchAngle * 0.35}deg) scale(${Math.max(0.72, Math.min(1.08, scale))})`; }
-function clearCanvas(canvas: HTMLCanvasElement | null) { const context = canvas?.getContext("2d"); if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height); }
-function canvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY: number) { const rect = canvas.getBoundingClientRect(); return { x: ((clientX - rect.left) / Math.max(1, rect.width)) * canvas.width, y: ((clientY - rect.top) / Math.max(1, rect.height)) * canvas.height }; }
-function maskStroke(context: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, size: number) { context.beginPath(); if (from.x === to.x && from.y === to.y) { context.arc(to.x, to.y, size / 2, 0, Math.PI * 2); context.fill(); } else { context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke(); } }
-function hasMask(canvas: HTMLCanvasElement) { const data = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data; if (!data) return false; for (let index = 3; index < data.length; index += 4) if (data[index] > 0) return true; return false; }
-const MASK_FILL_COLOR = "rgba(37, 99, 235, .38)";
-const MASK_BORDER_COLOR = "rgba(255, 255, 255, .72)";
-
-function renderMask(mask: HTMLCanvasElement, preview: HTMLCanvasElement | null, border = false) {
-  const context = preview?.getContext("2d");
-  if (!preview || !context) return;
-  context.clearRect(0, 0, preview.width, preview.height);
-  context.fillStyle = MASK_FILL_COLOR;
-  context.fillRect(0, 0, preview.width, preview.height);
-  context.globalCompositeOperation = "destination-in";
-  context.drawImage(mask, 0, 0);
-  context.globalCompositeOperation = "source-over";
-  if (border) drawDashedMaskBorder(context, mask);
-}
-
-function drawDashedMaskBorder(context: CanvasRenderingContext2D, mask: HTMLCanvasElement) {
-  const maskContext = mask.getContext("2d");
-  if (!maskContext) return;
-  const { width, height } = mask;
-  const data = maskContext.getImageData(0, 0, width, height).data;
-  const step = Math.max(1, Math.round(Math.max(width, height) / 1200));
-  const dash = step * 8;
-  const period = dash + step * 5;
-  context.save();
-  context.fillStyle = MASK_BORDER_COLOR;
-  context.shadowColor = "rgba(0, 0, 0, .24)";
-  context.shadowBlur = step * 1.5;
-  for (let y = step; y < height - step; y += step) {
-    for (let x = step; x < width - step; x += step) {
-      const offset = (y * width + x) * 4 + 3;
-      if (data[offset] === 0 || !isMaskEdge(data, width, x, y, step) || (x + y) % period > dash) continue;
-      context.fillRect(x - step / 2, y - step / 2, Math.max(1.5, step), Math.max(1.5, step));
-    }
-  }
-  context.restore();
-}
-
-function isMaskEdge(data: Uint8ClampedArray, width: number, x: number, y: number, step: number) {
-  return data[((y - step) * width + x) * 4 + 3] === 0
-    || data[((y + step) * width + x) * 4 + 3] === 0
-    || data[(y * width + x - step) * 4 + 3] === 0
-    || data[(y * width + x + step) * 4 + 3] === 0;
-}
-
-async function buildMarkedReference(sourceURL: string, selection: HTMLCanvasElement) {
-  const canvas = document.createElement("canvas");
-  canvas.width = selection.width;
-  canvas.height = selection.height;
-  const context = canvas.getContext("2d");
-  if (!context) return selection.toDataURL("image/png");
-  const image = await loadCanvasImage(sourceURL);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  context.fillStyle = MASK_FILL_COLOR;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.globalCompositeOperation = "destination-in";
-  context.drawImage(selection, 0, 0);
-  context.globalCompositeOperation = "destination-over";
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  context.globalCompositeOperation = "source-over";
-  return canvas.toDataURL("image/png");
-}
-
-function loadCanvasImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("读取图片失败"));
-    image.src = src;
-  });
-}
-
 function moveCrop(crop: CanvasImageCropRect, dx: number, dy: number) { return { ...crop, x: clamp(crop.x + dx, 0, 1 - crop.width), y: clamp(crop.y + dy, 0, 1 - crop.height) }; }
 function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: string, locked: boolean, frame: DOMRect) {
   let next = { ...crop };

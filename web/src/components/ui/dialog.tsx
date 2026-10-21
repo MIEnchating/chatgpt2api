@@ -85,7 +85,7 @@ function DialogContent({
           }
         }}
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-5 overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}
@@ -96,7 +96,7 @@ function DialogContent({
             {body.length > 0 ? (
               <ScrollArea
                 data-slot="dialog-body"
-                className="-mx-1 min-h-0 min-w-0 flex-1 pl-1 pr-4"
+                className="-mx-1 min-h-0 min-w-0 flex-1 px-1 data-[scroll-overflow-y=true]:pr-4"
                 viewportClassName="overscroll-contain py-1"
                 viewClass="grid min-w-0 gap-4"
               >
@@ -109,7 +109,7 @@ function DialogContent({
         {showCloseButton ? (
           <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="absolute top-3 right-3 z-30 inline-flex size-9 items-center justify-center rounded-lg bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60 sm:top-4 sm:right-4">
             <X className="size-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">关闭</span>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>
@@ -157,7 +157,8 @@ function DialogFooter({
       data-slot="dialog-footer"
       data-flush={flush || undefined}
       className={cn(
-        "z-10 flex min-w-0 shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:flex-wrap sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
+        "z-10 flex min-w-0 shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:flex-wrap sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18 [&>[data-slot=button]]:h-auto [&>[data-slot=button]]:min-h-10 [&>[data-slot=button]]:whitespace-normal",
+        !flush && "border-t border-border/70 pt-3",
         flush && "min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6",
         className,
       )}

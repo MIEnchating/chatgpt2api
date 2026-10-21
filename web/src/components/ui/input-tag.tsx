@@ -154,6 +154,7 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
         data-limit-reached={limitReached || undefined}
         className={cn(
           "flex min-h-10 w-full min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1.5 text-sm shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
+          !disabled && !readOnly && !invalid && "hover:border-foreground/25",
           disabled && "cursor-not-allowed bg-muted/50 opacity-60",
           readOnly && "bg-muted/30",
           invalid && "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
@@ -168,17 +169,17 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
             key={`${tag}-${index}`}
             data-slot="input-tag-item"
             className={cn(
-              "inline-flex h-7 max-w-full items-center gap-1 rounded-lg border border-border/70 bg-muted/65 pl-2.5 text-xs font-medium text-foreground",
+              "inline-flex min-h-7 max-w-full items-center gap-1 rounded-lg border border-border/70 bg-muted/65 pl-2.5 text-xs font-medium text-foreground",
               (disabled || readOnly) && "pr-2.5",
               tagClassName,
             )}
           >
-            <span className="min-w-0 max-w-56 truncate" title={tag}>{tag}</span>
+            <span className="min-w-0 max-w-full truncate" title={tag}>{tag}</span>
             {!disabled && !readOnly ? (
               <button
                 type="button"
                 data-slot="input-tag-remove"
-                className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 aria-label={`删除标签 ${tag}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -199,7 +200,7 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
             value={inputValue}
             placeholder={value.length === 0 ? placeholder : undefined}
             className={cn(
-              "h-7 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
+              "h-7 max-w-full flex-1 bg-transparent px-1 text-base sm:text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
               value.length === 0 ? "min-w-32" : "min-w-10",
               inputClassName,
             )}

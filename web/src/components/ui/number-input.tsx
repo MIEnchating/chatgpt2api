@@ -93,7 +93,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         disabled={decrementDisabled}
         onClick={() => changeByStep(-1)}
         className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
+          "flex size-8 max-h-full shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-background enabled:hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
           controlsLayout === "split" && "ml-1",
         )}
       >
@@ -109,7 +109,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         disabled={incrementDisabled}
         onClick={() => changeByStep(1)}
         className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
+          "flex size-8 max-h-full shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-background enabled:hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
           controlsLayout === "split" && "mr-1",
         )}
       >
@@ -120,8 +120,8 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     return (
       <div
         className={cn(
-          "flex h-10 w-full min-w-0 items-center rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20 has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:focus-within:border-destructive has-[input[aria-invalid=true]]:focus-within:ring-destructive/20",
-          disabled && "cursor-not-allowed bg-muted/50 opacity-60",
+          "flex h-10 w-full min-w-0 items-center rounded-lg border border-input bg-background shadow-xs hover:border-foreground/25 transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20 has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:focus-within:border-destructive has-[input[aria-invalid=true]]:focus-within:ring-destructive/20",
+          disabled && "cursor-not-allowed bg-muted/50 opacity-60 hover:border-input",
           readOnly && "bg-muted/30",
           className,
         )}
@@ -146,7 +146,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             value={value}
             onChange={(event) => onValueChange(event.target.value)}
             className={cn(
-              "h-full min-w-0 max-w-full appearance-none bg-transparent py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+              "h-full min-w-0 max-w-full appearance-none bg-transparent py-2 text-base sm:text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
               controlsLayout === "split" ? "flex-none px-0 text-right" : "flex-1 px-3",
               inputClassName,
             )}
@@ -164,7 +164,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           ) : null}
         </div>
         {controlsLayout === "split" ? incrementButton : (
-          <div className="mr-1 flex h-8 shrink-0 items-center rounded-md bg-muted/55 p-0.5">
+          <div className="mr-0.5 flex h-8 max-h-full shrink-0 items-center divide-x divide-border/70 rounded-md bg-muted/45">
             {decrementButton}
             {incrementButton}
           </div>

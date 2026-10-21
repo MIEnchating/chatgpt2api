@@ -298,7 +298,7 @@ test("cancelling a canvas connection drag never creates an edge", () => {
   const connectionRef = { current: { nodeID: "from", handleType: "source" } };
   const handler = pageHandler("canvas-engine.tsx", "handleUp", {
     panRef: { current: { active: false } }, dragRef: { current: { active: false } }, resizeRef: { current: { active: false } },
-    selectionRef: { current: null }, connectionRef,
+    selectionRef: { current: null }, connectionRef, syncToolCursor: () => {},
     screenToWorld: (x, y) => ({ x, y }), connectionTargetAt: () => ({ nodeID: "to", isNearNode: true }),
     connectionFor: () => ({ sourceID: "from", targetID: "to" }), setConnectionTargetID: () => {}, setConnecting: () => {},
     onConnect: (...args) => created.push(args),

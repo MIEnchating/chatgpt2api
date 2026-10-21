@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 
 import { toast } from "sonner";
 
@@ -25,7 +26,6 @@ import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preferenc
 import {
   createRelayTokenModelLoader,
   EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT,
-  RELAY_TOKEN_MODELS_REFRESH_MS,
 } from "@/lib/relay-token-models";
 import {
   dismissImageGenerationPreferencesLoadError,
@@ -34,13 +34,14 @@ import {
 } from "@/lib/image-generation-preferences-retry";
 
 export function RelayTokenPreferencesProvider({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
   const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
   const sessionKey = session?.key || "";
   const [tokenNames, setSelectedTokenNames] = useState<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const lastTokenByModelRef = useRef(new Map<string, string>());
   const tokenNamesRef = useRef<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const [preferencesReady, setPreferencesReady] = useState(false);
-  const modelScope = JSON.stringify([sessionKey, preferencesReady, tokenNames]);
+  const modelScope = JSON.stringify([sessionKey, preferencesReady, tokenNames, pathname]);
   const [modelState, setModelState] = useState({ scope: "", snapshot: EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT });
   const modelLoaderRef = useRef<ReturnType<typeof createRelayTokenModelLoader> | null>(null);
   const modelSnapshot = modelState.scope === modelScope ? modelState.snapshot : EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT;
@@ -115,22 +116,9 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
     });
     modelLoaderRef.current = loader;
     void loader.refresh();
-    const refreshOnReturn = () => {
-      if (document.visibilityState === "visible" && names.length > 0) void loader.refresh(true);
-    };
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible" && names.length > 0) void loader.refresh();
-    }, RELAY_TOKEN_MODELS_REFRESH_MS / 4);
-    window.addEventListener("focus", refreshOnReturn);
-    window.addEventListener("online", refreshOnReturn);
-    document.addEventListener("visibilitychange", refreshOnReturn);
     return () => {
       loader.dispose();
       if (modelLoaderRef.current === loader) modelLoaderRef.current = null;
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refreshOnReturn);
-      window.removeEventListener("online", refreshOnReturn);
-      document.removeEventListener("visibilitychange", refreshOnReturn);
     };
   }, [modelScope, preferencesReady, sessionKey, tokenNames]);
 
@@ -169,7 +157,7 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
     return name;
   }, [modelsByToken]);
 
-  const refreshTokenModels = useCallback(() => { void modelLoaderRef.current?.refresh(true); }, []);
+  const refreshTokenModels = useCallback(() => { void modelLoaderRef.current?.refresh(); }, []);
   const routeForModel = useCallback((kind: RelayTokenKind, model: string) => {
     const route = relayTokenRouteForModel(tokenNamesRef.current[kind], model, modelsByToken, failedModelTokenNames, preferencesReady && routingReady);
     if (modelsRefreshing && (route.status === "model-list-error" || route.status === "model-unavailable")) {

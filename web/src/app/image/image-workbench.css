@@ -1,0 +1,28 @@
+.studio-results {
+  container: studio-results / size;
+}
+
+[data-radix-popper-content-wrapper]:has(> .studio-contract-tooltip) {
+  pointer-events: none;
+}
+
+@container studio-results (max-height: 360px) {
+  .studio-welcome {
+    padding-block: 0;
+  }
+
+  .studio-welcome-content {
+    gap: 1rem;
+  }
+
+  .studio-preset-preview {
+    aspect-ratio: auto;
+    height: 100px;
+  }
+}
+
+@container studio-results (max-height: 240px) {
+  .studio-preset-preview {
+    height: 72px;
+  }
+}

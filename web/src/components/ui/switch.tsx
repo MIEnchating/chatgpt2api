@@ -36,8 +36,8 @@ function Switch({
       disabled={disabled}
       data-slot="switch"
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-muted-foreground/25 outline-none transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive/20",
-        checked && "bg-brand",
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-transparent bg-muted-foreground/25 shadow-inner outline-none transition-[background-color,box-shadow] enabled:hover:bg-muted-foreground/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive/20",
+        checked && "bg-brand enabled:hover:bg-brand/90",
         className,
       )}
       data-state={checked ? "checked" : "unchecked"}
@@ -46,8 +46,8 @@ function Switch({
     >
       <span
         className={cn(
-          "pointer-events-none block size-4 translate-x-0.5 rounded-full bg-background shadow-xs transition-transform",
-          checked && "translate-x-[18px] bg-brand-foreground",
+          "pointer-events-none block size-4.5 translate-x-0.5 rounded-full bg-white shadow-sm transition-transform duration-200",
+          checked && "translate-x-[22px] bg-brand-foreground",
         )}
       />
     </button>

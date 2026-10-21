@@ -34,7 +34,7 @@ export function ImageSizePresetControls({
 }) {
   return (
     <section className={cn("space-y-1.5", className)}>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <ImageParameterLabel help="选择图片宽高比和尺寸档位，图形会直观展示宽高关系。">宽高比</ImageParameterLabel>
         {previewLabel ? <GenerationSizeBadge highResolution={highResolution}>{previewLabel}</GenerationSizeBadge> : null}
       </div>

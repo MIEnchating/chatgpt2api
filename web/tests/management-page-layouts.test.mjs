@@ -48,9 +48,10 @@ test("assets, users, and logs use the same responsive pagination contract", () =
   assert.doesNotMatch(logsSource, /aria-label="上一页"/);
 
   assert.match(managementSource, /data-management-pagination/);
+  assert.match(managementSource, /col-span-2 row-start-2[^"]*sm:col-span-1[^"]*sm:row-start-1/);
   assert.match(
     managementSource,
-    /grid-cols-\[minmax\(0,1fr\)_auto_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
+    /grid-cols-\[minmax\(0,1fr\)_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
   );
   assert.match(
     managementSource,
@@ -156,7 +157,7 @@ test("log detail header reserves the global dialog close-button area", () => {
 
 test("major libraries and management pages share one page-level empty state", () => {
   assert.match(emptyStateSource, /data-empty-state/);
-  assert.match(emptyStateSource, /compact \? "min-h-32 py-8" : "min-h-44 py-10"/);
+  assert.match(emptyStateSource, /compact \? "min-h-32 py-6" : "min-h-48 py-10 sm:py-12"/);
   for (const source of [assetsSource, usersSource, rbacSource, logsSource, workflowsSource]) {
     assert.match(source, /<EmptyState/);
   }

@@ -6,27 +6,27 @@ import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 outline-none active:not-disabled:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium leading-5 select-none transition-[color,background-color,border-color,box-shadow,transform] duration-150 outline-none active:not-disabled:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-xs not-disabled:hover:bg-primary/90",
+          "border border-transparent bg-primary text-primary-foreground shadow-xs not-disabled:hover:bg-primary/90 not-disabled:hover:shadow-sm",
         destructive:
-          "bg-destructive text-white shadow-xs not-disabled:hover:bg-destructive/90 focus-visible:ring-destructive/20",
+          "border border-transparent bg-destructive text-white shadow-xs not-disabled:hover:bg-destructive/90 focus-visible:ring-destructive/20",
         outline:
-          "border border-border bg-background text-foreground shadow-xs not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground",
+          "border border-border bg-background text-foreground shadow-xs not-disabled:hover:border-foreground/20 not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-none not-disabled:hover:bg-secondary/80",
+          "border border-transparent bg-secondary text-secondary-foreground shadow-none not-disabled:hover:bg-secondary/80",
         ghost:
-          "text-muted-foreground not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground",
+          "text-muted-foreground not-disabled:hover:border-foreground/20 not-disabled:hover:bg-accent not-disabled:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2 has-[>svg]:px-3",
         sm: "h-8 gap-1.5 rounded-lg px-3 has-[>svg]:px-2.5",
         lg: "h-11 rounded-lg px-6 has-[>svg]:px-4",
-        icon: "size-10",
+        icon: "size-10 p-0",
       },
     },
     defaultVariants: {

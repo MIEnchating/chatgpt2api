@@ -23,15 +23,15 @@ function FileUploadButton({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        "group flex h-10 w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-border/80 bg-muted/25 px-2.5 text-left text-xs font-medium text-foreground transition-[border-color,background-color,color,box-shadow] enabled:hover:border-primary/45 enabled:hover:bg-primary/5 enabled:hover:text-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:border-border/80 disabled:bg-muted/15 disabled:text-muted-foreground disabled:opacity-60",
+        "group flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-border/80 bg-muted/25 px-2.5 py-1.5 text-left text-sm font-medium text-foreground transition-[border-color,background-color,color,box-shadow] enabled:hover:border-primary/45 enabled:hover:bg-primary/5 enabled:hover:text-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:border-border/80 disabled:bg-muted/15 disabled:text-muted-foreground disabled:opacity-60",
         className,
       )}
       {...props}
     >
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground shadow-xs ring-1 ring-border/70 transition-colors group-hover:text-primary group-disabled:text-muted-foreground">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground shadow-xs ring-1 ring-border/70 transition-colors group-hover:group-enabled:text-primary group-disabled:text-muted-foreground">
         {loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
       </span>
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span className="min-w-0 flex-1 break-words leading-5">{children}</span>
     </button>
   );
 }

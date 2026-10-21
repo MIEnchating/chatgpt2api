@@ -33,7 +33,7 @@ export function ChannelParameterEditor({ value, onChange, baseURL, models = [], 
     onChange(value.slice(0, start) + variable + value.slice(end));
     requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + variable.length, start + variable.length); });
   }
-  return <div className="grid min-w-0 gap-2 rounded-lg border border-border p-3">
+  return <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-muted/15 p-3 sm:p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="text-sm font-medium">自定义参数转换</span>
       <div className="flex flex-wrap gap-1">
@@ -41,10 +41,10 @@ export function ChannelParameterEditor({ value, onChange, baseURL, models = [], 
         <Button type="button" size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(`Base URL：${baseURL}\n模型列表：${models.join(", ") || "请填写实际模型名称"}\n\n${parameterTranslationHelp}\n\n结构示例：\n${example(kind, models[0] || "model-name")}`).then(() => toast.success("已复制说明"), () => toast.error("复制失败")); }}><Copy />复制说明</Button>
       </div>
     </div>
-    <p className="text-xs text-muted-foreground">按实际模型名称转换图片、视频或音频请求。留空使用原有接口，保存时校验语法。</p>
+    <p className="text-xs leading-5 text-muted-foreground">按实际模型名称转换图片、视频或音频请求。留空使用原有接口，保存时校验语法。</p>
     <Textarea ref={editor} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="min-h-52 font-mono text-xs" spellCheck={false} maxLength={128 * 1024} aria-label="渠道参数转换规则" placeholder={'{ models: {} }'} />
-    <details className="text-xs text-muted-foreground" onToggle={(event) => setPreview(event.currentTarget.open)}><summary className="cursor-pointer">高亮预览</summary>{preview ? <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono leading-6">{highlighted}</pre> : null}</details>
-    <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">插入变量与配置说明</summary><div className="mt-2 flex flex-wrap gap-1">{variables.map((variable) => <Button key={variable} type="button" size="sm" variant="outline" className="h-6 font-mono text-[11px]" disabled={disabled} onClick={() => insert(variable)}>{variable}</Button>)}</div><p className="mt-3 whitespace-pre-wrap leading-6">{parameterTranslationHelp}</p></details>
+    <details className="text-xs text-muted-foreground" onToggle={(event) => setPreview(event.currentTarget.open)}><summary className="cursor-pointer rounded-md py-1.5 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/30">高亮预览</summary>{preview ? <pre className="mt-2 max-h-64 max-w-full overflow-auto rounded-md bg-muted p-3 font-mono leading-6">{highlighted}</pre> : null}</details>
+    <details className="text-xs text-muted-foreground"><summary className="cursor-pointer rounded-md py-1.5 font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/30">插入变量与配置说明</summary><div className="mt-2 flex flex-wrap gap-1">{variables.map((variable) => <Button key={variable} type="button" size="sm" variant="outline" className="h-auto min-h-8 max-w-full whitespace-normal break-all py-1 font-mono text-xs" disabled={disabled} onClick={() => insert(variable)}>{variable}</Button>)}</div><p className="mt-3 whitespace-pre-wrap break-words leading-6">{parameterTranslationHelp}</p></details>
     <Button type="button" size="sm" variant="outline" className="justify-self-start" disabled={disabled || checking} onClick={() => void validate()}>{checking ? <LoaderCircle className="animate-spin" /> : <Check />}校验配置</Button>
   </div>;
 }

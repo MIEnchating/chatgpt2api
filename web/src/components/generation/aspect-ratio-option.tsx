@@ -74,24 +74,24 @@ export function AspectRatioOptionButton({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "group flex min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-1.5 text-center text-muted-foreground shadow-xs transition-[border-color,background-color,color,box-shadow] hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50",
-        layout === "visual" ? "h-[72px] gap-1.5" : "h-14 gap-1",
-        active && "border-brand/55 bg-brand-soft text-brand hover:border-brand/65 hover:bg-brand/15 hover:text-brand",
+        "group flex min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-1.5 text-center text-muted-foreground shadow-xs transition-[border-color,background-color,color,box-shadow] enabled:hover:border-foreground/20 enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50",
+        layout === "visual" ? "min-h-[76px] gap-2 py-2" : "min-h-16 gap-1.5 py-2",
+        active && "border-brand/55 bg-brand-soft text-brand enabled:hover:border-brand/65 enabled:hover:bg-brand/15 enabled:hover:text-brand",
       )}
       onClick={onClick}
     >
       {layout === "visual" ? (
         <>
           {ratio ? <AspectRatioGlyph ratio={ratio} large /> : null}
-          <span className="max-w-full truncate font-mono text-[11px] font-semibold leading-none text-current">{displayLabel}</span>
+          <span className="max-w-full truncate font-mono text-xs font-semibold leading-none text-current">{displayLabel}</span>
         </>
       ) : (
         <>
-          <span className="flex min-w-0 items-center justify-center gap-1">
+          <span className="flex min-w-0 max-w-full items-center justify-center gap-1">
             <AspectRatioGlyph ratio={ratio} />
-            <span className="truncate text-[10px] font-semibold leading-none">{displayLabel}</span>
+            <span className="truncate text-xs font-semibold leading-none">{displayLabel}</span>
           </span>
-          <span className="max-w-full truncate font-mono text-[9px] font-medium leading-none text-muted-foreground/80 group-aria-pressed:text-current">
+          <span className="max-w-full truncate font-mono text-[11px] font-medium leading-none text-muted-foreground/80 group-aria-pressed:text-current">
             {displayDescription}
           </span>
         </>

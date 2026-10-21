@@ -67,14 +67,14 @@ export function SectionNavigation<T extends string>({
               aria-controls={item.id}
               onClick={() => onSelect(item.id)}
               className={cn(
-                "flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card lg:w-full lg:gap-2.5",
+                "flex min-h-10 min-w-0 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card lg:w-full lg:gap-2.5",
                 active
                   ? "bg-brand-soft font-semibold text-brand ring-1 ring-inset ring-brand-border"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               <Icon className="size-4 shrink-0" />
-              <span className="whitespace-nowrap">{item.label}</span>
+              <span className="min-w-0 whitespace-nowrap lg:whitespace-normal lg:break-words">{item.label}</span>
             </button>
           );
         })}

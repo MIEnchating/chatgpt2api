@@ -5,6 +5,8 @@ import { Bell, BellOff, CalendarClock, ChevronRight, LoaderCircle } from "lucide
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -245,7 +247,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
             type="button"
             variant="ghost"
             size="icon"
-            className={cn("relative size-8 rounded-full", className)}
+            className={cn("relative size-8 rounded-lg", className)}
             aria-label={unreadCount > 0 ? `系统公告，${unreadCount} 条未读` : "系统公告"}
             title="系统公告"
           >
@@ -261,7 +263,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
           scrollable={false}
           align="end"
           sideOffset={8}
-          className="w-[min(calc(100vw-1.5rem),360px)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[0_22px_60px_-30px_rgba(15,23,42,0.55)]"
+          className="w-[min(calc(100vw-1.5rem),360px)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-popover)]"
         >
           <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/15 px-4 py-3">
             <div className="text-sm font-semibold text-foreground">系统公告</div>
@@ -269,12 +271,9 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
           </div>
           <ScrollArea className="min-h-0 max-h-[min(420px,65dvh)] flex-1">
             {!isLoaded ? (
-              <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />
-                正在加载
-              </div>
+              <LoadingState label="正在加载公告" className="min-h-40" />
             ) : announcements.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground">暂无公告</div>
+              <EmptyState compact icon={Bell} title="暂无公告" description="新的系统消息会显示在这里" />
             ) : (
               announcements.map((item) => {
                 const version = announcementVersion(item);
@@ -289,13 +288,13 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                     <span
                       className={cn(
                         "mt-1.5 size-2 shrink-0 rounded-full",
-                        unread ? "bg-[#1456f0]" : "bg-border",
+                        unread ? "bg-brand" : "bg-border",
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className={cn("line-clamp-2 text-sm leading-5 text-foreground", unread && "font-semibold")}>{item.title}</span>
+                      <span className={cn("line-clamp-2 break-words text-sm leading-6 text-foreground", unread && "font-semibold")}>{item.title}</span>
                       <span className="mt-1 block text-[11px] text-muted-foreground">{unread ? "未读 · " : ""}{announcementTime(item.updated_at)}</span>
-                      <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.content}</span>
+                      <span className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">{item.content}</span>
                     </span>
                     <ChevronRight className="mt-2 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
                   </button>
@@ -314,9 +313,9 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
               系统公告{selected?.updated_at ? ` · ${announcementTime(selected.updated_at)}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[50dvh] whitespace-pre-wrap break-words pr-1 text-sm leading-7 text-foreground">
+          <div className="whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]">
             {selected?.content || ""}
-          </ScrollArea>
+          </div>
           <DialogFooter className="gap-2 sm:justify-end">
             {isAutomaticPrompt ? (
               <>

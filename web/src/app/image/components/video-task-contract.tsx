@@ -4,6 +4,9 @@ import { createContext, lazy, Suspense, useContext, useEffect, useState, type Re
 import { LoaderCircle, PencilLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LoadingState } from "@/components/ui/loading-state";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { fetchAdminVideoModelContracts, type ManagedVideoModelContract } from "@/lib/api";
 import type { StoredAuthSession } from "@/lib/auth-session";
 import { resolveVideoTaskContracts } from "@/lib/video-task-contract";
@@ -52,7 +55,17 @@ export function VideoTaskContractsProvider({ session, enabled, onPublished, chil
   return (
     <VideoTaskContractsContext.Provider value={allowed ? { items, loading, error, edit: setEditing, retry: () => setLoadVersion((value) => value + 1) } : null}>
       {children}
-      {allowed && editing ? <Suspense fallback={<div role="status" className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm shadow-lg"><LoaderCircle className="size-4 animate-spin" />正在打开契约编辑器</div>}>
+      {allowed && editing ? <Suspense fallback={(
+        <Dialog open onOpenChange={(open) => !open && setEditing(null)}>
+          <DialogContent scrollable={false} className="h-[min(90dvh,860px)] w-[min(96vw,1280px)] max-w-none">
+            <DialogHeader>
+              <DialogTitle>编辑视频模型契约</DialogTitle>
+              <DialogDescription>{editing.contract.name || "配置模型能力和上游字段映射"}</DialogDescription>
+            </DialogHeader>
+            <LoadingState className="min-h-0 flex-1" label="正在加载契约编辑器" />
+          </DialogContent>
+        </Dialog>
+      )}>
         <VideoModelContractEditor
           key={`${session.key}:${editing.id}`}
           sessionKey={session.key}
@@ -77,20 +90,21 @@ export function VideoModelContractButton({ model }: { model: string }) {
   const label = current ? contractLabel({ ...current.contract, revision: current.revision }) : "当前模型没有启用的契约";
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      className="h-9 max-w-full shrink-0 gap-1.5 rounded-xl border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-none"
-      disabled={context.loading || (!context.error && !current)}
-      onClick={() => context.error ? context.retry() : current && context.edit(current)}
-      aria-label={context.loading ? "正在读取视频契约" : context.error ? "重试读取视频契约" : `编辑当前视频契约：${label}`}
-      title={context.error || label}
-    >
-      {context.loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <PencilLine className="size-3.5" />}
-      {context.loading ? "读取契约中" : context.error ? "重试读取契约" : current ? <>
-        <span>编辑契约</span>
-        <span className="hidden max-w-28 truncate text-muted-foreground/70 xl:inline">· {current.contract.name}</span>
-      </> : "未匹配契约"}
-    </Button>
+    <TooltipHint content={context.error || label} className="studio-contract-tooltip pointer-events-none">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="px-2 text-xs has-[>svg]:px-2"
+        disabled={context.loading || (!context.error && !current)}
+        onClick={() => context.error ? context.retry() : current && context.edit(current)}
+        aria-label={context.loading ? "正在读取视频契约" : context.error ? "重试读取视频契约" : `编辑当前视频契约：${label}`}
+      >
+        {context.loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <PencilLine className="size-3.5" />}
+        <span>
+          {context.loading ? "读取契约中" : context.error ? "重试读取契约" : current ? "管理契约" : "未匹配契约"}
+        </span>
+      </Button>
+    </TooltipHint>
   );
 }

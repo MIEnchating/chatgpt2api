@@ -3,10 +3,72 @@ import test from "node:test";
 
 import {
   clearAuthenticatedImageCache,
+  fetchAuthenticatedImageBlob,
   fetchCachedAuthenticatedImage,
   getCachedAuthenticatedImageByteSize,
   releaseCachedAuthenticatedImage,
 } from "../src/lib/authenticated-image.ts";
+
+test("image downloads and editors reuse the cached original Blob without another request", async () => {
+  const originalFetch = globalThis.fetch;
+  const blob = new Blob(["original pixels"], { type: "image/png" });
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return { ok: true, blob: async () => blob };
+  };
+  clearAuthenticatedImageCache();
+  let displayed;
+  try {
+    displayed = await fetchCachedAuthenticatedImage("/images/reused-original.png");
+    assert.equal(await fetchAuthenticatedImageBlob("/images/reused-original.png"), blob);
+    assert.equal(await fetchAuthenticatedImageBlob("/images/reused-original.png"), blob);
+    assert.equal(requests, 1);
+  } finally {
+    if (displayed) releaseCachedAuthenticatedImage(displayed.key);
+    clearAuthenticatedImageCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("cancelled image operations reject even when the original is already cached", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return { ok: true, blob: async () => new Blob(["cached image"]) };
+  };
+  clearAuthenticatedImageCache();
+  let displayed;
+  try {
+    displayed = await fetchCachedAuthenticatedImage("/images/cancelled-original.png");
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(fetchAuthenticatedImageBlob("/images/cancelled-original.png", controller.signal), { name: "AbortError" });
+    assert.equal(requests, 1);
+  } finally {
+    if (displayed) releaseCachedAuthenticatedImage(displayed.key);
+    clearAuthenticatedImageCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("clearing the image cache prevents downloads from reusing a previous session Blob", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => ({ ok: true, blob: async () => new Blob([`session ${++requests}`]) });
+  clearAuthenticatedImageCache();
+  try {
+    const oldImage = await fetchCachedAuthenticatedImage("/images/session-original.png");
+    clearAuthenticatedImageCache();
+    releaseCachedAuthenticatedImage(oldImage.key);
+    assert.equal(await (await fetchAuthenticatedImageBlob("/images/session-original.png")).text(), "session 2");
+    assert.equal(requests, 2);
+  } finally {
+    clearAuthenticatedImageCache();
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("a newly fetched image is retained before cache capacity trimming", async () => {
   const originalFetch = globalThis.fetch;

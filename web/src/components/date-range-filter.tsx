@@ -57,7 +57,7 @@ export function DateRangeFilter({ startDate, endDate, onChange, className }: Dat
           collisionPadding={12}
           sideOffset={8}
         >
-          <div className="mb-2 flex flex-wrap gap-1 border-b border-border pb-2" aria-label="快捷日期范围">
+          <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/50 p-1" aria-label="快捷日期范围">
             {[{ label: "今天", days: 0 }, { label: "近 7 天", days: 6 }, { label: "近 30 天", days: 29 }].map(({ label: presetLabel, days }) => <Button key={days} type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { const today = new Date(); onChange(format(subDays(today, days), "yyyy-MM-dd"), format(today, "yyyy-MM-dd")); setOpen(false); }}>{presetLabel}</Button>)}
           </div>
           <Calendar
@@ -67,7 +67,7 @@ export function DateRangeFilter({ startDate, endDate, onChange, className }: Dat
             onSelect={(value) => onChange(value?.from ? format(value.from, "yyyy-MM-dd") : "", value?.to ? format(value.to, "yyyy-MM-dd") : "")}
             numberOfMonths={numberOfMonths}
           />
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
             <Button type="button" variant="ghost" size="sm" disabled={!startDate && !endDate} onClick={() => { onChange("", ""); setOpen(false); }}>清除日期</Button>
             <Button type="button" size="sm" onClick={() => setOpen(false)}>完成</Button>
           </div>

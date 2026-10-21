@@ -152,8 +152,10 @@ export function LoginPageImageEditor({
     <div className="flex flex-col gap-3">
       <div
         ref={frameRef}
-        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] touch-none items-stretch justify-stretch overflow-hidden rounded-2xl border bg-muted/60 shadow-inner"
+        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] cursor-grab active:cursor-grabbing touch-none items-stretch justify-stretch overflow-hidden rounded-2xl border bg-muted/60 shadow-inner"
         onPointerDown={(event) => {
+          if (event.button !== 0 || !imageLayout) return;
+          event.preventDefault();
           dragStateRef.current = {
             pointerId: event.pointerId,
             startX: event.clientX,
@@ -195,6 +197,7 @@ export function LoginPageImageEditor({
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
         }}
+        onLostPointerCapture={() => { dragStateRef.current = null; }}
         onPointerCancel={(event) => {
           if (dragStateRef.current?.pointerId === event.pointerId) {
             dragStateRef.current = null;
@@ -232,7 +235,7 @@ export function LoginPageImageEditor({
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs leading-5 text-muted-foreground">
         <span>
           水平 {transform.positionX.toFixed(0)}% / 垂直 {transform.positionY.toFixed(0)}%
         </span>

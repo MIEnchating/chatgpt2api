@@ -30,7 +30,7 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
   }, [children, syncTextareaHeight]);
 
   return (
-    <div ref={frameRef} className={cn("canvas-prompt-scroll-frame relative w-full overflow-hidden", className)}>
+    <div ref={frameRef} className={cn("canvas-prompt-scroll-frame relative min-w-0 w-full overflow-hidden", className)}>
       <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
         {children}
       </ScrollArea>

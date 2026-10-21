@@ -1,7 +1,5 @@
 import type { RelayTokenModels } from "./relay-token-selection";
 
-export const RELAY_TOKEN_MODELS_REFRESH_MS = 60_000;
-
 export type RelayTokenModelSnapshot = {
   modelsByToken: RelayTokenModels;
   failedModelTokenNames: string[];
@@ -33,24 +31,20 @@ export function createRelayTokenModelLoader({
   tokenNames,
   load,
   onChange,
-  now = Date.now,
 }: {
   tokenNames: string[];
   load: (options: { tokenName: string; signal: AbortSignal }) => Promise<unknown>;
   onChange: (snapshot: RelayTokenModelSnapshot) => void;
-  now?: () => number;
 }) {
   const names = Array.from(new Set(tokenNames));
   const controller = new AbortController();
   let snapshot = EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT;
   let inFlight: Promise<void> | null = null;
-  let refreshedAt: number | null = null;
 
   return {
-    refresh(force = false): Promise<void> {
+    refresh(): Promise<void> {
       if (controller.signal.aborted) return Promise.resolve();
       if (inFlight) return inFlight;
-      if (!force && refreshedAt !== null && now() - refreshedAt < RELAY_TOKEN_MODELS_REFRESH_MS) return Promise.resolve();
 
       snapshot = { ...snapshot, refreshing: true };
       onChange(snapshot);
@@ -63,7 +57,6 @@ export function createRelayTokenModelLoader({
         }
       })).then((entries) => {
         if (controller.signal.aborted) return;
-        refreshedAt = now();
         snapshot = {
           modelsByToken: Object.fromEntries(entries.map((entry) => [entry.name, entry.models])),
           failedModelTokenNames: entries.filter((entry) => entry.failed).map((entry) => entry.name),

@@ -1,12 +1,11 @@
 "use client";
 
-import { Download, X, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
+import { Clock3, Download, History, X, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { useHistoryDownload } from "@/app/image/use-history-download";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/utils";
@@ -52,16 +51,16 @@ export function ImageSidebar({
     <aside aria-label="创作会话" className="h-full min-h-0 overflow-hidden">
       <div className="flex h-full min-h-0 flex-col gap-3">
         {!hideActionButtons && (
-          <div className="flex items-center gap-2">
-            <Button className="h-10 flex-1 rounded-xl" onClick={onCreateDraft}>
+          <div className="flex items-center gap-2 pb-1">
+            <Button className="h-10 flex-1 justify-start rounded-xl px-3 shadow-none" onClick={onCreateDraft}>
               <MessageSquarePlus className="size-4" />
               新建对话
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
               aria-label="清空会话记录"
-              className="size-10 shrink-0 rounded-xl border-border/70 text-muted-foreground"
+              className="size-10 shrink-0 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={() => void onClearHistory()}
               disabled={conversations.length === 0}
             >
@@ -70,7 +69,8 @@ export function ImageSidebar({
           </div>
         )}
 
-        <div className="flex min-h-8 items-center justify-between gap-2 px-1 pt-1">
+        {conversations.length > 0 ? <SearchInput value={query} onValueChange={setQuery} placeholder="搜索已加载的会话" className="h-9 rounded-lg border-border/60 bg-background/70 text-xs shadow-none" /> : null}
+        <div className="flex min-h-7 items-center justify-between gap-2 px-1">
           <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
             <span>最近会话</span>
             <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] leading-4 tabular-nums">{conversations.length}</span>
@@ -102,7 +102,6 @@ export function ImageSidebar({
             </div>
           </div>
         ) : null}
-        {conversations.length > 0 ? <SearchInput value={query} onValueChange={setQuery} placeholder="搜索已加载的会话" className="h-9 text-xs" /> : null}
         <ScrollArea
           className="min-h-0 flex-1"
         >
@@ -113,7 +112,11 @@ export function ImageSidebar({
                 正在读取会话记录
               </div>
             ) : conversations.length === 0 ? (
-              <div className="px-2 py-3 text-sm leading-6 text-muted-foreground">还没有对话记录，输入提示词后会在这里显示。</div>
+              <div className="flex flex-col items-center px-4 py-10 text-center">
+                <span className="mb-3 flex size-10 items-center justify-center rounded-xl border border-border/60 bg-background/80 text-muted-foreground"><History className="size-4" /></span>
+                <p className="text-xs font-medium text-foreground">还没有创作记录</p>
+                <p className="mt-1.5 text-xs leading-5 text-muted-foreground">从一个想法开始，<br />你的创作会保存在这里。</p>
+              </div>
             ) : (
               <>
               {visibleConversations.length === 0 ? <div className="px-2 py-5 text-center text-xs leading-6 text-muted-foreground">没有匹配的会话<Button variant="link" size="sm" className="mx-auto mt-1 flex text-xs" onClick={() => setQuery("")}>清除搜索</Button></div> : null}
@@ -123,6 +126,10 @@ export function ImageSidebar({
                 const turnCount = isImageConversationHistorySummaryOnly(conversation)
                   ? conversation.historySummary?.turnCount || 0
                   : conversation.turns.length;
+                const activityLabel = [
+                  stats.running > 0 ? `处理中 ${stats.running}` : "",
+                  stats.queued > 0 ? `排队 ${stats.queued}` : "",
+                ].filter(Boolean).join(" · ");
                 return (
                   <div key={conversation.id} className="group relative w-full">
                     <button
@@ -130,30 +137,34 @@ export function ImageSidebar({
                       onClick={() => onSelectConversation(conversation.id)}
                       aria-current={active ? "true" : undefined}
                       className={cn(
-                        "block w-full cursor-pointer rounded-xl border text-left shadow-xs transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        "block w-full cursor-pointer rounded-xl border text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                         hideActionButtons ? "px-4 py-3.5" : "px-3 py-2 pr-10 sm:py-3",
                         batch.selecting && (hideActionButtons ? "pl-11" : "pl-10"),
                         active
-                          ? "border-brand-border bg-brand-soft text-foreground ring-1 ring-inset ring-brand/15"
-                          : "border-border bg-card text-foreground hover:border-brand-border hover:bg-muted/60 dark:border-white/15 dark:bg-white/[0.035] dark:hover:border-white/25 dark:hover:bg-white/[0.06]",
+                          ? "border-brand-border/70 bg-brand-soft text-foreground shadow-xs"
+                          : "border-transparent bg-transparent text-foreground hover:border-border/60 hover:bg-card/80",
                       )}
                     >
-                      <div className={cn("truncate font-semibold", hideActionButtons ? "text-base" : "text-sm")}>
+                      <div className={cn("truncate font-medium", hideActionButtons ? "text-base" : "text-[13px]", active && "text-brand")}>
                         <span className="truncate">{conversation.title}</span>
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {turnCount} 轮 · {formatConversationTime(conversation.updatedAt)}
+                      <div className="mt-1.5 flex h-5 min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground">
+                        <span className="shrink-0">{turnCount} 轮</span>
+                        {activityLabel ? (
+                          <span
+                            className={cn(
+                              "inline-flex h-5 min-w-0 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold tabular-nums",
+                              stats.running > 0
+                                ? "bg-blue-600 text-white dark:bg-blue-400 dark:text-slate-950"
+                                : "bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-200",
+                            )}
+                            title={`${activityLabel} · ${formatConversationTime(conversation.updatedAt)}`}
+                          >
+                            {stats.running > 0 ? <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin motion-reduce:animate-none" /> : <Clock3 aria-hidden="true" className="size-3 shrink-0" />}
+                            <span className="min-w-0 truncate">{activityLabel}</span>
+                          </span>
+                        ) : <span className="min-w-0 truncate tabular-nums">{formatConversationTime(conversation.updatedAt)}</span>}
                       </div>
-                      {stats.running > 0 || stats.queued > 0 ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                          {stats.running > 0 ? (
-                            <Badge variant="info">处理中 {stats.running}</Badge>
-                          ) : null}
-                          {stats.queued > 0 ? (
-                            <Badge variant="warning">排队 {stats.queued}</Badge>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </button>
                     {batch.selecting ? <Checkbox
                       aria-label={`选择会话：${conversation.title}`}

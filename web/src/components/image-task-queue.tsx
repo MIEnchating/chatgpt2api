@@ -5,6 +5,7 @@ import { CheckCircle2, Clock3, ClipboardList, Image as ImageIcon, LoaderCircle, 
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/lib/image-options";
@@ -611,7 +612,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           )}
           <span className="hidden text-xs font-medium xl:inline">任务队列</span>
           {activeCount > 0 ? (
-            <span className="inline-flex min-w-5 items-center justify-center rounded-md bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white dark:bg-sky-400 dark:text-sky-950">
+            <span className="inline-flex min-w-5 items-center justify-center rounded-md bg-brand px-1.5 text-[10px] font-semibold leading-5 text-white dark:bg-sky-400 dark:text-sky-950">
               {activeCount}
             </span>
           ) : null}
@@ -625,7 +626,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
             </span>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-foreground">任务队列</div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs leading-5 text-muted-foreground">
                 {activeCount > 0
                   ? `${activeCount} 个任务正在排队或处理`
                   : hasRecentCompletion
@@ -659,13 +660,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
             </div>
           </ScrollArea>
         ) : (
-          <div className="bg-muted/15 px-6 py-8 text-center">
-            <span className="mx-auto flex size-10 items-center justify-center rounded-lg border border-emerald-100 bg-emerald-50 text-emerald-600 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <CheckCircle2 className="size-5" />
-            </span>
-            <div className="mt-3 text-sm font-semibold text-foreground">暂无处理中的任务</div>
-            <div className="mt-1 text-xs leading-5 text-muted-foreground">新任务开始后，状态与进度会显示在这里</div>
-          </div>
+          <EmptyState compact icon={CheckCircle2} title="暂无处理中的任务" description="新任务开始后，状态与进度会显示在这里" />
         )}
       </PopoverContent>
     </Popover>

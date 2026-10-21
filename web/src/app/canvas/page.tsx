@@ -38,7 +38,7 @@ import { canvasGenerationStatusLabel, canvasNodeInfoJSON } from "@/app/canvas/ca
 import { CANVAS_GROUP_PADDING, canvasNodeBounds, detachCanvasNodesFromRemovedGroups, expandCanvasGroupNodeIDs } from "@/app/canvas/canvas-groups";
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
 import { PANORAMA_IMAGE_SIZE, PANORAMA_NODE_SIZE, buildPanoramaPrompt, isStrictPanoramaSize, panoramaGenerationCount, panoramaGenerationQuality, panoramaRetryPrompt, panoramaRetryReferenceURLs } from "@/app/canvas/canvas-panorama";
-import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
+import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-mask-dialog";
 import { applyCanvasVideoTaskProgressNodes, applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
 import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
@@ -118,12 +118,10 @@ import { getCachedAuthSession } from "@/lib/session";
 
 const CanvasAgentPanel = lazy(() => import("@/app/canvas/canvas-agent-panel").then((module) => ({ default: module.CanvasAgentPanel })));
 const CanvasAssetPicker = lazy(() => import("@/app/canvas/canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));
-const CanvasCropDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasCropDialog })));
-const CanvasSplitDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasSplitDialog })));
-const CanvasUpscaleDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasUpscaleDialog })));
-const CanvasMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasMaskDialog })));
-const CanvasAngleDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasAngleDialog })));
-const ImageLightbox = lazy(() => import("@/components/image-lightbox").then((module) => ({ default: module.ImageLightbox })));
+import { CanvasCropDialog, CanvasSplitDialog, CanvasUpscaleDialog, CanvasAngleDialog } from "@/app/canvas/canvas-image-tools";
+import { CanvasMaskDialog } from "@/app/canvas/canvas-mask-dialog";
+import { ImageLightbox } from "@/components/image-lightbox";
+import { LoadingState } from "@/components/ui/loading-state";
 
 type CanvasSwitchPhase = "switching" | "revealing" | null;
 type ConnectionOrigin = { nodeID: string; handleType: "source" | "target" };
@@ -949,7 +947,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const previewPanorama = nodes.find((node) => node.id === previewNodeID && node.type === "panorama" && node.url) || null;
   const previewVideo = nodes.find((node) => node.id === previewNodeID && node.type === "video" && node.url) || null;
 
-  useEffect(() => () => { if (imageTool?.sourceURL) URL.revokeObjectURL(imageTool.sourceURL); }, [imageTool?.sourceURL]);
 
   useEffect(() => {
     let active = true;
@@ -2637,29 +2634,24 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function openCanvasImageTool(nodeID: string, kind: CanvasImageToolState["kind"]) {
+  function openCanvasImageTool(nodeID: string, kind: CanvasImageToolState["kind"]) {
     const node = nodesRef.current.find((item) => item.id === nodeID && (item.type === "image" || item.type === "panorama") && item.url);
     if (!node?.url || imageToolBusy) return;
-    setImageToolBusy(true);
-    const projectID = documentRef.current.id;
-    const operationEpoch = canvasOperationEpochRef.current;
-    try {
-      const blob = await fetchAuthenticatedImageBlob(node.url);
-      if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch || !nodesRef.current.some((item) => item.id === nodeID)) return;
-      if (kind === "mask") setMaskEditModel(node.generation_model?.trim() || imageModel.trim());
-      setImageTool({ kind, nodeID, sourceURL: URL.createObjectURL(blob) });
-      setPanelNodeID("");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取图片失败");
-    } finally {
-      if (mountedRef.current) setImageToolBusy(false);
-    }
+    if (kind === "mask") setMaskEditModel(node.generation_model?.trim() || imageModel.trim());
+    setImageTool({ kind, nodeID, sourceURL: node.url });
+    setPanelNodeID("");
   }
 
   function closeCanvasImageTool() {
     if (imageToolBusy) return;
     setImageTool(null);
     setMaskEditModel("");
+  }
+
+  function closeAgentPanel() {
+    setAgentOpen(false);
+    documentRef.current = { ...documentRef.current, agent_panel: { open: false, width: agentWidth } };
+    scheduleSave();
   }
 
   function cancelCanvasMediaOperations() {
@@ -2888,7 +2880,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function cropCanvasNode(crop: CanvasImageCropRect) {
+  async function cropCanvasNode(crop: CanvasImageCropRect, sourceURL: string) {
     if (!imageTool || imageTool.kind !== "crop" || imageToolBusy) return;
     const source = nodesRef.current.find((node) => node.id === imageTool.nodeID && (node.type === "image" || node.type === "panorama"));
     if (!source) return closeCanvasImageTool();
@@ -2896,7 +2888,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setImageToolBusy(true);
     try {
-      const result = await uploadDerivedCanvasImage(await cropCanvasImage(imageTool.sourceURL, crop), `canvas-crop-${source.id}.png`);
+      const result = await uploadDerivedCanvasImage(await cropCanvasImage(sourceURL, crop), `canvas-crop-${source.id}.png`);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch || !nodesRef.current.some((node) => node.id === source.id)) return;
       const size = canvasCroppedNodeSize(source.width, result.dimensions.width, result.dimensions.height);
       const child = {
@@ -2914,7 +2906,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function splitCanvasNode(params: CanvasImageSplitParams) {
+  async function splitCanvasNode(params: CanvasImageSplitParams, sourceURL: string) {
     if (!imageTool || imageTool.kind !== "split" || imageToolBusy) return;
     const source = nodesRef.current.find((node) => node.id === imageTool.nodeID && (node.type === "image" || node.type === "panorama"));
     if (!source) return closeCanvasImageTool();
@@ -2922,7 +2914,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setImageToolBusy(true);
     try {
-      const pieces = await splitCanvasImage(imageTool.sourceURL, params);
+      const pieces = await splitCanvasImage(sourceURL, params);
       const gap = 16;
       const cellWidth = source.width / params.columns;
       const cellHeight = source.height / params.rows;
@@ -2944,7 +2936,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function upscaleCanvasNode(params: CanvasImageUpscaleParams) {
+  async function upscaleCanvasNode(params: CanvasImageUpscaleParams, sourceURL: string) {
     if (!imageTool || imageTool.kind !== "upscale" || imageToolBusy) return;
     const source = nodesRef.current.find((node) => node.id === imageTool.nodeID && (node.type === "image" || node.type === "panorama"));
     if (!source) return closeCanvasImageTool();
@@ -2952,7 +2944,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setImageToolBusy(true);
     try {
-      const result = await uploadDerivedCanvasImage(await upscaleCanvasImage(imageTool.sourceURL, params), `canvas-upscale-${source.id}.png`);
+      const result = await uploadDerivedCanvasImage(await upscaleCanvasImage(sourceURL, params), `canvas-upscale-${source.id}.png`);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch || !nodesRef.current.some((node) => node.id === source.id)) return;
 		const child = buildImageNode({ url: result.uploaded.url, storageKey: result.uploaded.storageKey, title: `${source.title || "图片"} 放大`, prompt: source.prompt, width: result.dimensions.width, height: result.dimensions.height, bytes: result.bytes }, { x: source.x + source.width + 96, y: source.y }, source);
       replaceNodes([...nodesRef.current, child]);
@@ -4918,7 +4910,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {projectMenuOpen ? <aside data-canvas-project-menu className="absolute top-16 left-3 z-40 flex w-80 max-w-[calc(100%_-_1.5rem)] flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)]" style={{ maxHeight: Math.max(80, canvasSize.height - 80) }}><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-brand-soft text-brand")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></aside> : null}
 
-      {agentPanelMounted ? <Suspense fallback={null}><CanvasAgentPanel
+      {agentPanelMounted ? <Suspense fallback={agentOpen && !panelNodeID ? (
+        <aside aria-label="Agent 对话面板" aria-busy="true" className="absolute top-3 right-3 bottom-[var(--canvas-dock-clearance)] z-40 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)] sm:top-4 sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]" style={{ width: `min(${agentWidth}px, calc(100% - 12px))` }}>
+          <header className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+            <span className="flex items-center gap-2 text-sm font-semibold"><Bot className="size-4 text-brand" />Agent</span>
+            <Button type="button" variant="ghost" size="icon" aria-label="收起 Agent" onClick={closeAgentPanel}><X /></Button>
+          </header>
+          <LoadingState className="min-h-0 flex-1" label="正在加载 Agent" />
+        </aside>
+      ) : null}><CanvasAgentPanel
         key={renderedCanvasID}
         open={agentOpen && !panelNodeID}
         nodes={nodes}
@@ -4969,14 +4969,20 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onInitialRequestConsumed={() => {
           if (documentRef.current.id === renderedCanvasID) setInitialAgentRequest(null);
         }}
-        onClose={() => {
-          setAgentOpen(false);
-          documentRef.current = { ...documentRef.current, agent_panel: { open: false, width: agentWidth } };
-          scheduleSave();
-        }}
+        onClose={closeAgentPanel}
       /></Suspense> : null}
 
-      {assetPickerMounted ? <Suspense fallback={null}><CanvasAssetPicker
+      {assetPickerMounted ? <Suspense fallback={(
+        <Dialog open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+          <DialogContent scrollable={false} className="flex h-[min(820px,92dvh)] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
+            <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
+              <DialogTitle>选择素材</DialogTitle>
+              <DialogDescription>从我的素材或公开素材库插入文本、图片、视频和音频。</DialogDescription>
+            </DialogHeader>
+            <LoadingState className="min-h-0 flex-1" label="正在加载素材选择器" />
+          </DialogContent>
+        </Dialog>
+      )}><CanvasAssetPicker
         open={assetPickerOpen}
         session={session}
         onInsert={(payload) => {
@@ -5059,13 +5065,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {imageToolsMounted ? <Suspense fallback={null}>
-        <CanvasCropDialog sourceURL={imageTool?.kind === "crop" ? imageTool.sourceURL : ""} open={imageTool?.kind === "crop"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(crop) => void cropCanvasNode(crop)} />
-        <CanvasSplitDialog sourceURL={imageTool?.kind === "split" ? imageTool.sourceURL : ""} open={imageTool?.kind === "split"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void splitCanvasNode(params)} />
-        <CanvasUpscaleDialog sourceURL={imageTool?.kind === "upscale" ? imageTool.sourceURL : ""} open={imageTool?.kind === "upscale"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void upscaleCanvasNode(params)} />
+      {imageToolsMounted ? <>
+        <CanvasCropDialog sourceURL={imageTool?.kind === "crop" ? imageTool.sourceURL : ""} open={imageTool?.kind === "crop"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(crop, sourceURL) => void cropCanvasNode(crop, sourceURL)} />
+        <CanvasSplitDialog sourceURL={imageTool?.kind === "split" ? imageTool.sourceURL : ""} open={imageTool?.kind === "split"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params, sourceURL) => void splitCanvasNode(params, sourceURL)} />
+        <CanvasUpscaleDialog sourceURL={imageTool?.kind === "upscale" ? imageTool.sourceURL : ""} open={imageTool?.kind === "upscale"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params, sourceURL) => void upscaleCanvasNode(params, sourceURL)} />
         <CanvasMaskDialog sourceURL={imageTool?.kind === "mask" ? imageTool.sourceURL : ""} open={imageTool?.kind === "mask"} busy={imageToolBusy} model={maskEditModel || imageModel} models={imageModels} onModelChange={setMaskEditModel} onClose={closeCanvasImageTool} onConfirm={maskEditCanvasNode} />
         <CanvasAngleDialog sourceURL={imageTool?.kind === "angle" ? imageTool.sourceURL : ""} open={imageTool?.kind === "angle"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={angleCanvasNode} />
-      </Suspense> : null}
+      </> : null}
       {previewPanorama?.url ? (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewNodeID("")}>
           <div className="relative h-[85vh] w-[85vw] overflow-hidden rounded-xl" onClick={(event) => event.stopPropagation()}>
@@ -5075,7 +5081,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </div>
       ) : null}
       {previewVideo?.url ? <CanvasVideoPreview src={previewVideo.url} title={previewVideo.title || "视频"} onDownload={() => void downloadNodeImage(previewVideo.id)} onClose={() => setPreviewNodeID("")} /> : null}
-      {imageLightboxMounted ? <Suspense fallback={null}><ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} /></Suspense> : null}
+      {imageLightboxMounted ? <ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} /> : null}
       <Input ref={importRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importProjectArchive(event)} />
       <Input ref={imageInputRef} type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={(event) => void handleNodeImageUpload(event)} />
       {loading || switchPhase ? <CanvasSwitchShell revealing={!loading && switchPhase === "revealing"} /> : null}
@@ -5173,7 +5179,7 @@ function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange, onClos
   return (
     <div data-canvas-minimap className="absolute left-3 z-30 overflow-hidden rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur" style={{ width, bottom: "var(--canvas-dock-clearance)" }}>
       <div className="flex h-8 items-center justify-between border-b border-border/70 px-2.5 text-[11px] font-medium">画布导航<button type="button" className="grid size-6 place-items-center rounded hover:bg-muted" aria-label="关闭小地图" onClick={onClose}><X className="size-3.5" /></button></div>
-      <div ref={containerRef} aria-label="拖动小地图定位画布" className="relative cursor-crosshair touch-none" style={{ height }} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}>
+      <div ref={containerRef} aria-label="拖动小地图定位画布" className={cn("relative touch-none", dragging ? "cursor-grabbing" : "cursor-grab")} style={{ height }} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)}>
         {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-primary" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
         <span className="pointer-events-none absolute border border-brand bg-brand-soft" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
       </div>

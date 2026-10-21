@@ -123,13 +123,15 @@ export function MultiSelect({
     }}>
       <PopoverTrigger asChild>
         <div
+          data-slot="multi-select-trigger"
           role="combobox"
           tabIndex={disabled ? -1 : 0}
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-disabled={disabled}
           className={cn(
-            "flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1 text-sm shadow-xs outline-none transition-[border-color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20",
+            "flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background pl-2 pr-3 py-1 text-sm shadow-xs outline-none transition-[border-color,box-shadow,background-color] duration-150 data-[state=open]:border-foreground/25 data-[state=open]:bg-accent/30 motion-reduce:transition-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20",
+            !disabled && "hover:border-ring/40 hover:bg-accent/30",
             disabled && "cursor-not-allowed bg-muted/50 opacity-60",
             className,
           )}
@@ -209,38 +211,40 @@ export function MultiSelect({
               </div>
             ) : null}
           </div>
-          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-in-out motion-reduce:transition-none", open && "rotate-180")} />
         </div>
       </PopoverTrigger>
-      <PopoverContent scrollable={false} align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[min(90vw,18rem)] p-1.5">
+      <PopoverContent scrollable={false} align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[min(12rem,calc(100vw-1rem))] p-1.5">
         <ScrollArea
           maxHeight="min(20rem, calc(var(--radix-popover-content-available-height) - 0.75rem))"
-          viewportClassName="pr-2"
+          viewportClassName="overscroll-contain pr-2"
         >
           <div role="listbox" aria-multiselectable="true" className="space-y-0.5">
             {options.map((option) => {
               const checked = selected.includes(option.value);
               return (
-                <div key={option.value} className={cn("flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-accent", checked && "bg-accent")}>
+                <div key={option.value} className={cn("flex min-w-0 items-center gap-1 rounded-lg transition-colors duration-150 hover:bg-accent/70", checked && "bg-accent text-accent-foreground")}>
                   <button
                     type="button"
                     disabled={disabled}
                     role="option"
                     aria-selected={checked}
-                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm leading-5 outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => toggle(option.value)}
                   >
-                    <span className={cn("flex size-4 shrink-0 items-center justify-center rounded border border-border", checked && "border-brand bg-brand text-brand-foreground")}>
+                    <span className={cn("mt-0.5 flex size-4 shrink-0 self-start items-center justify-center rounded-[5px] border border-input bg-background shadow-xs", checked && "border-brand bg-brand text-brand-foreground")}>
                       {checked ? <Check className="size-3" /> : null}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    {option.meta}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className={cn("whitespace-normal [overflow-wrap:anywhere]", checked && "font-medium")}>{option.label}</span>
+                      {option.meta ? <span className="text-xs font-normal text-muted-foreground">{option.meta}</span> : null}
+                    </span>
                   </button>
-                  {option.action}
+                  {option.action ? <div className="shrink-0">{option.action}</div> : null}
                 </div>
               );
             })}
-            {options.length === 0 ? <p className="px-2.5 py-3 text-center text-xs text-muted-foreground">{emptyText}</p> : null}
+            {options.length === 0 ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">{emptyText}</p> : null}
           </div>
         </ScrollArea>
       </PopoverContent>

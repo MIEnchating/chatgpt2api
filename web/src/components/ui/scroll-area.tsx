@@ -426,12 +426,12 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
       </ViewportTag>
       {!native && verticalOverflow > 0 ? (
         <div className={cn("absolute inset-y-0 right-0 z-20 w-3 touch-none select-none transition-opacity duration-150", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("y", event)}>
-          <button type="button" tabIndex={-1} className="pointer-events-auto absolute left-1 w-1.5 touch-none select-none rounded-full bg-muted-foreground/45 transition-colors hover:bg-muted-foreground/70" style={{ height: verticalThumbHeight, top: 0, transform: `translate3d(0, ${verticalThumbTop}px, 0)` }} onPointerDown={(event) => startThumbDrag("y", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
+          <button type="button" tabIndex={-1} className="pointer-events-auto absolute left-1 w-1.5 touch-none select-none rounded-full bg-muted-foreground/35 transition-colors hover:bg-muted-foreground/65 active:bg-muted-foreground/80" style={{ height: verticalThumbHeight, top: 0, transform: `translate3d(0, ${verticalThumbTop}px, 0)` }} onPointerDown={(event) => startThumbDrag("y", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
         </div>
       ) : null}
       {!native && horizontalOverflow > 0 ? (
         <div className={cn("absolute bottom-0 left-0 z-20 h-3 w-full touch-none select-none transition-opacity duration-150", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("x", event)}>
-          <button type="button" tabIndex={-1} className="pointer-events-auto absolute top-1 h-1.5 touch-none select-none rounded-full bg-muted-foreground/45 transition-colors hover:bg-muted-foreground/70" style={{ width: horizontalThumbWidth, left: 0, transform: `translate3d(${horizontalThumbLeft}px, 0, 0)` }} onPointerDown={(event) => startThumbDrag("x", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
+          <button type="button" tabIndex={-1} className="pointer-events-auto absolute top-1 h-1.5 touch-none select-none rounded-full bg-muted-foreground/35 transition-colors hover:bg-muted-foreground/65 active:bg-muted-foreground/80" style={{ width: horizontalThumbWidth, left: 0, transform: `translate3d(${horizontalThumbLeft}px, 0, 0)` }} onPointerDown={(event) => startThumbDrag("x", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
         </div>
       ) : null}
     </div>

@@ -258,7 +258,7 @@ export function ImageLightbox({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-y-0 left-0 z-[1000] h-dvh w-screen bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 left-0 z-[1001] flex h-dvh w-screen items-center justify-center outline-none"
+          className="fixed inset-y-0 left-0 z-[1001] flex h-dvh w-screen flex-col outline-none"
           tabIndex={-1}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
@@ -273,9 +273,9 @@ export function ImageLightbox({
             查看、缩放、切换或下载当前图片。
           </DialogPrimitive.Description>
 
-          <div className="absolute top-3 right-3 left-3 z-20 flex flex-wrap items-center justify-end gap-2 sm:top-4 sm:right-4 sm:left-auto">
+          <div className="relative z-20 flex w-full shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/10 bg-black/20 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5">
             {current.sizeLabel || current.dimensions ? (
-              <span className="max-w-[calc(100vw-2rem)] truncate rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90 sm:max-w-[42vw]">
+              <span className="mr-auto max-w-full basis-full truncate sm:basis-auto rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90 sm:max-w-[42vw]">
                 {[current.sizeLabel, current.dimensions].filter(Boolean).join(" · ")}
               </span>
             ) : null}
@@ -289,7 +289,7 @@ export function ImageLightbox({
                 type="button"
                 onClick={zoomOut}
                 disabled={zoom <= MIN_ZOOM}
-                className="inline-flex size-9 items-center justify-center rounded-l-full transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex size-9 items-center justify-center rounded-l-full transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="缩小图片"
                 tooltip="缩小图片"
               >
@@ -300,7 +300,7 @@ export function ImageLightbox({
                 type="button"
                 onClick={zoomIn}
                 disabled={zoom >= MAX_ZOOM}
-                className="inline-flex size-9 items-center justify-center transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex size-9 items-center justify-center transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="放大图片"
                 tooltip="放大图片"
               >
@@ -310,7 +310,7 @@ export function ImageLightbox({
                 type="button"
                 onClick={resetZoom}
                 disabled={zoom === MIN_ZOOM && pan.x === 0 && pan.y === 0}
-                className="inline-flex size-9 items-center justify-center rounded-r-full transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex size-9 items-center justify-center rounded-r-full transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="重置缩放"
                 tooltip="重置缩放"
               >
@@ -320,12 +320,12 @@ export function ImageLightbox({
             <button
               type="button"
               onClick={handleDownload}
-              className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition hover:bg-black/70"
+              className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               aria-label="下载图片"
             >
               <Download className="size-4" />
             </button>
-            <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition hover:bg-black/70">
+            <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
               <X className="size-4" />
               <span className="sr-only">关闭</span>
             </DialogPrimitive.Close>
@@ -335,7 +335,7 @@ export function ImageLightbox({
             <button
               type="button"
               onClick={goPrev}
-              className="absolute left-4 z-10 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition hover:bg-black/60"
+              className="absolute top-1/2 left-3 z-10 -translate-y-1/2 sm:left-5 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               aria-label="上一张"
             >
               <ChevronLeft className="size-5" />
@@ -343,7 +343,7 @@ export function ImageLightbox({
           )}
 
           <div
-            className="flex h-full w-full items-center justify-center overflow-hidden p-4 pt-24 sm:p-8 sm:pt-20"
+            className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-8"
             onClick={() => onOpenChange(false)}
             onWheel={handleWheel}
           >
@@ -351,7 +351,7 @@ export function ImageLightbox({
               src={current.src}
               alt=""
               className={cn(
-                "max-h-[90vh] max-w-[90vw] rounded-lg object-contain",
+                "max-h-full max-w-full rounded-lg object-contain",
                 zoom > MIN_ZOOM ? "cursor-grab touch-none will-change-transform active:cursor-grabbing" : "cursor-zoom-in",
               )}
               style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
@@ -374,7 +374,7 @@ export function ImageLightbox({
             <button
               type="button"
               onClick={goNext}
-              className="absolute right-4 z-10 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition hover:bg-black/60"
+              className="absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-5 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               aria-label="下一张"
             >
               <ChevronRight className="size-5" />

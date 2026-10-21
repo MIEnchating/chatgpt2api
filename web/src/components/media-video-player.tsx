@@ -38,6 +38,7 @@ export function MediaVideoPlayer({
         controls: {
           autoHide: true,
           initShow: true,
+          mode: "normal",
         },
         videoFillMode: "contain",
         fitVideoSize: "fixed",
@@ -46,6 +47,7 @@ export function MediaVideoPlayer({
         cssFullscreen: false,
         playbackRate: {
           toggleMode: "click",
+          listType: "middle",
           list: [
             { rate: 2, text: "2 倍", iconText: "2x" },
             { rate: 1.5, text: "1.5 倍", iconText: "1.5x" },
@@ -85,7 +87,7 @@ export function MediaVideoPlayer({
     <div
       data-app-video-player
       className={cn(
-        "relative w-full overflow-hidden rounded-lg bg-[#080b10] text-white",
+        "relative isolate w-full overflow-hidden rounded-xl border border-white/10 bg-[#080b10] text-white shadow-[0_14px_40px_rgba(2,6,23,0.16)]",
         className,
       )}
       style={{ aspectRatio }}

@@ -42,7 +42,7 @@ test("canvas image tool drags release window listeners on every exit path", () =
   }
   assert.match(hookSource, /useEffect\(\(\) => stopDragging, \[stopDragging\]\)/);
   assert.ok((imageToolsSource.match(/stopDragging\(\);[\s\S]*?if \((?:open|!open)\)/g) || []).length >= 2);
-  assert.ok((imageToolsSource.match(/startDragging\(move\)/g) || []).length >= 2);
+  assert.ok((imageToolsSource.match(/startDragging\(move, /g) || []).length >= 2);
 });
 
 test("the quick action rail supports every actionable node type", () => {
@@ -200,7 +200,7 @@ test("canvas routes every generation through the key matched to its actual node 
 test("shared tooltips include a directional arrow and comfortable trigger spacing", () => {
   assert.match(tooltipSource, /sideOffset = 10/);
   assert.match(tooltipSource, /<TooltipPrimitive\.Arrow/);
-  assert.match(tooltipSource, /<svg className="overflow-visible"/);
+  assert.match(tooltipSource, /<svg viewBox="0 0 30 10" preserveAspectRatio="none" className="overflow-visible"/);
   assert.match(tooltipSource, /className="fill-popover" d="M-2-1H32L15 10Z"/);
   assert.match(tooltipSource, /d="M0 0 15 10 30 0"/);
   assert.match(tooltipSource, /width=\{14\}/);

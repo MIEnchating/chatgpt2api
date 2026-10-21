@@ -35,7 +35,7 @@ export function RelayTokenRequiredDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="w-[min(92vw,440px)] rounded-2xl">
-        <DialogHeader className="gap-3">
+        <DialogHeader className="gap-3 pr-0">
           <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <KeyRound className="size-5" />
           </div>

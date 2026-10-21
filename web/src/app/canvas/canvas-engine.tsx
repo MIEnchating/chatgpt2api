@@ -149,6 +149,17 @@ export function CanvasEngine({
   const selectionRef = useRef<SelectionBox | null>(null);
   const pendingSelectionRef = useRef<Set<string> | null>(null);
   const spacePressedRef = useRef(false);
+  const syncToolCursor = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resize = resizeRef.current;
+    const cursor = panRef.current.active || dragRef.current.active ? "grabbing"
+      : resize.active ? (resize.corner === "top-left" || resize.corner === "bottom-right" ? "nwse-resize" : "nesw-resize")
+      : connectionRef.current || selectionRef.current ? "crosshair"
+      : spacePressedRef.current ? "grab" : "";
+    container.classList.toggle("tool-dragging", Boolean(cursor));
+    container.style.setProperty("--tool-cursor", cursor);
+  }, []);
   const [connecting, setConnecting] = useState<ConnectionOrigin | null>(null);
   const [mouseWorld, setMouseWorld] = useState<Point>({ x: 0, y: 0 });
   const [connectionTargetID, setConnectionTargetID] = useState("");
@@ -268,6 +279,7 @@ export function CanvasEngine({
       startY: event.clientY,
       initial: nodesRef.current.filter((node) => draggedIDs.has(node.id)).map((node) => ({ id: node.id, x: node.x, y: node.y })),
     };
+    syncToolCursor();
   }
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>, node: CanvasNode, corner: ResizeCorner) {
@@ -275,6 +287,7 @@ export function CanvasEngine({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     resizeRef.current = { active: true, pointerID: event.pointerId, nodeID: node.id, corner, node: { ...node } };
+    syncToolCursor();
   }
 
   function startConnection(event: ReactMouseEvent, nodeID: string, handleType: HandleType) {
@@ -282,6 +295,7 @@ export function CanvasEngine({
     event.stopPropagation();
     const origin = { nodeID, handleType };
     connectionRef.current = origin;
+    syncToolCursor();
     setConnecting(origin);
     setMouseWorld(screenToWorld(event.clientX, event.clientY));
     setConnectionTargetID("");
@@ -305,6 +319,7 @@ export function CanvasEngine({
       const point = screenToWorld(event.clientX, event.clientY);
       const selection = { start: point, current: point, additive: event.shiftKey, initialIDs: event.shiftKey ? Array.from(selectedRef.current) : [] };
       selectionRef.current = selection;
+      syncToolCursor();
       setSelectionBox(selection);
       if (!event.shiftKey) onSelectionChange(new Set(), "");
       return;
@@ -312,7 +327,7 @@ export function CanvasEngine({
     event.preventDefault();
     if (temporaryPan) event.stopPropagation();
     panRef.current = { active: true, startX: event.clientX, startY: event.clientY, initialX: viewportRef.current.x, initialY: viewportRef.current.y, moved: false, preserveSelection: spacePressedRef.current };
-    document.body.style.cursor = "grabbing";
+    syncToolCursor();
   }
 
   function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -362,7 +377,7 @@ export function CanvasEngine({
         if (!target?.closest("input,textarea,select,[contenteditable='true'],[data-canvas-no-pan],[role='dialog'],[role='listbox']")) {
           event.preventDefault();
           spacePressedRef.current = true;
-          if (!panRef.current.active) document.body.style.cursor = "grab";
+          syncToolCursor();
         }
         return;
       }
@@ -372,11 +387,12 @@ export function CanvasEngine({
       setConnecting(null);
       setConnectionTargetID("");
       setSelectionBox(null);
+      syncToolCursor();
     };
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.code !== "Space") return;
       spacePressedRef.current = false;
-      if (!panRef.current.active) document.body.style.cursor = "default";
+      syncToolCursor();
     };
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -384,9 +400,9 @@ export function CanvasEngine({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       spacePressedRef.current = false;
-      if (!panRef.current.active) document.body.style.cursor = "default";
+      syncToolCursor();
     };
-  }, []);
+  }, [syncToolCursor]);
 
   useEffect(() => {
     const cancelPendingFrame = () => {
@@ -495,7 +511,7 @@ export function CanvasEngine({
         const dx = event.clientX - panRef.current.startX;
         const dy = event.clientY - panRef.current.startY;
         panRef.current.active = false;
-        document.body.style.cursor = spacePressedRef.current ? "grab" : "default";
+        syncToolCursor();
         cancelPendingFrame();
         if (!wasCancelled && wasMoved) {
           const next = { ...viewportRef.current, x: panRef.current.initialX + dx, y: panRef.current.initialY + dy };
@@ -562,6 +578,7 @@ export function CanvasEngine({
         selectionRef.current = null;
         setSelectionBox(null);
       }
+      syncToolCursor();
     };
 
     const handleBlur = () => {
@@ -581,7 +598,7 @@ export function CanvasEngine({
       connectionRef.current = null;
       selectionRef.current = null;
       spacePressedRef.current = false;
-      document.body.style.cursor = "default";
+      syncToolCursor();
       setConnecting(null);
       setConnectionTargetID("");
       setSelectionBox(null);
@@ -597,7 +614,7 @@ export function CanvasEngine({
       window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [connectionFor, connectionTargetAt, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange]);
+  }, [connectionFor, connectionTargetAt, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange, syncToolCursor]);
 
   const preview = connectionPreview(connecting, connectionTargetID, mouseWorld, nodeByID);
   const activeNodeID = exporting ? "" : selectedNodeIDs.size > 1
@@ -628,7 +645,7 @@ export function CanvasEngine({
     <div
       ref={containerRef}
       data-canvas-export-root
-      className="canvas-grid absolute inset-0 touch-none select-none overflow-hidden"
+      className="canvas-grid absolute inset-0 cursor-grab touch-none select-none overflow-hidden"
       style={{
         ...canvasBackgroundStyle,
         ...(exporting && exportBounds ? { width: exportBounds.width, height: exportBounds.height, right: "auto", bottom: "auto" } : {}),

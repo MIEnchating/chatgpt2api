@@ -60,25 +60,44 @@ input[type="number"]::-webkit-outer-spin-button {
 
 [data-app-video-player] .xgplayer {
   container-type: size;
+  isolation: isolate;
   background: #080b10;
   letter-spacing: 0;
   font-family: inherit;
 }
 
+[data-app-video-player] .xgplayer video {
+  background: #080b10;
+}
+
 [data-app-video-player] .xgplayer .xgplayer-controls {
-  height: 52px;
-  background-image: linear-gradient(180deg, transparent 0%, rgba(4, 7, 12, 0.56) 35%, rgba(4, 7, 12, 0.9) 100%);
+  height: 72px;
+  background-image: linear-gradient(180deg, transparent 0%, rgba(4, 7, 12, 0.54) 30%, rgba(4, 7, 12, 0.94) 100%);
 }
 
 [data-app-video-player] .xgplayer .xg-inner-controls {
-  height: 40px;
-  bottom: 2px;
+  right: 12px;
+  left: 12px;
+  height: 36px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  align-items: center;
+  gap: 4px;
+}
+
+[data-app-video-player] .xgplayer .xg-left-grid,
+[data-app-video-player] .xgplayer .xg-right-grid {
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
 }
 
 [data-app-video-player] .xgplayer xg-icon {
+  flex: 0 0 auto;
+  width: 36px;
   height: 36px;
-  margin-inline: 8px;
-  border-radius: 6px;
+  margin-inline: 0;
+  border-radius: 8px;
   transition: background-color 160ms ease, opacity 160ms ease;
 }
 
@@ -86,24 +105,48 @@ input[type="number"]::-webkit-outer-spin-button {
   background-color: rgba(255, 255, 255, 0.12);
 }
 
+[data-app-video-player] .xgplayer xg-icon .xgplayer-icon {
+  width: 28px;
+  height: 28px;
+  margin-inline: auto;
+}
+
 [data-app-video-player] .xgplayer .xgplayer-time {
-  min-width: 76px;
-  margin-inline: 8px;
+  min-width: 70px;
+  width: auto;
+  margin-inline: 4px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  line-height: 36px;
+  white-space: nowrap;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-time span {
+  height: auto;
+  line-height: inherit;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-time .time-duration {
+  color: rgba(255, 255, 255, 0.64);
+}
+
+[data-app-video-player] .xgplayer .xgplayer-time .time-separator {
+  margin-inline: 3px;
+  color: rgba(255, 255, 255, 0.36);
 }
 
 [data-app-video-player] .xgplayer .xg-center-grid {
-  top: -18px;
-  height: 20px;
+  top: -24px;
+  height: 24px;
   padding: 0;
 }
 
 [data-app-video-player] .xgplayer .xgplayer-progress {
-  height: 20px;
+  height: 24px;
   transform: none;
 }
 
+[data-app-video-player] .xgplayer .xgplayer-progress-outer,
 [data-app-video-player] .xgplayer.xgplayer-pc .xgplayer-progress-outer,
 [data-app-video-player] .xgplayer.xgplayer-pc .xgplayer-progress.active .xgplayer-progress-outer {
   height: 4px;
@@ -118,8 +161,8 @@ input[type="number"]::-webkit-outer-spin-button {
   border-radius: inherit;
 }
 
-[data-app-video-player] .xgplayer .xgplayer-progress-btn,
-[data-app-video-player] .xgplayer .xgplayer-progress-btn.active {
+[data-app-video-player] .xgplayer .xgplayer-progress .xgplayer-progress-btn,
+[data-app-video-player] .xgplayer .xgplayer-progress .xgplayer-progress-btn.active {
   width: 14px;
   height: 14px;
   border: 0;
@@ -127,7 +170,7 @@ input[type="number"]::-webkit-outer-spin-button {
   box-shadow: none;
 }
 
-[data-app-video-player] .xgplayer .xgplayer-progress-btn::before {
+[data-app-video-player] .xgplayer .xgplayer-progress .xgplayer-progress-btn::before {
   width: 8px;
   height: 8px;
   background: #fff;
@@ -135,14 +178,18 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 [data-app-video-player] .xgplayer .xgplayer-start {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
 }
 
-[data-app-video-player] .xgplayer xg-start-inner {
+[data-app-video-player] .xgplayer xg-start-inner,
+[data-app-video-player] .xgplayer.xgplayer-mobile xg-start-inner {
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 999px;
-  background: rgba(20, 86, 240, 0.92);
-  box-shadow: 0 10px 30px rgba(20, 86, 240, 0.3);
+  background: rgba(16, 23, 36, 0.56);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
 }
 
 [data-app-video-player] .xgplayer .xg-options-list,
@@ -155,21 +202,33 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 [data-app-video-player] .xgplayer .xgplayer-playbackrate {
-  min-width: 42px;
-  padding-inline: 4px;
+  width: 48px;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-playbackrate .btn-text {
+  top: 0;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  transform: none;
 }
 
 [data-app-video-player] .xgplayer .xgplayer-playbackrate .btn-text span {
-  min-width: 34px;
-  background: transparent;
+  box-sizing: border-box;
+  min-width: 40px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
   font-size: 12px;
   font-weight: 500;
 }
 
 [data-app-video-player] .xgplayer .xgplayer-playbackrate .xg-options-list {
   box-sizing: border-box;
-  width: 100px;
-  max-height: max(32px, calc(100cqh - 64px)) !important;
+  width: 112px;
+  max-height: max(32px, calc(100cqh - 80px)) !important;
   right: 50%;
   bottom: calc(100% + 8px);
   padding: 4px;
@@ -186,11 +245,12 @@ input[type="number"]::-webkit-outer-spin-button {
 [data-app-video-player] .xgplayer .xgplayer-playbackrate .xg-options-list li {
   box-sizing: border-box;
   width: 100%;
-  height: 28px;
+  position: relative;
+  height: 32px;
   margin: 0;
   padding: 0 24px 0 8px;
   border-radius: 4px;
-  line-height: 28px;
+  line-height: 32px;
   text-align: left;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -217,10 +277,6 @@ input[type="number"]::-webkit-outer-spin-button {
   font-weight: 500;
 }
 
-[data-app-video-player] .xgplayer .xgplayer-download {
-  width: 36px;
-}
-
 [data-app-video-player] .xgplayer .xg-tips,
 [data-app-video-player] .xgplayer .xgplayer-prompt,
 [data-app-video-player] .xgplayer .xgplayer-progress-point {
@@ -232,20 +288,55 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 @container (max-width: 480px) {
+  [data-app-video-player] .xgplayer .xg-inner-controls {
+    right: 8px;
+    left: 8px;
+    gap: 2px;
+  }
+
+  [data-app-video-player] .xgplayer .xg-left-grid,
+  [data-app-video-player] .xgplayer .xg-right-grid {
+    gap: 2px;
+  }
+
   [data-app-video-player] .xgplayer xg-icon {
-    margin-inline: 4px;
+    width: 32px;
+    height: 32px;
+  }
+
+  [data-app-video-player] .xgplayer .xgplayer-playbackrate {
+    width: 44px;
   }
 
   [data-app-video-player] .xgplayer .xgplayer-time {
-    min-width: 64px;
-    margin-inline: 4px;
+    width: auto;
+    min-width: 62px;
+    margin-inline: 2px;
     font-size: 11px;
+    line-height: 32px;
   }
 }
 
 @container (max-width: 360px) {
   [data-app-video-player] .xgplayer .xgplayer-download {
     display: none;
+  }
+
+  [data-app-video-player] .xgplayer .xgplayer-time {
+    min-width: 56px;
+  }
+}
+
+@container (max-width: 280px) {
+  [data-app-video-player] .xgplayer .xg-inner-controls {
+    right: 6px;
+    left: 6px;
+  }
+
+  [data-app-video-player] .xgplayer .xgplayer-start,
+  [data-app-video-player] .xgplayer.xgplayer-mobile .xgplayer-start {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -499,8 +590,7 @@ input[type="number"]::-webkit-outer-spin-button {
   body[data-scroll-locked] {
     margin-right: 0 !important;
   }
-  button:not(:disabled):not([aria-disabled="true"]):not([data-disabled]:not([data-disabled="false"])),
-  [role="button"]:not(:disabled):not([aria-disabled="true"]):not([data-disabled]:not([data-disabled="false"])) {
+  :where(button, a[href], summary, select, input[type="button"], input[type="submit"], input[type="reset"], input[type="checkbox"], input[type="radio"], [role="button"], [role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"]):not(:disabled):not([aria-disabled="true"]):not([data-disabled]:not([data-disabled="false"])) {
     cursor: pointer;
   }
   :where(
@@ -716,4 +806,10 @@ input[type="number"]::-webkit-outer-spin-button {
     background-color: #15181d;
   }
 
+}
+
+/* Keep the active tool cursor consistent across its interaction surface. */
+.tool-dragging,
+.tool-dragging * {
+  cursor: var(--tool-cursor) !important;
 }

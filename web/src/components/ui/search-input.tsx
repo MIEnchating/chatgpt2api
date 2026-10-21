@@ -38,7 +38,7 @@ export function SearchInput({ value, onValueChange, containerClassName, classNam
         }}
       />
       {value ? (
-        <button type="button" disabled={props.disabled || props.readOnly} aria-label="清除搜索" onClick={clear} className="absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+        <button type="button" disabled={props.disabled || props.readOnly} aria-label="清除搜索" onClick={clear} className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50">
           <X className="size-3.5" aria-hidden="true" />
         </button>
       ) : null}

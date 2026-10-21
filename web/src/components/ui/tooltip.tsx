@@ -6,17 +6,35 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 
 const TOOLTIP_DELAY = 300;
+const TOOLTIP_NAVIGATION_KEYS = new Set(["Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"]);
+const TooltipFocusContext = React.createContext<React.RefObject<boolean>>({ current: false });
 
 function TooltipProvider({ delayDuration = TOOLTIP_DELAY, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
-  return <TooltipPrimitive.Provider delayDuration={delayDuration} {...props} />;
+  const keyboardNavigation = React.useRef(false);
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { keyboardNavigation.current = TOOLTIP_NAVIGATION_KEYS.has(event.key); };
+    const onPointerDown = () => { keyboardNavigation.current = false; };
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, []);
+  return <TooltipFocusContext.Provider value={keyboardNavigation}><TooltipPrimitive.Provider delayDuration={delayDuration} {...props} /></TooltipFocusContext.Provider>;
 }
 
 function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root {...props} />;
 }
 
-function TooltipTrigger(props: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+function TooltipTrigger({ onFocus, ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  const keyboardNavigation = React.useContext(TooltipFocusContext);
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} onFocus={(event) => {
+    onFocus?.(event);
+    // Restoring focus after a dialog closes must not reopen the trigger tooltip.
+    if (!keyboardNavigation.current) event.preventDefault();
+  }} />;
 }
 
 function TooltipContent({ className, sideOffset = 10, children, ...props }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
@@ -27,14 +45,14 @@ function TooltipContent({ className, sideOffset = 10, children, ...props }: Reac
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-[200] max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-2.5 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          "z-[1100] max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-3 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           className,
         )}
         {...props}
       >
         {children}
         <TooltipPrimitive.Arrow width={14} height={7} asChild>
-          <svg className="overflow-visible" aria-hidden="true">
+          <svg viewBox="0 0 30 10" preserveAspectRatio="none" className="overflow-visible" aria-hidden="true">
             <path className="fill-popover" d="M-2-1H32L15 10Z" />
             <path
               className="fill-none stroke-border/70"
@@ -99,6 +117,7 @@ type TooltipAnchorRect = {
 };
 
 function TooltipDomBridge() {
+  const keyboardNavigation = React.useContext(TooltipFocusContext);
   const [target, setTarget] = React.useState<HTMLElement | null>(null);
   const [anchorRect, setAnchorRect] = React.useState<TooltipAnchorRect | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -141,6 +160,7 @@ function TooltipDomBridge() {
     }
 
     function handleFocusIn(event: FocusEvent) {
+      if (!keyboardNavigation.current) return;
       const nextTarget = tooltipTarget(event.target);
       if (nextTarget) updateTarget(nextTarget);
     }
@@ -148,21 +168,29 @@ function TooltipDomBridge() {
     function handleFocusOut(event: FocusEvent) {
       const currentTarget = targetRef.current;
       if (currentTarget && event.relatedTarget instanceof Node && currentTarget.contains(event.relatedTarget)) return;
-      updateTarget(tooltipTarget(event.relatedTarget));
+      updateTarget(keyboardNavigation.current ? tooltipTarget(event.relatedTarget) : null);
     }
+    function dismiss() { updateTarget(null); }
+    function handleKeyDown(event: KeyboardEvent) { if (event.key === "Escape" || event.key === "Enter" || event.key === " ") dismiss(); }
 
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("blur", dismiss);
     document.addEventListener("pointerover", handlePointerOver, true);
     document.addEventListener("pointerout", handlePointerOut, true);
     document.addEventListener("focusin", handleFocusIn, true);
     document.addEventListener("focusout", handleFocusOut, true);
     return () => {
       clearOpenTimer();
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("blur", dismiss);
       document.removeEventListener("pointerover", handlePointerOver, true);
       document.removeEventListener("pointerout", handlePointerOut, true);
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("focusout", handleFocusOut, true);
     };
-  }, []);
+  }, [keyboardNavigation]);
 
   React.useLayoutEffect(() => {
     if (!target) {
@@ -196,7 +224,7 @@ function TooltipDomBridge() {
   if (!target || !anchorRect) return null;
 
   return (
-    <Tooltip open={open}>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <span
           aria-hidden="true"

@@ -104,12 +104,12 @@ function ManagementPagination(props: ManagementPaginationProps) {
     <nav
       data-management-pagination
       aria-label="分页导航"
-      className="mt-auto grid min-h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:px-5"
+      className="mt-auto grid min-h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-border bg-card px-3 py-3 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:px-5"
     >
-      <span className="min-w-0 truncate tabular-nums" role="status" aria-live="polite">
+      <span className="min-w-0 break-words leading-5 tabular-nums" role="status" aria-live="polite">
         {cursorMode ? "本页" : "共"} {cursorMode ? props.currentItems : props.totalItems} {itemLabel}
       </span>
-      <div className="flex items-center justify-center gap-1 sm:gap-2">
+      <div className="col-span-2 row-start-2 flex min-w-0 items-center justify-center gap-2 border-t border-border/60 pt-2 sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:border-0 sm:pt-0">
         <Button
           type="button"
           variant="outline"
@@ -121,7 +121,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
         >
           <ChevronLeft className="size-4" />
         </Button>
-        <span className="min-w-10 shrink-0 text-center tabular-nums sm:min-w-24">
+        <span className="min-w-16 text-center tabular-nums sm:min-w-24">
           <span className="sm:hidden">{cursorMode ? `${hasItems || page > 1 ? page : 0}` : `${hasItems ? page : 0} / ${hasItems ? totalPages : 0}`}</span>
           <span className="hidden sm:inline">
           {cursorMode
@@ -141,7 +141,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
           <ChevronRight className="size-4" />
         </Button>
       </div>
-      <div className="justify-self-end">
+      <div className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
         <Select
           value={String(props.pageSize)}
           onValueChange={(value) => props.onPageSizeChange(Number(value))}

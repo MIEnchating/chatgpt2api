@@ -358,7 +358,6 @@ export function ImageComposer({
   const [isReferenceImageDragActive, setIsReferenceImageDragActive] = useState(false);
   const [pendingReferenceImages, setPendingReferenceImages] = useState<PendingReferenceImage[]>([]);
   const composerPanelRef = useRef<HTMLDivElement>(null);
-  const composerToolbarRef = useRef<HTMLDivElement>(null);
   const promptAreaResizeRef = useRef<{ pointerOffsetY: number } | null>(null);
   const referenceImageDragDepthRef = useRef(0);
   const pendingReferenceImageSequenceRef = useRef(0);
@@ -619,13 +618,12 @@ export function ImageComposer({
 
     event.preventDefault();
     const panelRect = composerPanelRef.current?.getBoundingClientRect();
-    const toolbarHeight = composerToolbarRef.current?.getBoundingClientRect().height ?? 0;
-    if (!panelRect) {
+    const promptRect = textareaRef.current?.getBoundingClientRect();
+    if (!panelRect || !promptRect) {
       return;
     }
 
-    const handleHeight = event.currentTarget.getBoundingClientRect().height;
-    const nextHeight = panelRect.bottom - toolbarHeight - handleHeight - event.clientY + resizeState.pointerOffsetY;
+    const nextHeight = promptRect.height + panelRect.top - event.clientY + resizeState.pointerOffsetY;
     setPromptAreaHeight(clampPromptAreaHeight(nextHeight));
   };
 
@@ -741,7 +739,7 @@ export function ImageComposer({
       <div
         ref={composerPanelRef}
         className={cn(
-          "relative overflow-visible rounded-2xl border border-border bg-card shadow-[var(--shadow-elevated)] transition-[border-color,box-shadow] focus-within:border-brand/45 focus-within:ring-4 focus-within:ring-brand/5",
+          "relative overflow-visible rounded-2xl border border-border/80 bg-card shadow-[0_4px_24px_-8px_rgba(0,0,0,0.12)] transition-[border-color,box-shadow] focus-within:border-brand/45 focus-within:ring-4 focus-within:ring-brand/5",
           isReferenceImageDragActive &&
             "border-brand bg-brand-soft",
         )}
@@ -761,7 +759,7 @@ export function ImageComposer({
         <button
           type="button"
           className={cn(
-            "hidden h-4 w-full cursor-[ns-resize] touch-none select-none items-center justify-center rounded-t-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex",
+            "group hidden h-3 w-full cursor-[ns-resize] touch-none select-none items-center justify-center rounded-t-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:flex",
             isPromptAreaResizing && "cursor-row-resize",
           )}
           onPointerDown={handlePromptResizeStart}
@@ -789,9 +787,72 @@ export function ImageComposer({
             onOpenChange={setLightboxOpen}
             onIndexChange={setLightboxIndex}
           />
-          <div className="flex items-center justify-between gap-3 px-4 pt-2 sm:px-5 sm:pt-0">
-            <span className="text-xs font-medium text-muted-foreground">{composerMode === "video" ? "描述你的镜头" : hasReferenceImages ? "描述你的修改" : "把想象变成画面"}</span>
-            <span className="hidden text-[11px] text-muted-foreground/70 sm:block">Enter 发送 · Shift + Enter 换行</span>
+          <div className="flex items-center gap-3 px-3 pt-3 pb-1 sm:px-4 sm:pt-0" onClick={(event) => event.stopPropagation()}>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 items-center rounded-lg border border-input bg-muted/70 p-0.5" role="group" aria-label="创作类型">
+                <button
+                  type="button"
+                  className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "image" && "bg-card text-brand shadow-sm")}
+                  onClick={() => onComposerModeChange("image")}
+                  aria-label="图片生成"
+                  aria-pressed={composerMode === "image"}
+                >
+                  <ImagePlus className="size-4" />
+                  图片
+                </button>
+                <button
+                  type="button"
+                  className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "video" && "bg-card text-brand shadow-sm")}
+                  onClick={() => onComposerModeChange("video")}
+                  aria-label="视频生成"
+                  aria-pressed={composerMode === "video"}
+                >
+                  <Video className="size-4" />
+                  视频
+                </button>
+              </div>
+              <Select
+                value={activeModelAvailable ? activeModel : ""}
+                disabled={activeModelOptions.length === 0}
+                open={isModelMenuOpen}
+                onOpenChange={(open) => {
+                  setIsModelMenuOpen(open);
+                  if (open) setIsImageSettingsOpen(false);
+                }}
+                onValueChange={(value) => {
+                  if (composerMode === "video") {
+                    onVideoModelChange(value);
+                  } else {
+                    onImageModelChange(value as ImageModel);
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className="h-auto min-h-9 w-auto min-w-[min(10rem,100%)] flex-1 py-1.5 whitespace-normal sm:min-w-52 sm:max-w-[min(32rem,100%)] sm:flex-none [&>span]:whitespace-normal [&>span]:overflow-visible [&>span>span]:whitespace-normal"
+                  aria-label={`选择模型，当前 ${imageModelLabel}`}
+                >
+                  <SelectValue><span className="min-w-0 flex-1 whitespace-normal text-left [overflow-wrap:anywhere]">{imageModelLabel}</span></SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                >
+                  {activeModelOptions.map((option) => {
+                    const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
+                    return (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        disabled={unavailableForReferences}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <Textarea
             ref={textareaRef}
@@ -812,111 +873,45 @@ export function ImageComposer({
                 if (activeModelAvailable && !submitDisabled) void onSubmit();
               }
             }}
-            className="min-h-[58px] resize-none rounded-none border-0 bg-transparent px-4 py-2 text-base leading-7 text-foreground shadow-none placeholder:text-muted-foreground/60 focus-visible:ring-0 sm:min-h-0 sm:px-5 sm:text-[15px]"
+            className="min-h-[58px] resize-none rounded-none border-0 bg-transparent px-4 py-3 text-base leading-7 text-foreground shadow-none placeholder:text-muted-foreground/60 focus-visible:ring-0 sm:min-h-0 sm:px-5 sm:text-[15px]"
             style={{ height: promptAreaHeight }}
           />
 
           <div
-            ref={composerToolbarRef}
-            className="rounded-b-2xl border-t border-border/60 bg-muted/20 p-2 sm:px-4 sm:py-2"
+            className="rounded-b-2xl px-2 pb-2 pt-1 sm:px-3 sm:pb-3"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">
-              <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
-                <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:gap-2">
-                  <div className="flex shrink-0 items-center rounded-xl border border-border/70 bg-muted/60 p-0.5" role="group" aria-label="创作类型">
-                    <button
-                      type="button"
-                      className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "image" && "bg-card text-brand shadow-sm")}
-                      onClick={() => onComposerModeChange("image")}
-                      aria-label="图片生成"
-                      aria-pressed={composerMode === "image"}
-                    >
-                      <ImagePlus className="size-4" />
-                      图片
-                    </button>
-                    <button
-                      type="button"
-                      className={cn("inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", composerMode === "video" && "bg-card text-brand shadow-sm")}
-                      onClick={() => onComposerModeChange("video")}
-                      aria-label="视频生成"
-                      aria-pressed={composerMode === "video"}
-                    >
-                      <Video className="size-4" />
-                      视频
-                    </button>
-                  </div>
-                  <Select
-                    value={activeModelAvailable ? activeModel : ""}
-                    disabled={activeModelOptions.length === 0}
-                    open={isModelMenuOpen}
-                    onOpenChange={(open) => {
-                      setIsModelMenuOpen(open);
-                      if (open) setIsImageSettingsOpen(false);
-                    }}
-                    onValueChange={(value) => {
-                      if (composerMode === "video") {
-                        onVideoModelChange(value);
-                      } else {
-                        onImageModelChange(value as ImageModel);
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        "h-9 min-w-0 flex-1 justify-between gap-2 rounded-xl border-border/70 bg-card px-3 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 sm:w-[190px] sm:flex-none",
-                        isModelMenuOpen &&
-                          "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
-                      )}
-                      aria-label={`选择模型，当前 ${imageModelLabel}`}
-                    >
-                      <SelectValue><span className="min-w-0 flex-1 truncate text-left">{imageModelLabel}</span></SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      side="top"
-                      align="start"
-                      sideOffset={8}
-                    >
-                      {activeModelOptions.map((option) => {
-                        const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
-                        return (
-                          <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            disabled={unavailableForReferences}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {composerMode !== "chat" ? <button
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {composerMode !== "chat" ? <Button
                   type="button"
-                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  variant="outline"
+                  size="sm"
+                  className="px-2 text-xs has-[>svg]:px-2"
                   onClick={onOpenPromptMarket}
                   aria-label="打开提示词"
                 >
                   <BookOpenText className="size-3.5" />
-                  <span className="hidden sm:inline">提示词</span>
-                </button> : null}
+                  <span>提示词</span>
+                </Button> : null}
                 {composerMode === "image" ? (
                   <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                     <PopoverTrigger asChild>
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         className={cn(
-                          "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "px-2 text-xs has-[>svg]:px-2",
                           isImageSettingsOpen &&
-                            "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
+                            "border-brand-border bg-brand-soft text-brand",
                         )}
                         aria-label={isImageSettingsOpen ? "收起图像设置" : "打开图像设置"}
                         aria-expanded={isImageSettingsOpen}
                       >
                         <SlidersHorizontal className="size-3.5" />
                         <span>参数</span>
-                      </button>
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent
                       scrollable={false}
@@ -935,21 +930,23 @@ export function ImageComposer({
                   </Popover>
                 ) : null}
                 {composerMode === "video" ? (
-                  <div className="inline-flex shrink-0 items-center gap-1.5 sm:gap-2">
+                  <div className="contents">
                     <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                       <PopoverTrigger asChild>
-                        <button
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
                           className={cn(
-                            "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            isImageSettingsOpen && "bg-brand-soft text-brand sm:border-brand-border",
+                            "px-2 text-xs has-[>svg]:px-2",
+                            isImageSettingsOpen && "border-brand-border bg-brand-soft text-brand",
                           )}
                           aria-label="打开视频设置"
                           aria-expanded={isImageSettingsOpen}
                         >
                           <SlidersHorizontal className="size-3.5" />
                           <span>参数</span>
-                        </button>
+                        </Button>
                       </PopoverTrigger>
                       <PopoverContent
                         scrollable={false}
@@ -1010,14 +1007,15 @@ export function ImageComposer({
                 ) : null}
               </div>
 
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+              <span className="mr-2 hidden text-[11px] text-muted-foreground/70 2xl:block">Enter 发送 · Shift + Enter 换行</span>
+              <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
                 {composerMode !== "video" ? <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   onClick={handlePickReferenceImage}
                   disabled={!referenceEditingSupported}
-                  className="size-9 shrink-0 rounded-xl border border-border/70 bg-card text-muted-foreground hover:text-foreground"
+                  className="size-8 shrink-0 rounded-lg"
                   aria-label="上传参考图"
                 >
                   <ImagePlus className="size-4" />
@@ -1028,11 +1026,11 @@ export function ImageComposer({
                   onClick={() => void onSubmit()}
                   disabled={!prompt.trim() || !activeModelAvailable || submitDisabled}
                   title={submitDisabledReason}
-                  className="h-9 shrink-0 gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-sm sm:gap-2 sm:px-4"
+                  className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-none sm:gap-2 sm:px-4"
                   aria-label={submitLabel}
                 >
-                  <span className="min-[360px]:hidden">生成</span>
-                  <span className="hidden min-[360px]:inline">{submitLabel}</span>
+                  <span className="sm:hidden">生成</span>
+                  <span className="hidden sm:inline">{submitLabel}</span>
                   <ArrowUp className="size-4" />
                 </Button>
               </div>
