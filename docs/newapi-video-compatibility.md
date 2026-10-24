@@ -17,9 +17,9 @@ Seedance 的映射是官方 Doubao 插件的测试条件，并非所有聚合渠
 
 本机现有 New API 容器使用 `mienvirtuoso/new-api:latest` 镜像；该标签不能证明它与本次核验的官方 commit 一致。只读检查确认，运行服务使用 PostgreSQL，四个模型配置在 OpenAI 类型的聚合渠道中，没有模型映射，运行时插件列表不包含 xAI。因此，本地另一份空 SQLite 数据库不能用于判断目标渠道是否存在，官方插件测试通过也不代表当前聚合接口已接通。本次未修改数据库连接、渠道、运行时契约或容器版本。
 
-可导入样例位于 [newapi-video-contracts.json](examples/newapi-video-contracts.json)。两个 Grok 契约标记为启用；两个 Seedance 契约标记为禁用，核对目标渠道后再启用。该文件没有自动写入运行时数据库。
+可导入样例位于 [newapi-video-contracts.json](examples/newapi-video-contracts.json)。两个 Grok 契约标记为启用；旧 Seedance 契约标记为禁用。另有基于当前 Key 公开参数摘录的 [Seedance A 契约](newapi-seedance-a.md)及一份覆盖两个型号的 New API 插件。契约文件没有自动写入运行时数据库。
 
-Seedance 样例只提供保守的起始选项：5/8/10 秒、480p/720p、三种画幅，参考图片/视频/音频各最多一个。这不是厂家的完整能力表；最高分辨率、最长时长、素材文件大小和累计时长限制应按实际映射的模型及厂家文档设置。插件能力表显示普通 2.0 和 2.5 的时长、清晰度上限不同，不能合并为一个不加限制的契约。
+旧 Seedance 样例只提供保守的起始选项，不代表 `seedance2.0-A` 和 `seedance2.5-A` 的完整公开能力。A 型号的独立能力、插件和素材上限见 [Seedance A 契约说明](newapi-seedance-a.md)。合并插件基于契约生成并加入 Dramaya 素材转换，经过本地干跑；没有真实 Key 在线目录查询或上游付费生成验证。
 
 ## 公开接口和产物
 

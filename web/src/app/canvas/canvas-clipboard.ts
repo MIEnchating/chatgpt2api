@@ -14,7 +14,7 @@ const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
   "generation_output_compression", "generation_stream", "generation_partial_images", "generation_snap_to_multiple_16",
   "generation_response_format_b64_json", "generation_codex_cli_compatibility", "generation_status",
 	  "generation_started_at", "generation_progress", "generation_error", "generation_type", "generation_reference_urls",
-	  "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",
+	  "generation_video_parameters", "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",
 	  "generation_video_audio", "generation_video_watermark", "generation_video_reference_mode",
 	  "generation_video_reference_image_urls", "generation_video_reference_urls", "generation_video_reference_audio_urls",
 	  "generation_video_first_frame_node_id", "generation_video_last_frame_node_id", "generation_mode", "generation_text_model",
@@ -75,7 +75,7 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.generation_model !== undefined && (typeof source.generation_model !== "string" || source.generation_model.trim().length > 256)) return null;
     if (source.generation_video_model !== undefined && (typeof source.generation_video_model !== "string" || source.generation_video_model.trim().length > 256)) return null;
     if (source.generation_video_size !== undefined && (typeof source.generation_video_size !== "string" || source.generation_video_size.length > 64)) return null;
-    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds !== -1 && source.generation_video_seconds < 1 || source.generation_video_seconds > 3600 || !Number.isInteger(source.generation_video_seconds))) return null;
+    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds !== -1 && source.generation_video_seconds < 1 || source.generation_video_seconds > Number.MAX_SAFE_INTEGER || !Number.isInteger(source.generation_video_seconds))) return null;
     if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || source.generation_video_resolution.length > 64)) return null;
     if (source.batch_child_ids !== undefined && (!Array.isArray(source.batch_child_ids) || source.batch_child_ids.some((childID) => typeof childID !== "string"))) return null;
     if (source.generation_reference_urls !== undefined && (!Array.isArray(source.generation_reference_urls) || source.generation_reference_urls.some((url) => typeof url !== "string"))) return null;

@@ -1418,6 +1418,14 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := splitPath(r.URL.Path)
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "creation-tasks" && parts[3] == "video-content" {
+		a.handleVideoContentRecovery(w, r, identity, parts[2])
+		return
+	}
+	if r.URL.Path == "/api/creation-tasks/events" && r.Method == http.MethodGet {
+		a.handleCreationTaskEvents(w, r, identity)
+		return
+	}
 	if r.URL.Path == "/api/creation-tasks" && r.Method == http.MethodGet {
 		tasks, err := a.tasks.ListTasksWithError(identity, util.ParseCommaList(r.URL.Query().Get("ids")))
 		if err != nil {
@@ -1910,10 +1918,22 @@ func chatTaskRequestMetadata(body map[string]any) map[string]any {
 }
 
 func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelContract) map[string]any {
+	constraints := service.VideoTaskInputConstraints{PromptRequired: contract.Capability.Prompt == nil || contract.Capability.Prompt.Required, MaximumSeconds: 3600}
+	if duration := contract.Capability.SecondsRange; duration != nil {
+		constraints.MaximumSeconds = 0
+		if duration.Max != nil {
+			constraints.MaximumSeconds = *duration.Max
+		}
+	}
+
 	metadata := map[string]any{
 		relayTaskCredentialKey:                    body[relayTaskCredentialKey],
 		protocol.VideoContractSnapshotPayloadKey:  contract,
+		service.VideoTaskInputConstraintsKey:      constraints,
 		service.VideoTaskTimeoutSecondsPayloadKey: contract.Polling.TimeoutSeconds + contract.Polling.IntervalSeconds,
+	}
+	if parameters, ok := body["parameters"].(map[string]any); ok {
+		metadata["parameters"] = parameters
 	}
 	if inputs, ok := body["workflow_inputs"]; ok {
 		metadata["workflow_inputs"] = inputs

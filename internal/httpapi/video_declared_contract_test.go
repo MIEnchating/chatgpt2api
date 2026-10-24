@@ -574,11 +574,19 @@ func TestDeclaredVideoContractValidation(t *testing.T) {
 			t.Fatalf("invalid declared parameters accepted: %#v", input)
 		}
 	}
-	if len([]rune(strings.Repeat("字", 5000))) > contract.Validation.MaxPromptCharacters {
-		t.Fatal("prompt at declared limit rejected")
+}
+
+func TestVideoContractDoesNotLimitPromptLength(t *testing.T) {
+	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
+	if !ok {
+		t.Fatal("MiniMax H3 contract is not installed")
 	}
-	if len([]rune(strings.Repeat("字", 5001))) <= contract.Validation.MaxPromptCharacters {
-		t.Fatal("prompt above declared limit was accepted")
+	body := map[string]any{
+		"model": "minimax-h3-768p", "prompt": strings.Repeat("字", 5001),
+		"size": "16:9", "seconds": 5, "resolution": "768p",
+	}
+	if err := normalizeVideoContractInput(body, contract); err != nil {
+		t.Fatalf("long prompt was rejected: %v", err)
 	}
 }
 

@@ -1,3 +1,5 @@
+import { VideoParameterInputs } from "./video-parameter-inputs";
+import type { VideoParameterValues } from "@/lib/video-model-contracts";
 import { LockKeyhole } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -37,6 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type VideoSettingsValue = {
+  parameters?: VideoParameterValues;
   size: string;
   seconds: string;
   resolution: string;
@@ -76,8 +79,10 @@ export function VideoSettingsPanel({
     ? "自动"
     : (/^\d+x\d+$/i.test(displaySize) ? displaySize : [displayResolution, displayRatio].filter(Boolean).join(" · ")).replace(/x/gi, "×");
   const allowsCustomDuration = videoAllowsCustomDuration(capabilitySource);
-  const minimumSeconds = positiveSeconds[0] || 1;
-  const maximumSeconds = positiveSeconds.at(-1) || minimumSeconds;
+  const activeContract = contract ?? videoModelContract(model);
+  const range = activeContract?.capability.seconds_range;
+  const minimumSeconds = range?.min ?? positiveSeconds[0] ?? 1;
+  const maximumSeconds = range ? range.max ?? undefined : positiveSeconds.at(-1) || minimumSeconds;
   const secondsValid = videoSecondsIsValid(capabilitySource, Number(displaySeconds));
   const resolutionValid = videoResolutionIsValid(capabilitySource, displayResolution);
   const audioControl = videoAudioControl(capabilitySource);
@@ -122,11 +127,12 @@ export function VideoSettingsPanel({
         <ImageParameterLabel help="时长越长，通常需要更久的生成时间。">视频时长</ImageParameterLabel>
         <div className={cn("grid gap-2", allowsCustomDuration ? "grid-cols-[minmax(0,1fr)_6.5rem]" : "grid-cols-1")}>
           <Select value={secondsPresets.includes(Number(displaySeconds)) ? displaySeconds : undefined} disabled={disabled("duration")} onValueChange={(seconds) => onChange({ seconds })}><SelectTrigger className="h-8 min-w-0 rounded-lg border-border bg-card px-2 text-xs font-medium text-foreground shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频秒数"><SelectValue placeholder="选择秒数" /></SelectTrigger><SelectContent>{(secondsPresets.length > 0 ? secondsPresets : secondsOptions).map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select>
-          {allowsCustomDuration ? <VideoDurationInput value={displaySeconds === "-1" ? "" : displaySeconds} min={minimumSeconds} max={maximumSeconds} disabled={disabled("duration")} placeholder={displaySeconds === "-1" ? "智能" : `${minimumSeconds}-${maximumSeconds}`} onChange={(seconds) => onChange({ seconds })} /> : null}
+          {allowsCustomDuration ? <VideoDurationInput value={displaySeconds === "-1" ? "" : displaySeconds} min={minimumSeconds} max={maximumSeconds} disabled={disabled("duration")} placeholder={displaySeconds === "-1" ? "智能" : maximumSeconds == null ? `${minimumSeconds} 秒起` : `${minimumSeconds}-${maximumSeconds}`} onChange={(seconds) => onChange({ seconds })} /> : null}
         </div>
         {!secondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
       </section> : null}
 
+      {!coreOnly && activeContract?.capability.parameters?.length ? <section className="order-55 space-y-3"><ImageParameterLabel>模型附加参数</ImageParameterLabel><VideoParameterInputs parameters={activeContract.capability.parameters.filter(parameter => !parameter.modes?.length || parameter.modes.includes(Number(ruleValues?.reference_image || 0) + Number(ruleValues?.reference_video || 0) + Number(ruleValues?.reference_audio || 0) > 0 ? "reference" : Number(ruleValues?.first_frame || 0) + Number(ruleValues?.last_frame || 0) > 0 ? "image" : "text"))} value={value.parameters || {}} onChange={parameters => onChange({parameters})} /></section> : null}
       {showTaskCount ? <section className="order-35 flex items-center justify-between gap-3">
         <div className="min-w-0"><ImageParameterLabel help="一次创建多个相同参数的独立视频任务。">生成数量</ImageParameterLabel><p className="mt-1 text-[11px] leading-5 text-muted-foreground">每个视频独立生成</p></div>
         <NumberInput value={taskCount} min={1} max={6} controlsLayout="split" suffix="个" aria-label="视频任务数" className="h-9 w-32 shrink-0" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ taskCount: Math.max(1, Math.min(6, Math.round(next))) }); }} />
@@ -138,7 +144,7 @@ export function VideoSettingsPanel({
   );
 }
 
-function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }: { value: string; min: number; max: number; disabled: boolean; placeholder: string; onChange: (value: string) => void }) {
+function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }: { value: string; min: number; max?: number; disabled: boolean; placeholder: string; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   const [editing, setEditing] = useState(false);
   useEffect(() => {
@@ -146,13 +152,13 @@ function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }
   }, [editing, value]);
 
   const parsed = Number(draft);
-  const valid = draft === "" || (Number.isInteger(parsed) && parsed >= min && parsed <= max);
+  const valid = draft === "" || (Number.isInteger(parsed) && parsed >= min && (max == null || parsed <= max));
   const commit = () => {
     if (draft === "") {
       setDraft(value);
       return;
     }
-    const next = String(Math.max(min, Math.min(max, Math.round(parsed))));
+    const next = String(Math.max(min, Math.min(max ?? Number.MAX_SAFE_INTEGER, Math.round(parsed))));
     setDraft(next);
     if (next !== value) onChange(next);
   };

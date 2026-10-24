@@ -41,6 +41,7 @@ type DialogContentProps = Omit<
 > & {
   showCloseButton?: boolean;
   scrollable?: boolean;
+  overlayClassName?: string;
 };
 
 function DialogContent({
@@ -48,6 +49,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   scrollable = true,
+  overlayClassName,
   onCloseAutoFocus,
   onInteractOutside,
   ...props
@@ -62,7 +64,7 @@ function DialogContent({
 
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         tabIndex={-1}

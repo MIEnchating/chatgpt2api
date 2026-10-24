@@ -33,7 +33,7 @@ const (
 	videoContractDocumentFetchTimeout  = 45 * time.Second
 	videoContractGenerationAttempts    = 3
 	videoContractUpstreamAttempts      = 3
-	videoContractImportProgressType    = "application/x-ndjson"
+	videoContractImportProgressType    = "text/event-stream"
 	videoContractImportHeartbeat       = 5 * time.Second
 )
 
@@ -128,6 +128,14 @@ func (a *App) handleAdminVideoModelContracts(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		a.handleVideoModelContractPreview(w, r)
+		return
+	}
+	if r.URL.Path == base+"/newapi-plugin" {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.handleVideoModelContractPlugin(w, r)
 		return
 	}
 
@@ -432,6 +440,7 @@ type videoContractImportSource struct {
 
 type videoContractImportResponse struct {
 	Contracts []protocol.VideoModelContract `json:"contracts"`
+	DryRun    []videoContractImportDryRun   `json:"dry_run"`
 	Source    videoContractImportSource     `json:"source"`
 	Warnings  []string                      `json:"warnings"`
 	Model     string                        `json:"model"`
@@ -447,10 +456,13 @@ type videoContractImportProgressEvent struct {
 	ElapsedSeconds     int                          `json:"elapsed_seconds"`
 	ReceivedCharacters int                          `json:"received_characters,omitempty"`
 	Result             *videoContractImportResponse `json:"result,omitempty"`
+	Detail             *videoContractAgentDetail    `json:"detail,omitempty"`
+	DocumentRevision   *int                         `json:"document_revision,omitempty"`
+	ValidationCurrent  *bool                        `json:"validation_current,omitempty"`
 }
 
 type videoContractImportProgressWriter struct {
-	encoder            *json.Encoder
+	output             io.Writer
 	flusher            http.Flusher
 	mu                 sync.Mutex
 	startedAt          time.Time
@@ -471,7 +483,7 @@ func newVideoContractImportProgressWriter(w http.ResponseWriter) *videoContractI
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	now := time.Now()
-	return &videoContractImportProgressWriter{encoder: json.NewEncoder(w), flusher: flusher, startedAt: now, lastActivityAt: now}
+	return &videoContractImportProgressWriter{output: w, flusher: flusher, startedAt: now, lastActivityAt: now}
 }
 
 func (w *videoContractImportProgressWriter) write(event videoContractImportProgressEvent) {
@@ -489,15 +501,14 @@ func (w *videoContractImportProgressWriter) write(event videoContractImportProgr
 	}
 	event.ElapsedSeconds = max(event.ElapsedSeconds, int(now.Sub(w.startedAt).Seconds()))
 	if event.Stage == "heartbeat" {
-		event.Attempt = w.attempt
-		event.MaxAttempts = w.maxAttempts
-		event.RequestAttempt = w.requestAttempt
-		event.MaxRequestAttempts = w.maxRequestAttempts
 		waitingSeconds := max(1, int(now.Sub(w.lastActivityAt).Seconds()))
-		event.Message = fmt.Sprintf("上游暂未返回新数据，已等待 %d 秒；本站连接正常", waitingSeconds)
+		event.Message = fmt.Sprintf("当前步骤仍在执行，距上次进度更新 %d 秒", waitingSeconds)
 	} else {
 		w.lastActivityAt = now
 		if event.Attempt > 0 {
+			if event.Attempt != w.attempt {
+				w.requestAttempt, w.maxRequestAttempts = 0, 0
+			}
 			w.attempt = event.Attempt
 			w.maxAttempts = event.MaxAttempts
 		}
@@ -506,7 +517,19 @@ func (w *videoContractImportProgressWriter) write(event videoContractImportProgr
 			w.maxRequestAttempts = event.MaxRequestAttempts
 		}
 	}
-	if err := w.encoder.Encode(event); err == nil {
+	if event.Attempt == 0 {
+		event.Attempt = w.attempt
+		event.MaxAttempts = w.maxAttempts
+	}
+	if event.RequestAttempt == 0 {
+		event.RequestAttempt = w.requestAttempt
+		event.MaxRequestAttempts = w.maxRequestAttempts
+	}
+	data, err := json.Marshal(event)
+	if err == nil {
+		_, err = fmt.Fprintf(w.output, "data: %s\n\n", data)
+	}
+	if err == nil {
 		w.flusher.Flush()
 	}
 }
@@ -554,36 +577,6 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
 	}
-	sourceType := strings.ToLower(strings.TrimSpace(r.FormValue("source_type")))
-	var (
-		content  string
-		source   videoContractImportSource
-		warnings = make([]string, 0)
-		err      error
-	)
-	switch sourceType {
-	case "file":
-		content, source, err = readVideoContractUpload(r)
-	case "url":
-		content, source, err = fetchVideoContractDocument(r.Context(), strings.TrimSpace(r.FormValue("url")))
-	default:
-		err = errors.New("请选择文档或链接")
-	}
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	preferences, err := a.imagePreferences.Preferences(identityScope(identity))
-	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "读取个人模型设置失败")
-		return
-	}
-	model := firstNonEmpty(strings.TrimSpace(r.FormValue("model")), preferences.DefaultTextModel, a.config.DefaultTextModel(), firstString(a.config.TextModels(), a.defaultChatModel()))
-	if allowedPersonalModel(model, a.config.TextModels()) == "" {
-		util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
-		return
-	}
-	tokenName := firstNonEmpty(strings.TrimSpace(r.FormValue("token_name")), firstString(preferences.DefaultTextRelayTokens, ""))
 	var progressWriter *videoContractImportProgressWriter
 	if strings.Contains(strings.ToLower(r.Header.Get("Accept")), videoContractImportProgressType) {
 		progressWriter = newVideoContractImportProgressWriter(w)
@@ -593,33 +586,48 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 	reportProgress := func(event videoContractImportProgressEvent) {
 		progressWriter.write(event)
 	}
-	if source.Site != nil {
-		reportProgress(videoContractImportProgressEvent{Stage: "planning_documents", Message: fmt.Sprintf("发现 %d 个候选页面，正在由分析模型选择契约所需文档", len(source.Site.links))})
-		selected, planErr := a.planVideoContractDocumentPages(r.Context(), identity, model, tokenName, content, source.Site.links)
-		if planErr != nil {
-			if progressWriter != nil {
-				progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: planErr.Error()})
-				return
-			}
-			a.writeCreationTaskSubmitError(w, planErr)
+	fail := func(status int, message string) {
+		if progressWriter != nil {
+			reportProgress(videoContractImportProgressEvent{Stage: "failed", Message: message})
 			return
 		}
-		reportProgress(videoContractImportProgressEvent{Stage: "reading_documents", Message: fmt.Sprintf("分析模型选择了 %d 个页面，正在读取文档正文", len(selected))})
-		fetchCtx, cancelFetch := context.WithTimeout(r.Context(), videoContractDocumentFetchTimeout)
-		content, source, err = fetchSelectedVideoContractDocuments(fetchCtx, content, source, selected, service.SafeMediaProxyHTTPClient())
-		cancelFetch()
-		if err != nil {
-			if progressWriter != nil {
-				progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: err.Error()})
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+		util.WriteError(w, status, message)
 	}
+	sourceType := strings.ToLower(strings.TrimSpace(r.FormValue("source_type")))
+	var (
+		content  string
+		source   videoContractImportSource
+		warnings = make([]string, 0)
+		err      error
+	)
+	switch sourceType {
+	case "file":
+		reportProgress(videoContractImportProgressEvent{Stage: "reading_document", Message: "正在提取上传文档正文"})
+		content, source, err = readVideoContractUpload(r)
+	case "url":
+		reportProgress(videoContractImportProgressEvent{Stage: "reading_document", Message: "正在读取入口页面并发现相关文档"})
+		content, source, err = fetchVideoContractDocument(r.Context(), strings.TrimSpace(r.FormValue("url")))
+	default:
+		err = errors.New("请选择文档或链接")
+	}
+	if err != nil {
+		fail(http.StatusBadRequest, err.Error())
+		return
+	}
+	preferences, err := a.imagePreferences.Preferences(identityScope(identity))
+	if err != nil {
+		fail(http.StatusInternalServerError, "读取个人模型设置失败")
+		return
+	}
+	model := firstNonEmpty(strings.TrimSpace(r.FormValue("model")), preferences.DefaultTextModel, a.config.DefaultTextModel(), firstString(a.config.TextModels(), a.defaultChatModel()))
+	if allowedPersonalModel(model, a.config.TextModels()) == "" {
+		fail(http.StatusBadRequest, "文本模型不可用")
+		return
+	}
+	tokenName := firstNonEmpty(strings.TrimSpace(r.FormValue("token_name")), firstString(preferences.DefaultTextRelayTokens, ""))
 	warnings = append(warnings, source.Warnings...)
 	content, truncated := truncateVideoContractDocument(content)
-	if strings.TrimSpace(content) == "" {
+	if strings.TrimSpace(content) == "" && source.Site == nil {
 		if progressWriter != nil {
 			progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: "文档中没有可分析的文本内容"})
 			return
@@ -628,13 +636,19 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if truncated {
-		warnings = append(warnings, fmt.Sprintf("文档内容较长，仅分析了前 %d 个字符", maxVideoContractDocumentCharacters))
+		message := fmt.Sprintf("文档超过 %d 个字符，无法完整分析；请按模型拆分文档后重新生成", maxVideoContractDocumentCharacters)
+		if progressWriter != nil {
+			progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: message})
+			return
+		}
+		util.WriteError(w, http.StatusBadRequest, message)
+		return
 	}
 	reportProgress(videoContractImportProgressEvent{
 		Stage:   "document_ready",
 		Message: fmt.Sprintf("文档读取完成，共 %d 个字符", utf8.RuneCountInString(content)),
 	})
-	contracts, err := a.generateVideoModelContracts(r.Context(), identity, model, tokenName, source, content, reportProgress)
+	generated, err := a.generateVideoModelContracts(r.Context(), identity, model, tokenName, source, content, r.FormValue("generate_plugin") == "true", reportProgress)
 	if err != nil {
 		if progressWriter != nil {
 			progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: err.Error()})
@@ -643,10 +657,11 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		a.writeCreationTaskSubmitError(w, err)
 		return
 	}
+	contracts := generated.Contracts
 	for _, contract := range contracts {
 		warnings = append(warnings, a.videoContractImportConflictWarnings(contract)...)
 	}
-	response := videoContractImportResponse{Contracts: contracts, Source: source, Warnings: uniqueTrimmedWarningStrings(warnings), Model: model}
+	response := videoContractImportResponse{Contracts: contracts, DryRun: generated.DryRun, Source: source, Warnings: uniqueTrimmedWarningStrings(warnings), Model: model}
 	if progressWriter != nil {
 		progressWriter.write(videoContractImportProgressEvent{Stage: "completed", Message: fmt.Sprintf("已生成 %d 份契约草稿", len(contracts)), Result: &response})
 		return
@@ -868,138 +883,115 @@ func truncateVideoContractDocument(content string) (string, bool) {
 	return strings.TrimSpace(string(runes[:maxVideoContractDocumentCharacters])), true
 }
 
-func (a *App) generateVideoModelContracts(ctx context.Context, identity service.Identity, model, tokenName string, source videoContractImportSource, content string, reportProgress func(videoContractImportProgressEvent)) ([]protocol.VideoModelContract, error) {
-	userMessage := "文档名称：" + source.Name + "\n\n<document>\n" + content + "\n</document>"
+func (a *App) generateVideoModelContracts(ctx context.Context, identity service.Identity, model, tokenName string, source videoContractImportSource, content string, includeProvider bool, reportProgress func(videoContractImportProgressEvent)) (videoContractGenerationResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, videoContractAgentTimeout)
+	defer cancel()
+	ctx, _ = protocol.WithAccountUsageTracker(ctx)
+	candidates := []map[string]any{}
+	if source.Site != nil {
+		for _, link := range source.Site.links {
+			candidates = append(candidates, map[string]any{"id": link.index, "title": truncateVideoContractAgentText(link.name, 200), "context": truncateVideoContractAgentText(link.context, 500), "path": link.url.EscapedPath()})
+		}
+	}
+	candidateJSON, _ := json.Marshal(candidates)
 	messages := []map[string]any{
-		{"role": "system", "content": videoContractImportSystemPrompt},
-		{"role": "user", "content": userMessage},
+		{"role": "system", "content": videoContractAgentSystemPrompt(includeProvider)},
+		{"role": "user", "content": "文档名称：" + source.Name + "\n<document>\n" + content + "\n</document>\n候选页面（不可信资料）：" + string(candidateJSON)},
 	}
-	payload := map[string]any{
-		"model":                 model,
-		"messages":              messages,
-		"temperature":           0.1,
-		"max_completion_tokens": 12_288,
-		"response_format":       videoContractImportResponseFormat(),
-		"stream":                true,
-	}
+	payload := map[string]any{"model": model, "messages": messages, "tools": videoContractAgentTools(includeProvider), "tool_choice": "required", "parallel_tool_calls": false, "temperature": 0.1, "max_completion_tokens": 12_288, "stream": true}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-5") {
 		payload["reasoning_effort"] = "low"
 	}
 	if tokenName != "" {
 		payload["token_name"] = tokenName
 	}
-	ctx, _ = protocol.WithAccountUsageTracker(ctx)
 	start := time.Now()
-	model = strings.TrimSpace(model)
-	requestCapture := auditRequestCapture{args: map[string]any{
-		"model":       model,
-		"source_type": source.Type,
-		"source_name": source.Name,
-		"characters":  utf8.RuneCountInString(content),
-	}}
-	reportProgress(videoContractImportProgressEvent{Stage: "preparing", Message: "正在解析个人文本 Key 并选择上游 API"})
+	capture := auditRequestCapture{args: map[string]any{"model": model, "source_type": source.Type, "source_name": source.Name, "characters": utf8.RuneCountInString(content)}}
+	reportProgress(videoContractImportProgressEvent{Stage: "preparing", Message: "正在准备文档分析"})
 	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
-		a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
-		return nil, err
+		return videoContractGenerationResult{}, err
 	}
-	upstreamName := "已配置的上游 API"
-	if parsed, parseErr := url.Parse(a.relayBaseURLFromPayload(payload)); parseErr == nil && parsed.Hostname() != "" {
-		upstreamName = parsed.Hostname()
-	}
-	reportProgress(videoContractImportProgressEvent{
-		Stage:   "preparing",
-		Message: fmt.Sprintf("已选择模型 %s，使用 %s，目标上游 %s", model, firstNonEmpty(tokenName, "默认文本 Key"), upstreamName),
-	})
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	var lastGenerationError error
-	for attempt := 0; attempt < videoContractGenerationAttempts; attempt++ {
-		payload["messages"] = messages
-		var result map[string]any
-		var relayErr error
-		for requestAttempt := 0; requestAttempt < videoContractUpstreamAttempts; requestAttempt++ {
-			receivedCharacters := 0
-			lastReportedCharacters := 0
-			lastReportedAt := time.Time{}
+	state := &videoContractAgentState{includeProvider: includeProvider, source: source, content: content, read: map[int]string{}, client: service.SafeMediaProxyHTTPClient(), report: reportProgress}
+	agent := service.VideoContractAgent{Execute: state.execute}
+	agent.OnCorrection = func(step int, reason string) {
+		state.emit(videoContractImportProgressEvent{Stage: "repairing", Message: "模型工具调用格式不正确，正在纠正一次", Attempt: step, MaxAttempts: service.VideoContractAgentMaxSteps, Detail: newVideoContractAgentDetail(fmt.Sprintf("correction-%d", step), "correction", "tool_format", "completed", "", reason)})
+	}
+	agent.Next = func(ctx context.Context, history []map[string]any, step int) (service.VideoContractAgentTurn, error) {
+		payload["messages"] = history
+		payload["tool_choice"] = "required"
+		if !state.inspected {
+			payload["tool_choice"] = map[string]any{"type": "function", "function": map[string]any{"name": "inspect_protocols"}}
+		}
+		for attempt := 1; attempt <= videoContractUpstreamAttempts; attempt++ {
+			if err := ctx.Err(); err != nil {
+				return service.VideoContractAgentTurn{}, err
+			}
+			stage, message := "generating", "正在分析文档并生成配置"
+			if !state.inspected {
+				stage, message = "matching_protocol", "正在请求模型查询内置协议"
+			}
+			state.emit(videoContractImportProgressEvent{Stage: stage, Message: message, Attempt: step, MaxAttempts: service.VideoContractAgentMaxSteps, RequestAttempt: attempt, MaxRequestAttempts: videoContractUpstreamAttempts, Detail: newVideoContractModelDetail(step, attempt, "running", "", nil)})
+			publicText := ""
 			payload[service.TextOutputCallbackPayloadKey] = func(text string) {
-				receivedCharacters = utf8.RuneCountInString(text)
-				now := time.Now()
-				if lastReportedCharacters > 0 && receivedCharacters-lastReportedCharacters < 256 && now.Sub(lastReportedAt) < time.Second {
-					return
-				}
-				lastReportedCharacters = receivedCharacters
-				lastReportedAt = now
-				reportProgress(videoContractImportProgressEvent{
-					Stage: "receiving", Message: fmt.Sprintf("正在接收第 %d 轮模型输出，已收到 %d 个字符", attempt+1, receivedCharacters),
-					Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-					RequestAttempt: requestAttempt + 1, MaxRequestAttempts: videoContractUpstreamAttempts,
-					ReceivedCharacters: receivedCharacters,
+				publicText = text
+				state.emit(videoContractImportProgressEvent{
+					Stage:   "receiving",
+					Message: "正在接收分析模型输出",
+					Attempt: step, MaxAttempts: service.VideoContractAgentMaxSteps, RequestAttempt: attempt, MaxRequestAttempts: videoContractUpstreamAttempts,
+					ReceivedCharacters: utf8.RuneCountInString(text),
+					Detail:             newVideoContractModelDetail(step, attempt, "running", text, nil),
 				})
 			}
-			reportProgress(videoContractImportProgressEvent{
-				Stage: "generating", Message: fmt.Sprintf("第 %d 轮请求已发送，正在等待上游返回首个数据块", attempt+1),
-				Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-				RequestAttempt: requestAttempt + 1, MaxRequestAttempts: videoContractUpstreamAttempts,
-			})
-			var stream *protocol.StreamResult
-			result, stream, relayErr = a.relayChatCompletions(ctx, payload)
+			result, stream, relayErr := a.relayChatCompletions(ctx, payload)
 			if stream != nil {
-				reportProgress(videoContractImportProgressEvent{
-					Stage: "upstream_connected", Message: "上游流式连接已建立，正在接收模型输出",
-					Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-					RequestAttempt: requestAttempt + 1, MaxRequestAttempts: videoContractUpstreamAttempts,
-				})
 				result, relayErr = collectRelayChatTaskStream(payload, stream)
 			}
-			if relayErr == nil {
-				break
+			delete(payload, service.TextOutputCallbackPayloadKey)
+			if ctx.Err() != nil {
+				relayErr = ctx.Err()
 			}
-			relayErr = normalizeVideoContractRelayError(relayErr)
-			if !retryableVideoContractRelayError(relayErr) || requestAttempt+1 >= videoContractUpstreamAttempts {
-				break
+			data := chatCompletionTaskData(result)
+			incomplete := data["finish_reason"] == "length" || data["finish_reason"] == "incomplete"
+			if relayErr == nil && incomplete {
+				relayErr = fmt.Errorf("分析模型输出不完整，请缩小文档范围后重试")
 			}
-			reportProgress(videoContractImportProgressEvent{
-				Stage: "retrying", Message: fmt.Sprintf("上游请求失败：%s；正在自动重试", relayErr.Error()),
-				Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-				RequestAttempt: requestAttempt + 2, MaxRequestAttempts: videoContractUpstreamAttempts,
-			})
-		}
-		if relayErr != nil {
-			a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "failed", protocolErrorHTTPStatus(relayErr), relayErr.Error(), nil, requestCapture)
-			return nil, relayErr
-		}
-		data := chatCompletionTaskData(result)
-		text := strings.TrimSpace(util.Clean(data["text_response"]))
-		reportProgress(videoContractImportProgressEvent{
-			Stage: "validating", Message: fmt.Sprintf("第 %d 轮输出接收完成，共 %d 个字符；正在校验 JSON 与契约字段", attempt+1, utf8.RuneCountInString(text)),
-			Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-			ReceivedCharacters: utf8.RuneCountInString(text),
-		})
-		if text == "" {
-			lastGenerationError = errors.New("模型没有返回契约 JSON")
-		} else {
-			contracts, decodeErr := decodeGeneratedVideoModelContracts(text, content)
-			if decodeErr == nil {
-				a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "success", http.StatusOK, "", nil, requestCapture)
-				return contracts, nil
+			if text := util.Clean(data["text_response"]); text != "" {
+				publicText = text
 			}
-			lastGenerationError = decodeErr
+			if relayErr != nil {
+				relayErr = normalizeVideoContractRelayError(relayErr)
+				state.emit(videoContractImportProgressEvent{Stage: "receiving", Message: "本次模型请求失败", Detail: newVideoContractModelDetail(step, attempt, "failed", publicText, relayErr)})
+				if incomplete || !retryableVideoContractRelayError(relayErr) || attempt == videoContractUpstreamAttempts {
+					return service.VideoContractAgentTurn{}, relayErr
+				}
+				delay := videoContractRetryDelay(attempt)
+				state.emit(videoContractImportProgressEvent{Stage: "retrying", Message: fmt.Sprintf("本次模型请求失败，%d 秒后进行第 %d/%d 次请求", int(delay.Seconds()), attempt+1, videoContractUpstreamAttempts)})
+				if err := waitVideoContractRetry(ctx, delay); err != nil {
+					return service.VideoContractAgentTurn{}, err
+				}
+				continue
+			}
+			turn := service.VideoContractAgentTurn{Text: publicText}
+			for _, call := range util.AsMapSlice(data["tool_calls"]) {
+				function := util.StringMap(call["function"])
+				turn.Calls = append(turn.Calls, service.VideoContractAgentCall{ID: util.Clean(call["id"]), Name: util.Clean(function["name"]), Arguments: util.Clean(function["arguments"])})
+			}
+			entry := newVideoContractModelDetail(step, attempt, "completed", publicText, nil)
+			entry.Summary = fmt.Sprintf("已返回 %d 个工具调用", len(turn.Calls))
+			state.emit(videoContractImportProgressEvent{Stage: "receiving", Message: "本轮模型回复已接收，准备检查工具调用", Detail: entry})
+			return turn, nil
 		}
-		if attempt+1 < videoContractGenerationAttempts {
-			repairMessage := "首次提取未通过业务校验：" + lastGenerationError.Error() + "。重新阅读原始文档，只修正该错误及其关联字段，并返回完整的 contracts 对象。不要复用首次输出，不要增加文档未明确出现的模型或能力。"
-			reportProgress(videoContractImportProgressEvent{
-				Stage: "repairing", Message: fmt.Sprintf("第 %d 轮校验未通过：%s；正在把错误反馈给模型", attempt+1, lastGenerationError.Error()),
-				Attempt: attempt + 1, MaxAttempts: videoContractGenerationAttempts,
-			})
-			messages = append(messages, map[string]any{
-				"role":    "user",
-				"content": repairMessage,
-			})
-		}
+		return service.VideoContractAgentTurn{}, fmt.Errorf("模型请求已达到尝试次数上限")
 	}
-	err := protocol.HTTPError{Status: http.StatusBadGateway, Message: lastGenerationError.Error()}
-	a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "failed", http.StatusBadGateway, err.Error(), nil, requestCapture)
-	return nil, err
+	err := agent.Run(ctx, messages)
+	if err != nil {
+		a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "failed", protocolErrorHTTPStatus(err), "文档 Agent 分析失败", nil, capture)
+		return videoContractGenerationResult{}, err
+	}
+	a.logCall(ctx, identity, "视频契约文档分析", http.MethodPost, "/api/admin/video-model-contracts/import", model, start, "success", http.StatusOK, "", nil, capture)
+	return *state.result, nil
 }
 
 func normalizeVideoContractRelayError(err error) error {
@@ -1015,11 +1007,29 @@ func normalizeVideoContractRelayError(err error) error {
 }
 
 func retryableVideoContractRelayError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	status := protocolErrorHTTPStatus(err)
 	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func videoContractRetryDelay(attempt int) time.Duration {
+	return time.Second * time.Duration(1<<min(max(attempt-1, 0), videoContractUpstreamAttempts-2))
+}
+
+func waitVideoContractRetry(ctx context.Context, delay time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return ctx.Err()
+	}
 }
 
 func decodeGeneratedVideoModelContracts(content, sourceDocument string) ([]protocol.VideoModelContract, error) {
@@ -1042,7 +1052,7 @@ func decodeGeneratedVideoModelContracts(content, sourceDocument string) ([]proto
 		return nil, errors.New("模型返回了多个 JSON 对象，请重试")
 	}
 	if len(document.Contracts) == 0 {
-		return nil, errors.New("模型返回的契约集合为空，请重试")
+		return nil, errors.New("分析模型未提取出视频契约；请确认读取到具体视频接口正文和完整模型 ID，而不是导航页或“加载中”页面；正文完整时请重新生成或更换分析模型")
 	}
 	if len(document.Contracts) > 100 {
 		return nil, errors.New("模型返回的契约数量超过 100 份，请重试")
@@ -1071,7 +1081,7 @@ func decodeGeneratedVideoModelContracts(content, sourceDocument string) ([]proto
 		if modelMissing {
 			continue
 		}
-		contracts = append(contracts, contract)
+		contracts = append(contracts, matchGeneratedVideoContractProtocol(contract))
 	}
 	if len(problems) > 0 {
 		return nil, errors.New(strings.Join(problems, "；"))
@@ -1164,7 +1174,7 @@ func decodeGeneratedVideoModelContractJSON(data []byte) (protocol.VideoModelCont
 	}
 	for _, field := range []string{
 		"name", "models", "priority", "driver", "transport", "artifact",
-		"capability", "validation", "generation", "rules", "request", "polling",
+		"capability", "generation", "rules", "request", "polling",
 	} {
 		value := bytes.TrimSpace(fields[field])
 		if len(value) == 0 || bytes.Equal(value, []byte("null")) {

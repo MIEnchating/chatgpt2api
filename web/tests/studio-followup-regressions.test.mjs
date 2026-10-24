@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import * as imageOptions from "../src/lib/image-options.ts";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
-import { activeVideoModelContracts, installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
+import { activeVideoModelContracts, installVideoModelContracts, videoModelContract } from "../src/lib/video-model-contracts.ts";
 import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
+import { isVideoSaveFailure } from "../src/lib/video-task-error.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
 import { imageConversationHasActiveTurn, canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
 import { DEFAULT_PROMPT_MARKET_SOURCES, normalizePromptMarketSources } from "../src/app/image/banana-prompts.ts";
@@ -185,7 +186,7 @@ test("video submit reports unsupported contracts without rejecting the event han
     composerMode: "video", imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
     referenceImages: [], videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [],
     videoModel: "missing-contract", videoModelOptions: [{ value: "missing-contract" }], videoSeconds: "4", videoSize: "1280x720",
-    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false,
+    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: {},
     absoluteReferenceURL: value => value, cleanReferenceURLs: values => values, requireRelayToken: () => true,
     videoRequiresReferenceImage: () => false, videoRequiresReferenceVideo: () => false, videoRequiresReferenceAudio: () => false,
     videoRequiresMultimodalReferenceMode: () => false, supportsVideoMultimodalReferences: () => false,
@@ -366,6 +367,8 @@ function retryFixture(mode = "generate", status = "message") {
       pageActiveRef: { current: true }, conversationsRef: { current: [conversation] },
       retryingImageIdsRef: { current: new Set() }, queueingTurnIdsRef: { current: new Set() },
       isTurnInProgress: () => false, isConfiguredCreationModel: () => true,
+      isVideoSaveFailure,
+      videoModelContract,
       imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: item => item?.historySummaryOnly === true,
       imageTurnReferenceValidationError: () => "", requireRelayToken: () => true,
       imageModel: "new-image", videoModel: "new-video", imageTurnProgressKey: () => "turn-key",
@@ -385,6 +388,54 @@ test("retry on a model text response queues the requested slot", async () => {
   assert.equal(fixture.saved.turns[0].images[0].text_response, undefined);
 });
 
+for (const outcome of ["success", "download-error", "session-change", "replaced-task"]) {
+  test(`video save retry never regenerates after ${outcome}`, async () => {
+    const fixture = retryFixture("video", "error");
+    const original = fixture.turn.images[0];
+    original.taskId = "completed-video";
+    original.error = "视频已生成但保存失败: video content returned status 502";
+    const response = deferred();
+    const session = { current: "original-session" };
+    let downloads = 0;
+    const retry = extract("handleRetryImage", {
+      ...fixture.context,
+      currentSessionKeyRef: session,
+      creationTaskRequestOptions: { sessionKey: session.current },
+      recoverVideoContent: async id => {
+        assert.equal(id, "completed-video");
+        downloads++;
+        await response.promise;
+        if (outcome === "download-error") throw new Error("Gateway 502");
+        return { id, status: "success" };
+      },
+      runConversationQueue: () => assert.fail("Recovery submitted a new generation"),
+      requireRelayToken: () => assert.fail("Recovery selected a generation token"),
+      taskDataToStoredImage: image => ({ ...image, status: "success", error: undefined, videoUrl: "/videos/recovered.mp4" }),
+      deriveGenerationTaskStatus: images => ({ status: images.every(image => image.status === "success") ? "success" : "error" }),
+      formatCreationTaskError: error => error.message,
+      toast: { error: error => fixture.errors.push(error), loading: () => "saving", dismiss: () => {}, success: () => {} },
+    });
+    const pending = retry("conversation", "turn", 0);
+    await retry("conversation", "turn", 0);
+    assert.equal(downloads, 1);
+    if (outcome === "session-change") session.current = "another-session";
+    if (outcome === "replaced-task") original.taskId = "replacement-video";
+    response.resolve();
+    await pending;
+    assert.equal(fixture.context.retryingImageIdsRef.current.size, 0);
+    if (outcome === "success") {
+      assert.equal(fixture.saved.turns[0].images[0].videoUrl, "/videos/recovered.mp4");
+      assert.equal(fixture.saved.turns[0].images[0].taskId, "completed-video");
+    } else if (outcome === "replaced-task") {
+      assert.equal(fixture.saved.turns[0].images[0].taskId, "replacement-video");
+      assert.equal(fixture.saved.turns[0].images[0].status, "error");
+    } else {
+      assert.equal(fixture.saved, undefined);
+      assert.equal(fixture.errors.length, outcome === "download-error" ? 1 : 0);
+    }
+  });
+}
+
 for (const mode of ["generate", "chat"]) {
   test(`retry still rejects a ${mode === "chat" ? "chat response" : "successful image"}`, async () => {
     const fixture = retryFixture(mode, mode === "chat" ? "message" : "success");
@@ -395,6 +446,30 @@ for (const mode of ["generate", "chat"]) {
 }
 
 for (const name of ["handleRetryImage", "handleRegenerateTurn"]) {
+  for (const required of [false, true]) {
+    test(`${name} respects the selected video's prompt requirement (${required})`, async () => {
+      const previous = activeVideoModelContracts();
+      const contract = structuredClone(contractDocument.contracts[0]);
+      contract.models = ["new-video"];
+      contract.model_profiles = [];
+      contract.capability.prompt = { required, min_length: 0, max_length: 0 };
+      installVideoModelContracts([contract]);
+      try {
+        const fixture = retryFixture("video", "error");
+        fixture.turn.prompt = "";
+        const normalize = extract("normalizeRetryVideoTurnFields", { normalizeVideoRequest, videoTurnFieldsFromNormalizedRequest });
+        await extract(name, { ...fixture.context, normalizeRetryVideoTurnFields: normalize })("conversation", "turn", 0);
+        if (required) {
+          assert.deepEqual(fixture.errors, ["请输入提示词"]);
+          assert.equal(fixture.saved, undefined);
+        } else {
+          assert.deepEqual(fixture.errors, []);
+          assert.equal(fixture.saved.turns[0].prompt, "");
+          assert.equal(fixture.saved.turns[0].images[0].status, "loading");
+        }
+      } finally { installVideoModelContracts(previous); }
+    });
+  }
   test(`${name} persists all normalized video references and clears hidden inputs`, async () => {
     const previous = activeVideoModelContracts();
     const contract = structuredClone(contractDocument.contracts[0]);

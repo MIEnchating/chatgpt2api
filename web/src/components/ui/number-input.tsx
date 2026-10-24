@@ -164,7 +164,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           ) : null}
         </div>
         {controlsLayout === "split" ? incrementButton : (
-          <div className="mr-0.5 flex h-8 max-h-full shrink-0 items-center divide-x divide-border/70 rounded-md bg-muted/45">
+          <div className="mr-0.5 flex h-8 max-h-full shrink-0 items-center gap-0.5">
             {decrementButton}
             {incrementButton}
           </div>

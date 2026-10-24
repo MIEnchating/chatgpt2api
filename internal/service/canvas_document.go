@@ -116,6 +116,7 @@ type CanvasNode struct {
 	GenerationReferenceURLs              []string             `json:"generation_reference_urls,omitempty"`
 	GenerationVideoModel                 string               `json:"generation_video_model,omitempty"`
 	GenerationVideoSize                  string               `json:"generation_video_size,omitempty"`
+	GenerationVideoParameters            map[string]any       `json:"generation_video_parameters,omitempty"`
 	GenerationVideoSeconds               int                  `json:"generation_video_seconds,omitempty"`
 	GenerationVideoResolution            string               `json:"generation_video_resolution,omitempty"`
 	GenerationVideoAudio                 *bool                `json:"generation_video_audio,omitempty"`
@@ -1316,6 +1317,11 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, err
 	}
 	node.GenerationWorkflowInputs = inputs
+	videoParameters, err := normalizeCanvasWorkflowInputs(node.GenerationVideoParameters)
+	if err != nil {
+		return CanvasNode{}, err
+	}
+	node.GenerationVideoParameters = videoParameters
 
 	node.GenerationReferenceURLs = append([]string(nil), node.GenerationReferenceURLs...)
 	node.GenerationVideoReferenceURLs = append([]string(nil), node.GenerationVideoReferenceURLs...)
@@ -1512,7 +1518,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if len(node.GenerationVideoSize) > 64 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation size is invalid")
 		}
-		if node.GenerationVideoSeconds < 1 || node.GenerationVideoSeconds > 3600 {
+		if node.GenerationVideoSeconds < 1 || node.GenerationVideoSeconds > 9007199254740991 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
 		}
 		if len(node.GenerationVideoResolution) > 64 {

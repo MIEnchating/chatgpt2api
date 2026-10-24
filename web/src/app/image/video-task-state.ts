@@ -8,6 +8,7 @@ export function videoTurnFieldsFromNormalizedRequest(request: NormalizedVideoReq
   return {
     size: request.size || "",
     videoSeconds: request.seconds,
+    ...(request.parameters ? { videoParameters: request.parameters } : {}),
     videoResolution: request.resolution,
     videoGenerateAudio: request.generateAudio,
     videoWatermark: request.watermark,

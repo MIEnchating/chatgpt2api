@@ -12,7 +12,7 @@ test("canvas Codex streams split events without cookies and closes the server se
   const abort = new AbortController(); let stream;
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
-    if (url.endsWith("/events")) return new Response(new ReadableStream({ start(controller) { stream = controller; options.signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true }); } }));
+    if (url.endsWith("/events")) return new Response(new ReadableStream({ start(controller) { stream = controller; options.signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true }); } }), { headers: { "content-type": "text/event-stream" } });
     return Response.json(url.endsWith("/sessions") ? { sessionId: "session", serviceId: "service" } : { ok: true });
   };
   try {
@@ -35,7 +35,7 @@ test("canvas Codex reports a broken event stream and deletes its session", async
   const abort = new AbortController(); let stream;
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
-    if (url.endsWith("/events")) return new Response(new ReadableStream({ start(controller) { stream = controller; } }));
+    if (url.endsWith("/events")) return new Response(new ReadableStream({ start(controller) { stream = controller; } }), { headers: { "content-type": "text/event-stream" } });
     return Response.json(url.endsWith("/sessions") ? { sessionId: "session", serviceId: "service" } : {});
   };
   try {

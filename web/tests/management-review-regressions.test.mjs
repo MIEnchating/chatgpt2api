@@ -29,6 +29,38 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+test("document imports enter plugin generation only after preliminary review and with the switch enabled", async () => {
+  for (const [enabled, reviewPassed] of [[false, true], [true, true], [false, false], [true, false]]) {
+    let reviewOpen, targets, returnToReview = false;
+    let warnings;
+    const contracts = [{ name: "First", models: ["video-one"] }, { name: "Second", models: ["video-two"] }];
+    const run = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", {
+      importSourceType: "url", importFile: null, importURL: "https://docs.example.com/video", importModel: "test-model", importTokenName: "",
+      importGeneratePlugin: enabled, sessionKey: "session-a", isCurrentSession: () => true,
+      importControllerRef: { current: null }, importStartedAtRef: { current: 0 },
+      importVideoModelContract: async () => ({ contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] }),
+      normalizeVideoModelContractCollections: structuredClone, cloneVideoModelContract: structuredClone,
+      setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportElapsedSeconds: () => {}, setIsImporting: () => {},
+      setImportOpen: () => {}, setEditingItem: () => {}, setReadOnly: () => {}, setGeneratedContracts: () => {},
+      setGeneratedWarnings: value => { warnings = value; }, setGeneratedPublishError: () => {}, setGeneratedEditingIndex: () => {},
+      setGeneratedDryRun: () => {},
+      setGeneratedReviewOpen: value => { reviewOpen = value; }, setPluginReturnToReview: value => { returnToReview = value; },
+      setPluginTargets: value => { targets = value; }, toast: { error: message => assert.fail(message) },
+    });
+    await run();
+    const generatePlugin = enabled && reviewPassed;
+    assert.equal(reviewOpen, !generatePlugin);
+    assert.equal(returnToReview, generatePlugin);
+    if (!reviewPassed) assert.ok(warnings.some(warning => warning.includes("prompt_expansion_mode")));
+    if (generatePlugin) {
+      assert.deepEqual(targets.map(target => target.contract), contracts);
+      assert.notEqual(targets[0].contract, contracts[0]);
+      assert.notEqual(targets[0].id, targets[1].id);
+      assert.deepEqual(targets[0].warnings, ["Check the provider address"]);
+    } else assert.equal(targets, undefined);
+  }
+});
+
 test("asset batches bound concurrency and preserve outcomes in input order", async () => {
   let active = 0, peak = 0;
   const items = Array.from({ length: 21 }, (_, index) => index);

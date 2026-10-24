@@ -13,6 +13,7 @@ export type VideoTaskQueueRequest = {
   model: string;
   size?: string;
   seconds: number;
+  parameters?: import("@/lib/video-model-contracts").VideoParameterValues;
   resolution?: string;
   generateAudio?: boolean;
   watermark?: boolean;
@@ -53,6 +54,7 @@ export function useVideoTaskQueue(options: {
         model: request.model,
         size: request.size,
         seconds: request.seconds,
+        parameters: request.parameters,
         resolution: request.resolution,
         generateAudio: request.generateAudio,
         watermark: request.watermark,

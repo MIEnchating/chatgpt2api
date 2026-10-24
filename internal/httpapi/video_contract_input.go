@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"fmt"
-	"unicode/utf8"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
@@ -31,7 +30,15 @@ func normalizeVideoContractInput(body map[string]any, contract protocol.VideoMod
 	if err := protocol.ValidateVideoContractModeMaterials(contract, kind, counts); err != nil {
 		return err
 	}
-	body["seconds"] = util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
+	seconds := contract.Capability.DefaultSeconds
+	if value, present := body["seconds"]; present {
+		var valid bool
+		seconds, valid = util.StrictInt(value)
+		if !valid {
+			return fmt.Errorf("视频时长必须是整数")
+		}
+	}
+	body["seconds"] = seconds
 	body["size"] = firstNonEmpty(util.Clean(body["size"]), contract.Capability.DefaultSize)
 	body["resolution"] = firstNonEmpty(util.Clean(body["resolution"]), contract.Capability.DefaultResolution)
 	body["generate_audio"] = contract.Capability.AudioControl == "always" || contract.Capability.AudioControl == "toggle" && util.ToBool(body["generate_audio"])
@@ -53,12 +60,23 @@ func normalizeVideoContractInput(body map[string]any, contract protocol.VideoMod
 	} {
 		body[bodyField] = values[field]
 	}
-	prompt := util.Clean(body["prompt"])
-	if prompt == "" {
-		return fmt.Errorf("请输入视频提示词")
+	if err := protocol.ValidateVideoPrompt(contract.Capability, body["prompt"]); err != nil {
+		return err
 	}
-	if utf8.RuneCountInString(prompt) > contract.Validation.MaxPromptCharacters {
-		return fmt.Errorf("当前视频模型提示词最多支持 %d 个字符", contract.Validation.MaxPromptCharacters)
+	var parameterInput map[string]any
+	if raw, exists := body["parameters"]; exists {
+		var ok bool
+		parameterInput, ok = raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("parameters 必须是已声明参数的对象")
+		}
+	}
+	parameters, err := protocol.NormalizeVideoParameters(contract.Capability, kind, parameterInput)
+	if err != nil {
+		return err
+	}
+	if len(parameters) > 0 {
+		body["parameters"] = parameters
 	}
 	if !protocol.VideoContractSupports(contract, util.Clean(body["size"]), util.ToInt(body["seconds"], 0), util.Clean(body["resolution"])) {
 		return fmt.Errorf("当前视频模型不支持所选视频参数")

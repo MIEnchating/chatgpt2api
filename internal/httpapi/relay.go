@@ -1105,6 +1105,12 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
 			}
 			if videoAuth == "relay" {
+				if callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate)); ok {
+					callback(service.VideoTaskProgressUpdate{Status: service.TaskStatusRunning, UpstreamTaskID: taskID, Progress: 100, HasProgress: true, Recovery: &service.VideoContentRecovery{
+						TaskID: taskID, URL: videoURL, BaseURL: baseURL, AllowedHosts: contract.Artifact.AllowedHosts,
+						TokenName: selectedRelayTokenNameFromPayload(payload), TokenGroup: selectedRelayTokenGroupFromPayload(payload),
+					}})
+				}
 				localURL, saveErr := a.downloadRelayVideo(
 					ctx,
 					videoURL,
@@ -1235,8 +1241,15 @@ func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey, createPat
 			return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 		}
 		if len(files) > 0 {
-			if len(files) > 1 && !contract.Transport.MultipartRepeatable {
-				return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "当前模型契约不允许一次提交多个本地素材"}
+			if !contract.Transport.MultipartRepeatable {
+				seenFields := map[string]bool{}
+				for _, file := range files {
+					field := firstNonEmpty(file.Field, contract.Transport.MultipartFileField)
+					if seenFields[field] {
+						return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "当前模型契约不允许同一字段提交多个本地素材"}
+					}
+					seenFields[field] = true
+				}
 			}
 			if hasExternalURLs && !contract.Transport.MultipartMixedURLs {
 				return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "当前模型契约不允许本地素材与公网 URL 混用"}
@@ -1277,6 +1290,7 @@ func (a *App) extractContractLocalVideoMaterials(request map[string]any, contrac
 				return nil, false, err
 			}
 			if local {
+				file.Field = contract.Transport.MultipartFields[field.role]
 				files = append(files, file)
 				continue
 			}
@@ -1336,10 +1350,10 @@ func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, c
 	}
 	set(contract.Request.AspectRatioField, firstNonEmpty(util.Clean(ruleValues["size"]), contract.Capability.DefaultSize))
 	set(contract.Request.ResolutionField, firstNonEmpty(util.Clean(ruleValues["resolution"]), contract.Capability.DefaultResolution))
-	if generateAudio, ok := ruleValues["generate_audio"].(bool); ok && contract.Request.GenerateAudioField != "" {
+	if generateAudio, ok := ruleValues["generate_audio"].(bool); ok && contract.Capability.AudioControl != "none" && contract.Request.GenerateAudioField != "" {
 		videoSetObjectPath(request, contract.Request.GenerateAudioField, generateAudio)
 	}
-	if watermark, ok := ruleValues["watermark"].(bool); ok && contract.Request.WatermarkField != "" {
+	if watermark, ok := ruleValues["watermark"].(bool); ok && contract.Capability.Watermark && contract.Request.WatermarkField != "" {
 		videoSetObjectPath(request, contract.Request.WatermarkField, watermark)
 	}
 
@@ -1360,15 +1374,38 @@ func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, c
 	}
 	set(contract.Request.GenerationModeField, modeValue)
 
+	parameters, _ := payload["parameters"].(map[string]any)
+	for _, parameter := range contract.Capability.Parameters {
+		if !protocol.VideoParameterActive(parameter, modeKind) {
+			continue
+		}
+		value, present := parameters[parameter.Name]
+		if !present {
+			value = parameter.Default
+		}
+		if value != nil {
+			videoSetObjectPath(request, parameter.Field, value)
+		}
+	}
+	if contract.Capability.Prompt != nil && !contract.Capability.Prompt.Required && util.Clean(payload["prompt"]) == "" {
+		delete(request, "prompt")
+	}
+	setReference := func(field string, values []string) {
+		if contract.Request.ReferenceValueType == "scalar" {
+			videoSetObjectPath(request, field, values[0])
+		} else {
+			videoSetObjectPath(request, field, values)
+		}
+	}
 	if modeKind == "reference" {
 		if len(imageReferences) > 0 && contract.Request.ReferenceImagesField != "" {
-			videoSetObjectPath(request, contract.Request.ReferenceImagesField, imageReferences)
+			setReference(contract.Request.ReferenceImagesField, imageReferences)
 		}
 		if len(videoReferences) > 0 && contract.Request.ReferenceVideosField != "" {
-			videoSetObjectPath(request, contract.Request.ReferenceVideosField, videoReferences)
+			setReference(contract.Request.ReferenceVideosField, videoReferences)
 		}
 		if len(audioReferences) > 0 && contract.Request.ReferenceAudiosField != "" {
-			videoSetObjectPath(request, contract.Request.ReferenceAudiosField, audioReferences)
+			setReference(contract.Request.ReferenceAudiosField, audioReferences)
 		}
 	} else if modeKind == "image" {
 		firstFrame, lastFrame, _ := videoContractImageFrames(payload, imageReferences)
@@ -1584,12 +1621,13 @@ func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey, createPath
 		}
 	}
 	fileField = strings.TrimSpace(fileField)
-	if fileField == "" {
-		return nil, errors.New("video multipart file field is required")
-	}
 	for _, file := range files {
+		field := firstNonEmpty(file.Field, fileField)
+		if field == "" {
+			return nil, errors.New("video multipart file field is required")
+		}
 		header := make(textproto.MIMEHeader)
-		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeMultipartQuote(fileField), escapeMultipartQuote(file.Filename)))
+		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeMultipartQuote(field), escapeMultipartQuote(file.Filename)))
 		header.Set("Content-Type", file.ContentType)
 		part, err := writer.CreatePart(header)
 		if err != nil {
@@ -1632,6 +1670,7 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	req.Header.Set("Accept", "video/*, application/octet-stream, application/json;q=0.9")
 	client := a.relayHTTPClientForContext(ctx)
 	redirectPolicy := client.CheckRedirect
 	clientCopy := *client
@@ -1653,7 +1692,7 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("video content returned status %d", resp.StatusCode)
+		return "", videoContentResponseError(resp)
 	}
 	const maxVideoBytes int64 = 512 << 20
 	if resp.ContentLength > maxVideoBytes {
@@ -1836,13 +1875,14 @@ func relayVideoTaskProgress(payload map[string]any, state map[string]any, contra
 	}
 	normalizedStatus := videoRelayTaskStatusForContract(state, contract)
 	taskStatus := service.TaskStatusQueued
-	if normalizedStatus == "in_progress" || normalizedStatus == "unknown" {
+	if normalizedStatus == "in_progress" || normalizedStatus == "unknown" || normalizedStatus == "completed" {
 		taskStatus = service.TaskStatusRunning
 	}
 	progress, hasProgress := videoContractProgressForContract(state, contract)
 	callback(service.VideoTaskProgressUpdate{
 		Status:         taskStatus,
 		UpstreamStatus: strings.ToLower(videoContractFirstString(state, contract.Polling.StatusFields)),
+		UpstreamTaskID: videoContractFirstString(state, contract.Polling.TaskIDFields),
 		Progress:       progress,
 		HasProgress:    hasProgress,
 	})

@@ -17,3 +17,12 @@ func videoTaskContractReference(value any) map[string]any {
 	}
 	return reference
 }
+
+// VideoTaskInputConstraints carries application validation settings without
+// making the task service depend on upstream protocol definitions.
+const VideoTaskInputConstraintsKey = "video_input_constraints"
+
+type VideoTaskInputConstraints struct {
+	PromptRequired bool
+	MaximumSeconds int
+}

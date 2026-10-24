@@ -30,6 +30,7 @@ export type StoredImage = {
   status?: "loading" | "success" | "error" | "cancelled" | "message";
   taskStatus?: GenerationTaskStatus;
   taskProgress?: number;
+  canRecoverVideo?: boolean;
   path?: string;
   visibility?: ImageVisibility;
   b64_json?: string;
@@ -85,6 +86,7 @@ export type ImageTurn = {
   partialImages?: number;
   responseFormatB64JSON?: boolean;
   codexCLICompatibility?: boolean;
+  videoParameters?: import("./video-model-contracts").VideoParameterValues;
   videoSeconds?: number;
   videoResolution?: string;
   videoGenerateAudio?: boolean;

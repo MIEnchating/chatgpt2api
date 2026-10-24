@@ -159,7 +159,7 @@ test("rejects excess image-mode materials instead of silently truncating them", 
 
 test("keeps shared prompt and stored-duration normalization deterministic", () => {
   assert.equal(composeVideoPrompt("user", "system"), "system\n\nuser");
-  assert.equal(normalizeStoredVideoSeconds(4000), 3600);
+  assert.equal(normalizeStoredVideoSeconds(4000), 4000);
 });
 
 

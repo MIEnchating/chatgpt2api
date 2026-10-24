@@ -19,7 +19,7 @@ var videoModelContractsJSON []byte
 const VideoContractSnapshotPayloadKey = "video_contract_snapshot"
 
 var (
-	videoContractModelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+	videoContractModelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$`)
 	videoContractRequestPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\]){0,7}$`)
 	videoContractFieldPathPattern      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\])*$`)
 	videoContractMultipartFieldPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(?:\[\])?$`)
@@ -35,6 +35,9 @@ type VideoModelReferenceLimits struct {
 }
 
 type VideoModelContractCapability struct {
+	Parameters           []VideoModelParameter     `json:"parameters,omitempty"`
+	SecondsRange         *VideoDurationRange       `json:"seconds_range,omitempty"`
+	Prompt               *VideoPromptConstraint    `json:"prompt,omitempty"`
 	Sizes                []string                  `json:"sizes"`
 	Seconds              []int                     `json:"seconds"`
 	Resolutions          []string                  `json:"resolutions"`
@@ -46,10 +49,6 @@ type VideoModelContractCapability struct {
 	ReferenceMode        bool                      `json:"reference_mode"`
 	AudioControl         string                    `json:"audio_control"`
 	Watermark            bool                      `json:"watermark"`
-}
-
-type VideoModelContractValidation struct {
-	MaxPromptCharacters int `json:"max_prompt_characters"`
 }
 
 type VideoModelMaterialRange struct {
@@ -104,6 +103,7 @@ type VideoModelContractRule struct {
 }
 
 type VideoModelContractRequest struct {
+	ReferenceValueType   string `json:"reference_value_type,omitempty"`
 	DurationField        string `json:"duration_field"`
 	DurationValueType    string `json:"duration_value_type"`
 	AspectRatioField     string `json:"aspect_ratio_field"`
@@ -133,12 +133,13 @@ type VideoModelContractPolling struct {
 }
 
 type VideoModelContractTransport struct {
-	LocalMaterial       string `json:"local_material"`
-	MultipartFileField  string `json:"multipart_file_field"`
-	MultipartRepeatable bool   `json:"multipart_repeatable"`
-	MultipartMixedURLs  bool   `json:"multipart_mixed_urls"`
-	CreatePath          string `json:"create_path"`
-	QueryPath           string `json:"query_path"`
+	MultipartFields     map[string]string `json:"multipart_fields,omitempty"`
+	LocalMaterial       string            `json:"local_material"`
+	MultipartFileField  string            `json:"multipart_file_field"`
+	MultipartRepeatable bool              `json:"multipart_repeatable"`
+	MultipartMixedURLs  bool              `json:"multipart_mixed_urls"`
+	CreatePath          string            `json:"create_path"`
+	QueryPath           string            `json:"query_path"`
 }
 
 type VideoModelContractArtifact struct {
@@ -149,6 +150,7 @@ type VideoModelContractArtifact struct {
 }
 
 type VideoModelContract struct {
+	Provider      *VideoContractProvider       `json:"provider,omitempty"`
 	Name          string                       `json:"name"`
 	Models        []string                     `json:"models"`
 	Priority      int                          `json:"priority"`
@@ -156,7 +158,6 @@ type VideoModelContract struct {
 	Transport     VideoModelContractTransport  `json:"transport"`
 	Artifact      VideoModelContractArtifact   `json:"artifact"`
 	Capability    VideoModelContractCapability `json:"capability"`
-	Validation    VideoModelContractValidation `json:"validation"`
 	Generation    VideoModelContractGeneration `json:"generation"`
 	Rules         []VideoModelContractRule     `json:"rules"`
 	Request       VideoModelContractRequest    `json:"request"`
@@ -212,6 +213,17 @@ func loadDefaultVideoModelContracts() []VideoModelContract {
 
 func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContract, error) {
 	contract = cloneVideoContract(contract)
+	provider, err := NormalizeVideoContractProvider(contract.Provider)
+	if err != nil {
+		return VideoModelContract{}, err
+	}
+	contract.Provider = provider
+	if contract.Polling.IntervalSeconds == 0 {
+		contract.Polling.IntervalSeconds = 5
+	}
+	if contract.Polling.TimeoutSeconds == 0 {
+		contract.Polling.TimeoutSeconds = 900
+	}
 	queuedStatusesMissing := contract.Polling.QueuedStatuses == nil
 	runningStatusesMissing := contract.Polling.RunningStatuses == nil
 	progressFieldsMissing := contract.Polling.ProgressFields == nil
@@ -219,6 +231,11 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Driver = strings.ToLower(strings.TrimSpace(contract.Driver))
 	contract.Transport.LocalMaterial = strings.ToLower(strings.TrimSpace(contract.Transport.LocalMaterial))
 	contract.Transport.MultipartFileField = strings.TrimSpace(contract.Transport.MultipartFileField)
+	for role, field := range contract.Transport.MultipartFields {
+		if strings.TrimSpace(field) == "" {
+			delete(contract.Transport.MultipartFields, role)
+		}
+	}
 	contract.Transport.CreatePath = normalizeVideoContractEndpointPath(contract.Transport.CreatePath)
 	contract.Transport.QueryPath = normalizeVideoContractEndpointPath(contract.Transport.QueryPath)
 	if contract.Transport.LocalMaterial != "multipart" {
@@ -745,6 +762,9 @@ func videoGenerationKindLabel(kind string) string {
 }
 
 func ValidateVideoModelContract(contract VideoModelContract) error {
+	if _, err := NormalizeVideoContractProvider(contract.Provider); err != nil {
+		return err
+	}
 	if _, err := normalizeVideoModelProfiles(contract); err != nil {
 		return err
 	}
@@ -769,7 +789,7 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		return fmt.Errorf("本地素材提交方式仅支持 url 或 multipart")
 	}
 	if contract.Transport.LocalMaterial == "multipart" {
-		if !videoContractMultipartFieldPattern.MatchString(contract.Transport.MultipartFileField) {
+		if len(contract.Transport.MultipartFields) == 0 && !videoContractMultipartFieldPattern.MatchString(contract.Transport.MultipartFileField) {
 			return fmt.Errorf("multipart 文件字段 %q 格式无效", contract.Transport.MultipartFileField)
 		}
 	}
@@ -801,7 +821,7 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		}
 	}
 	capability := contract.Capability
-	if len(capability.Sizes) > 32 || len(capability.Seconds) == 0 || len(capability.Seconds) > 60 || len(capability.Resolutions) > 16 {
+	if len(capability.Sizes) > 32 || len(capability.Seconds) == 0 && capability.SecondsRange == nil || len(capability.Seconds) > 60 || len(capability.Resolutions) > 16 {
 		return fmt.Errorf("视频参数选项数量超出限制")
 	}
 	for _, value := range append(append([]string{}, capability.Sizes...), capability.Resolutions...) {
@@ -814,7 +834,7 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 			return fmt.Errorf("视频时长必须在 1-3600 秒之间")
 		}
 	}
-	if !intSliceContains(capability.Seconds, capability.DefaultSeconds) {
+	if !VideoDurationSupported(capability, capability.DefaultSeconds) {
 		return fmt.Errorf("默认时长必须属于可选时长")
 	}
 	if len(capability.Sizes) > 0 && !stringSliceContainsFold(capability.Sizes, capability.DefaultSize) {
@@ -835,9 +855,6 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	}
 	if !capability.ReferenceMode && limits.Image+limits.Video+limits.Audio > 0 {
 		return fmt.Errorf("配置参考素材上限时必须启用多模态参考模式")
-	}
-	if contract.Validation.MaxPromptCharacters < 1 || contract.Validation.MaxPromptCharacters > 100000 {
-		return fmt.Errorf("提示词上限必须在 1-100000 个字符之间")
 	}
 	if err := validateVideoContractGeneration(contract.Generation); err != nil {
 		return err
@@ -887,7 +904,7 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		name     string
 		required bool
 	}{
-		{"request.duration_field", contract.Request.DurationField, len(capability.Seconds) > 1},
+		{"request.duration_field", contract.Request.DurationField, len(capability.Seconds) > 1 || capability.SecondsRange != nil},
 		{"request.aspect_ratio_field", contract.Request.AspectRatioField, len(capability.Sizes) > 0},
 		{"request.resolution_field", contract.Request.ResolutionField, len(capability.Resolutions) > 0},
 		{"request.generate_audio_field", contract.Request.GenerateAudioField, capability.AudioControl == "toggle"},
@@ -906,6 +923,12 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		if field.name != "" && !videoContractRequestPathPattern.MatchString(field.name) {
 			return fmt.Errorf("请求字段 %q 格式无效", field.name)
 		}
+	}
+	if err := validateVideoContractParameters(contract); err != nil {
+		return err
+	}
+	if err := validateVideoContractMultipartFields(contract); err != nil {
+		return err
 	}
 	if err := validateVideoContractRequestPathConflicts(contract); err != nil {
 		return err
@@ -1199,10 +1222,41 @@ func cloneVideoContracts(contracts []VideoModelContract) []VideoModelContract {
 }
 
 func cloneVideoContract(contract VideoModelContract) VideoModelContract {
+	if contract.Provider != nil {
+		provider := *contract.Provider
+		contract.Provider = &provider
+	}
 	contract.ModelProfiles = slices.Clone(contract.ModelProfiles)
 	for index, profile := range contract.ModelProfiles {
-		value := cloneVideoContract(VideoModelContract{Capability: profile.Capability, Validation: profile.Validation, Generation: profile.Generation, Rules: profile.Rules})
+		value := cloneVideoContract(VideoModelContract{Capability: profile.Capability, Generation: profile.Generation, Rules: profile.Rules})
 		contract.ModelProfiles[index] = videoModelProfileFromContract(profile.Model, value)
+	}
+	contract.Transport.MultipartFields = maps.Clone(contract.Transport.MultipartFields)
+	contract.Capability.Parameters = slices.Clone(contract.Capability.Parameters)
+	for i := range contract.Capability.Parameters {
+		p := &contract.Capability.Parameters[i]
+		p.Enum = slices.Clone(p.Enum)
+		p.Modes = slices.Clone(p.Modes)
+		if p.Minimum != nil {
+			v := *p.Minimum
+			p.Minimum = &v
+		}
+		if p.Maximum != nil {
+			v := *p.Maximum
+			p.Maximum = &v
+		}
+	}
+	if contract.Capability.SecondsRange != nil {
+		r := *contract.Capability.SecondsRange
+		if r.Max != nil {
+			v := *r.Max
+			r.Max = &v
+		}
+		contract.Capability.SecondsRange = &r
+	}
+	if contract.Capability.Prompt != nil {
+		p := *contract.Capability.Prompt
+		contract.Capability.Prompt = &p
 	}
 	contract.Models = slices.Clone(contract.Models)
 	contract.Artifact.AllowedHosts = slices.Clone(contract.Artifact.AllowedHosts)

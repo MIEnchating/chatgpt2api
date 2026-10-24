@@ -69,9 +69,6 @@
           "audio_control": "none",
           "watermark": false
         },
-        "validation": {
-          "max_prompt_characters": 5000
-        },
         "generation": {
           "selection": "infer",
           "default_mode": "text-to-video",
@@ -210,9 +207,6 @@
               "audio_control": "none",
               "watermark": false
             },
-            "validation": {
-              "max_prompt_characters": 5000
-            },
             "generation": {
               "selection": "infer",
               "default_mode": "text-to-video",
@@ -300,9 +294,6 @@
               "reference_mode": true,
               "audio_control": "none",
               "watermark": false
-            },
-            "validation": {
-              "max_prompt_characters": 5000
             },
             "generation": {
               "selection": "infer",

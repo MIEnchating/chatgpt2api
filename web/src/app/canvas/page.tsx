@@ -1,3 +1,6 @@
+"use client";
+
+import { waitForCreationTask, CreationTaskTimeoutError } from "@/lib/creation-task-events";
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
 import { toPng } from "html-to-image";
@@ -153,9 +156,6 @@ type CanvasActiveGeneration = {
 const DEFAULT_AGENT_PANEL = { open: false, width: 390 };
 const DEFAULT_DOCUMENT: CanvasDocument = { version: 1, id: "", revision: 0, title: "我的画布", background: "dots", show_image_info: false, nodes: [], connections: [], agent_panel: DEFAULT_AGENT_PANEL, viewport: { zoom: 1, x: 0, y: 0 } };
 const MAX_HISTORY = 50;
-const TASK_POLL_INTERVAL_MS = 1200;
-const TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
-const TASK_POLL_MAX_RETRY_DELAY_MS = 10_000;
 const SIDE_PANEL_STORAGE_KEY = "yunmian-canvas-side-panel";
 const DEFAULT_SIDE_PANEL = { open: true, width: 304, tab: "canvas" as CanvasSidePanelTab };
 const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用于 AI 生图的提示词。
@@ -165,7 +165,6 @@ const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用�
 2. 覆盖主体、构图、风格、光线、色彩、材质、镜头和氛围。
 3. 尽量写成可直接用于生图模型的完整提示词。`;
 
-class CanvasTaskPollingTimeoutError extends Error {}
 
 function storedCanvasSidePanel(): typeof DEFAULT_SIDE_PANEL {
   if (typeof window === "undefined") return DEFAULT_SIDE_PANEL;
@@ -226,21 +225,6 @@ function storedCanvasAgentConfig(document: CanvasDocument): CanvasAgentConfig | 
     videoQuality: stringValue("videoQuality"),
     videoSize: stringValue("videoSize"),
   };
-}
-
-function sleep(milliseconds: number, signal?: AbortSignal) {
-  if (signal?.aborted) return Promise.reject(new DOMException("请求已取消", "AbortError"));
-  return new Promise<void>((resolve, reject) => {
-    const abort = () => {
-      window.clearTimeout(timer);
-      reject(new DOMException("请求已取消", "AbortError"));
-    };
-    const timer = window.setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
 }
 
 async function canvasAudioCloneDataURL(reference: CanvasAudioReference, signal: AbortSignal) {
@@ -365,6 +349,7 @@ function canvasVideoParameters(node?: CanvasNode | null) {
     generation_video_model: model,
 		generation_video_size: normalizedSize,
 		generation_video_seconds: normalizedSeconds,
+    generation_video_parameters: node?.generation_video_parameters,
 			generation_video_resolution: resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : videoDefaultResolution(model),
 	    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? false) : videoAudioControl(model) === "always",
 	    generation_video_watermark: node?.generation_video_watermark ?? false,
@@ -386,6 +371,7 @@ function canvasVideoModelPatch(model: string) {
     generation_video_model: model,
     generation_video_size: videoDefaultSize(model),
     generation_video_seconds: seconds,
+    generation_video_parameters: {},
     generation_video_resolution: resolutions[0] || videoDefaultResolution(model),
     generation_video_reference_mode: "first-frame" as const,
   };
@@ -399,6 +385,7 @@ function normalizeCanvasVideoNode(node: CanvasNode) {
     generation_video_model: params.generation_video_model,
     generation_video_size: params.generation_video_size,
     generation_video_seconds: params.generation_video_seconds,
+    generation_video_parameters: params.generation_video_parameters,
     generation_video_resolution: params.generation_video_resolution,
 	    generation_video_audio: params.generation_video_audio,
 	    generation_video_watermark: params.generation_video_watermark,
@@ -468,6 +455,7 @@ function CanvasVideoPromptPanel({ node, relayTokenName, inputs, running, generat
   const videoSettingsValue: VideoSettingsValue = {
     size: params.generation_video_size,
     seconds: String(params.generation_video_seconds),
+    parameters: params.generation_video_parameters,
     resolution: params.generation_video_resolution || "",
     generateAudio: params.generation_video_audio,
     watermark: params.generation_video_watermark,
@@ -476,6 +464,7 @@ function CanvasVideoPromptPanel({ node, relayTokenName, inputs, running, generat
   function updateVideoSettings(patch: Partial<VideoSettingsValue>) {
     onParametersChange({
       ...(patch.size !== undefined ? { generation_video_size: patch.size } : {}),
+      ...(patch.parameters !== undefined ? {generation_video_parameters:patch.parameters} : {}),
       ...(patch.seconds !== undefined && videoSecondsIsValid(params.generation_video_model, Number(patch.seconds)) ? { generation_video_seconds: Number(patch.seconds) } : {}),
       ...(patch.resolution !== undefined ? { generation_video_resolution: patch.resolution } : {}),
       ...(patch.generateAudio !== undefined ? { generation_video_audio: patch.generateAudio } : {}),
@@ -554,7 +543,7 @@ function CanvasVideoPromptPanel({ node, relayTokenName, inputs, running, generat
 		{videoReferenceSupported ? <label className="space-y-1.5"><ImageParameterLabel help="首帧图生视频使用一张开场图片；多模态参考可以组合图片、视频和音频。">参考模式</ImageParameterLabel><Select value={params.generation_video_reference_mode} onValueChange={(value: "first-frame" | "reference") => onParametersChange({ generation_video_reference_mode: value })}><SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="first-frame">首帧图生视频</SelectItem><SelectItem value="reference">多模态参考</SelectItem></SelectContent></Select></label> : null}
 		  {visibleReferenceMaterials ? <div className="order-40 space-y-2 rounded-xl border border-border/80 bg-muted/15 p-3 text-xs">
 		<div className="flex items-center justify-between"><span className="font-medium text-foreground">参考素材</span><span className="text-[11px] text-muted-foreground">按类型分别传入</span></div>
-		<p className="text-[11px] leading-4 text-muted-foreground">图片参考用于图生视频；视频参考用于视频生视频。两者共用模型、尺寸、时长和清晰度参数，但提交给厂商的参考字段不同。</p>
+		<p className="text-[11px] leading-4 text-muted-foreground">首尾帧指定起止画面，参考图提供外观依据。视频可用于动作参考、编辑或延长；音频用于声音参考，能否驱动口型以模型为准。</p>
 		<input ref={referenceImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceImage(file); }} />
 		<input ref={referenceVideoInputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceVideo(file); }} />
 		<input ref={referenceAudioInputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceAudio(file); }} />
@@ -570,7 +559,7 @@ function CanvasVideoPromptPanel({ node, relayTokenName, inputs, running, generat
       <AutoDLWorkflowFields tokenName={relayTokenName} model={params.generation_video_model} value={node.generation_workflow_inputs || {}} onChange={(generation_workflow_inputs) => onParametersChange({ generation_workflow_inputs })} disabled={running} /></div></AppScrollArea>
 	  {showGenerateFooter ? <CanvasGenerationFooter
 	    running={running}
-    disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
+    disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable && videoModelContract(params.generation_video_model)?.capability.prompt?.required !== false) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
 	    secondaryAction={onUpload ? { label: node.url ? "替换视频" : "上传视频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload } : undefined}
 	    onGenerate={() => onGenerate(prompt.trim())}
 	    onStop={onStop}
@@ -3226,28 +3215,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function waitForTask(taskID: string, onProgress?: (task: CreationTask) => void, signal?: AbortSignal) {
-    const deadline = Date.now() + TASK_POLL_MAX_DURATION_MS;
-    let delay = TASK_POLL_INTERVAL_MS;
-    let errorCount = 0;
-    while (Date.now() < deadline) {
-      await sleep(delay, signal);
-      let task: CreationTask | undefined;
-      try {
-        task = (await fetchCreationTasks([taskID], { signal })).items.find((item) => item.id === taskID);
-        errorCount = 0;
-      } catch (error) {
-        if (!isRetryableTaskPollError(error)) throw error;
-        errorCount += 1;
-        const retryDelay = Math.min(TASK_POLL_MAX_RETRY_DELAY_MS, 1000 * 2 ** Math.min(errorCount - 1, 4));
-        await sleep(retryDelay, signal);
-        continue;
-      }
-      if (task) onProgress?.(task);
-      if (task?.status === "success" || task?.status === "error" || task?.status === "cancelled") return task;
-      delay = Math.min(2500, Math.round(delay * 1.35));
-    }
-    throw new CanvasTaskPollingTimeoutError("任务处理时间过长，请稍后在任务队列中查看结果");
+  function waitForTask(taskID: string, onProgress?: (task: CreationTask) => void, signal?: AbortSignal) {
+    return waitForCreationTask(taskID, { onProgress, signal });
   }
 
   function isCurrentCanvasRecovery(projectID: string, operationEpoch: number, signal: AbortSignal) {
@@ -3328,7 +3297,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         }), projectID, operationEpoch, signal);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          if (error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)) {
+          if (error instanceof CreationTaskTimeoutError || isRetryableTaskPollError(error)) {
             markCanvasTaskRecoveryPending(taskID, projectID, operationEpoch, signal);
           } else {
             markCanvasTaskRecoveryError(taskID, error instanceof Error ? error.message : "恢复任务失败", projectID, operationEpoch, signal);
@@ -3434,7 +3403,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const outcomes = await Promise.all(resultIDs.map(async (resultID) => {
         const clientTaskID = clientTaskIDs.get(resultID) || `canvas-text-${randomID()}`;
         try {
-          const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, relayTokenName, requestOptions: { signal: controller.signal } });
+          const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, stream: true, relayTokenName, requestOptions: { signal: controller.signal } });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           if (!isCurrentProject()) return false;
@@ -3448,6 +3417,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           }, controller.signal);
           if (!isCurrentProject()) return false;
           controller.signal.throwIfAborted();
+          if (completed.status !== "success") throw new Error(completed.error || "文本生成失败");
           const content = (completed.data || []).map((item) => String(item.text_response || "")).join("\n").trim();
           if (!content) throw new Error(completed.error || "文本任务完成但没有返回内容");
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, prompt: content, composer_content: context.prompt, generation_status: "success", generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID } : node));
@@ -3934,6 +3904,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				model: params.generation_video_model,
 				size: params.generation_video_size,
 				seconds: params.generation_video_seconds,
+        parameters: params.generation_video_parameters,
 				resolution: params.generation_video_resolution,
 				generateAudio: params.generation_video_audio,
 				watermark: params.generation_video_watermark,
@@ -3953,6 +3924,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				model: params.generation_video_model,
 				size: normalizedVideo.size || undefined,
 				seconds: normalizedVideo.seconds,
+        parameters: normalizedVideo.parameters,
 				resolution: normalizedVideo.resolution || undefined,
 				generateAudio: normalizedVideo.generateAudio,
 				watermark: normalizedVideo.watermark,
@@ -4293,7 +4265,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const cancelled = taskCancelled || controller.signal.aborted || cancelledTaskIDsRef.current.has(activeTaskID) || cancelledTaskIDsRef.current.has(taskID);
       const generationError = error instanceof Error ? error.message : "创作任务失败";
       const recoveryPending = !cancelled && taskSubmissionAttempted && !terminalTaskReceived && (
-        error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)
+        error instanceof CreationTaskTimeoutError || isRetryableTaskPollError(error)
       );
       let cancelledTask: CreationTask | null = null;
       if (cancelled) {

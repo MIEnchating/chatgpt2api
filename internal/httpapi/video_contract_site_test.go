@@ -2,10 +2,10 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -74,6 +74,140 @@ func TestFetchVideoContractDocumentSetUsesLLMSIndex(t *testing.T) {
 	directContent, directSource, err := fetchSelectedVideoContractDocuments(context.Background(), directInitial, directSource, []int{1, 2}, server.Client())
 	if err != nil || !strings.Contains(directContent, "alpha-video-v1") || !strings.Contains(directSource.Name, "2 个相关页面") {
 		t.Fatalf("direct llms.txt import content=%q source=%#v error=%v", directContent, directSource, err)
+	}
+}
+
+func TestVideoContractSelectedDocumentsRejectIncompleteInput(t *testing.T) {
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "External documentation")
+	}))
+	defer external.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/create":
+			fmt.Fprint(w, "POST /v1/videos")
+		case "/empty":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><body><script>renderDocs()</script></body></html>`)
+		case "/redirect":
+			http.Redirect(w, r, external.URL, http.StatusFound)
+		case "/binary":
+			w.Header().Set("Content-Type", "image/png")
+			fmt.Fprint(w, "invalid document")
+		case "/large":
+			fmt.Fprint(w, strings.Repeat("x", 2048))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	base, _ := url.Parse(server.URL)
+	for _, test := range []struct {
+		name, path, want string
+		limit            int
+	}{
+		{"missing query", "/missing", "HTTP 404", 1024},
+		{"empty query", "/empty", "没有可读取的正文", 1024},
+		{"external redirect", "/redirect", "重定向到其他站点", 1024},
+		{"unsupported format", "/binary", "不支持该文档格式", 1024},
+		{"oversized query", "/large", "总大小限制", 1024},
+		{"exhausted budget", "/missing", "总大小限制", len("POST /v1/videos")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := videoContractImportSource{Type: "url", Site: &videoContractDocumentSite{
+				baseURL: base, remainingBytes: test.limit,
+				links: []videoContractDocumentLink{
+					{index: 1, name: "Create", url: base.ResolveReference(&url.URL{Path: "/create"})},
+					{index: 2, name: "Query", url: base.ResolveReference(&url.URL{Path: test.path})},
+				},
+			}}
+			content, _, err := fetchSelectedVideoContractDocuments(context.Background(), "Entry", source, []int{1, 2}, server.Client())
+			if err == nil || !strings.Contains(err.Error(), test.want) || !strings.Contains(err.Error(), "Query") || content != "" {
+				t.Fatalf("partial documentation accepted or missing failure detail: content=%q error=%v", content, err)
+			}
+		})
+	}
+}
+
+func TestVideoContractDocumentDetectsGenericContentTypes(t *testing.T) {
+	for _, contentType := range []string{"", "application/octet-stream"} {
+		for _, document := range []struct{ name, body, want string }{
+			{"html", `<html><body><p>Video API</p><script>hidden()</script><a href="/query">Query</a></body></html>`, "Video API"},
+			{"markdown", "# Video API\nPOST /v1/videos", "POST /v1/videos"},
+			{"json", `{"paths":{"/v1/videos":{}}}`, `"/v1/videos"`},
+		} {
+			t.Run(contentType+"/"+document.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path != "/docs" {
+						http.NotFound(w, r)
+						return
+					}
+					w.Header()["Content-Type"] = []string{contentType}
+					fmt.Fprint(w, document.body)
+				}))
+				defer server.Close()
+				content, source, err := fetchVideoContractDocumentSet(context.Background(), server.URL+"/docs", server.Client())
+				if err != nil || !strings.Contains(content, document.want) || strings.Contains(content, "hidden()") {
+					t.Fatalf("generic content type extraction: content=%q error=%v", content, err)
+				}
+				if document.name == "html" && (source.Site == nil || len(source.Site.links) != 1) {
+					t.Fatalf("detected HTML did not expose related documents: %#v", source.Site)
+				}
+			})
+		}
+	}
+}
+
+func TestVideoContractDocumentRejectsEmptyEntryWithoutReadableSelection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/docs" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html><body><script>renderDocs()</script></body></html>`)
+	}))
+	defer server.Close()
+	if _, _, err := fetchVideoContractDocumentSet(context.Background(), server.URL+"/docs", server.Client()); err == nil || !strings.Contains(err.Error(), "JavaScript") {
+		t.Fatalf("empty JavaScript page must explain how to provide documentation: %v", err)
+	}
+	source := videoContractImportSource{Site: &videoContractDocumentSite{}}
+	if _, _, err := fetchSelectedVideoContractDocuments(context.Background(), "", source, nil, server.Client()); err == nil {
+		t.Fatal("empty entry with no selected supplements was accepted")
+	}
+}
+
+func TestVideoContractDocumentDiscoveryCombinesIndexAndHTMLWithoutEntryAnchors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start":
+			http.Redirect(w, r, "/docs#videos", http.StatusFound)
+		case "/docs":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><body><p>Video API</p><a href="#videos">Videos</a><a href="/query">Query</a><script>SwaggerUIBundle({url: "/openapi.json"})</script></body></html>`)
+		case "/llms.txt":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "[Chat](/chat.md)\n[Query](/query)")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	for _, entry := range []string{"/start", "/docs#videos"} {
+		_, source, err := fetchVideoContractDocumentSet(context.Background(), server.URL+entry, server.Client())
+		if err != nil || source.Site == nil || len(source.Site.links) != 3 {
+			t.Fatalf("index must not hide HTML/spec links or duplicate entry: source=%#v error=%v", source.Site, err)
+		}
+		foundSpec := false
+		for _, link := range source.Site.links {
+			if link.url.Path == "/docs" {
+				t.Fatal("entry fragment was offered as a supplementary page")
+			}
+			foundSpec = foundSpec || link.url.Path == "/openapi.json"
+		}
+		if !foundSpec {
+			t.Fatal("llms.txt hid the OpenAPI specification")
+		}
 	}
 }
 
@@ -172,42 +306,6 @@ func TestFetchVideoContractDocumentSetKeepsSingleMarkdownIsolated(t *testing.T) 
 	}
 	if source.Name != "single.md" {
 		t.Fatalf("single Markdown source = %#v", source)
-	}
-}
-
-func TestDecodeVideoContractDocumentPlanIsStrict(t *testing.T) {
-	if selected, err := decodeVideoContractDocumentPlan(`{"selected":[]}`, 2); err != nil || len(selected) != 0 {
-		t.Fatalf("an entry needing no supplementary pages was rejected: %v", err)
-	}
-	selected, err := decodeVideoContractDocumentPlan(`{"selected":[3,1]}`, 4)
-	if err != nil || len(selected) != 2 || selected[0] != 3 || selected[1] != 1 {
-		t.Fatalf("decoded document plan = %#v, error = %v", selected, err)
-	}
-	for name, content := range map[string]string{
-		"missing selection": `{}`,
-		"null selection":    `{"selected":null}`,
-		"unknown field":     `{"selected":[1],"url":"https://example.com/private"}`,
-		"unknown id":        `{"selected":[5]}`,
-		"duplicate id":      `{"selected":[1,1]}`,
-		"multiple plans":    `{"selected":[1]} {"selected":[2]}`,
-	} {
-		if _, err := decodeVideoContractDocumentPlan(content, 4); err == nil {
-			t.Errorf("%s document plan was accepted", name)
-		}
-	}
-	format := videoContractDocumentPlanResponseFormat(40)
-	jsonSchema, ok := format["json_schema"].(map[string]any)
-	if !ok || format["type"] != "json_schema" || jsonSchema["strict"] != true {
-		t.Fatalf("document plan response format = %#v", format)
-	}
-	encoded, _ := json.Marshal(jsonSchema["schema"])
-	if !strings.Contains(string(encoded), `"minItems":0`) || !strings.Contains(string(encoded), `"maxItems":24`) || !strings.Contains(string(encoded), `"uniqueItems":true`) {
-		t.Fatalf("document plan schema = %s", encoded)
-	}
-	for _, requirement := range []string{"只能返回候选列表中已有的整数 id", "入口正文会完整保留", "不可信资料", "视频编辑", "任务查询"} {
-		if !strings.Contains(videoContractDocumentPlannerPrompt, requirement) {
-			t.Errorf("document planner prompt is missing %q", requirement)
-		}
 	}
 }
 

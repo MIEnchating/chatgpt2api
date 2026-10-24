@@ -1,3 +1,11 @@
+export type VideoModelParameter = {
+  name: string; label: string; field: string; type: "string" | "integer" | "number" | "boolean";
+  required: boolean; default?: string | number | boolean | null; enum?: string[];
+  minimum?: number | null; maximum?: number | null; max_length?: number; format?: "" | "uri";
+  modes?: ("text" | "image" | "reference")[];
+};
+export type VideoParameterValues = Record<string, string | number | boolean>;
+
 type VideoModelMaterialRange = { min: number; max: number };
 type VideoModelModeMaterials = {
   first_frame: VideoModelMaterialRange;
@@ -37,6 +45,7 @@ export type VideoModelContractUIState = {
 };
 
 export type VideoModelContract = {
+  provider?: { base_url: string; auth_mode: "" | "bearer" | "header" | "none"; auth_header: string };
   name: string;
   models: string[];
   priority: number;
@@ -59,6 +68,7 @@ export type VideoModelContract = {
   transport: {
     local_material: "url" | "multipart";
     multipart_file_field: string;
+    multipart_fields?: Partial<Record<"first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio", string>>;
     multipart_repeatable: boolean;
     multipart_mixed_urls: boolean;
     create_path: string;
@@ -71,6 +81,9 @@ export type VideoModelContract = {
     allowed_hosts: string[];
   };
   capability: {
+    parameters?: VideoModelParameter[];
+    seconds_range?: { min: number; max?: number | null; step: number } | null;
+    prompt?: { required: boolean; min_length: number; max_length: number } | null;
     sizes: string[];
     seconds: number[];
     resolutions: string[];
@@ -83,9 +96,6 @@ export type VideoModelContract = {
     audio_control: "none" | "toggle" | "always";
     watermark: boolean;
   };
-  validation: {
-    max_prompt_characters: number;
-  };
   generation: {
     selection: "infer";
     default_mode: string;
@@ -95,6 +105,7 @@ export type VideoModelContract = {
   request: {
     duration_field: string;
     duration_value_type: "number" | "string";
+    reference_value_type?: "array" | "scalar";
     aspect_ratio_field: string;
     resolution_field: string;
     generate_audio_field: string;
@@ -121,11 +132,11 @@ export type VideoModelContract = {
   };
 };
 
-export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "validation" | "generation" | "rules"> & { model: string };
+export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "generation" | "rules"> & { model: string };
 
 export function videoModelProfile(contract: VideoModelContract, model: string): VideoModelContractProfile {
-  const { capability, validation, generation, rules } = contract;
-  return structuredClone({ model, capability, validation, generation, rules });
+  const { capability, generation, rules } = contract;
+  return structuredClone({ model, capability, generation, rules });
 }
 
 export function resolveVideoModelContract(contract: VideoModelContract, model: string): VideoModelContract {
@@ -133,7 +144,6 @@ export function resolveVideoModelContract(contract: VideoModelContract, model: s
   const profile = resolved.model_profiles?.find((item) => item.model.toLowerCase() === model.trim().toLowerCase());
   if (profile) {
     resolved.capability = profile.capability;
-    resolved.validation = profile.validation;
     resolved.generation = profile.generation;
     resolved.rules = profile.rules;
   }

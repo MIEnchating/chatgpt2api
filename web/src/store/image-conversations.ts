@@ -747,6 +747,8 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     partialImages: normalizePartialImages(turn.partialImages),
     responseFormatB64JSON: typeof turn.responseFormatB64JSON === "boolean" ? turn.responseFormatB64JSON : undefined,
     codexCLICompatibility: typeof turn.codexCLICompatibility === "boolean" ? turn.codexCLICompatibility : undefined,
+    videoParameters: turn.videoParameters && typeof turn.videoParameters === "object" && !Array.isArray(turn.videoParameters)
+      ? Object.fromEntries(Object.entries(turn.videoParameters).filter(([key, value]) => !["__proto__", "prototype", "constructor"].includes(key) && (["string", "boolean"].includes(typeof value) || typeof value === "number" && Number.isFinite(value)))) : undefined,
     videoSeconds: normalizeStoredVideoSeconds(turn.videoSeconds),
     videoResolution: typeof turn.videoResolution === "string" && turn.videoResolution ? turn.videoResolution : undefined,
     videoGenerateAudio: typeof turn.videoGenerateAudio === "boolean" ? turn.videoGenerateAudio : undefined,

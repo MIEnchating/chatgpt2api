@@ -1,0 +1,19 @@
+{
+  "newapi_repository": "https://github.com/QuantumNous/new-api",
+  "newapi_commit": "33c61a24234aa20cb10e8a644304322c476361de",
+  "api_version": 1,
+  "plugin": "minimax-h3",
+  "plugin_version": "1.0.1",
+  "sha256": "2d90a2205f46f37236c569bf656e3a401d95fbc2a77e594491d1a681d98ca361",
+  "lint": "passed",
+  "host_fixture": {
+    "passed": 19,
+    "total": 19
+  },
+  "commands": [
+    "new-api plugin lint minimax-h3-v1.0.1.js",
+    "new-api plugin test minimax-h3-v1.0.1.js --fixture newapi-host-fixture.json"
+  ],
+  "execution": "Official pkg/jsplugin.RunCLI invoked from the pinned source checkout",
+  "upstream_requests": 0
+}

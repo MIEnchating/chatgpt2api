@@ -77,6 +77,8 @@ type ImageComposerProps = {
   videoModel: string;
   videoModelOptions: ReadonlyArray<{ value: string; label: string }>;
   videoSize: string;
+  videoParameters?: import("@/lib/video-model-contracts").VideoParameterValues;
+  onVideoParametersChange?: (parameters: import("@/lib/video-model-contracts").VideoParameterValues) => void;
   videoSeconds: string;
   videoResolution: string;
   videoGenerateAudio: boolean;
@@ -152,7 +154,7 @@ function VideoReferencePicker({ values, max, disabled, uploading, onChange, onRe
   return (
     <section className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <ImageParameterLabel help="支持 MP4 / MOV，单个文件最大 50 MiB。">参考视频</ImageParameterLabel>
+        <ImageParameterLabel help="用于参考动作、运镜，或编辑、延长已有片段，具体取决于模型。支持 MP4 / MOV，单个文件最大 50 MiB。">参考视频</ImageParameterLabel>
         <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{values.length}/{max}，MP4 / MOV，最大 50 MiB</span>
       </div>
       <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; files.slice(0, max - values.length).forEach((file) => void onChange(file)); }} />
@@ -169,7 +171,7 @@ function AudioReferencePicker({ values, max, disabled, uploading, onChange, onRe
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <section className="space-y-1.5">
-      <div className="flex items-center justify-between"><ImageParameterLabel help="支持 MP3 / WAV，单个文件最大 15 MiB。">参考音频</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{values.length}/{max}，MP3 / WAV</span></div>
+      <div className="flex items-center justify-between"><ImageParameterLabel help="用于声音参考；台词写在提示词中，是否支持录音驱动口型取决于模型。支持 MP3 / WAV，单个文件最大 15 MiB。">参考音频</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{values.length}/{max}，MP3 / WAV</span></div>
       <input ref={inputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; files.slice(0, max - values.length).forEach((file) => void onChange(file)); }} />
       <FileUploadButton icon={AudioLines} loading={uploading} disabled={disabled} onClick={() => inputRef.current?.click()}>
         {uploading ? "正在上传参考音频" : "上传参考音频"}
@@ -213,7 +215,7 @@ function VideoFramePicker({ slot, label, value, disabled, uploading, onFileChang
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-1.5">
-      <span className="text-[11px] font-medium text-muted-foreground dark:text-muted-foreground">{label}</span>
+      <ImageParameterLabel help={slot === "first" ? "指定视频的起始画面，在提示词中描述后续动作；不保证人物全程不变。" : "指定视频的结束画面，在提示词中描述衔接动作；动作跨度需符合时长。"}>{label}</ImageParameterLabel>
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onFileChange(slot, file); }} />
       {value ? (
         <div className="grid grid-cols-[3rem_minmax(0,1fr)_1.75rem] items-center gap-2 rounded-lg border border-border p-1.5 dark:border-border">
@@ -298,6 +300,8 @@ export function ImageComposer({
   videoModel,
   videoModelOptions,
   videoSize,
+  videoParameters,
+  onVideoParametersChange,
   videoSeconds,
   videoResolution,
   videoGenerateAudio,
@@ -442,6 +446,7 @@ export function ImageComposer({
   }
 
   const videoSettingsValue: VideoSettingsValue = {
+    parameters: videoParameters,
     size: videoSize,
     seconds: videoSeconds,
     resolution: videoResolution,
@@ -451,6 +456,7 @@ export function ImageComposer({
   };
 
   function updateVideoSettings(patch: Partial<VideoSettingsValue>) {
+    if (patch.parameters !== undefined) onVideoParametersChange?.(patch.parameters);
     if (patch.size !== undefined) onVideoSizeChange(patch.size);
     if (patch.seconds !== undefined) onVideoSecondsChange(patch.seconds);
     if (patch.resolution !== undefined) onVideoResolutionChange(patch.resolution);
@@ -970,14 +976,14 @@ export function ImageComposer({
                               <div className="flex flex-col gap-4 [&>section]:space-y-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3">
                                 <p className="text-xs leading-5 text-muted-foreground">按需添加素材，控制画面、动作与声音。支持的素材类型随模型变化。</p>
                                 {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section className="space-y-2">
-                                  <div className="flex items-center justify-between"><ImageParameterLabel help="首帧和尾帧是独立输入，不会与普通参考图混用。">首尾帧</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
+                                  <div className="flex items-center justify-between"><ImageParameterLabel help="首帧控制开场，尾帧控制收尾，中间动作由提示词引导。能否搭配参考图以当前模型配置为准。">首尾帧</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
                                   <div className={cn("grid gap-2", videoFieldVisible("first_frame") && videoFieldVisible("last_frame") ? "grid-cols-2" : "grid-cols-1")}>
                                     {videoFieldVisible("first_frame") ? <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} disabled={videoFieldDisabled("first_frame")} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} /> : null}
                                     {videoFieldVisible("last_frame") ? <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} disabled={videoFieldDisabled("last_frame")} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} /> : null}
                                   </div>
                                 </section> : null}
                                 {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section className="space-y-1.5">
-                                  <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片顺序分别作为首帧和尾帧。" : "上传一张图片时使用图生视频；多张图片或混合视频、音频时使用参考生视频。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
+                                  <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片按顺序指定开场和收尾画面，中间动作由提示词引导。" : "提供人物、场景或物品的外观依据，不限定开场构图，也不保证跨镜头完全一致。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
                                   <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
                                   <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
                                   {displayReferenceImages.length > 0 ? <div className="flex gap-1.5 overflow-x-auto">{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</div> : null}
@@ -1024,7 +1030,7 @@ export function ImageComposer({
                 <Button
                   type="button"
                   onClick={() => void onSubmit()}
-                  disabled={!prompt.trim() || !activeModelAvailable || submitDisabled}
+                  disabled={(!prompt.trim() && !(composerMode === "video" && videoModelContract(videoModel)?.capability.prompt?.required === false)) || !activeModelAvailable || submitDisabled}
                   title={submitDisabledReason}
                   className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-none sm:gap-2 sm:px-4"
                   aria-label={submitLabel}

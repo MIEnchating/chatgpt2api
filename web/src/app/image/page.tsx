@@ -1,5 +1,8 @@
 "use client";
 
+import { videoModelContract } from "@/lib/video-model-contracts";
+import { isVideoSaveFailure } from "@/lib/video-task-error";
+
 import "./image-workbench.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -109,6 +112,7 @@ import {
   uploadVideoReference,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
+  recoverVideoContent,
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
   isImageModel,
@@ -318,6 +322,7 @@ function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
     model,
     size: turn.size,
     seconds: turn.videoSeconds,
+    parameters: turn.videoParameters,
     resolution: turn.videoResolution,
     generateAudio: turn.videoGenerateAudio,
     watermark: turn.videoWatermark,
@@ -754,6 +759,7 @@ function creationTaskMetadataUpdates(task: CreationTask, completed: boolean): Pa
     taskCreatedAt: task.created_at,
     taskUpdatedAt: task.updated_at,
     taskProgress: task.mode === "video" ? task.status === "success" ? 100 : normalizeGenerationProgress(task.progress) : undefined,
+    canRecoverVideo: task.mode === "video" ? task.can_recover_video : undefined,
   };
   if (!completed) {
     updates.generationDurationMs = undefined;
@@ -1526,6 +1532,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoModel, setVideoModel] = useState("");
   const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [videoSize, setVideoSize] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_size);
+  const [videoParameters, setVideoParameters] = useState<import("@/lib/video-model-contracts").VideoParameterValues>({});
   const [videoSeconds, setVideoSeconds] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_seconds);
   const [videoResolution, setVideoResolution] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_resolution);
   const [videoGenerateAudio, setVideoGenerateAudio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_generate_audio);
@@ -1659,6 +1666,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     // Keep the previous model's async upload from racing with the new model.
     // Existing references and raw settings remain available across switches.
     resetReferenceUploads();
+    setVideoParameters({});
     setVideoModel(model);
   }, [resetReferenceUploads]);
   const { refreshTokenModels, routeForModel, nextTokenNameForModel } = useRelayTokenPreferences();
@@ -3327,6 +3335,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setImagePrompt(targetTurn.prompt);
       setVideoModel(targetTurn.model);
       setVideoSize(targetTurn.size || "1280x720");
+      setVideoParameters(targetTurn.videoParameters || {});
       setVideoSeconds(String(targetTurn.videoSeconds || videoDefaultSeconds(targetTurn.model)));
       setVideoResolution(targetTurn.videoResolution || "720p");
       setVideoGenerateAudio(targetTurn.videoGenerateAudio ?? false);
@@ -3706,6 +3715,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             model: activeTurn.model,
             size: activeTurn.size,
             seconds: activeTurn.videoSeconds,
+            parameters: activeTurn.videoParameters,
             resolution: activeTurn.videoResolution,
             generateAudio: activeTurn.videoGenerateAudio,
             watermark: activeTurn.videoWatermark,
@@ -3871,6 +3881,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               model: activeTurn.model,
               size: activeTurn.size || undefined,
               seconds: activeTurn.videoSeconds ?? 4,
+              parameters: activeTurn.videoParameters,
               resolution: activeTurn.videoResolution || undefined,
               generateAudio: activeTurn.videoGenerateAudio ?? false,
               watermark: activeTurn.videoWatermark ?? false,
@@ -4368,6 +4379,39 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到对应的图片记录");
         return;
       }
+      if (targetTurn.mode === "video" && isVideoSaveFailure(targetImage)) {
+        const recoverySessionKey = currentSessionKeyRef.current;
+        retryingImageIdsRef.current.add(retryKey);
+        const notice = toast.loading("正在保存已生成视频，不会重新生成");
+        try {
+          const task = await recoverVideoContent(targetImage.taskId || targetImage.id, creationTaskRequestOptions);
+          if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
+          const recoveredConversation = await updateConversation(conversationId, (conversation) => {
+            if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) {
+              throw new DOMException("Session changed", "AbortError");
+            }
+            const current = conversation || targetConversation;
+            return {
+              ...current,
+              turns: current.turns.map((turn) => {
+                if (turn.id !== turnId) return turn;
+                const images = turn.images.map((image, index) => index === imageIndex && (image.taskId || image.id) === task.id ? taskDataToStoredImage(image, task) : image);
+                return { ...turn, images, ...deriveGenerationTaskStatus(images) };
+              }),
+            };
+          });
+          if (!recoveredConversation || !pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
+          toast.success("视频已保存");
+        } catch (error) {
+          if (pageActiveRef.current && currentSessionKeyRef.current === recoverySessionKey) {
+            toast.error(formatCreationTaskError(error, "视频保存失败，未重新生成"));
+          }
+        } finally {
+          toast.dismiss(notice);
+          retryingImageIdsRef.current.delete(retryKey);
+        }
+        return;
+      }
       if (targetTurn.mode === "chat") {
         toast.error("当前站点只支持图片生成");
         return;
@@ -4376,7 +4420,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前会话正在生成，请等待完成后再重试");
         return;
       }
-      if (!targetTurn.prompt.trim()) {
+      if (!targetTurn.prompt.trim() && !(targetTurn.mode === "video" && videoModelContract(videoModel.trim())?.capability.prompt?.required === false)) {
         toast.error("请输入提示词");
         return;
       }
@@ -4494,6 +4538,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       updateConversation,
       imageModel,
       videoModel,
+      creationTaskRequestOptions,
     ],
   );
 
@@ -4509,7 +4554,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前站点只支持图片生成");
         return;
       }
-      if (!targetTurn.prompt.trim()) {
+      if (!targetTurn.prompt.trim() && !(targetTurn.mode === "video" && videoModelContract(videoModel.trim())?.capability.prompt?.required === false)) {
         toast.error("请输入提示词");
         return;
       }
@@ -4882,13 +4927,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const normalizedLastFrameURL = absoluteReferenceURL(videoLastFrameURL);
     const hasVideoFrame = Boolean(normalizedFirstFrameURL || normalizedLastFrameURL);
     const hasVideoReferenceImage = hasVideoFrame || referenceImages.length > 0 || cleanReferenceURLs(videoReferenceImageURLs).length > 0;
-    if (!prompt) {
-      toast.error("请输入提示词");
-      return;
-    }
     const effectiveModel = videoMode
       ? (videoModelOptions.some((option) => option.value === videoModel) ? videoModel : videoModelOptions[0]?.value || "")
       : imageCreationModelOptions.some((option) => option.value === imageModel) ? imageModel : defaultImageModel;
+    if (!prompt && !(videoMode && videoModelContract(effectiveModel)?.capability.prompt?.required === false)) {
+      toast.error("请输入提示词");
+      return;
+    }
     if (videoMode && !effectiveModel) {
       toast.error("管理员尚未配置可用的视频模型");
       return;
@@ -4943,6 +4988,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       model: effectiveModel,
       size: videoSize,
       seconds: selectedVideoSeconds,
+          parameters: videoParameters,
       resolution: videoResolution,
       generateAudio: videoGenerateAudio,
       watermark: videoWatermark,
@@ -4988,6 +5034,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           model: effectiveModel,
           size: videoSize,
           seconds: selectedVideoSeconds,
+          parameters: videoParameters,
           resolution: videoResolution,
           generateAudio: videoGenerateAudio,
           watermark: videoWatermark,
@@ -5081,6 +5128,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         partialImages: effectiveImageStream ? normalizedImagePartialImages(Number(imagePartialImages)) : 0,
         responseFormatB64JSON: videoMode ? undefined : imageResponseFormatB64JSON,
         codexCLICompatibility: videoMode ? undefined : imageCodexCLICompatibility,
+        videoParameters: videoMode ? normalizedVideoTurnFields?.videoParameters : undefined,
         videoSeconds: videoMode ? normalizedVideoTurnFields?.videoSeconds ?? selectedVideoSeconds : undefined,
         videoResolution: videoMode ? normalizedVideoTurnFields?.videoResolution : undefined,
         videoGenerateAudio: videoMode ? normalizedVideoTurnFields?.videoGenerateAudio : undefined,
@@ -5709,6 +5757,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 videoModel={videoModel}
                 videoModelOptions={videoModelOptions}
                 videoSize={videoSize}
+                videoParameters={videoParameters}
+                onVideoParametersChange={setVideoParameters}
                 videoSeconds={videoSeconds}
                 videoResolution={videoResolution}
                 videoGenerateAudio={videoGenerateAudio}

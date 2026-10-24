@@ -419,7 +419,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      <ViewportTag ref={setWrapRef} tabIndex={tabindex === undefined ? undefined : Number(tabindex)} className={wrapClasses} style={wrapStyles} onScroll={handleNativeScroll}>
+      <ViewportTag data-slot="scroll-area-viewport" ref={setWrapRef} tabIndex={tabindex === undefined ? undefined : Number(tabindex)} className={wrapClasses} style={wrapStyles} onScroll={handleNativeScroll}>
         <ViewTag ref={viewRef} id={id} role={role} aria-label={ariaLabel} aria-orientation={ariaOrientation === "undefined" ? undefined : ariaOrientation} className={cn("min-w-0", viewClass)} style={viewStyles}>
           {children}
         </ViewTag>

@@ -1,3 +1,5 @@
+import { assertServerSentEventContentType, readServerSentEvents } from "@/lib/server-sent-events";
+
 export type CanvasCodexEvent =
   | { type: "rpc"; message: CanvasCodexRPC }
   | { type: "tool"; source: "mcp"; requestId: string; name: string; arguments: unknown }
@@ -40,28 +42,16 @@ export async function connectCanvasCodex(input: {
   if (input.signal.aborted) { disconnect(); throw new DOMException("连接已取消", "AbortError"); }
   let streamResponse: Response;
   try {
-    streamResponse = await fetch(endpoint + root + "/events", { headers: { authorization: `Bearer ${input.token.trim()}` }, signal, credentials: "omit" });
+    streamResponse = await fetch(endpoint + root + "/events", { headers: { authorization: `Bearer ${input.token.trim()}`, Accept: "text/event-stream" }, signal, credentials: "omit" });
     if (!streamResponse.ok || !streamResponse.body) throw new Error("无法建立本地事件连接");
+    assertServerSentEventContentType(streamResponse.headers.get("content-type"));
   } catch (error) { disconnect(); throw error; }
-  const reader = streamResponse.body.getReader();
   void (async () => {
-    const decoder = new TextDecoder();
-    let buffer = "";
     try {
-      while (!signal.aborted) {
-        const { value, done } = await reader.read();
-        if (done) throw new Error("本地 Codex 服务已断开");
-        buffer += decoder.decode(value, { stream: true });
-        if (buffer.length > 4 * 1024 * 1024) throw new Error("本地消息过大");
-        let split: number;
-        while ((split = buffer.indexOf("\n\n")) >= 0) {
-          const frame = buffer.slice(0, split); buffer = buffer.slice(split + 2);
-          const data = frame.split("\n").filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
-          if (data && !signal.aborted) input.onEvent(JSON.parse(data) as CanvasCodexEvent);
-        }
-      }
+      await readServerSentEvents(streamResponse.body!, data => input.onEvent(JSON.parse(data) as CanvasCodexEvent), { signal, maxEventCharacters: 4 * 1024 * 1024 });
+      if (!signal.aborted) throw new Error("本地 Codex 服务已断开");
     } catch (error) { if (!signal.aborted) input.onEvent({ type: "disconnected", message: error instanceof Error ? error.message : "本地服务连接中断" }); }
-    finally { reader.releaseLock(); input.signal.removeEventListener("abort", disconnect); disconnect(); }
+    finally { input.signal.removeEventListener("abort", disconnect); disconnect(); }
   })();
   return {
     sessionId, serviceId: opened.serviceId, disconnect,

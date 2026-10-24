@@ -26,9 +26,9 @@ func videoContractMaterialFields(contract protocol.VideoModelContract, kind stri
 		add(contract.Request.FirstFrameField, "first_frame", true, mode.Materials.FirstFrame.Max)
 		add(contract.Request.LastFrameField, "last_frame", true, mode.Materials.LastFrame.Max)
 	case "reference":
-		add(contract.Request.ReferenceImagesField, "reference_image", false, mode.Materials.Image.Max)
-		add(contract.Request.ReferenceVideosField, "reference_video", false, mode.Materials.Video.Max)
-		add(contract.Request.ReferenceAudiosField, "reference_audio", false, mode.Materials.Audio.Max)
+		add(contract.Request.ReferenceImagesField, "reference_image", contract.Request.ReferenceValueType == "scalar", mode.Materials.Image.Max)
+		add(contract.Request.ReferenceVideosField, "reference_video", contract.Request.ReferenceValueType == "scalar", mode.Materials.Video.Max)
+		add(contract.Request.ReferenceAudiosField, "reference_audio", contract.Request.ReferenceValueType == "scalar", mode.Materials.Audio.Max)
 	}
 	return fields
 }

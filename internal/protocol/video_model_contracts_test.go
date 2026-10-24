@@ -105,7 +105,7 @@ func TestMiniMaxH3DeclaredVideoContract(t *testing.T) {
 		if len(capability.Resolutions) != 1 || capability.Resolutions[0] != "768p" {
 			t.Fatalf("contract capability for %q resolutions = %#v", model, capability.Resolutions)
 		}
-		if contract.Capability.References.Total != 12 || contract.Validation.MaxPromptCharacters != 5000 {
+		if contract.Capability.References.Total != 12 {
 			t.Fatalf("VideoContractForModel(%q) limits = %#v", model, contract)
 		}
 	}
@@ -180,6 +180,31 @@ func TestVideoContractMatchingDoesNotRewriteModelID(t *testing.T) {
 	}
 	if _, ok := VideoContractForModel("kling-2.6/text-to-video"); ok {
 		t.Fatal("canonical alias unexpectedly matched a literal model ID")
+	}
+}
+
+func TestVideoContractPreservesModelIDSpaces(t *testing.T) {
+	t.Cleanup(func() { _ = ReplaceVideoContracts(DefaultVideoContracts()) })
+	contract := DefaultVideoContracts()[0]
+	contract.Models = []string{"MiniMax H3 Max", "OpenAI Video"}
+	contract.ModelProfiles = nil
+	if err := ReplaceVideoContracts([]VideoModelContract{contract}); err != nil {
+		t.Fatal(err)
+	}
+	for _, model := range contract.Models {
+		matched, ok := VideoContractForModel(model)
+		if !ok || !slices.Equal(matched.Models, contract.Models) {
+			t.Fatalf("model ID was not preserved: %q, %#v", model, matched.Models)
+		}
+	}
+	if _, ok := VideoContractForModel("MiniMax-H3-Max"); ok {
+		t.Fatal("rewritten model ID unexpectedly matched")
+	}
+	for _, model := range []string{"MiniMax\tH3", "MiniMax\nH3", "MiniMax\rH3"} {
+		contract.Models = []string{model}
+		if _, err := NormalizeVideoModelContract(contract); err == nil {
+			t.Fatalf("control whitespace accepted in model ID: %q", model)
+		}
 	}
 }
 

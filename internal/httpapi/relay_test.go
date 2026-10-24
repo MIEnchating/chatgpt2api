@@ -322,6 +322,65 @@ func TestDownloadRelayVideoAllowsAuthenticatedSameOriginRedirect(t *testing.T) {
 	}
 }
 
+func TestDownloadRelayVideoPreservesBinaryContentStreams(t *testing.T) {
+	content := append([]byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2"), bytes.Repeat([]byte{0, 0xff, 0x80, '\r', '\n', '{', '}'}, 1024)...)
+	for _, mode := range []string{"content-length", "chunked", "chunked-close", "truncated"} {
+		t.Run(mode, func(t *testing.T) {
+			chunked := strings.HasPrefix(mode, "chunked")
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/videos/provider-task/content" || r.Header.Get("Authorization") != "Bearer fixture-key" {
+					t.Error("unexpected content request")
+				}
+				w.Header().Set("Content-Type", "video/mp4")
+				if mode == "chunked-close" {
+					w.Header().Set("Connection", "close")
+					w.Header().Set("Vary", "Origin")
+					w.Header().Set("Server", "nginx/1.27.3")
+					w.Header().Set("X-Request-Id", "video-stream-fixture")
+				}
+				if mode == "content-length" {
+					w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+				} else if mode == "truncated" {
+					w.Header().Set("Content-Length", fmt.Sprint(len(content)+100))
+				} else {
+					w.(http.Flusher).Flush()
+				}
+				for start := 0; start < len(content); start += 333 {
+					_, _ = w.Write(content[start:min(start+333, len(content))])
+					if chunked {
+						w.(http.Flusher).Flush()
+					}
+				}
+			}))
+			defer upstream.Close()
+			app := newTestApp(t)
+			defer app.Close()
+			before, err := os.ReadDir(app.videoDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			localURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/v1/videos/provider-task/content", "fixture-key", "owner", "local-task", "provider-task", upstream.URL, nil)
+			if mode == "truncated" {
+				if err == nil || localURL != "" {
+					t.Fatal("incomplete video was accepted")
+				}
+				files, readErr := os.ReadDir(app.videoDir)
+				if readErr != nil || !reflect.DeepEqual(files, before) {
+					t.Fatalf("partial video left behind: count=%d err=%v", len(files), readErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := os.ReadFile(filepath.Join(app.videoDir, strings.TrimPrefix(localURL, "/videos/")))
+			if err != nil || !bytes.Equal(saved, content) {
+				t.Fatalf("binary stream was changed: saved=%d expected=%d err=%v", len(saved), len(content), err)
+			}
+		})
+	}
+}
+
 func TestDownloadRelayVideoSeparatesClientTasksWithSameUpstreamTaskID(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("video"))
@@ -2714,6 +2773,21 @@ func TestNormalizeKIEImagePayloadCoversEveryReferenceImageModel(t *testing.T) {
 				if _, ok := payload[test.reference]; !ok {
 					t.Fatalf("missing reference field %s: %#v", test.reference, payload)
 				}
+			}
+		})
+	}
+}
+
+func TestVideoContentDownloadErrorsAreSafeAndActionable(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"cloudflare", `{"cloudflare_error":true,"error_code":502,"error_name":"origin_bad_gateway","detail":"secret"}`, "Cloudflare"},
+		{"plugin policy", `{"error":{"code":"artifact_request_rejected","message":"secret"}}`, "下载请求或跳转"},
+		{"unstructured", `secret`, "video content returned status 502"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := videoContentResponseError(&http.Response{StatusCode: 502, Body: io.NopCloser(strings.NewReader(tc.body))})
+			if !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "secret") {
+				t.Fatalf("error = %v", err)
 			}
 		})
 	}

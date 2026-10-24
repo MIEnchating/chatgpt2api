@@ -194,16 +194,20 @@ func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 		"duration_value_type", "必须选择 string", "必须选择 number",
 		"严格按以下互斥矩阵", "image 的 first_frame.max 必须为 1", "reference 的 first_frame、last_frame 全部为 0",
 		"ui.show、ui.hide、ui.disable 三组不能包含同一字段",
-		"不可信资料", "只返回 Schema 要求的 JSON 对象",
+		"不可信资料", "证据缺失时只生成待人工确认的草稿", "端点、参数能力、轮询状态、产物下载四类证据",
+		"优先匹配内置协议", "# Protocol matching", "普通 JSON 字段", "不是选择自定义协议的理由", "禁止根据 Grok、Seedance 等模型名称猜驱动",
 	} {
 		if !strings.Contains(videoContractImportSystemPrompt, requirement) {
 			t.Errorf("document import prompt is missing requirement %q", requirement)
 		}
 	}
-	if strings.Contains(videoContractImportSystemPrompt, `{"contracts"`) || len(videoContractImportSystemPrompt) >= 8_000 {
+	if strings.Contains(videoContractImportSystemPrompt, `{"contracts"`) || len(videoContractImportSystemPrompt) >= 9_000 {
 		t.Fatal("document import prompt still embeds a verbose contract example")
 	}
-	format := videoContractImportResponseFormat()
+	if strings.Contains(videoContractImportSystemPrompt, "普通 JSON 字段映射使用 custom-video") {
+		t.Fatal("document import still routes all JSON mappings to the custom driver")
+	}
+	format := videoContractImportResponseFormat(false)
 	jsonSchema, ok := format["json_schema"].(map[string]any)
 	if !ok {
 		t.Fatalf("document import JSON Schema wrapper is invalid: %#v", format)
@@ -219,14 +223,95 @@ func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 		t.Fatalf("document import schema is not compact enough for prompt caching: %d bytes", len(encoded))
 	}
 	for _, field := range []string{
+		`"evidence"`, `"endpoints_quote"`, `"parameters_quote"`, `"polling_quote"`, `"download_quote"`,
 		`"create_path"`, `"query_path"`, `"artifact"`, `"content_path"`,
-		`"allowed_hosts"`, `"generation"`, `"rules"`, `"validation"`,
+		`"allowed_hosts"`, `"generation"`, `"rules"`, `"model_profiles"`,
 		`"queued_statuses"`, `"processing_statuses"`, `"progress_fields"`, `"generation_mode_field"`,
 		`"when"`, `"require"`, `"require_any"`, `"forbid"`, `"limits"`,
 		`"force_values"`, `"ui"`, `"show"`, `"hide"`, `"disable"`, `"message"`,
 	} {
 		if !bytes.Contains(encoded, []byte(field)) {
 			t.Errorf("document import JSON Schema is missing current contract field %q", field)
+		}
+	}
+}
+
+func TestVideoContractGenerationPromptCarriesExactSchema(t *testing.T) {
+	prompt := videoContractGenerationSystemPrompt(false)
+	_, schemaText, ok := strings.Cut(prompt, "<output_schema>\n")
+	if !ok {
+		t.Fatal("model-visible prompt is missing the output schema")
+	}
+	schemaText, _, ok = strings.Cut(schemaText, "\n</output_schema>")
+	if !ok {
+		t.Fatal("model-visible schema is unterminated")
+	}
+	expected, _ := json.Marshal(videoContractImportJSONSchema(false))
+	if schemaText != string(expected) {
+		t.Fatal("model-visible schema differs from the transport schema")
+	}
+	for _, requirement := range []string{"additionalProperties=false", "extra_body", "必填参数若无法表达", "普通空格必须按文档保留"} {
+		if !strings.Contains(prompt, requirement) {
+			t.Errorf("prompt is missing %q", requirement)
+		}
+	}
+}
+
+func TestVideoContractGenerationSchemaScopesPluginConnectionHints(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		schema := videoContractImportJSONSchema(enabled)
+		properties := schema["properties"].(map[string]any)
+		contracts := properties["contracts"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+		evidence := properties["evidence"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+		_, hasProvider := contracts["provider"]
+		_, hasURLQuote := evidence["provider_base_url_quote"]
+		_, hasAuthQuote := evidence["provider_auth_quote"]
+		if hasProvider != enabled || hasURLQuote != enabled || hasAuthQuote != enabled {
+			t.Fatalf("plugin connection fields must follow the explicit option: enabled=%t", enabled)
+		}
+		prompt := videoContractGenerationSystemPrompt(enabled)
+		if !strings.Contains(prompt, "禁止因缺少这些配置添加 review_issues") {
+			t.Fatal("channel configuration was treated as a contract blocker")
+		}
+		if !enabled && (strings.Contains(prompt, "# Provider connection hints") || !strings.Contains(prompt, "用户未开启 New API 插件生成")) {
+			t.Fatal("ordinary contract extraction must not request plugin connection hints")
+		}
+		if enabled && !strings.Contains(prompt, "缺少默认地址不影响契约初审或插件生成") {
+			t.Fatal("plugin defaults must remain optional")
+		}
+		encoded, _ := json.Marshal(schema)
+		if !strings.Contains(prompt, "<output_schema>\n"+string(encoded)+"\n</output_schema>") {
+			t.Fatal("prompt and tool schema disagree")
+		}
+	}
+}
+
+func TestGeneratedVideoContractRejectsExtraBodyAtEveryLevel(t *testing.T) {
+	for _, location := range []string{"contract", "request", "profile"} {
+		for _, value := range []string{`{}`, `null`, `{"seed":123}`} {
+			t.Run(location+value, func(t *testing.T) {
+				contract := protocol.DefaultVideoContracts()[0]
+				contract.Models = []string{"document-video"}
+				contract.ModelProfiles = nil
+				data, _ := json.Marshal(contract)
+				var fields map[string]any
+				_ = json.Unmarshal(data, &fields)
+				var extension any
+				_ = json.Unmarshal([]byte(value), &extension)
+				switch location {
+				case "contract":
+					fields["extra_body"] = extension
+				case "request":
+					fields["request"].(map[string]any)["extra_body"] = extension
+				case "profile":
+					fields["model_profiles"] = []any{map[string]any{"model": "document-video", "capability": fields["capability"], "generation": fields["generation"], "rules": fields["rules"], "extra_body": extension}}
+				}
+				data, _ = json.Marshal(fields)
+				_, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`]}`, "document-video")
+				if err == nil || !strings.Contains(err.Error(), "extra_body") {
+					t.Fatalf("unsupported request data was accepted or silently dropped: %v", err)
+				}
+			})
 		}
 	}
 }
@@ -427,7 +512,7 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 	}
 	for _, field := range []string{
 		"name", "models", "priority", "driver", "transport", "artifact",
-		"capability", "validation", "generation", "rules", "request", "polling",
+		"capability", "generation", "rules", "request", "polling",
 	} {
 		withoutField := maps.Clone(legacy)
 		delete(withoutField, field)
@@ -457,6 +542,14 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 }
 
 func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) {
+	for _, includeProvider := range []bool{false, true} {
+		t.Run(fmt.Sprintf("generate_plugin=%t", includeProvider), func(t *testing.T) {
+			testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t, includeProvider)
+		})
+	}
+}
+
+func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, includeProvider bool) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -472,6 +565,9 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 	contract := protocol.DefaultVideoContracts()[0]
 	contract.Name = "Document video v1"
 	contract.Models = []string{"document/video-v1"}
+	contract.Driver = protocol.VideoContractDriverCustom
+	contract.Transport.CreatePath = "/v1/videos"
+	contract.Transport.QueryPath = "/v1/videos/{task_id}"
 	contractJSON, _ := json.Marshal(contract)
 	contractBundleJSON := []byte(`{"contracts":[` + string(contractJSON) + `]}`)
 	invalidContract := contract
@@ -479,6 +575,7 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 	invalidContractJSON, _ := json.Marshal(invalidContract)
 	invalidContractBundleJSON := []byte(`{"contracts":[` + string(invalidContractJSON) + `]}`)
 	requestCount := 0
+	var lastRequest time.Time
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
@@ -491,29 +588,93 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 		if !strings.Contains(util.Clean(util.AsMapSlice(payload["messages"])[1]["content"]), "PRIVATE_DOC_MARKER") {
 			t.Errorf("document content missing from analysis payload: %#v", payload["messages"])
 		}
-		responseFormat, _ := payload["response_format"].(map[string]any)
-		jsonSchema, _ := responseFormat["json_schema"].(map[string]any)
-		if !util.ToBool(payload["stream"]) || responseFormat["type"] != "json_schema" || !util.ToBool(jsonSchema["strict"]) || util.Clean(payload["reasoning_effort"]) != "low" {
-			t.Errorf("document analysis requires strict structured low-reasoning streaming: %#v", payload)
+		if util.Clean(util.AsMapSlice(payload["messages"])[0]["content"]) != videoContractAgentSystemPrompt(includeProvider) {
+			t.Error("agent prompt missing schema or workflow")
+		}
+		if !util.ToBool(payload["stream"]) || len(util.AsMapSlice(payload["tools"])) != 4 || payload["response_format"] != nil {
+			t.Error("agent must use streamed tool calls")
+		}
+		toolSchema := util.StringMap(util.StringMap(util.AsMapSlice(payload["tools"])[2]["function"])["parameters"])
+		contractProperties := util.StringMap(util.StringMap(util.StringMap(toolSchema["properties"])["contracts"])["items"])
+		_, hasProvider := util.StringMap(contractProperties["properties"])["provider"]
+		if hasProvider != includeProvider {
+			t.Errorf("plugin option did not reach the model tool schema: provider=%t", hasProvider)
 		}
 		requestCount++
-		responseContent := string(contractBundleJSON)
+		if requestCount == 2 && time.Since(lastRequest) < videoContractRetryDelay(1) || requestCount == 3 && time.Since(lastRequest) < videoContractRetryDelay(2) {
+			t.Error("upstream request retried without backoff")
+		}
+		lastRequest = time.Now()
+		toolName, arguments := "inspect_protocols", "{}"
+		validEvidence := `,"evidence":[{"model":"document/video-v1","endpoints_quote":"","parameters_quote":"","polling_quote":"","download_quote":"","review_issues":[]}]`
+		messages := util.AsMapSlice(payload["messages"])
 		switch requestCount {
 		case 1:
 			util.WriteError(w, 524, "The origin web server did not respond to Cloudflare within the allowed time.")
 			return
 		case 2:
-			responseContent = string(invalidContractBundleJSON)
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"断线前已收到的公开回复\"}}]}\n\n")
+			fmt.Fprint(w, "data: {\"error\":{\"message\":\"temporary stream failure\"}}\n\n")
+			return
 		case 3:
-			messages := util.AsMapSlice(payload["messages"])
-			if len(messages) != 3 || !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), "request.duration_field") {
-				t.Errorf("request mapping feedback missing from retry: %#v", messages)
+			if util.Clean(util.StringMap(util.StringMap(payload["tool_choice"])["function"])["name"]) != "inspect_protocols" {
+				t.Error("first call must inspect real protocol capabilities")
 			}
+		case 4:
+			w.Header().Set("Content-Type", "text/event-stream")
+			delta := map[string]any{"content": "正在核对文档。"}
+			if includeProvider {
+				delta["tool_calls"] = []map[string]any{
+					{"index": 0, "id": "rejected-1", "type": "function", "function": map[string]any{"name": "validate_contracts", "arguments": "{}"}},
+					{"index": 1, "id": "rejected-2", "type": "function", "function": map[string]any{"name": "finish", "arguments": "{}"}},
+				}
+			}
+			encoded, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"delta": delta, "finish_reason": "stop"}}})
+			fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", encoded)
+			return
+		case 5:
+			toolName = "validate_contracts"
+			arguments = string(invalidContractBundleJSON[:len(invalidContractBundleJSON)-1]) + validEvidence + "}"
+			if messages[len(messages)-1]["role"] != "user" || !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), "未执行任何工具") {
+				t.Error("tool format correction missing")
+			}
+			encodedHistory, _ := json.Marshal(messages)
+			if !strings.Contains(string(encodedHistory), "default_paths") || strings.Contains(string(encodedHistory), "rejected-") {
+				t.Error("correction lost protocol evidence or included rejected calls")
+			}
+		case 6:
+			toolName = "validate_contracts"
+			if !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), "request.duration_field") {
+				t.Error("validation feedback missing")
+			}
+			withUnknown := strings.TrimSuffix(string(contractJSON), "}") + `,"extra_body":{}}`
+			arguments = `{"contracts":[` + withUnknown + `]` + validEvidence + "}"
+		case 7:
+			toolName = "validate_contracts"
+			if !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), "extra_body") {
+				t.Error("unknown-field feedback missing")
+			}
+			arguments = string(contractBundleJSON[:len(contractBundleJSON)-1]) + validEvidence + "}"
+		case 8:
+			toolName = "finish"
+			if !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), `"requests"`) {
+				t.Error("actual request preview missing from tool result")
+			}
+		default:
+			t.Errorf("unexpected extra request %d", requestCount)
+			util.WriteError(w, 400, "unexpected request")
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		encoded, _ := json.Marshal(map[string]any{
-			"choices": []map[string]any{{"delta": map[string]any{"content": responseContent}, "finish_reason": "stop"}},
-		})
+		publicText := "正在核对接口配置。"
+		if toolName == "finish" {
+			publicText = ""
+		}
+		encoded, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"delta": map[string]any{
+			"content": publicText, "reasoning_content": "PRIVATE_REASONING_MARKER",
+			"tool_calls": []map[string]any{{"index": 0, "id": fmt.Sprintf("call-%d", requestCount), "type": "function", "function": map[string]any{"name": toolName, "arguments": arguments}}},
+		}, "finish_reason": "tool_calls"}}})
 		_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", encoded)
 	}))
 	defer upstream.Close()
@@ -527,6 +688,7 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("generate_plugin", fmt.Sprint(includeProvider))
 	_ = writer.WriteField("source_type", "file")
 	_ = writer.WriteField("model", "gpt-5-contract-parser")
 	file, err := writer.CreateFormFile("file", "video-api.md")
@@ -552,7 +714,10 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 	if !res.Flushed {
 		t.Fatal("import progress response was not flushed")
 	}
-	for _, stage := range []string{"document_ready", "preparing", "generating", "retrying", "upstream_connected", "receiving", "validating", "repairing", "completed"} {
+	if !strings.HasPrefix(strings.TrimSpace(res.Body.String()), "data: ") {
+		t.Fatalf("import progress is not SSE formatted: %s", res.Body.String())
+	}
+	for _, stage := range []string{"reading_document", "document_ready", "preparing", "generating", "retrying", "matching_protocol", "receiving", "dry_run", "validating", "repairing", "completed"} {
 		if !strings.Contains(res.Body.String(), `"stage":"`+stage+`"`) {
 			t.Fatalf("import progress missing stage %q: %s", stage, res.Body.String())
 		}
@@ -560,11 +725,58 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 	if !strings.Contains(res.Body.String(), `"warnings":[]`) {
 		t.Fatalf("import warnings must be an array: %s", res.Body.String())
 	}
+	if !strings.Contains(res.Body.String(), `"driver":"openai-videos"`) || !strings.Contains(res.Body.String(), `"create_path":""`) || !strings.Contains(res.Body.String(), `"query_path":""`) {
+		t.Fatalf("document import did not select the equivalent built-in protocol: %s", res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"detail":`) || !strings.Contains(res.Body.String(), "正在核对接口配置") || strings.Contains(res.Body.String(), "PRIVATE_REASONING_MARKER") {
+		t.Fatal("execution details must show public replies and exclude private reasoning")
+	}
 	if strings.Contains(res.Body.String(), `"transcript_`) || strings.Contains(res.Body.String(), `"stage":"transcript"`) {
 		t.Fatalf("import progress exposed model transcript: %s", res.Body.String())
 	}
-	if requestCount != 3 {
-		t.Fatalf("document analysis requests = %d, want 3", requestCount)
+	if requestCount != 8 {
+		t.Fatalf("document analysis requests = %d, want 8", requestCount)
+	}
+	details := map[string]videoContractAgentDetail{}
+	corrections, toolRuns := 0, 0
+	for _, frame := range strings.Split(strings.TrimSpace(res.Body.String()), "\n\n") {
+		var event videoContractImportProgressEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Detail == nil {
+			continue
+		}
+		details[event.Detail.ID] = *event.Detail
+		if event.Detail.Kind == "correction" {
+			corrections++
+		}
+		if event.Detail.Kind == "tool" && event.Detail.Status == "running" {
+			toolRuns++
+		}
+		if event.Detail.Name == "validate_contracts" && event.Detail.Status == "failed" && (event.ValidationCurrent == nil || *event.ValidationCurrent) {
+			t.Fatal("failed validation did not invalidate frontend progress")
+		}
+	}
+	if first := details["model-1-attempt-1"]; first.Status != "failed" || !strings.Contains(first.Error, "524") || first.Round != 1 || first.RequestAttempt != 1 {
+		t.Fatalf("first request failure was overwritten: %#v", first)
+	}
+	if second := details["model-1-attempt-2"]; second.Status != "failed" || second.Output != "断线前已收到的公开回复" || !strings.Contains(second.Error, "temporary stream failure") {
+		t.Fatalf("failed stream lost its public text or reason: %#v", second)
+	}
+	if third := details["model-1-attempt-3"]; third.Status != "completed" || third.RequestAttempt != 3 {
+		t.Fatalf("successful retry missing: %#v", third)
+	}
+	if corrections != 1 || toolRuns != 5 {
+		t.Fatalf("corrections=%d toolRuns=%d", corrections, toolRuns)
+	}
+	if last := details["model-6-attempt-1"]; last.Status != "completed" || last.Output != "" || last.Summary != "已返回 1 个工具调用" {
+		t.Fatalf("tool-only model request did not complete visibly: %#v", last)
+	}
+	for id, detail := range details {
+		if detail.Status == "running" {
+			t.Fatalf("unfinished detail after completion: %s", id)
+		}
 	}
 	items, err := app.videoContracts.List()
 	if err != nil {
@@ -586,7 +798,7 @@ func TestVideoContractImportProgressWriterSendsHeartbeat(t *testing.T) {
 	var body bytes.Buffer
 	flushed := make(chan struct{}, 1)
 	writer := &videoContractImportProgressWriter{
-		encoder: json.NewEncoder(&body),
+		output:  &body,
 		flusher: videoContractImportTestFlusher{flushed: flushed},
 	}
 	stop := writer.startHeartbeat(context.Background(), time.Millisecond)
@@ -598,10 +810,57 @@ func TestVideoContractImportProgressWriterSendsHeartbeat(t *testing.T) {
 	stop()
 
 	var event videoContractImportProgressEvent
-	if err := json.NewDecoder(&body).Decode(&event); err != nil {
+	line := strings.SplitN(body.String(), "\n\n", 2)[0]
+	line = strings.TrimPrefix(line, "data: ")
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		t.Fatalf("decode heartbeat: %v", err)
 	}
 	if event.Stage != "heartbeat" || event.Message == "" {
 		t.Fatalf("heartbeat event = %#v", event)
+	}
+}
+
+func TestVideoContractImportStreamsDocumentReadFailure(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	_ = form.WriteField("source_type", "url")
+	_ = form.WriteField("url", "file:///invalid-document")
+	_ = form.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import", &body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req.Header.Set("Accept", "text/event-stream")
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.HasPrefix(res.Header().Get("Content-Type"), "text/event-stream") || !res.Flushed {
+		t.Fatalf("document read failure must use the established event stream: status=%d headers=%v", res.Code, res.Header())
+	}
+	var events []videoContractImportProgressEvent
+	for _, frame := range strings.Split(strings.TrimSpace(res.Body.String()), "\n\n") {
+		var event videoContractImportProgressEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event); err != nil {
+			t.Fatalf("invalid SSE frame: %v", err)
+		}
+		events = append(events, event)
+	}
+	if len(events) != 2 || events[0].Stage != "reading_document" || events[1].Stage != "failed" || events[1].Message == "" {
+		t.Fatalf("expected document reading followed by the actual failure: %#v", events)
+	}
+}
+
+func TestVideoContractImportProgressPreservesModelRound(t *testing.T) {
+	res := httptest.NewRecorder()
+	writer := newVideoContractImportProgressWriter(res)
+	writer.write(videoContractImportProgressEvent{Stage: "generating", Attempt: 2, MaxAttempts: 12, RequestAttempt: 1, MaxRequestAttempts: 3})
+	writer.write(videoContractImportProgressEvent{Stage: "receiving", ReceivedCharacters: 16})
+	frames := strings.Split(res.Body.String(), "\n\n")
+	var event videoContractImportProgressEvent
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Attempt != 2 || event.MaxAttempts != 12 || event.RequestAttempt != 1 || event.ReceivedCharacters != 16 {
+		t.Fatalf("text updates lost the current model round: %#v", event)
 	}
 }

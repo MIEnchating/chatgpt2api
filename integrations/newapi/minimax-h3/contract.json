@@ -1,0 +1,243 @@
+{
+  "contracts": [
+    {
+      "contract": {
+        "provider": {
+          "base_url": "",
+          "auth_mode": "bearer",
+          "auth_header": ""
+        },
+        "name": "MiniMax H3 视频",
+        "models": [
+          "MiniMax H3"
+        ],
+        "priority": 0,
+        "driver": "custom-video",
+        "transport": {
+          "multipart_fields": {
+            "reference_audio": "reference_audios",
+            "reference_image": "images",
+            "reference_video": "reference_videos"
+          },
+          "local_material": "multipart",
+          "multipart_file_field": "",
+          "multipart_repeatable": true,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "parameters": [
+            {
+              "name": "aspect_ratio",
+              "label": "宽高比",
+              "field": "aspect_ratio",
+              "type": "string",
+              "required": false,
+              "enum": [
+                "1:1",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "21:9"
+              ]
+            },
+            {
+              "name": "prompt_enhance",
+              "label": "提示词增强",
+              "field": "prompt_enhance",
+              "type": "boolean",
+              "required": false
+            },
+            {
+              "name": "mode",
+              "label": "供应商 mode 参数",
+              "field": "mode",
+              "type": "string",
+              "required": false
+            }
+          ],
+          "seconds_range": {
+            "min": 4,
+            "max": 15,
+            "step": 1
+          },
+          "prompt": {
+            "required": true,
+            "min_length": 0,
+            "max_length": 0
+          },
+          "sizes": [
+            "864x480",
+            "1376x768",
+            "1920x1088",
+            "480x864",
+            "768x1376",
+            "1088x1920",
+            "640x640",
+            "1024x1024",
+            "1440x1440",
+            "544x800",
+            "832x1248",
+            "1184x1760",
+            "800x544",
+            "1248x832",
+            "1760x1184",
+            "576x736",
+            "896x1184",
+            "1248x1664",
+            "736x576",
+            "1184x896",
+            "1664x1248",
+            "992x416",
+            "1568x672",
+            "2208x960",
+            "2K",
+            "4K"
+          ],
+          "seconds": [],
+          "resolutions": [],
+          "default_size": "1376x768",
+          "default_seconds": 5,
+          "default_resolution": "",
+          "references": {
+            "image": 9,
+            "video": 3,
+            "audio": 3,
+            "total": 15
+          },
+          "first_frame_image_limit": 0,
+          "reference_mode": true,
+          "audio_control": "none",
+          "watermark": false
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 9
+                },
+                "video": {
+                  "min": 0,
+                  "max": 3
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 3
+                },
+                "total": {
+                  "min": 1,
+                  "max": 15
+                }
+              }
+            }
+          ]
+        },
+        "rules": [],
+        "request": {
+          "reference_value_type": "array",
+          "duration_field": "seconds",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "size",
+          "resolution_field": "",
+          "generate_audio_field": "",
+          "watermark_field": "",
+          "generation_mode_field": "",
+          "first_frame_field": "",
+          "last_frame_field": "",
+          "reference_images_field": "images",
+          "reference_videos_field": "reference_videos",
+          "reference_audios_field": "reference_audios"
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 900,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": []
+        }
+      },
+      "enabled": true
+    }
+  ],
+  "version": 4
+}

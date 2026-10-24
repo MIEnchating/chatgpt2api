@@ -1,3 +1,5 @@
+import { normalizeVideoParameters, videoDurationValue } from "./video-parameters.ts";
+import type { VideoParameterValues } from "./video-model-contracts";
 import {
   videoContractGenerationMode,
   videoContractMaterialError,
@@ -20,6 +22,7 @@ export function videoWorkbenchReferenceLimitError(model: string, imageCount: num
 }
 
 export type VideoRequestInput = {
+  parameters?: VideoParameterValues;
   model?: string;
   size?: string;
   seconds?: number;
@@ -43,6 +46,7 @@ export type VideoGenerationTaskRequestInput = VideoRequestInput & {
 };
 
 export type NormalizedVideoRequest = {
+  parameters?: VideoParameterValues;
   model: string;
   size?: string;
   seconds: number;
@@ -75,7 +79,7 @@ function videoRequestRuleValues(input: VideoReferenceCombinationInput, contract:
     generate_audio: capability.audio_control === "always" || (capability.audio_control === "toggle" && Boolean(input.generateAudio)),
     size: selectedOption(capability.sizes, input.size, capability.default_size),
     resolution: selectedOption(capability.resolutions, input.resolution, capability.default_resolution),
-    duration: selectedOption(capability.seconds, Math.round(Number(input.seconds)), capability.default_seconds),
+    duration: videoDurationValue(capability, input.seconds),
     watermark: capability.watermark && Boolean(input.watermark),
   };
 }
@@ -169,7 +173,7 @@ export function composeVideoPrompt(prompt: string, systemPrompt?: string) {
 export function normalizeStoredVideoSeconds(value: unknown) {
   const seconds = Math.round(Number(value));
   if (!Number.isFinite(seconds)) return undefined;
-  return seconds === -1 ? -1 : Math.max(1, Math.min(3600, seconds));
+  return seconds === -1 ? -1 : Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, seconds));
 }
 
 function selectedOption<T extends string | number>(options: T[], requested: unknown, fallback: T): T {
@@ -207,7 +211,7 @@ function normalizeVisibleVideoRequest(visibleInput: VideoReferenceCombinationInp
   const size = capability.sizes.length > 0
     ? selectedOption(capability.sizes, visibleInput.size, capability.default_size)
     : "";
-  const seconds = selectedOption(capability.seconds, Math.round(Number(visibleInput.seconds)), capability.default_seconds);
+  const seconds = videoDurationValue(capability, visibleInput.seconds);
   const resolution = capability.resolutions.length > 0
     ? selectedOption(capability.resolutions, visibleInput.resolution, capability.default_resolution)
     : "";
@@ -221,6 +225,10 @@ function normalizeVisibleVideoRequest(visibleInput: VideoReferenceCombinationInp
   const audioControl = capability.audio_control;
   return {
     model: String(visibleInput.model || "").trim(),
+    ...(capability.parameters?.length || visibleInput.parameters ? {parameters: normalizeVideoParameters(contract, kind, Object.fromEntries(Object.entries(visibleInput.parameters || {}).filter(([name]) => {
+      const parameter = capability.parameters?.find(item => item.name === name);
+      return !parameter?.modes?.length || parameter.modes.includes(kind);
+    })))} : {}),
     ...(size ? { size } : {}),
     seconds,
     ...(resolution ? { resolution } : {}),
@@ -250,8 +258,9 @@ export function videoGenerationTaskRequestBody(input: VideoGenerationTaskRequest
   const prompt = composeVideoPrompt(input.prompt, input.systemPrompt);
   return {
     client_task_id: input.clientTaskId,
-    prompt,
+    ...(prompt || contract.capability.prompt?.required !== false ? {prompt} : {}),
     model: normalized.model,
+    ...(normalized.parameters && Object.keys(normalized.parameters).length ? { parameters: normalized.parameters } : {}),
     ...(normalized.size && !uiState.hidden.has("size") ? { size: normalized.size } : {}),
     ...(contract.request.duration_field && !uiState.hidden.has("duration") ? { seconds: normalized.seconds } : {}),
     ...(normalized.resolution && !uiState.hidden.has("resolution") ? { resolution: normalized.resolution } : {}),

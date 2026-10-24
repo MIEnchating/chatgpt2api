@@ -18,6 +18,11 @@ func validateVideoContractRequestPathConflicts(contract VideoModelContract) erro
 			contract.Request.ResolutionField, contract.Request.GenerateAudioField,
 			contract.Request.WatermarkField, contract.Request.GenerationModeField,
 		}
+		for _, parameter := range contract.Capability.Parameters {
+			if VideoParameterActive(parameter, mode.Kind) {
+				paths = append(paths, parameter.Field)
+			}
+		}
 		if contract.Driver == VideoContractDriverVolcengine {
 			paths = append(paths, "metadata.content")
 		}
@@ -30,6 +35,7 @@ func validateVideoContractRequestPathConflicts(contract VideoModelContract) erro
 				paths = append(paths, contract.Request.LastFrameField)
 			}
 		case "reference":
+			referencePaths := map[string]bool{}
 			for _, field := range []struct {
 				maximum int
 				path    string
@@ -39,7 +45,11 @@ func validateVideoContractRequestPathConflicts(contract VideoModelContract) erro
 				{mode.Materials.Audio.Max, contract.Request.ReferenceAudiosField},
 			} {
 				if field.maximum > 0 {
+					if contract.Request.ReferenceValueType == "scalar" && referencePaths[field.path] {
+						continue
+					}
 					paths = append(paths, field.path)
+					referencePaths[field.path] = true
 				}
 			}
 		}

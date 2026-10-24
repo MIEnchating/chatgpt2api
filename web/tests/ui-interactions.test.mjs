@@ -25,6 +25,9 @@ const imageResultsSource = await readFile(new URL("../src/app/image/components/i
 const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
 const videoContractsSource = await readFile(new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url), "utf8");
+const videoCapabilitiesSource = await readFile(new URL("../src/app/settings/components/video-contract-capabilities.tsx", import.meta.url), "utf8");
+const videoRequestSource = await readFile(new URL("../src/app/settings/components/video-contract-request.tsx", import.meta.url), "utf8");
+const videoRulesSource = await readFile(new URL("../src/app/settings/components/video-contract-rules.tsx", import.meta.url), "utf8");
 const settingsPageSource = await readFile(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
 const settingsStoreSource = await readFile(new URL("../src/app/settings/store.ts", import.meta.url), "utf8");
 const settingsConfigSource = await readFile(new URL("../src/app/settings/components/config-card.tsx", import.meta.url), "utf8");
@@ -193,12 +196,13 @@ test("dialog footers share compact inset and full-width fixed styles", () => {
   assert.doesNotMatch(dialogSource, /mt-1 pt-1/);
 });
 
-test("video contract editor shows configuration and parameter preview side by side", () => {
-  assert.match(videoContractsSource, /h-\[min\(90dvh,860px\)\] w-\[min\(96vw,1280px\)\] max-w-none/);
+test("video contract editor keeps configuration sections and a responsive parameter preview", () => {
+  assert.match(videoContractsSource, /h-\[min\(94dvh,940px\)\] w-\[min\(96vw,1360px\)\] max-w-none/);
   assert.match(videoContractsSource, /<DialogContent[\s\S]*?scrollable=\{false\}/);
-  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)_minmax\(0,1fr\)\][^"]*overflow-hidden/);
-  assert.match(videoContractsSource, /<ScrollArea[\s\S]*?data-video-contract-details[\s\S]*?className="h-full min-h-0 min-w-0"[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3"[\s\S]*?ariaLabel="契约表单"/);
-  assert.match(videoContractsSource, /<ScrollArea[\s\S]*?data-video-contract-preview[\s\S]*?className="h-full min-h-0 min-w-0[^"]*"[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"[\s\S]*?ariaLabel="契约预览"/);
+  assert.match(videoContractsSource, /aria-label="视频配置分区"/);
+  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)\][^"]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,20rem\)\]/);
+  assert.match(videoContractsSource, /data-video-contract-details[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3"[\s\S]*?ariaLabel="契约表单"/);
+  assert.match(videoContractsSource, /data-video-contract-preview[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"[\s\S]*?ariaLabel="契约预览"/);
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
   assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
   assert.match(videoContractsSource, /String\(value \|\| ""\)\.split/);
@@ -216,9 +220,8 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.match(videoContractsSource, /referenceLimits\.video > 0 && visible\("reference_video"\) \? uploadPreview\("参考视频"/);
   assert.match(videoContractsSource, /referenceLimits\.audio > 0 && visible\("reference_audio"\) \? uploadPreview\("参考音频"/);
   assert.match(videoContractsSource, /<ContractReferenceMaterialPreview contract=\{contract\} ruleValues=\{ruleValues\} \/>[\s\S]*?<VideoSettingsPanel/);
-  assert.match(videoContractsSource, /label="命中后显示"/);
-  assert.match(videoContractsSource, /label="命中后隐藏"/);
-  assert.match(videoContractsSource, /label="命中后禁用"/);
+  assert.match(videoRulesSource, /调整创作面板中的控件/);
+  assert.match(videoRulesSource, /隐藏参数不会禁止提交/);
   assert.match(videoContractsSource, /<VideoSettingsPanel[\s\S]*?contract=\{contract\}/);
   assert.doesNotMatch(videoContractsSource, /CONTRACT_PREVIEW_MODEL|activeVideoModelContracts/);
   assert.match(videoContractsSource, /import \{ InputTag \} from "@\/components\/ui\/input-tag"/);
@@ -231,7 +234,15 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.match(videoContractsSource, /value=\{normalizeTags\(value\)\}/);
   assert.match(videoContractsSource, /<Field className="self-start">[\s\S]*?<InputTag[\s\S]*?className="min-h-11"/);
   assert.match(videoContractsSource, /grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3/);
-  assert.match(videoContractsSource, /profile\.capability\.seconds = normalizeTags\(draft\.seconds\)/);
+  assert.match(videoContractsSource, /label="默认画幅"/);
+  assert.match(videoContractsSource, /label="默认时长"/);
+  assert.match(videoContractsSource, /label="默认清晰度"/);
+  assert.match(videoContractsSource, /profile\.capability\.seconds = profile\.capability\.seconds_range \? \[\] : normalizeTags\(draft\.seconds\)/);
+  assert.match(videoContractsSource, /<ContractMaterialsEditor/);
+  assert.match(videoCapabilitiesSource, /文生视频/);
+  assert.match(videoCapabilitiesSource, /首帧、尾帧已支持/);
+  assert.match(videoCapabilitiesSource, /带时间点的多张关键帧尚未接入/);
+  assert.doesNotMatch(videoContractsSource, /label="保存后启用"/);
   assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
   assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
   assert.match(videoContractsSource, /navigator\.clipboard\.writeText\(contractJSON\)/);
@@ -253,20 +264,22 @@ test("video contract help icons explain only technical fields", () => {
   for (const adapter of ["OpenAI Videos / Sora", "Kling Video", "MiniMax / Hailuo", "Gemini Veo", "Vertex AI Veo", "Vidu Video", "Seedance / 即梦", "DashScope / 通义万相", "KIE Video", "APIMart Video"]) {
     assert.match(videoContractsSource, new RegExp(adapter));
   }
-  assert.match(videoContractsSource, /label="平台本地素材" help=/);
-  assert.match(videoContractsSource, /label="multipart 文件字段" help=/);
-  assert.match(videoContractsSource, /label="允许重复文件字段" help=/);
-  assert.match(videoContractsSource, /label="允许文件与 URL 混用" help=/);
-  assert.match(videoContractsSource, /label="默认模式" help=/);
-  assert.match(videoContractsSource, /label="模式类型" help=/);
-  assert.match(videoContractsSource, /label="至少提供一项"/);
-  assert.match(videoContractsSource, /help=\{REQUEST_FIELD_HELP\[key\]\}/);
-  for (const label of ["轮询间隔", "超时时间", "任务 ID 路径", "任务状态路径", "任务进度路径", "排队状态", "处理中状态", "成功状态", "失败状态", "未知状态", "错误信息路径", "结果地址路径"]) {
+  assert.match(videoRequestSource, /什么时候需要配置/);
+  assert.match(videoRequestSource, /metadata\.duration/);
+  assert.match(videoRequestSource, /时长的发送格式/);
+  assert.match(videoRequestSource, /生成方式参数/);
+  assert.match(videoRequestSource, /平台暂存的图片、视频与音频/);
+  assert.match(videoRequestSource, /接收文件的表单字段/);
+  assert.match(videoRequestSource, /多个文件使用相同字段名逐个发送/);
+  assert.match(videoRequestSource, /允许本地文件与外部素材网址一起提交/);
+  assert.match(videoRulesSource, /至少提供一项/);
+  for (const label of ["查询频率", "最长等待时间", "任务编号取自", "生成状态取自", "完成进度取自（选填）", "哪些值表示排队中", "哪些值表示生成中", "哪些值表示已完成", "哪些值表示失败", "遇到其他状态时", "失败原因取自（选填）", "视频下载地址取自"]) {
     assert.match(videoContractsSource, new RegExp(`label="${label}" help=`));
   }
-  for (const id of ["sizes", "seconds", "resolutions", "default-size", "default-seconds", "default-resolution", "prompt-limit"]) {
+  for (const id of ["sizes", "seconds", "resolutions", "default-size", "default-seconds", "default-resolution"]) {
     assert.match(videoContractsSource, new RegExp(`id="video-contract-${id}" label="[^"]+" (?!help=)`));
   }
+  assert.doesNotMatch(videoContractsSource, /提示词字数上限|max_prompt_characters/);
 });
 
 test("video contracts support reviewed JSON import and ID-free export", () => {
@@ -288,23 +301,18 @@ test("video contract document import keeps failures visible", () => {
   assert.match(apiSource, /video-model-contracts\/import[\s\S]*?timeout: 600_000/);
 });
 
-test("video contract document import shows only the latest concise status and can be stopped", () => {
-  assert.match(apiSource, /Accept: "application\/x-ndjson"/);
-  assert.match(apiSource, /onDownloadProgress:[\s\S]*consumeProgress/);
-  assert.match(videoContractsSource, /aria-label="契约生成进度"/);
-  assert.match(videoContractsSource, /videoContractImportStatusLabel\(importStatus\?\.stage\)/);
-  assert.match(videoContractsSource, /videoContractImportStatusSummary\(importStatus\)/);
-  assert.match(videoContractsSource, /setImportStatus\(progress\)/);
-  assert.match(videoContractsSource, /progress\.request_attempt > 1[\s\S]*上游重试/);
-  assert.doesNotMatch(videoContractsSource, /`请求 \$\{progress\.request_attempt\}/);
-  assert.match(videoContractsSource, /LoaderCircle className="size-5 shrink-0 animate-spin text-primary"/);
-  assert.doesNotMatch(videoContractsSource, /importProgress|<ol|videoContractProgressDuration|importTranscript|transcript_content|模型对话/);
+test("video contract document import streams actual workflow steps and can be stopped", () => {
+  assert.match(apiSource, /httpRequestEventStream\("\/api\/admin\/video-model-contracts\/import"/);
+  assert.doesNotMatch(apiSource, /application\/x-ndjson|onDownloadProgress/);
+  assert.match(videoContractsSource, /<VideoContractImportProgress activity=\{importStatus\}/);
+  assert.match(videoContractsSource, /updateVideoContractImportActivity\(current, progress\)/);
   assert.match(videoContractsSource, /importControllerRef\.current\?\.abort\(\)/);
-  assert.match(videoContractsSource, /分析中 · \$\{formatElapsedSeconds\(importElapsedSeconds\)\}/);
+  assert.match(videoContractsSource, /isImporting \? "分析中"/);
+  assert.doesNotMatch(videoContractsSource, /分析中 · \$\{formatElapsedSeconds/);
 });
 
 test("video contract document import tolerates null response collections", () => {
-  assert.match(videoContractsSource, /const warnings = Array\.isArray\(data\.warnings\) \? data\.warnings : \[\]/);
+  assert.match(videoContractsSource, /Array\.isArray\(data\.warnings\) \? data\.warnings : \[\]/);
   assert.match(videoContractsSource, /value\.rules = Array\.isArray\(value\.rules\) \? value\.rules : \[\]/);
   assert.match(videoContractsSource, /value\.artifact\.allowed_hosts = Array\.isArray\(value\.artifact\.allowed_hosts\)/);
 });
@@ -361,7 +369,7 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /decision\.reconcile && \(force \|\| decision\.concurrent\)/);
   assert.match(videoContractsSource, /契约<\/span>[\s\S]*匹配模型<\/span>[\s\S]*能力范围<\/span>[\s\S]*更新时间<\/span>[\s\S]*操作<\/span>/);
   assert.match(videoContractsSource, /data-video-contract-row/);
-  assert.match(videoContractsSource, /xl:grid-cols-\[32px_minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_210px\]/);
+  assert.match(videoContractsSource, /xl:grid-cols-\[32px_minmax\(140px,1\.2fr\)_minmax\(120px,0\.95fr\)_minmax\(150px,1\.35fr\)_110px_252px\]/);
   assert.match(videoContractsSource, /保存草稿/);
   assert.match(videoContractsSource, /发布新版本/);
   assert.match(videoContractsSource, /请求与响应模拟/);
@@ -383,6 +391,10 @@ test("video contracts support page selection and ordered bulk operations", () =>
   assert.match(videoContractsSource, /批量停用/);
   assert.match(videoContractsSource, /导出选中/);
   assert.match(videoContractsSource, /删除选中/);
+  const bulkToolbarStart = videoContractsSource.indexOf("data-video-contract-bulk-toolbar");
+  const contractListStart = videoContractsSource.indexOf("data-video-contract-list", bulkToolbarStart);
+  assert.ok(bulkToolbarStart >= 0 && contractListStart > bulkToolbarStart);
+  assert.doesNotMatch(videoContractsSource.slice(bulkToolbarStart, contractListStart), /生成 New API 插件/);
   assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await setVideoModelContractEnabled\(item\.id, enabled\)/);
   assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await deleteVideoModelContract\(item\.id\)/);
   assert.match(videoContractsSource, /<DialogTitle>批量删除视频模型契约？<\/DialogTitle>/);

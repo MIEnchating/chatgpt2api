@@ -564,7 +564,7 @@ func TestDefaultVideoModelContractCanBeEditedAndDeleted(t *testing.T) {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 	items, err := service.List()
-	if err != nil || len(items) != 1 {
+	if err != nil || len(items) != len(protocol.DefaultVideoContracts()) {
 		t.Fatalf("List() = %#v, error = %v", items, err)
 	}
 	contract := items[0].Contract
@@ -581,7 +581,7 @@ func TestDefaultVideoModelContractCanBeEditedAndDeleted(t *testing.T) {
 		t.Fatalf("reloaded Initialize() error = %v", err)
 	}
 	items, err = reloaded.List()
-	if err != nil || len(items) != 0 {
+	if err != nil || len(items) != len(protocol.DefaultVideoContracts())-1 {
 		t.Fatalf("deleted default contract was restored: %#v, error = %v", items, err)
 	}
 }
@@ -600,12 +600,14 @@ func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 	defaults, err := service.List()
-	if err != nil || len(defaults) != 1 {
+	if err != nil || len(defaults) != len(protocol.DefaultVideoContracts()) {
 		t.Fatalf("List() = %#v, error = %v", defaults, err)
 	}
 	updatedContract := defaults[0].Contract
 	updatedContract.Models = []string{"imported/default-video"}
+	updatedContract.ModelProfiles = nil
 	newContract := testVideoContract(t, "Imported custom video", "imported/custom-video")
+	newContract.Provider = &protocol.VideoContractProvider{BaseURL: "https://api.example.com", AuthMode: "header", AuthHeader: "X-Api-Key"}
 	created, updated, err := service.Import([]ImportedVideoModelContract{
 		{Contract: updatedContract, Enabled: false},
 		{Contract: newContract, Enabled: true},
@@ -614,7 +616,7 @@ func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
 		t.Fatalf("Import() = created %d, updated %d, error %v", created, updated, err)
 	}
 	items, err := service.List()
-	if err != nil || len(items) != 2 {
+	if err != nil || len(items) != len(defaults)+1 {
 		t.Fatalf("List() = %#v, error = %v", items, err)
 	}
 	if _, ok := protocol.VideoContractForModel("imported/default-video"); ok {
@@ -623,13 +625,27 @@ func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
 	if _, ok := protocol.VideoContractForModel("imported/custom-video"); !ok {
 		t.Fatal("enabled imported contract was not installed")
 	}
+	reloaded := NewVideoModelContractService(backend)
+	stored, err := reloaded.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provider *protocol.VideoContractProvider
+	for _, item := range stored {
+		if item.Contract.Name == newContract.Name {
+			provider = item.Contract.Provider
+		}
+	}
+	if !reflect.DeepEqual(provider, newContract.Provider) {
+		t.Fatalf("provider metadata lost after reload: %#v", provider)
+	}
 
 	conflicting := testVideoContract(t, "Conflicting video", "imported/custom-video")
 	if _, _, err := service.Import([]ImportedVideoModelContract{{Contract: conflicting, Enabled: true}}); err == nil {
 		t.Fatal("Import() accepted a model collision")
 	}
 	afterFailure, err := service.List()
-	if err != nil || len(afterFailure) != 2 {
+	if err != nil || len(afterFailure) != len(defaults)+1 {
 		t.Fatalf("failed import changed stored contracts: %#v, error = %v", afterFailure, err)
 	}
 }

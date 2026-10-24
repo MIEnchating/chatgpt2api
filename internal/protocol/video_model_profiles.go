@@ -10,19 +10,17 @@ import (
 type VideoModelContractProfile struct {
 	Model      string                       `json:"model"`
 	Capability VideoModelContractCapability `json:"capability"`
-	Validation VideoModelContractValidation `json:"validation"`
 	Generation VideoModelContractGeneration `json:"generation"`
 	Rules      []VideoModelContractRule     `json:"rules"`
 }
 
 func videoModelProfileFromContract(model string, contract VideoModelContract) VideoModelContractProfile {
-	return VideoModelContractProfile{Model: model, Capability: contract.Capability, Validation: contract.Validation, Generation: contract.Generation, Rules: contract.Rules}
+	return VideoModelContractProfile{Model: model, Capability: contract.Capability, Generation: contract.Generation, Rules: contract.Rules}
 }
 
 func applyVideoModelProfile(contract VideoModelContract, profile VideoModelContractProfile) VideoModelContract {
 	contract.ModelProfiles = nil
 	contract.Capability = profile.Capability
-	contract.Validation = profile.Validation
 	contract.Generation = profile.Generation
 	contract.Rules = profile.Rules
 	return contract

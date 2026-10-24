@@ -52,6 +52,7 @@ export type CanvasNode = {
   generation_video_model?: string;
   generation_video_size?: string;
   generation_video_seconds?: number;
+  generation_video_parameters?: import("@/lib/video-model-contracts").VideoParameterValues;
   generation_video_resolution?: string;
   generation_video_audio?: boolean;
   generation_video_watermark?: boolean;

@@ -5,7 +5,7 @@ func VideoContractSupports(contract VideoModelContract, size string, seconds int
 	if size != "" && !stringSliceContainsFold(capability.Sizes, size) {
 		return false
 	}
-	if !intSliceContains(capability.Seconds, seconds) {
+	if !VideoDurationSupported(capability, seconds) {
 		return false
 	}
 	if resolution != "" && !stringSliceContainsFold(capability.Resolutions, resolution) {

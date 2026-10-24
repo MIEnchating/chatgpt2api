@@ -1,0 +1,699 @@
+{
+  "cases": [
+    {
+      "name": "json mapped decoder",
+      "hook": "protocols",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "body": {
+            "kind": "json",
+            "value": {
+              "model": "my-h3",
+              "prompt": "test",
+              "seconds": 5,
+              "size": "1376x768",
+              "prompt_enhance": false
+            }
+          }
+        }
+      ],
+      "path": [
+        "openai_video",
+        "decodeRequest"
+      ],
+      "expected": {
+        "kind": "submit",
+        "model": "my-h3",
+        "action": "text_to_video",
+        "requestBody": {
+          "model": "my-h3",
+          "prompt": "test",
+          "seconds": 5,
+          "size": "1376x768",
+          "prompt_enhance": false
+        }
+      }
+    },
+    {
+      "name": "multipart mapped decoder",
+      "hook": "protocols",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "body": {
+            "kind": "multipart",
+            "fields": {
+              "model": [
+                "my-h3"
+              ],
+              "prompt": [
+                "test"
+              ],
+              "seconds": [
+                "5"
+              ],
+              "size": [
+                "1376x768"
+              ],
+              "prompt_enhance": [
+                "false"
+              ]
+            },
+            "files": []
+          }
+        }
+      ],
+      "path": [
+        "openai_video",
+        "decodeRequest"
+      ],
+      "expected": {
+        "kind": "submit",
+        "model": "my-h3",
+        "action": "text_to_video",
+        "requestBody": {
+          "model": "my-h3",
+          "prompt": "test",
+          "seconds": 5,
+          "size": "1376x768",
+          "prompt_enhance": false
+        }
+      }
+    },
+    {
+      "name": "channel URL submission",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        }
+      ],
+      "expected": {
+        "url": "http://channel.example:3000/provider/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "MiniMax H3",
+          "prompt": "test",
+          "seconds": 5,
+          "size": "1376x768",
+          "prompt_enhance": false
+        }
+      }
+    },
+    {
+      "name": "missing channel URL",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        }
+      ],
+      "expectedError": "渠道中配置上游地址"
+    },
+    {
+      "name": "usage with alias",
+      "hook": "extractUsage",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        }
+      ],
+      "expected": {
+        "seconds": 5
+      }
+    },
+    {
+      "name": "per-call ratios",
+      "hook": "extractUsage",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          },
+          "usagePurpose": "billing_ratios"
+        }
+      ],
+      "expected": {}
+    },
+    {
+      "name": "submit 200",
+      "hook": "parseSubmitResponse",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        },
+        {
+          "statusCode": 200,
+          "headers": {},
+          "body": {
+            "id": "task-fixture"
+          }
+        }
+      ],
+      "expected": {
+        "taskId": "task-fixture",
+        "taskData": {
+          "id": "task-fixture"
+        }
+      }
+    },
+    {
+      "name": "submit 201",
+      "hook": "parseSubmitResponse",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        },
+        {
+          "statusCode": 201,
+          "headers": {},
+          "body": {
+            "id": "task-fixture"
+          }
+        }
+      ],
+      "expected": {
+        "taskId": "task-fixture",
+        "taskData": {
+          "id": "task-fixture"
+        }
+      }
+    },
+    {
+      "name": "submit 202",
+      "hook": "parseSubmitResponse",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        },
+        {
+          "statusCode": 202,
+          "headers": {},
+          "body": {
+            "id": "task-fixture"
+          }
+        }
+      ],
+      "expected": {
+        "taskId": "task-fixture",
+        "taskData": {
+          "id": "task-fixture"
+        }
+      }
+    },
+    {
+      "name": "query path",
+      "hook": "buildQueryRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          },
+          "taskId": "task-fixture"
+        }
+      ],
+      "expected": {
+        "url": "http://channel.example:3000/provider/v1/videos/task-fixture",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer fixture-key"
+        }
+      }
+    },
+    {
+      "name": "poll queued",
+      "hook": "parseTaskResult",
+      "args": [
+        {
+          "taskId": "task-fixture"
+        },
+        {
+          "id": "task-fixture",
+          "status": "queued",
+          "error": {
+            "message": "failed fixture"
+          }
+        },
+        {
+          "status": 200,
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "status": "QUEUED"
+      }
+    },
+    {
+      "name": "poll in_progress",
+      "hook": "parseTaskResult",
+      "args": [
+        {
+          "taskId": "task-fixture"
+        },
+        {
+          "id": "task-fixture",
+          "status": "in_progress",
+          "error": {
+            "message": "failed fixture"
+          }
+        },
+        {
+          "status": 200,
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "name": "poll completed",
+      "hook": "parseTaskResult",
+      "args": [
+        {
+          "taskId": "task-fixture"
+        },
+        {
+          "id": "task-fixture",
+          "status": "completed",
+          "error": {
+            "message": "failed fixture"
+          }
+        },
+        {
+          "status": 200,
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "status": "SUCCESS",
+        "progress": "100%"
+      }
+    },
+    {
+      "name": "poll failed",
+      "hook": "parseTaskResult",
+      "args": [
+        {
+          "taskId": "task-fixture"
+        },
+        {
+          "id": "task-fixture",
+          "status": "failed",
+          "error": {
+            "message": "failed fixture"
+          }
+        },
+        {
+          "status": 200,
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "status": "FAILURE",
+        "reason": "failed fixture"
+      }
+    },
+    {
+      "name": "unknown status",
+      "hook": "parseTaskResult",
+      "args": [
+        {
+          "taskId": "task-fixture"
+        },
+        {
+          "id": "task-fixture",
+          "status": "unrecognized"
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "reason": "上游状态未在契约中声明"
+      }
+    },
+    {
+      "name": "GET content",
+      "hook": "buildContentRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          },
+          "artifactKey": "video",
+          "upstreamTaskId": "task-fixture",
+          "clientRequest": {
+            "method": "GET",
+            "headers": {}
+          }
+        }
+      ],
+      "expected": {
+        "url": "http://channel.example:3000/provider/v1/videos/task-fixture/content",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer fixture-key"
+        }
+      }
+    },
+    {
+      "name": "HEAD content",
+      "hook": "buildContentRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false
+          },
+          "upstream": {
+            "kind": "vendor"
+          },
+          "artifactKey": "video",
+          "upstreamTaskId": "task-fixture",
+          "clientRequest": {
+            "method": "HEAD",
+            "headers": {}
+          }
+        }
+      ],
+      "expected": {
+        "url": "http://channel.example:3000/provider/v1/videos/task-fixture/content",
+        "method": "HEAD",
+        "headers": {
+          "Authorization": "Bearer fixture-key"
+        }
+      }
+    },
+    {
+      "name": "multipart alias decode",
+      "hook": "protocols",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "body": {
+            "kind": "multipart",
+            "fields": {
+              "model": [
+                "my-h3"
+              ],
+              "prompt": [
+                "test"
+              ],
+              "seconds": [
+                "5"
+              ],
+              "size": [
+                "1376x768"
+              ],
+              "prompt_enhance": [
+                "false"
+              ]
+            },
+            "files": [
+              {
+                "ref": "opaque:images",
+                "field": "images",
+                "filename": "images.bin",
+                "mimeType": "image/png",
+                "size": 32
+              },
+              {
+                "ref": "opaque:reference_videos",
+                "field": "reference_videos",
+                "filename": "reference_videos.bin",
+                "mimeType": "video/mp4",
+                "size": 32
+              },
+              {
+                "ref": "opaque:reference_audios",
+                "field": "reference_audios",
+                "filename": "reference_audios.bin",
+                "mimeType": "audio/mpeg",
+                "size": 32
+              }
+            ]
+          }
+        }
+      ],
+      "path": [
+        "openai_video",
+        "decodeRequest"
+      ],
+      "expected": {
+        "kind": "submit",
+        "model": "my-h3",
+        "action": "image_to_video",
+        "requestBody": {
+          "model": "my-h3",
+          "prompt": "test",
+          "seconds": 5,
+          "size": "1376x768",
+          "prompt_enhance": false,
+          "images": [
+            "opaque:images"
+          ],
+          "reference_videos": [
+            "opaque:reference_videos"
+          ],
+          "reference_audios": [
+            "opaque:reference_audios"
+          ]
+        }
+      }
+    },
+    {
+      "name": "multipart opaque file forwarding",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "model": "my-h3",
+          "upstreamModel": "MiniMax H3",
+          "baseUrl": "http://channel.example:3000/provider",
+          "apiKey": "fixture-key",
+          "files": [
+            {
+              "ref": "opaque:images",
+              "field": "images",
+              "filename": "images.bin",
+              "mimeType": "image/png",
+              "size": 32
+            },
+            {
+              "ref": "opaque:reference_videos",
+              "field": "reference_videos",
+              "filename": "reference_videos.bin",
+              "mimeType": "video/mp4",
+              "size": 32
+            },
+            {
+              "ref": "opaque:reference_audios",
+              "field": "reference_audios",
+              "filename": "reference_audios.bin",
+              "mimeType": "audio/mpeg",
+              "size": 32
+            }
+          ],
+          "requestBody": {
+            "model": "my-h3",
+            "prompt": "test",
+            "seconds": 5,
+            "size": "1376x768",
+            "prompt_enhance": false,
+            "images": [
+              "opaque:images"
+            ],
+            "reference_videos": [
+              "opaque:reference_videos"
+            ],
+            "reference_audios": [
+              "opaque:reference_audios"
+            ]
+          },
+          "upstream": {
+            "kind": "vendor"
+          }
+        }
+      ],
+      "expected": {
+        "url": "http://channel.example:3000/provider/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key"
+        },
+        "bodyType": "multipart",
+        "parts": [
+          {
+            "name": "images",
+            "fileRef": "opaque:images",
+            "filename": "images.bin"
+          },
+          {
+            "name": "reference_videos",
+            "fileRef": "opaque:reference_videos",
+            "filename": "reference_videos.bin"
+          },
+          {
+            "name": "reference_audios",
+            "fileRef": "opaque:reference_audios",
+            "filename": "reference_audios.bin"
+          },
+          {
+            "name": "model",
+            "value": "MiniMax H3"
+          },
+          {
+            "name": "prompt",
+            "value": "test"
+          },
+          {
+            "name": "prompt_enhance",
+            "value": "false"
+          },
+          {
+            "name": "seconds",
+            "value": "5"
+          },
+          {
+            "name": "size",
+            "value": "1376x768"
+          }
+        ]
+      }
+    }
+  ]
+}

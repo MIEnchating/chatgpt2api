@@ -14,3 +14,11 @@ test("missing reasons and bare task identifiers are not displayed as failure exp
     assert.equal(videoTaskErrorMessage(error), "上游未提供具体失败原因，请稍后重试。");
   }
 });
+
+test("completed videos with a storage failure select save recovery instead of regeneration", async () => {
+  const { isVideoSaveFailure } = await import("../src/lib/video-task-error.ts");
+  assert.equal(isVideoSaveFailure({ error: "视频已生成但保存失败: video content returned status 502" }), true);
+  assert.equal(isVideoSaveFailure({ canRecoverVideo: true, error: "下载失败" }), true);
+  assert.equal(isVideoSaveFailure({ error: "视频生成失败" }), false);
+  assert.equal(isVideoSaveFailure({ error: "upstream 502" }), false);
+});

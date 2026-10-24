@@ -56,6 +56,8 @@ type ImageTaskHandler func(context.Context, Identity, map[string]any) (map[strin
 type VideoTaskProgressUpdate struct {
 	Status         string
 	UpstreamStatus string
+	UpstreamTaskID string
+	Recovery       *VideoContentRecovery
 	Progress       int
 	HasProgress    bool
 }
@@ -107,6 +109,7 @@ type ImageTaskService struct {
 	persistenceStop      chan struct{}
 	stopping             bool
 	closed               bool
+	taskSubscribers      map[chan struct{}]struct{}
 }
 
 type ImageTaskLimitError struct {
@@ -165,6 +168,7 @@ func newImageTaskService(store storage.JSONDocumentBackend, generation ImageTask
 		ownerSubmitTimes:  map[string][]time.Time{},
 		ownerRunningUnits: map[string]int{},
 		persistenceStop:   make(chan struct{}),
+		taskSubscribers:   make(map[chan struct{}]struct{}),
 	}
 	s.creationUnitCond = sync.NewCond(&s.mu)
 	if len(limitGetters) > 0 {
@@ -208,6 +212,7 @@ func (s *ImageTaskService) Close() error {
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
 		s.stopping = true
+		s.notifyTaskSubscribersLocked()
 		close(s.persistenceStop)
 		cancels := make([]context.CancelFunc, 0, len(s.cancels))
 		for _, cancel := range s.cancels {
@@ -251,11 +256,15 @@ func (s *ImageTaskService) SubmitChatWithMetadata(_ context.Context, identity Id
 
 func (s *ImageTaskService) SubmitVideo(_ context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, referenceMode string, images, videos, audios any, metadata map[string]any) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
+	constraints := VideoTaskInputConstraints{PromptRequired: true, MaximumSeconds: 3600}
+	if declared, ok := metadata[VideoTaskInputConstraintsKey].(VideoTaskInputConstraints); ok {
+		constraints = declared
+	}
+	if constraints.PromptRequired && prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
-	if seconds != -1 && (seconds < 1 || seconds > 3600) {
-		return nil, fmt.Errorf("视频时长必须在 1 到 3600 秒之间")
+	if seconds != -1 && (seconds < 1 || seconds > 9007199254740991 || constraints.MaximumSeconds > 0 && seconds > constraints.MaximumSeconds) {
+		return nil, fmt.Errorf("视频时长超出允许范围")
 	}
 	payload := map[string]any{
 		"client_task_id": clientTaskID,
@@ -684,6 +693,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		return result, nil
 	}
 	result := publicTask(s.tasks[key], identity)
+	s.notifyTaskSubscribersLocked()
 	s.taskWorkers.Add(1)
 	s.startRemoteMonitorLocked()
 	s.mu.Unlock()
@@ -1173,6 +1183,14 @@ func (s *ImageTaskService) updateVideoTaskProgress(key string, update VideoTaskP
 	}
 	changed := false
 	currentStatus := util.Clean(task["status"])
+	if update.Recovery != nil {
+		task["video_recovery"] = update.Recovery.document()
+		changed = true
+	}
+	if upstreamTaskID := strings.TrimSpace(update.UpstreamTaskID); upstreamTaskID != "" && util.Clean(task["upstream_task_id"]) != upstreamTaskID {
+		task["upstream_task_id"] = upstreamTaskID
+		changed = true
+	}
 	if update.Status == TaskStatusRunning && currentStatus != TaskStatusRunning {
 		task["status"] = TaskStatusRunning
 		task["error"] = ""
@@ -1232,6 +1250,7 @@ func (s *ImageTaskService) updateImageTaskPartialData(key string, data []map[str
 		task["output_statuses"] = statuses
 	}
 	bumpImageTaskRevision(task)
+	s.notifyTaskSubscribersLocked()
 	return true
 }
 
@@ -1252,6 +1271,7 @@ func (s *ImageTaskService) updateTextTaskPartialData(key, text string) bool {
 	task["output_type"] = "text"
 	task["data"] = []map[string]any{{"text_response": text}}
 	bumpImageTaskRevision(task)
+	s.notifyTaskSubscribersLocked()
 	return true
 }
 
@@ -1321,6 +1341,12 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		mergeMediaTaskFields(normalized, task, mode)
 		mergePublicImageToolTaskFields(normalized, task)
 		if mode == "video" {
+			if recovery := videoContentRecovery(task); recovery != nil {
+				normalized["video_recovery"] = recovery.document()
+			}
+			if upstreamTaskID := strings.TrimSpace(util.Clean(task["upstream_task_id"])); upstreamTaskID != "" {
+				normalized["upstream_task_id"] = upstreamTaskID
+			}
 			if reference := videoTaskContractReference(task["video_contract"]); reference != nil {
 				normalized["video_contract"] = reference
 			}
@@ -1411,7 +1437,7 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 		case <-ticker.C:
 		}
 		s.mu.Lock()
-		if s.stopping || s.closed || len(s.cancels) == 0 {
+		if s.stopping || s.closed || len(s.cancels) == 0 && len(s.taskSubscribers) == 0 {
 			s.remoteMonitorRunning = false
 			s.mu.Unlock()
 			return
@@ -1553,6 +1579,17 @@ func (s *ImageTaskService) mergeTaskMapsLocked(remote, local map[string]map[stri
 	for key := range s.deletedTasks {
 		delete(merged, key)
 	}
+	if len(merged) != len(local) {
+		s.notifyTaskSubscribersLocked()
+	} else {
+		for key, task := range merged {
+			previous := local[key]
+			if previous == nil || util.ToInt(task["revision"], 0) != util.ToInt(previous["revision"], 0) || task["status"] != previous["status"] || task["updated_at"] != previous["updated_at"] {
+				s.notifyTaskSubscribersLocked()
+				break
+			}
+		}
+	}
 	return merged
 }
 
@@ -1585,6 +1622,7 @@ func imageTaskSnapshotNewer(candidate, current map[string]any) bool {
 // failure is retried by at most one service-level worker. The worker always
 // serializes the latest in-memory state instead of replaying a stale snapshot.
 func (s *ImageTaskService) saveWithRetryLocked() error {
+	defer s.notifyTaskSubscribersLocked()
 	if s.closed {
 		return ErrImageTaskServiceClosed
 	}
@@ -1783,6 +1821,9 @@ func publicTask(task map[string]any, identity Identity) map[string]any {
 	}
 	mergePublicImageToolTaskFields(item, task)
 	mergeMediaTaskFields(item, task, mode)
+	if mode == "video" {
+		item["can_recover_video"] = util.Clean(task["status"]) == TaskStatusError && videoContentRecovery(task) != nil
+	}
 	if mode == "video" && identity.Role == AuthRoleAdmin {
 		if reference := videoTaskContractReference(task["video_contract"]); reference != nil {
 			item["video_contract"] = reference
@@ -1950,6 +1991,9 @@ func normalizedFallbackReferenceImage(value any) map[string]any {
 }
 
 func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	if parameters, ok := metadata["parameters"].(map[string]any); ok {
+		payload["parameters"] = util.CopyMap(parameters)
+	}
 	if reference := videoTaskContractReference(metadata["video_contract"]); reference != nil {
 		payload["video_contract"] = reference
 	}

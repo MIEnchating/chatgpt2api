@@ -1,0 +1,367 @@
+{
+  "slug": "minimax-h3",
+  "name": "MiniMax H3",
+  "model_type": "video",
+  "capability_name": "视频生成",
+  "summary": "根据文本或参考素材生成短视频。",
+  "tags": [
+    "文生视频",
+    "图生视频"
+  ],
+  "family": {
+    "family_id": "minimax",
+    "family_name": "MiniMax",
+    "provider_logo_url": "/api/providers/logo?provider_id=minimax"
+  },
+  "auth": {
+    "type": "bearer_api_key",
+    "header": "Authorization",
+    "format": "Bearer <platform_api_key>"
+  },
+  "endpoints": [
+    {
+      "operation_id": "create",
+      "name": "创建视频任务",
+      "summary": "提交一次生成请求并返回任务对象；异步渠道返回进行中状态，同步渠道可能在同一请求内返回成品。",
+      "protocol_id": "openai_video",
+      "method": "POST",
+      "path": "/v1/videos",
+      "content_type": "application/json",
+      "stream": null,
+      "path_params": [],
+      "query_params": [],
+      "responses": [
+        {
+          "status": 202,
+          "content_type": "application/json",
+          "description": "返回任务对象，含 id、status、progress 等字段。"
+        }
+      ],
+      "notes": [],
+      "forms": [
+        {
+          "template_id": "minimax_h3_default",
+          "title": "Hook MiniMax H3",
+          "summary": "根据文本或参考素材生成短视频。",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "prompt",
+              "seconds",
+              "size"
+            ],
+            "properties": {
+              "prompt": {
+                "type": "string"
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 15
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "864x480",
+                  "1376x768",
+                  "1920x1088",
+                  "480x864",
+                  "768x1376",
+                  "1088x1920",
+                  "640x640",
+                  "1024x1024",
+                  "1440x1440",
+                  "544x800",
+                  "832x1248",
+                  "1184x1760",
+                  "800x544",
+                  "1248x832",
+                  "1760x1184",
+                  "576x736",
+                  "896x1184",
+                  "1248x1664",
+                  "736x576",
+                  "1184x896",
+                  "1664x1248",
+                  "992x416",
+                  "1568x672",
+                  "2208x960",
+                  "2K",
+                  "4K"
+                ]
+              },
+              "aspect_ratio": {
+                "type": "string",
+                "enum": [
+                  "1:1",
+                  "2:3",
+                  "3:2",
+                  "3:4",
+                  "4:3",
+                  "9:16",
+                  "16:9",
+                  "21:9"
+                ]
+              },
+              "mode": {
+                "type": "string"
+              },
+              "prompt_enhance": {
+                "type": "boolean"
+              },
+              "input_reference": {
+                "type": "string"
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 9
+              },
+              "reference_video": {
+                "type": "string"
+              },
+              "reference_audio": {
+                "type": "string"
+              },
+              "reference_videos": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 3
+              },
+              "reference_audios": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 3
+              }
+            }
+          },
+          "material_fields": {
+            "images": {
+              "categories": [
+                "image"
+              ],
+              "multiple": true
+            },
+            "input_reference": {
+              "categories": [
+                "image",
+                "video"
+              ],
+              "multiple": false
+            },
+            "reference_video": {
+              "categories": [
+                "video"
+              ],
+              "multiple": false
+            },
+            "reference_videos": {
+              "categories": [
+                "video"
+              ],
+              "multiple": true
+            },
+            "reference_audio": {
+              "categories": [
+                "audio"
+              ],
+              "multiple": false
+            },
+            "reference_audios": {
+              "categories": [
+                "audio"
+              ],
+              "multiple": true
+            }
+          },
+          "example": {
+            "model": "MiniMax H3",
+            "prompt": "镜头缓慢推进，一只橘猫在窗边晒太阳",
+            "seconds": 5,
+            "size": "1376x768"
+          },
+          "notes": [
+            "素材字段既可直接传入公开可访问的 URL，也可随创建请求以 multipart/form-data 上传文件。"
+          ]
+        }
+      ]
+    },
+    {
+      "operation_id": "retrieve",
+      "name": "获取视频任务",
+      "summary": "按任务 ID 查询任务状态、进度、结果地址与错误信息。",
+      "protocol_id": "openai_video",
+      "method": "GET",
+      "path": "/v1/videos/{video_id}",
+      "content_type": "application/json",
+      "stream": null,
+      "path_params": [
+        {
+          "name": "video_id",
+          "description": "任务 ID，取创建接口返回的 id（形如 task_<uuid>）。"
+        }
+      ],
+      "query_params": [],
+      "responses": [
+        {
+          "status": 200,
+          "content_type": "application/json",
+          "description": "返回任务对象，含状态、进度、结果地址与错误信息。"
+        }
+      ],
+      "notes": [],
+      "forms": []
+    },
+    {
+      "operation_id": "download",
+      "name": "下载视频成品",
+      "summary": "按任务 ID 下载视频成品，返回二进制流。",
+      "protocol_id": "openai_video",
+      "method": "GET",
+      "path": "/v1/videos/{video_id}/content",
+      "content_type": "video/*",
+      "stream": null,
+      "path_params": [
+        {
+          "name": "video_id",
+          "description": "任务 ID，取创建接口返回的 id（形如 task_<uuid>）。"
+        }
+      ],
+      "query_params": [
+        {
+          "name": "variant",
+          "description": "成品变体，当前仅支持默认值 video。"
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "content_type": "video/*",
+          "description": "返回视频二进制流。"
+        }
+      ],
+      "notes": [],
+      "forms": []
+    }
+  ],
+  "error_reference": [
+    {
+      "shape": "openai",
+      "protocol_ids": [
+        "openai_video"
+      ],
+      "body": {
+        "error": {
+          "message": "...",
+          "type": "...",
+          "param": null,
+          "code": "..."
+        }
+      },
+      "entries": [
+        {
+          "status": 401,
+          "code": "invalid_api_key",
+          "message": "Invalid API key",
+          "scene": "令牌缺失、无效或已停用"
+        },
+        {
+          "status": 402,
+          "code": "insufficient_balance",
+          "message": "Insufficient balance",
+          "scene": "账户余额不足"
+        },
+        {
+          "status": 403,
+          "code": null,
+          "message": "Permission denied",
+          "scene": "令牌无权访问该模型或模型分组"
+        },
+        {
+          "status": 404,
+          "code": "video_not_found",
+          "message": "Video not found",
+          "scene": "请求的资源或任务不存在"
+        },
+        {
+          "status": 404,
+          "code": "not_found",
+          "message": "Resource not found",
+          "scene": "请求的资源或任务不存在"
+        },
+        {
+          "status": 409,
+          "code": "conflict",
+          "message": "Request conflicts with an existing resource",
+          "scene": "请求与现有资源冲突"
+        },
+        {
+          "status": 422,
+          "code": "invalid_request_error",
+          "message": "Invalid request parameters",
+          "scene": "请求参数或模型契约校验失败"
+        },
+        {
+          "status": 429,
+          "code": "rate_limit_exceeded",
+          "message": "Rate limit exceeded",
+          "scene": "超出速率或并发限制"
+        },
+        {
+          "status": 500,
+          "code": "internal_error",
+          "message": "Internal server error",
+          "scene": "服务内部错误"
+        },
+        {
+          "status": 502,
+          "code": "upstream_unavailable",
+          "message": "Upstream service unavailable",
+          "scene": "上游服务不可用"
+        },
+        {
+          "status": 503,
+          "code": "authentication_unavailable",
+          "message": "Authentication service temporarily unavailable",
+          "scene": "鉴权服务暂时不可用"
+        },
+        {
+          "status": 504,
+          "code": "upstream_timeout",
+          "message": "Upstream service timed out",
+          "scene": "上游服务超时"
+        }
+      ]
+    }
+  ],
+  "status_reference": {
+    "statuses": [
+      {
+        "status": "queued",
+        "description": "任务已受理，等待生成"
+      },
+      {
+        "status": "in_progress",
+        "description": "正在生成视频"
+      },
+      {
+        "status": "completed",
+        "description": "视频已生成完成，可通过结果地址下载"
+      },
+      {
+        "status": "failed",
+        "description": "生成失败或任务被终止，失败原因见 error 字段"
+      }
+    ],
+    "note": "任务状态由平台按上游处理进度推进；仅 completed 提供结果地址，failed 时由 error 字段给出原因。"
+  }
+}

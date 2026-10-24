@@ -1,5 +1,7 @@
 "use client";
 
+import { watchCreationTasks, waitForCreationTask } from "@/lib/creation-task-events";
+
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -196,40 +198,14 @@ function taskID(prefix: string) {
   return `${prefix}-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
 }
 
-function workflowPollDelay(milliseconds: number, signal?: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const onAbort = () => {
-      window.clearTimeout(timer);
-      reject(signal?.reason || new DOMException("Workspace closed", "AbortError"));
-    };
-    const timer = window.setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 function isWorkflowPollAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
 async function waitForTask(id: string, timeoutSeconds: number, signal?: AbortSignal) {
-  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
-  while (Date.now() < deadline) {
-    const response = await fetchCreationTasks([id], { signal });
-    const task = response.items?.[0];
-    if (task?.status === "success") return task;
-    if (task?.status === "error" || task?.status === "cancelled") {
-      throw new Error(task.error || "任务执行失败");
-    }
-    await workflowPollDelay(1200, signal);
-  }
-  throw new Error("任务执行超时");
+  const task = await waitForCreationTask(id, { signal, timeoutMs: Math.max(1, timeoutSeconds) * 1000 });
+  if (task.status !== "success") throw new Error(task.error || "任务执行失败");
+  return task;
 }
 
 async function workflowImageFiles(references: WorkflowReference[], signal?: AbortSignal) {
@@ -571,49 +547,50 @@ function CreativeWorkflowWorkspaceContent({
   useEffect(() => {
     if (!runningWorkflowTaskIDs) return;
     const controller = new AbortController();
-    const poll = async () => {
-      while (!controller.signal.aborted) {
-        try {
-          // Discover children submitted after the initial history snapshot.
-          const response = await fetchCreationTasks([], { signal: controller.signal });
-          const updates = new Map(
-            restoreWorkflowTasks(response.items).map((task) => [task.id, task]),
-          );
-          updateTasks((current) => current.map((task) => {
-            const update = updates.get(task.id);
-            if (!update) return task;
-            const completedUnits = Array.from(new Set([
-              ...(task.completed_units || []),
-              ...(update.completed_units || []),
-            ])).sort((left, right) => left - right);
-            const unitErrors = { ...task.unit_errors, ...update.unit_errors };
-            const count = Math.max(task.count, update.count);
-            const incomplete = completedUnits.length < count;
-            const recoveryExpired = update.status === "failed" && !inFlightTaskCountsRef.current.has(task.id);
-            return {
-              ...task,
-              ...update,
-              count,
-              backend_task_ids: Array.from(new Set([...task.backend_task_ids, ...update.backend_task_ids])),
-              completed_units: completedUnits,
-              unit_errors: unitErrors,
-              status: incomplete && !recoveryExpired ? "running" : recoveryExpired || Object.keys(unitErrors).length ? "failed" : "success",
-              ended_at: incomplete && !recoveryExpired ? undefined : update.ended_at,
-            };
-          }));
-        } catch {
-          if (controller.signal.aborted) return;
-          // Keep the durable task visible and retry on the next interval.
-        }
-        try {
-          await workflowPollDelay(1200, controller.signal);
-        } catch {
-          return;
-        }
-      }
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+    const reconcile = (items: CreationTask[]) => {
+      clearTimeout(recoveryTimer);
+      if (controller.signal.aborted) return;
+      const updates = new Map(
+        restoreWorkflowTasks(items).map((task) => [task.id, task]),
+      );
+      updateTasks((current) => current.map((task) => {
+        const update = updates.get(task.id);
+        if (!update) return task;
+        const completedUnits = Array.from(new Set([
+          ...(task.completed_units || []),
+          ...(update.completed_units || []),
+        ])).sort((left, right) => left - right);
+        const unitErrors = { ...task.unit_errors, ...update.unit_errors };
+        const count = Math.max(task.count, update.count);
+        const incomplete = completedUnits.length < count;
+        const recoveryExpired = update.status === "failed" && !inFlightTaskCountsRef.current.has(task.id);
+        return {
+          ...task,
+          ...update,
+          count,
+          backend_task_ids: Array.from(new Set([...task.backend_task_ids, ...update.backend_task_ids])),
+          completed_units: completedUnits,
+          unit_errors: unitErrors,
+          status: incomplete && !recoveryExpired ? "running" : recoveryExpired || Object.keys(unitErrors).length ? "failed" : "success",
+          ended_at: incomplete && !recoveryExpired ? undefined : update.ended_at,
+        };
+      }));
+      // Missing serial children expire on a local deadline, without network polling.
+      const byID = new Map(items.map(item => [item.id, item]));
+      const deadlines = [...updates.values()]
+        .filter(task => task.status === "running" && task.backend_task_ids.length < task.count
+          && task.backend_task_ids.every(id => !["queued", "running"].includes(byID.get(id)?.status || "running")))
+        .map(task => Math.max(...task.backend_task_ids.map(id => Date.parse(byID.get(id)?.updated_at || "") || Date.now()))
+          + task.count * (Math.max(1, Number(task.config.timeout) || 600) + 60) * 1000 + 1);
+      if (deadlines.length) recoveryTimer = setTimeout(() => reconcile(items), Math.max(1, Math.min(2_147_483_647, Math.min(...deadlines) - Date.now())));
     };
-    void poll();
-    return () => controller.abort();
+    const unsubscribe = watchCreationTasks({
+      signal: controller.signal,
+      onUpdate: ({ items }) => reconcile(items),
+      onError: error => { if (!controller.signal.aborted && !isWorkflowPollAbort(error)) toast.error(error.message); },
+    });
+    return () => { controller.abort(); unsubscribe(); clearTimeout(recoveryTimer); };
   }, [runningWorkflowTaskIDs]);
 
   const categories = useMemo(
@@ -1258,6 +1235,7 @@ function CreativeWorkflowWorkspaceContent({
       );
       const submitted = await createChatGenerationTask({
         clientTaskId: taskID("workflow-series"),
+        stream: true,
         prompt,
         model,
         relayTokenName: nextTokenNameForModel("text", model),

@@ -5,8 +5,39 @@ import (
 	"fmt"
 	"testing"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
 )
+
+func TestVideoTaskPersistsAdditionalParametersAndOptionalPrompt(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	received := make(chan map[string]any, 1)
+	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		received <- payload
+		return nil, fmt.Errorf("fixture upstream failure")
+	}
+	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	defer svc.Close()
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Capability.Prompt = &protocol.VideoPromptConstraint{Required: false, MinLength: 1, MaxLength: 20000}
+	contract.Capability.Seconds = nil
+	contract.Capability.SecondsRange = &protocol.VideoDurationRange{Min: 1, Step: 1}
+	parameters := map[string]any{"seed": 0, "prompt_enhance": false, "prompt_expansion_mode": "quality"}
+	identity := Identity{ID: "parameter-creator", Role: AuthRoleAdmin}
+	_, err := svc.SubmitVideo(context.Background(), identity, "parameter-task", "", "video-model", "16:9", 5000, "720p", false, false, "text", nil, nil, nil, map[string]any{
+		protocol.VideoContractSnapshotPayloadKey: contract, "parameters": parameters, VideoTaskInputConstraintsKey: VideoTaskInputConstraints{PromptRequired: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForTaskStatus(t, svc, identity, "parameter-task", TaskStatusError)
+	payload := <-received
+	got := util.StringMap(payload["parameters"])
+	if len(got) != 3 || util.ToInt(got["seed"], 99) != 0 || got["prompt_enhance"] != false || got["prompt_expansion_mode"] != "quality" || util.ToInt(payload["seconds"], 0) != 5000 {
+		t.Fatalf("task parameters lost: %#v", payload)
+	}
+}
 
 func TestVideoTaskContractPersistsAndIsVisibleOnlyToAdministrator(t *testing.T) {
 	backend := newTestStorageBackend(t)

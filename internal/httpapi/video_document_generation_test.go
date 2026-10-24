@@ -47,7 +47,7 @@ func TestVideoContractBatchCreatePreservesExistingContractsAndDrafts(t *testing.
 		t.Fatal(err)
 	}
 	draft := existing
-	draft.Validation.MaxPromptCharacters++
+	draft.Name = "Existing video draft"
 	if _, err := app.videoContracts.SaveDraft(item.ID, draft, true); err != nil {
 		t.Fatal(err)
 	}

@@ -53,16 +53,12 @@ func AutoDLVideoContract(workflow model.AutoDLWorkflow) (VideoModelContract, err
 		Transport:  VideoModelContractTransport{LocalMaterial: "url"},
 		Artifact:   VideoModelContractArtifact{Mode: "response_url", Auth: "none"},
 		Capability: VideoModelContractCapability{Seconds: choices, DefaultSeconds: int(seconds), AudioControl: "none"},
-		Validation: VideoModelContractValidation{MaxPromptCharacters: 12000},
 		Generation: VideoModelContractGeneration{Selection: "infer"},
 		Request:    VideoModelContractRequest{DurationField: "duration", DurationValueType: "number"},
 		Polling:    VideoModelContractPolling{IntervalSeconds: 2, TimeoutSeconds: 2700, TaskIDFields: []string{"data.task_id"}, StatusFields: []string{"data.status"}, QueuedStatuses: []string{"queued", "pending"}, RunningStatuses: []string{"running", "processing", "in_progress"}, SuccessStatuses: []string{"completed", "success", "succeeded"}, FailureStatuses: []string{"failed", "error", "cancelled"}, ResultFields: []string{"data.results"}},
 	}
 	if contract.Name == "" {
 		contract.Name = workflow.UUID
-	}
-	if prompt, ok := workflow.InputRules["prompt"]; ok && prompt.MaxLength != nil {
-		contract.Validation.MaxPromptCharacters = *prompt.MaxLength
 	}
 	required := func(fields []string) int {
 		count := 0

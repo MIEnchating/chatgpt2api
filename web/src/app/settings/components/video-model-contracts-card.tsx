@@ -1,15 +1,25 @@
 "use client";
 
+import { ContractParametersEditor } from "./video-contract-parameters";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ContractRequestEditor } from "./video-contract-request";
+import { VideoContractAgentDetails } from "./video-contract-agent-details";
+import { VideoContractImportProgress } from "./video-contract-import-progress";
+import { updateVideoContractAgentDetails, updateVideoContractImportActivity, type VideoContractImportActivity } from "@/lib/video-contract-agent-progress";
+import { ContractMaterialsEditor } from "./video-contract-capabilities";
+import { ContractRuleEditor } from "./video-contract-rules";
+import { VIDEO_RULE_SCENARIOS } from "./video-contract-rule-scenarios";
 import { AutoDLContractImport } from "./autodl-contract-import";
+import { VideoContractPluginDialog, type VideoContractPluginTarget } from "./video-contract-plugin-dialog";
 import {
   AudioLines,
   Braces,
   CheckCircle2,
   CheckCheck,
-  ChevronDown,
   CircleAlert,
   CircleHelp,
+  Code2,
   Copy,
   Download,
   Eye,
@@ -81,7 +91,8 @@ import {
   setVideoModelContractEnabled,
   validateVideoModelContract,
   type ManagedVideoModelContract,
-  type VideoModelContractImportProgress,
+  type VideoModelContractImportResult,
+  type VideoContractAgentDetail,
   type VideoModelContractPreviewResult,
   type VideoModelContractMutation,
   type VideoModelContractTransferDocument,
@@ -97,8 +108,9 @@ import {
   type VideoModelContract,
   type VideoModelContractRule,
   type VideoModelContractRuleField,
-  type VideoModelGenerationMode,
 } from "@/lib/video-model-contracts";
+import { applyVideoFrameDefaults } from "@/lib/video-contract-editor";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import { cn } from "@/lib/utils";
 
 import {
@@ -112,7 +124,6 @@ import {
   SettingsCard,
   SettingsEmptyState,
   settingsDialogInputClassName,
-  settingsPanelClassName,
 } from "./settings-ui";
 
 type ContractDraft = {
@@ -138,35 +149,6 @@ function formatElapsedSeconds(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return minutes > 0 ? `${minutes}分${String(remainingSeconds).padStart(2, "0")}秒` : `${remainingSeconds}秒`;
-}
-
-function videoContractImportStatusLabel(stage: VideoModelContractImportProgress["stage"] | undefined) {
-  switch (stage) {
-    case "reading_document": return "正在读取文档";
-    case "planning_documents": return "正在规划文档范围";
-    case "reading_documents": return "正在读取相关页面";
-    case "document_ready": return "文档读取完成";
-    case "preparing": return "正在准备分析请求";
-    case "generating": return "正在请求分析模型";
-    case "upstream_connected": return "已连接分析模型";
-    case "receiving": return "正在接收分析结果";
-    case "validating": return "正在校验生成的契约";
-    case "repairing": return "正在自动修正契约";
-    case "retrying": return "正在重试分析请求";
-    case "heartbeat": return "正在等待分析模型响应";
-    case "completed": return "契约生成完成";
-    case "failed": return "契约生成失败";
-    default: return "正在分析文档并生成契约";
-  }
-}
-
-function videoContractImportStatusSummary(progress: VideoModelContractImportProgress | null) {
-  if (!progress) return "正在建立分析连接";
-  const details: string[] = [];
-  if (progress.attempt && progress.max_attempts) details.push(`分析轮次 ${progress.attempt}/${progress.max_attempts}`);
-  if (progress.request_attempt && progress.request_attempt > 1 && progress.max_request_attempts) details.push(`上游重试 ${progress.request_attempt}/${progress.max_request_attempts}`);
-  if (progress.received_characters) details.push(`已接收 ${progress.received_characters} 字符`);
-  return details.join(" · ") || "分析连接保持正常";
 }
 
 const VIDEO_CONTRACT_DRIVERS: Array<{
@@ -229,21 +211,6 @@ function videoContractDriverLabel(driver: VideoModelContract["driver"]) {
   return VIDEO_CONTRACT_DRIVERS.find((item) => item.value === driver)?.label || driver;
 }
 
-const REQUEST_FIELD_HELP: Record<keyof VideoModelContract["request"], string> = {
-  duration_field: "上游 API 请求体中接收视频时长的字段路径，例如 duration 或 metadata.durationSeconds。",
-  duration_value_type: "上游 API 请求体中视频时长值的 JSON 类型。数字会发送 5，字符串会发送 \"5\"。",
-  aspect_ratio_field: "上游 API 请求体中接收画幅比例的字段路径，例如 ratio 或 metadata.aspectRatio。",
-  resolution_field: "上游 API 请求体中接收清晰度的字段路径，例如 resolution 或 metadata.resolution。",
-  generate_audio_field: "上游 API 请求体中控制是否生成音频的字段名，例如 generate_audio；接口不支持时留空。",
-  watermark_field: "上游 API 请求体中控制水印开关的字段名；接口不支持时留空。",
-  generation_mode_field: "上游 API 请求体中区分文生视频、首尾帧或多模态参考模式的字段名。",
-  first_frame_field: "上游 API 请求体中接收首帧图片地址的字段名；不支持首帧时留空。",
-  last_frame_field: "上游 API 请求体中接收尾帧图片地址的字段名；不支持尾帧时留空。",
-  reference_images_field: "上游 API 请求体中接收普通参考图片列表的字段名。",
-  reference_videos_field: "上游 API 请求体中接收参考视频列表的字段名。",
-  reference_audios_field: "上游 API 请求体中接收参考音频列表的字段名。",
-};
-
 const emptyContract: VideoModelContract = {
   name: "",
   models: [],
@@ -271,7 +238,6 @@ const emptyContract: VideoModelContract = {
     audio_control: "none",
     watermark: false,
   },
-  validation: { max_prompt_characters: 5000 },
   generation: {
     selection: "infer",
     default_mode: "text-to-video",
@@ -347,6 +313,8 @@ function normalizeVideoModelContractCollections(contract: VideoModelContract) {
 
 function draftFromContract(contract: VideoModelContract, enabled: boolean, profileModel = contract.model_profiles?.[0]?.model || ""): ContractDraft {
   const value = normalizeVideoModelContractCollections(contract);
+  value.generation = applyVideoFrameDefaults(value.generation);
+  for (const profile of value.model_profiles || []) profile.generation = applyVideoFrameDefaults(profile.generation);
   const profile = resolveVideoModelContract(value, profileModel);
   return {
     contract: value,
@@ -382,7 +350,7 @@ function mutationFromDraft(draft: ContractDraft, existingID = ""): VideoModelCon
   contract.models = normalizeTags(draft.models);
   const profile = contract.model_profiles?.find((item) => item.model === draft.profileModel) || contract;
   profile.capability.sizes = normalizeTags(draft.sizes);
-  profile.capability.seconds = normalizeTags(draft.seconds)
+  profile.capability.seconds = profile.capability.seconds_range ? [] : normalizeTags(draft.seconds)
     .map(Number)
     .filter((value) => Number.isInteger(value));
   profile.capability.resolutions = normalizeTags(draft.resolutions);
@@ -438,6 +406,7 @@ function previewInputJSON(contract: VideoModelContract) {
   return JSON.stringify({
     model,
     prompt: "示例视频提示词",
+    ...(contract.capability.parameters?.length ? {parameters:Object.fromEntries(contract.capability.parameters.filter(p=> !p.modes?.length || p.modes.includes("text")).filter(p=>p.required || p.default != null).map(p=>[p.name,p.default ?? p.enum?.[0] ?? (p.type === "boolean" ? false : p.type === "string" ? p.format === "uri" ? "https://example.com/callback" : "示例" : p.minimum ?? 0)]))} : {}),
     seconds: contract.capability.default_seconds,
     size: contract.capability.default_size,
     resolution: contract.capability.default_resolution,
@@ -701,190 +670,6 @@ function TagListField({
   );
 }
 
-const MATERIAL_RANGE_FIELDS = [
-  ["first_frame", "首帧"],
-  ["last_frame", "尾帧"],
-  ["image", "参考图片"],
-  ["video", "参考视频"],
-  ["audio", "参考音频"],
-  ["total", "素材合计"],
-] as const;
-
-const MODE_KIND_META: Record<VideoModelGenerationMode["kind"], { shortLabel: string }> = {
-  text: { shortLabel: "文生" },
-  image: { shortLabel: "图生" },
-  reference: { shortLabel: "参考" },
-};
-
-const CONTRACT_RULE_FIELDS: Array<{ label: string; value: VideoModelContractRuleField }> = [
-  { value: "first_frame", label: "首帧" },
-  { value: "last_frame", label: "尾帧" },
-  { value: "reference_image", label: "参考图片" },
-  { value: "reference_video", label: "参考视频" },
-  { value: "reference_audio", label: "参考音频" },
-  { value: "generate_audio", label: "音频生成" },
-  { value: "size", label: "画幅" },
-  { value: "resolution", label: "清晰度" },
-  { value: "duration", label: "时长" },
-  { value: "watermark", label: "水印" },
-];
-
-const CONTRACT_RULE_FIELD_SET = new Set(CONTRACT_RULE_FIELDS.map((item) => item.value));
-const CONTRACT_FORCE_FIELDS = new Set(["duration", "size", "resolution", "generate_audio", "watermark"]);
-
-function recordTags(values: Record<string, string | number> | undefined) {
-  return Object.entries(values || {}).map(([field, value]) => `${field}=${value}`);
-}
-
-function tagsToIntRecord(values: string[]) {
-  return Object.fromEntries(values.flatMap((value) => {
-    const [field, rawValue] = value.split("=", 2).map((item) => item.trim());
-    const parsed = Number(rawValue);
-    return CONTRACT_RULE_FIELD_SET.has(field as VideoModelContractRuleField) && Number.isInteger(parsed) ? [[field, parsed]] : [];
-  }));
-}
-
-function tagsToStringRecord(values: string[]) {
-  return Object.fromEntries(values.flatMap((value) => {
-    const separator = value.indexOf("=");
-    const field = value.slice(0, separator).trim();
-    const fieldValue = value.slice(separator + 1).trim();
-    return separator > 0 && CONTRACT_FORCE_FIELDS.has(field) && fieldValue ? [[field, fieldValue]] : [];
-  }));
-}
-
-function ContractModeEditor({
-  canRemove,
-  disabled,
-  index,
-  mode,
-  onChange,
-  onRemove,
-}: {
-  canRemove: boolean;
-  disabled: boolean;
-  index: number;
-  mode: VideoModelGenerationMode;
-  onChange: (mode: VideoModelGenerationMode) => void;
-  onRemove: () => void;
-}) {
-  const [open, setOpen] = useState(index === 0);
-  const updateRange = (field: keyof VideoModelGenerationMode["materials"], key: "min" | "max", value: number) => {
-    onChange({
-      ...mode,
-      materials: { ...mode.materials, [field]: { ...mode.materials[field], [key]: value } },
-    });
-  };
-  const hasMaterialLimit = MATERIAL_RANGE_FIELDS.some(([field]) => mode.materials[field].min > 0 || mode.materials[field].max > 0);
-  return (
-    <details
-      data-video-contract-mode
-      className="group overflow-hidden rounded-lg border border-border/70 bg-background transition-colors open:border-border"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/35 [&::-webkit-details-marker]:hidden">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          {mode.kind === "text" ? <FileText className="size-4" /> : mode.kind === "image" ? <ImagePlus className="size-4" /> : <Link2 className="size-4" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{mode.label || "未命名模式"}</span>
-            <Badge variant="secondary" className="h-5 shrink-0 rounded px-1.5 text-[11px] font-medium">{MODE_KIND_META[mode.kind].shortLabel}</Badge>
-          </span>
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-            {hasMaterialLimit ? "已配置素材数量限制" : "不接收参考素材"}
-          </span>
-        </span>
-        <code className="hidden max-w-48 truncate rounded bg-muted/70 px-2 py-1 text-[11px] text-muted-foreground md:block">{mode.request_value || "不发送模式值"}</code>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
-      </summary>
-      <div className="space-y-5 border-t border-border/70 bg-muted/15 p-4">
-        <div className="grid items-start gap-4 sm:grid-cols-2">
-          <TextField id={`video-contract-mode-label-${index}`} label="显示名称" value={mode.label} disabled={disabled} onChange={(label) => onChange({ ...mode, label })} />
-          <Field>
-            <ContractFieldLabel htmlFor={`video-contract-mode-kind-${index}`} label="模式类型" help="模式类型决定系统如何根据素材自动选择模式。" />
-            <Select value={mode.kind} disabled={disabled} onValueChange={(kind) => onChange({ ...mode, kind: kind as VideoModelGenerationMode["kind"] })}>
-              <SelectTrigger id={`video-contract-mode-kind-${index}`} className="h-10"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="text">文生视频</SelectItem><SelectItem value="image">图生视频</SelectItem><SelectItem value="reference">参考素材生视频</SelectItem></SelectContent>
-            </Select>
-          </Field>
-          <TextField id={`video-contract-mode-id-${index}`} label="模式标识" value={mode.id} disabled={disabled} onChange={(id) => onChange({ ...mode, id })} />
-          <TextField id={`video-contract-mode-request-${index}`} label="上游请求值" value={mode.request_value} disabled={disabled} placeholder="例如 image-to-video" onChange={(request_value) => onChange({ ...mode, request_value })} />
-        </div>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-foreground">素材数量限制</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">0 表示该模式不接收对应素材</p>
-            </div>
-            <span className="shrink-0 text-[11px] text-muted-foreground">最少 / 最多</span>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {MATERIAL_RANGE_FIELDS.map(([field, label]) => (
-              <div key={field} className="min-w-0 rounded-lg border border-border/60 bg-background p-2.5">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-medium text-foreground">{label}</span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground">{mode.materials[field].min}–{mode.materials[field].max}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberInput aria-label={`${mode.label}${label}最少数量`} controlsLayout="split" className="h-9" min={0} max={80} value={mode.materials[field].min} disabled={disabled} onValueChange={(value) => updateRange(field, "min", Number(value) || 0)} />
-                  <NumberInput aria-label={`${mode.label}${label}最多数量`} controlsLayout="split" className="h-9" min={0} max={80} value={mode.materials[field].max} disabled={disabled} onValueChange={(value) => updateRange(field, "max", Number(value) || 0)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {!disabled && canRemove ? <div className="flex justify-end border-t border-border/60 pt-3"><Button type="button" variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300" onClick={onRemove}><Trash2 className="size-4" />删除模式</Button></div> : null}
-      </div>
-    </details>
-  );
-}
-
-function ContractRuleEditor({ disabled, index, onChange, onRemove, rule }: {
-  disabled: boolean;
-  index: number;
-  onChange: (rule: VideoModelContractRule) => void;
-  onRemove: () => void;
-  rule: VideoModelContractRule;
-}) {
-  const fieldTagsValid = (value: string) => CONTRACT_RULE_FIELD_SET.has(value as VideoModelContractRuleField);
-  return (
-    <div data-video-contract-rule className="space-y-4 rounded-lg border border-border/70 bg-muted/15 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">规则 {index + 1}</p>
-        {!disabled ? <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 dark:text-rose-300" title="删除规则" onClick={onRemove}><Trash2 className="size-4" /></Button> : null}
-      </div>
-      <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <Field>
-          <FieldLabel>条件字段</FieldLabel>
-          <Select value={rule.when.field} disabled={disabled} onValueChange={(field) => onChange({ ...rule, when: { ...rule.when, field: field as VideoModelContractRuleField } })}>
-            <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-            <SelectContent>{CONTRACT_RULE_FIELDS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel>判断方式</FieldLabel>
-          <Select value={rule.when.operator} disabled={disabled} onValueChange={(operator) => onChange({ ...rule, when: { ...rule.when, operator: operator as "present" | "equals" } })}>
-            <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="present">存在或已启用</SelectItem><SelectItem value="equals">等于指定值</SelectItem></SelectContent>
-          </Select>
-        </Field>
-        <TextField id={`video-contract-rule-value-${index}`} label="比较值" value={rule.when.value || ""} disabled={disabled || rule.when.operator !== "equals"} placeholder="例如 pro 或 true" onChange={(value) => onChange({ ...rule, when: { ...rule.when, value } })} />
-        <TagListField id={`video-contract-rule-require-${index}`} label="必须同时提供" value={rule.require || []} disabled={disabled} placeholder="输入字段名后按回车" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(require) => onChange({ ...rule, require: require as VideoModelContractRuleField[] })} />
-        <TagListField id={`video-contract-rule-require-any-${index}`} label="至少提供一项" value={rule.require_any || []} disabled={disabled} placeholder="输入字段名后按回车" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(require_any) => onChange({ ...rule, require_any: require_any as VideoModelContractRuleField[] })} />
-        <TagListField id={`video-contract-rule-forbid-${index}`} label="禁止同时提供" value={rule.forbid || []} disabled={disabled} placeholder="输入字段名后按回车" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(forbid) => onChange({ ...rule, forbid: forbid as VideoModelContractRuleField[] })} />
-        <TagListField id={`video-contract-rule-limits-${index}`} label="条件上限" value={recordTags(rule.limits)} disabled={disabled} placeholder="例如 reference_image=1" onValueChange={(values) => onChange({ ...rule, limits: tagsToIntRecord(values) })} />
-        <TagListField id={`video-contract-rule-force-${index}`} label="强制参数值" value={recordTags(rule.force_values)} disabled={disabled} placeholder="例如 duration=8" validateTag={(value) => Object.keys(tagsToStringRecord([value])).length === 1} invalidMessage="仅支持 duration、size、resolution、generate_audio、watermark 的字段=值" onValueChange={(values) => onChange({ ...rule, force_values: tagsToStringRecord(values) })} />
-        <TagListField id={`video-contract-rule-ui-show-${index}`} label="命中后显示" value={rule.ui?.show || []} disabled={disabled} placeholder="例如 watermark" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(show) => onChange({ ...rule, ui: { ...rule.ui, show: show as VideoModelContractRuleField[] } })} />
-        <TagListField id={`video-contract-rule-ui-hide-${index}`} label="命中后隐藏" value={rule.ui?.hide || []} disabled={disabled} placeholder="例如 reference_audio" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(hide) => onChange({ ...rule, ui: { ...rule.ui, hide: hide as VideoModelContractRuleField[] } })} />
-        <TagListField id={`video-contract-rule-ui-disable-${index}`} label="命中后禁用" value={rule.ui?.disable || []} disabled={disabled} placeholder="例如 duration" validateTag={fieldTagsValid} invalidMessage="请输入受支持的规则字段名" onValueChange={(disable) => onChange({ ...rule, ui: { ...rule.ui, disable: disable as VideoModelContractRuleField[] } })} />
-        <div className="sm:col-span-2"><TextField id={`video-contract-rule-message-${index}`} label="校验提示" value={rule.message} disabled={disabled} placeholder="不满足关系时显示的中文提示" onChange={(message) => onChange({ ...rule, message })} /></div>
-      </div>
-    </div>
-  );
-}
-
 function ContractModelProfileSummary({ contract }: { contract: VideoModelContract }) {
   if (!contract.model_profiles?.length) return null;
   return <div className="mt-3 space-y-2 rounded-lg bg-muted/35 p-3 text-xs">
@@ -940,7 +725,7 @@ function ContractReferenceMaterialPreview({ contract, ruleValues }: { contract: 
       {visibleFrameLimit > 0 ? (
         <section className="space-y-1.5">
           <div className="flex items-center justify-between gap-3">
-            <ImageParameterLabel help="首帧和尾帧是独立输入，不会与普通参考图混用。">首尾帧</ImageParameterLabel>
+            <ImageParameterLabel help="首帧控制开场，尾帧控制收尾，中间动作由提示词引导。能否搭配参考图以当前模型配置为准。">首尾帧</ImageParameterLabel>
             <span className="text-[11px] text-muted-foreground">0/{visibleFrameLimit}</span>
           </div>
           <div className={visibleFrameLimit > 1 ? "grid grid-cols-2 gap-2" : "grid grid-cols-1"}>
@@ -1048,6 +833,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(() => new Set());
   const [isBulkActionBusy, setIsBulkActionBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [editorSection, setEditorSection] = useState("capability");
   const [dialogOpen, setDialogOpen] = useState(Boolean(editor));
   const [editingItem, setEditingItem] = useState<ManagedVideoModelContract | null>(editor?.item ?? null);
   const [readOnly, setReadOnly] = useState(false);
@@ -1061,10 +847,13 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [importURL, setImportURL] = useState("");
   const [importModel, setImportModel] = useState("");
   const [importTokenName, setImportTokenName] = useState("");
+  const [importGeneratePlugin, setImportGeneratePlugin] = useState(false);
   const [importError, setImportError] = useState("");
-  const [importStatus, setImportStatus] = useState<VideoModelContractImportProgress | null>(null);
+  const [importStatus, setImportStatus] = useState<VideoContractImportActivity | null>(null);
+  const [importDetails, setImportDetails] = useState<VideoContractAgentDetail[]>([]);
   const [importElapsedSeconds, setImportElapsedSeconds] = useState(0);
   const [generatedContracts, setGeneratedContracts] = useState<VideoModelContract[]>([]);
+  const [generatedDryRun, setGeneratedDryRun] = useState<VideoModelContractImportResult["dry_run"]>([]);
   const [generatedWarnings, setGeneratedWarnings] = useState<string[]>([]);
   const [generatedPublishError, setGeneratedPublishError] = useState("");
   const [generatedReviewOpen, setGeneratedReviewOpen] = useState(false);
@@ -1087,6 +876,8 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [previewQueryResponse, setPreviewQueryResponse] = useState("{}");
   const [previewResult, setPreviewResult] = useState<VideoModelContractPreviewResult | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [pluginTargets, setPluginTargets] = useState<VideoContractPluginTarget[]>([]);
+  const [pluginReturnToReview, setPluginReturnToReview] = useState(false);
 
   const isCurrentSession = useCallback((targetSessionKey: string) => (
     mountedRef.current && currentSessionKeyRef.current === targetSessionKey
@@ -1225,7 +1016,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     });
   };
 
-  const updateProfile = (update: (profile: Pick<VideoModelContractProfile, "capability" | "validation" | "generation" | "rules">) => void) => {
+  const updateProfile = (update: (profile: Pick<VideoModelContractProfile, "capability" | "generation" | "rules">) => void) => {
     setDraft((current) => {
       const contract = cloneContract(current.contract);
       const profile = contract.model_profiles?.find((item) => item.model === current.profileModel) || contract;
@@ -1246,66 +1037,20 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setPreviewResult(null);
   };
 
-  const updateGenerationMode = (index: number, mode: VideoModelGenerationMode) => {
-    updateProfile((contract) => {
-      contract.generation.modes[index] = mode;
-      if (!contract.generation.modes.some((item) => item.id === contract.generation.default_mode)) {
-        contract.generation.default_mode = mode.id;
-      }
-    });
-  };
-
-  const addGenerationMode = () => {
-    updateProfile((contract) => {
-      const kinds: VideoModelGenerationMode["kind"][] = ["text", "image", "reference"];
-      const kind = kinds.find((candidate) => !contract.generation.modes.some((mode) => mode.kind === candidate));
-      if (!kind) return;
-      const baseID = `${kind}-to-video`;
-      let id = baseID;
-      let ordinal = 2;
-      while (contract.generation.modes.some((mode) => mode.id.toLowerCase() === id.toLowerCase())) {
-        id = `${baseID}-${ordinal}`;
-        ordinal += 1;
-      }
-      contract.generation.modes.push({
-        id,
-        label: kind === "text" ? "文生视频" : kind === "image" ? "图生视频" : "参考素材生视频",
-        kind,
-        request_value: kind === "text" ? "text-to-video" : kind === "image" ? "image-to-video" : "reference-to-video",
-        materials: {
-          first_frame: kind === "image" ? { min: 1, max: 1 } : { min: 0, max: 0 },
-          last_frame: { min: 0, max: 0 },
-          image: kind === "reference" ? { min: 0, max: 1 } : { min: 0, max: 0 },
-          video: { min: 0, max: 0 },
-          audio: { min: 0, max: 0 },
-          total: kind === "text" ? { min: 0, max: 0 } : { min: 1, max: 1 },
-        },
-      });
-    });
-  };
-
-  const removeGenerationMode = (index: number) => {
-    updateProfile((contract) => {
-      const [removed] = contract.generation.modes.splice(index, 1);
-      if (removed?.id === contract.generation.default_mode) {
-        contract.generation.default_mode = contract.generation.modes[0]?.id || "";
-      }
-    });
-  };
-
   const updateContractRule = (index: number, rule: VideoModelContractRule) => {
     updateProfile((contract) => { contract.rules[index] = rule; });
   };
 
-  const addContractRule = () => {
+  const addContractRule = (rule = VIDEO_RULE_SCENARIOS[0].rule) => {
     updateProfile((contract) => {
-      contract.rules.push({ when: { field: "last_frame", operator: "present" }, require: ["first_frame"], message: "添加尾帧前必须先添加首帧" });
+      if (contract.rules.length < 32) contract.rules.push(structuredClone(rule));
     });
   };
 
   const clearImportFeedback = () => {
     setImportError("");
     setImportStatus(null);
+    setImportDetails([]);
     setImportElapsedSeconds(0);
   };
 
@@ -1325,19 +1070,19 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const openImport = () => {
+    setImportGeneratePlugin(false);
     setImportSourceType("file");
     setImportFile(null);
     setImportURL("");
     clearImportFeedback();
     setImportOpen(true);
-    if (textModels.length > 0 || isLoadingImportOptions) return;
+    if (isLoadingImportOptions) return;
     setIsLoadingImportOptions(true);
     void Promise.all([fetchModelConfig(), fetchImageGenerationPreferences()])
       .then(([{ config }, { preferences }]) => {
+        if (!isCurrentSession(sessionKey)) return;
         const models = config.text_models || [];
-        const preferred = models.includes(preferences.default_text_model)
-          ? preferences.default_text_model
-          : config.default_text_model || models[0] || "";
+        const preferred = resolveConfiguredModel(models, preferences.default_text_model, config.default_text_model);
         setTextModels(models);
         setImportModel(preferred);
         setImportTokenName(preferences.default_text_relay_token_names[0] || "");
@@ -1359,23 +1104,30 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     importControllerRef.current?.abort();
     importControllerRef.current = controller;
     importStartedAtRef.current = Date.now();
+    setImportDetails([]);
     setImportError("");
     setImportStatus({
       stage: "reading_document",
       message: importSourceType === "file" ? "正在上传并读取文档" : "正在读取文档页面",
+      step: 0,
+      completedSteps: [],
+      connected: false,
     });
     setImportElapsedSeconds(0);
     setIsImporting(true);
     try {
       const data = await importVideoModelContract({
         sourceType: importSourceType,
+        generatePlugin: importGeneratePlugin,
         file: importSourceType === "file" ? importFile : null,
         url: importSourceType === "url" ? importURL : "",
         model: importModel,
         tokenName: importTokenName,
         signal: controller.signal,
         onProgress: (progress) => {
-          if (!controller.signal.aborted) setImportStatus(progress);
+          if (controller.signal.aborted || importControllerRef.current !== controller || !isCurrentSession(sessionKey)) return;
+          setImportStatus((current) => updateVideoContractImportActivity(current, progress));
+          if (progress.detail) setImportDetails((current) => updateVideoContractAgentDetails(current, progress.detail!));
         },
       });
       if (controller.signal.aborted || !isCurrentSession(sessionKey)) return;
@@ -1383,15 +1135,26 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         ? data.contracts.map(normalizeVideoModelContractCollections)
         : [];
       if (contracts.length === 0) throw new Error("文档分析完成，但未生成任何契约草稿");
+      const dryRun = Array.isArray(data.dry_run) ? data.dry_run : [];
+      if (dryRun.length !== contracts.length || dryRun.some((item) => !item.passed)) throw new Error("契约干跑测试未通过，暂不进入初审");
       setImportOpen(false);
       setEditingItem(null);
       setReadOnly(false);
-      const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+      const warnings = [...(Array.isArray(data.warnings) ? data.warnings : []), ...dryRun.flatMap(item => [
+        ...item.missing_evidence.map(field => `文档证据待补充：${field}`),
+        ...item.review_issues.map(issue => `契约待确认：${issue}`),
+      ])];
       setGeneratedContracts(contracts);
+      setGeneratedDryRun(dryRun);
       setGeneratedWarnings(warnings);
       setGeneratedPublishError("");
       setGeneratedEditingIndex(null);
-      setGeneratedReviewOpen(true);
+      const generatePlugin = importGeneratePlugin && dryRun.every(item => item.review_passed);
+      setGeneratedReviewOpen(!generatePlugin);
+      if (generatePlugin) {
+        setPluginReturnToReview(true);
+        setPluginTargets(contracts.map((contract, index) => ({ id: `document-${index + 1}`, contract: cloneVideoModelContract(contract), label: `文档生成草稿 ${index + 1}（未发布）`, warnings })));
+      }
     } catch (error) {
       const message = controller.signal.aborted ? "已停止分析" : error instanceof Error ? error.message : "分析文档失败";
       setImportError(message);
@@ -1433,6 +1196,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setGeneratedReviewOpen(false);
     setGeneratedEditingIndex(null);
     setGeneratedContracts([]);
+    setGeneratedDryRun([]);
     setGeneratedWarnings([]);
     setGeneratedPublishError("");
   };
@@ -1440,6 +1204,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const removeGeneratedContract = (index: number) => {
     const remaining = generatedContracts.filter((_, currentIndex) => currentIndex !== index);
     setGeneratedContracts(remaining);
+    setGeneratedDryRun((current) => current.filter((_, currentIndex) => currentIndex !== index));
     setGeneratedPublishError("");
     if (remaining.length === 0) setGeneratedReviewOpen(false);
   };
@@ -1570,6 +1335,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       if (generatedEditingIndex !== null) {
         const remaining = generatedContracts.filter((_, index) => index !== generatedEditingIndex);
         setGeneratedContracts(remaining);
+        setGeneratedDryRun((current) => current.filter((_, index) => index !== generatedEditingIndex));
         setGeneratedPublishError("");
         setGeneratedEditingIndex(null);
         setDialogOpen(false);
@@ -1735,8 +1501,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
 
   const activeProfile = draft.contract.model_profiles?.find((item) => item.model === draft.profileModel) || draft.contract;
   const capability = activeProfile.capability;
-  const request = draft.contract.request;
-  const transport = draft.contract.transport;
   const artifact = draft.contract.artifact;
   const polling = draft.contract.polling;
   const normalizedContract = useMemo(() => mutationFromDraft(draft).contract, [draft]);
@@ -1946,7 +1710,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeContractDialog())}>
         <DialogContent
           scrollable={false}
-          className="h-[min(90dvh,860px)] w-[min(96vw,1280px)] max-w-none"
+          className="h-[min(94dvh,940px)] w-[min(96vw,1360px)] max-w-none"
         >
           <DialogHeader>
             <DialogTitle>
@@ -1956,15 +1720,18 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
             </DialogTitle>
             <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}{editor ? "。修改的是全局契约，发布后对新任务生效；已有任务保留原版本记录。" : ""}</DialogDescription>
           </DialogHeader>
-          <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
+          <div className="flex shrink-0 flex-wrap gap-1 rounded-lg bg-muted/40 p-1" aria-label="视频配置分区">
+            {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <button key={key} type="button" aria-pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:text-sm", key === "preview" && "lg:hidden", editorSection === key ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
+          </div>
+          <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
             <ScrollArea
               data-video-contract-details
-              className="h-full min-h-0 min-w-0"
+              className={cn("h-full min-h-0 min-w-0", editorSection === "preview" && "hidden lg:block")}
               viewportClassName="h-full overscroll-y-contain pr-3"
               viewClass="flex min-w-0 flex-col gap-7 pb-1"
               ariaLabel="契约表单"
             >
-              <section className="flex flex-col gap-4">
+              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle>基本信息</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
                   <TextField id="video-contract-name" label="契约名称" value={draft.contract.name} disabled={readOnly} placeholder="例如 MiniMax H3" onChange={(value) => updateContract((contract) => { contract.name = value; })} />
@@ -1983,10 +1750,9 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     return draftFromContract(contract, current.enabled, value.includes(current.profileModel) ? current.profileModel : "");
                   })} /></div>
                 </div>
-                {!readOnly ? <label className="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground"><Checkbox checked={draft.enabled} onCheckedChange={(checked) => setDraft((current) => ({ ...current, enabled: Boolean(checked) }))} />保存后启用</label> : null}
               </section>
 
-              <section className="space-y-3 rounded-xl border border-border bg-muted/25 p-4">
+              <section className={cn("space-y-3 rounded-xl border border-border bg-muted/25 p-4", !["capability", "rules", "preview"].includes(editorSection) && "hidden")}>
                 <Field>
                   <ContractFieldLabel htmlFor="video-contract-profile" label="当前配置的模型能力" help="接口、请求字段和轮询由整条契约共用。此处分别配置各模型的参数、生成模式及条件规则；未单独配置的模型使用通用能力。" />
                   <Select value={draft.profileModel || "__default__"} onValueChange={(value) => selectProfile(value === "__default__" ? "" : value)}>
@@ -2004,103 +1770,48 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                   setDraft(draftFromContract(contract, draft.enabled, ""));
                 }}>移除该模型的独立配置</Button> : null}
               </section>
-              <section className="flex flex-col gap-4">
-                <SectionTitle>生成能力</SectionTitle>
+              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+                <SectionTitle description="先填写模型支持的选项，再单独指定默认值。默认值用于首次选择该模型或请求未指定参数时。">生成参数</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <TagListField id="video-contract-sizes" label="画幅选项" value={draft.sizes} disabled={readOnly} placeholder="例如 16:9" onValueChange={(value) => setDraft((current) => ({ ...current, sizes: value }))} />
-                  <TagListField id="video-contract-seconds" label="时长选项" value={draft.seconds} disabled={readOnly} placeholder="例如 5" validateTag={(tag) => Number.isInteger(Number(tag)) && Number(tag) >= 1 && Number(tag) <= 3600} invalidMessage="时长必须是 1–3600 的整数" onValueChange={(value) => setDraft((current) => ({ ...current, seconds: value }))} />
+                  <TagListField id="video-contract-seconds" label="时长选项" value={draft.seconds} disabled={readOnly || Boolean(capability.seconds_range)} placeholder="例如 5" validateTag={(tag) => Number.isInteger(Number(tag)) && Number(tag) >= 1 && Number(tag) <= 3600} invalidMessage="时长必须是 1–3600 的整数" onValueChange={(value) => setDraft((current) => ({ ...current, seconds: value }))} />
                   <TagListField id="video-contract-resolutions" label="清晰度选项" value={draft.resolutions} disabled={readOnly} placeholder="例如 720p" onValueChange={(value) => setDraft((current) => ({ ...current, resolutions: value }))} />
                   <TextField id="video-contract-default-size" label="默认画幅" value={capability.default_size} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_size = value; })} />
-                  <NumericField id="video-contract-default-seconds" label="默认时长" min={1} max={3600} value={capability.default_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateProfile((contract) => { contract.capability.default_seconds = value; })} />
+                  <NumericField id="video-contract-default-seconds" label="默认时长" min={1} max={capability.seconds_range ? capability.seconds_range.max ?? Number.MAX_SAFE_INTEGER : 3600} value={capability.default_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateProfile((contract) => { contract.capability.default_seconds = value; })} />
                   <TextField id="video-contract-default-resolution" label="默认清晰度" value={capability.default_resolution} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_resolution = value; })} />
-                  <NumericField id="video-contract-prompt-limit" label="提示词上限" min={1} max={100000} value={activeProfile.validation.max_prompt_characters} disabled={readOnly} suffix="字符" onChange={(value) => updateProfile((contract) => { contract.validation.max_prompt_characters = value; })} />
                   <Field><ContractFieldLabel htmlFor="video-contract-audio-control" label="音频生成" help="控制创作参数面板是否显示音频开关。不支持表示不生成音频，用户开关表示由用户选择，始终生成表示请求固定携带音频。" /><Select value={capability.audio_control} disabled={readOnly} onValueChange={(value) => updateProfile((contract) => { contract.capability.audio_control = value as VideoModelContract["capability"]["audio_control"]; })}><SelectTrigger id="video-contract-audio-control" className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">不支持</SelectItem><SelectItem value="toggle">用户开关</SelectItem><SelectItem value="always">始终生成</SelectItem></SelectContent></Select></Field>
                   <ContractCheckboxField id="video-contract-watermark" label="支持水印开关" checked={capability.watermark} disabled={readOnly} className="min-h-11 self-end" onCheckedChange={(checked) => updateProfile((contract) => { contract.capability.watermark = checked; })} />
                 </div>
               </section>
 
-              <section data-video-contract-generation className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 pb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">生成模式与约束</h3>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">定义系统如何根据输入素材选择上游生成模式。</p>
-                  </div>
-                </div>
-                <div className="rounded-lg bg-muted/30 p-3">
-                  <Field>
-                    <ContractFieldLabel htmlFor="video-contract-default-mode" label="默认模式" help="没有任何素材时优先使用的模式；通常设置为文生视频。" />
-                    <Select value={activeProfile.generation.default_mode} disabled={readOnly} onValueChange={(default_mode) => updateProfile((contract) => { contract.generation.default_mode = default_mode; })}>
-                      <SelectTrigger id="video-contract-default-mode" className="h-10 bg-background"><SelectValue /></SelectTrigger>
-                      <SelectContent>{activeProfile.generation.modes.filter((mode) => mode.kind === "text").map((mode) => <SelectItem key={mode.id} value={mode.id}>{mode.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-semibold text-foreground">生成模式</h4>
-                    <span className="text-[11px] tabular-nums text-muted-foreground">{activeProfile.generation.modes.length}/3</span>
-                  </div>
-                  {!readOnly ? <Button type="button" variant="outline" size="sm" disabled={activeProfile.generation.modes.length >= 3} onClick={addGenerationMode}><Plus className="size-4" />添加模式</Button> : null}
-                </div>
-                <div className="space-y-3">
-                  {activeProfile.generation.modes.map((mode, index) => (
-                    <ContractModeEditor key={index} canRemove={activeProfile.generation.modes.length > 1 && mode.kind !== "text"} disabled={readOnly} index={index} mode={mode} onChange={(next) => updateGenerationMode(index, next)} onRemove={() => removeGenerationMode(index)} />
-                  ))}
-                </div>
-                <div className="mt-2 flex flex-wrap items-start justify-between gap-3 border-t border-border/70 pt-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-foreground">高级条件规则</h4>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">仅用于尾帧依赖首帧等跨参数关系，普通素材数量在模式内配置。</p>
-                  </div>
-                  {!readOnly ? <Button type="button" variant="outline" size="sm" disabled={activeProfile.rules.length >= 32} onClick={addContractRule}><Plus className="size-4" />添加规则</Button> : null}
-                </div>
-                {activeProfile.rules.length > 0 ? (
-                  <div className="space-y-3">{activeProfile.rules.map((rule, index) => (
-                    <ContractRuleEditor key={index} disabled={readOnly} index={index} rule={rule} onChange={(next) => updateContractRule(index, next)} onRemove={() => updateProfile((contract) => { contract.rules.splice(index, 1); })} />
-                  ))}</div>
-                ) : <p className="rounded-lg border border-dashed border-border/70 bg-muted/15 px-4 py-3 text-center text-xs text-muted-foreground">暂无高级规则，当前仅按各模式的素材数量校验</p>}
+              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+                <SectionTitle>附加参数与输入约束</SectionTitle>
+                <ContractParametersEditor capability={capability} disabled={readOnly} onChange={value => updateProfile(profile => { profile.capability = value; })} />
+              </section>
+              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+                <SectionTitle description="只勾选模型实际支持的输入方式，选中后再配置对应的上传要求。">支持哪些输入</SectionTitle>
+                <ContractMaterialsEditor generation={activeProfile.generation} disabled={readOnly} onChange={(generation) => updateProfile((profile) => { profile.generation = generation; })} />
               </section>
 
-              <section className="flex flex-col gap-4">
-                <SectionTitle>请求字段映射</SectionTitle>
-                <div className={`${settingsPanelClassName} grid items-start gap-4 sm:grid-cols-2`}>
-                  <Field>
-                    <ContractFieldLabel htmlFor="video-contract-local-material" label="平台本地素材" help="选择平台暂存的图片、视频和音频如何提交给上游。使用 multipart 时，只有实际存在本地文件的任务才会切换为表单提交。" />
-                    <Select value={transport.local_material} disabled={readOnly} onValueChange={(value) => updateContract((contract) => {
-                      contract.transport.local_material = value as VideoModelContract["transport"]["local_material"];
-                      if (value === "multipart" && !contract.transport.multipart_file_field) {
-                        contract.transport.multipart_file_field = "input_reference[]";
-                      }
-                    })}>
-                      <SelectTrigger id="video-contract-local-material" className="h-10"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="url">使用平台 URL</SelectItem><SelectItem value="multipart">转为 multipart 文件</SelectItem></SelectContent>
-                    </Select>
-                  </Field>
-                  <TextField id="video-contract-multipart-field" label="multipart 文件字段" help="上游接收文件的表单字段名，可包含末尾方括号，例如 input_reference[]。" value={transport.multipart_file_field} disabled={readOnly || transport.local_material !== "multipart"} placeholder="例如 input_reference[]" onChange={(value) => updateContract((contract) => { contract.transport.multipart_file_field = value; })} />
-                  <ContractCheckboxField id="video-contract-multipart-repeatable" label="允许重复文件字段" help="开启后，同一任务的多个本地素材会使用相同字段名逐个提交。" checked={transport.multipart_repeatable} disabled={readOnly || transport.local_material !== "multipart"} onCheckedChange={(checked) => updateContract((contract) => { contract.transport.multipart_repeatable = checked; })} />
-                  <ContractCheckboxField id="video-contract-multipart-mixed-urls" label="允许文件与 URL 混用" help="开启后，本地素材转为文件，外部公网 URL 仍保留在各自请求字段中。" checked={transport.multipart_mixed_urls} disabled={readOnly || transport.local_material !== "multipart"} onCheckedChange={(checked) => updateContract((contract) => { contract.transport.multipart_mixed_urls = checked; })} />
-                  <TextField id="video-contract-create-path" label="任务创建路径" help="可选。留空时使用厂家驱动的默认入口；自定义协议必须填写站内绝对路径。" value={transport.create_path} disabled={readOnly} placeholder="例如 /v1/videos" onChange={(value) => updateContract((contract) => { contract.transport.create_path = value; })} />
-                  <TextField id="video-contract-query-path" label="任务查询路径" help="可选。留空时使用厂家驱动默认入口；自定义路径必须包含 {task_id}。" value={transport.query_path} disabled={readOnly} placeholder="例如 /v1/videos/{task_id}" onChange={(value) => updateContract((contract) => { contract.transport.query_path = value; })} />
+              <section className={cn("flex flex-col gap-4", editorSection !== "rules" && "hidden")}>
+                <SectionTitle description="用“当…则…”表达参数之间的关系。一般数量限制在模型能力中填写，只有参数相互依赖时才需要规则。">参数条件规则</SectionTitle>
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <p className="mb-3 text-xs font-medium">从常见场景开始 <span className="font-normal text-muted-foreground">· 点击添加，再按接口要求调整</span></p>
+                  <div className="grid gap-2">
+                    {VIDEO_RULE_SCENARIOS.map((scenario) => <button key={scenario.label} type="button" disabled={readOnly || activeProfile.rules.length >= 32} onClick={() => addContractRule(scenario.rule)} className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-left transition-colors enabled:hover:border-primary/40 enabled:hover:bg-primary/5 disabled:opacity-50"><Plus className="size-4 shrink-0 text-muted-foreground" /><span><span className="block text-sm font-medium">{scenario.label}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{scenario.description}</span></span></button>)}
+                  </div>
                 </div>
-                <div className={`${settingsPanelClassName} grid gap-4 sm:grid-cols-2`}>
-                  <Field>
-                    <ContractFieldLabel htmlFor="video-contract-duration-value-type" label="时长值类型" help={REQUEST_FIELD_HELP.duration_value_type} />
-                    <Select value={request.duration_value_type} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.request.duration_value_type = value as VideoModelContract["request"]["duration_value_type"]; })}>
-                      <SelectTrigger id="video-contract-duration-value-type" className="h-10"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="number">数字，例如 5</SelectItem><SelectItem value="string">字符串，例如 "5"</SelectItem></SelectContent>
-                    </Select>
-                  </Field>
-                  {([
-					["duration_field", "时长字段"], ["aspect_ratio_field", "画幅字段"], ["resolution_field", "清晰度字段"],
-					["generate_audio_field", "生成音频字段"], ["watermark_field", "水印字段"], ["generation_mode_field", "生成模式字段"], ["first_frame_field", "首帧字段"],
-                    ["last_frame_field", "尾帧字段"], ["reference_images_field", "参考图片字段"], ["reference_videos_field", "参考视频字段"],
-                    ["reference_audios_field", "参考音频字段"],
-                  ] as const).map(([key, label]) => <TextField key={key} id={`video-contract-${key}`} label={label} help={REQUEST_FIELD_HELP[key]} value={request[key]} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.request[key] = value; })} />)}
-                </div>
+                <div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">已配置 {activeProfile.rules.length} / 32 条规则</p>{!readOnly ? <Button type="button" variant="outline" size="sm" disabled={activeProfile.rules.length >= 32} onClick={() => addContractRule()}><Plus className="size-4" />添加规则</Button> : null}</div>
+                {activeProfile.rules.length > 0 ? <div className="space-y-3">{activeProfile.rules.map((rule, index) => <ContractRuleEditor key={index} disabled={readOnly} index={index} rule={rule} onChange={(next) => updateContractRule(index, next)} onRemove={() => updateProfile((profile) => { profile.rules.splice(index, 1); })} />)}</div> : <p className="rounded-lg border border-dashed border-border/70 p-5 text-center text-sm text-muted-foreground">还没有条件规则，仅按已配置的能力与上传数量校验。</p>}
               </section>
 
-              <section className="flex flex-col gap-4">
-                <SectionTitle description="显式声明视频最终从哪里获取，适配 NewAPI 内容端点和其他厂家的 CDN 返回地址。">视频产物</SectionTitle>
+              <section className={cn("flex flex-col gap-4", editorSection !== "request" && "hidden")}>
+                <SectionTitle description="告诉系统如何把用户选择的参数发送给上游。字段名称按接口文档填写；普通用户在创作时无需接触这些设置。">上游请求设置</SectionTitle>
+                <ContractRequestEditor contract={normalizedContract} generation={activeProfile.generation} disabled={readOnly} onChange={updateContract} onGenerationChange={(generation) => updateProfile((profile) => { profile.generation = generation; })} />
+              </section>
+
+              <section className={cn("flex flex-col gap-4", editorSection !== "response" && "hidden")}>
+                <SectionTitle description="任务完成后，选择从响应中的下载地址还是独立下载接口获取视频。">获取生成的视频</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-artifact-mode" label="获取方式" help="响应地址读取轮询 JSON 中的结果字段；任务内容端点使用任务 ID 组成下载路径。" />
@@ -2125,38 +1836,38 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                       <SelectContent><SelectItem value="none">不携带鉴权</SelectItem><SelectItem value="relay">携带中转鉴权</SelectItem></SelectContent>
                     </Select>
                   </Field>
-                  <TextField id="video-contract-content-path" label="任务产物路径" help="必须包含 {task_id}，适用于 /v1/videos/{task_id}/content 这类内容代理。" value={artifact.content_path} disabled={readOnly || artifact.mode !== "task_content"} placeholder="/v1/videos/{task_id}/content" onChange={(value) => updateContract((contract) => { contract.artifact.content_path = value; })} />
+                  <TextField id="video-contract-content-path" label="视频下载接口" help="必须包含 {task_id}，适用于 /v1/videos/{task_id}/content 这类内容代理。" value={artifact.content_path} disabled={readOnly || artifact.mode !== "task_content"} placeholder="/v1/videos/{task_id}/content" onChange={(value) => updateContract((contract) => { contract.artifact.content_path = value; })} />
                   <TagListField id="video-contract-artifact-hosts" label="允许域名" help="限制结果地址或允许携带中转鉴权的域名；支持 *.example.com。留空时，relay 鉴权只能发送到中转自身。" value={artifact.allowed_hosts} disabled={readOnly} placeholder="例如 cdn.example.com" onValueChange={(value) => updateContract((contract) => { contract.artifact.allowed_hosts = value; })} />
                 </div>
               </section>
 
-              <section className="flex flex-col gap-4">
-                <SectionTitle>异步轮询</SectionTitle>
+              <section className={cn("flex flex-col gap-4", editorSection !== "response" && "hidden")}>
+                <SectionTitle description="创建视频任务后，系统定时查询生成状态，并从上游返回的 JSON 中读取任务编号、进度和视频地址。">读取任务结果</SectionTitle>
+                <div className="space-y-2 rounded-lg bg-muted/35 p-3 text-xs leading-5 text-muted-foreground"><p>例如上游返回下列内容：任务编号填 data.id，生成状态填 data.status，完成进度填 data.progress，视频下载地址填 data.video_url。</p><pre className="overflow-x-auto rounded-md bg-background p-3 font-mono text-foreground">{JSON.stringify({ data: { id: "task_123", status: "completed", progress: 100, video_url: "https://example.com/video.mp4" } }, null, 2)}</pre><p>“data.progress”表示 data 对象中的 progress 字段。多项按填写顺序读取；选填字段没有对应数据时可留空。</p></div>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
-                  <NumericField id="video-contract-poll-interval" label="轮询间隔" help="创建异步视频任务后，每隔多少秒向上游查询一次任务状态。间隔过短可能触发上游限流。" min={1} max={300} value={polling.interval_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.interval_seconds = value; })} />
-                  <NumericField id="video-contract-poll-timeout" label="超时时间" help="上游任务提交成功后最多轮询多长时间；视频任务总时限会自动覆盖该时间和一次轮询间隔。" min={1} max={86400} value={polling.timeout_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.timeout_seconds = value; })} />
-                  <TagListField id="video-contract-task-id-fields" label="任务 ID 路径" help="创建响应中任务 ID 的 JSON 路径，按顺序读取，例如 id 或 data.task_id。" value={draft.taskIDFields} disabled={readOnly} placeholder="例如 id" onValueChange={(value) => setDraft((current) => ({ ...current, taskIDFields: value }))} />
-                  <TagListField id="video-contract-status-fields" label="任务状态路径" help="查询响应中任务状态的 JSON 路径，按顺序读取，例如 status 或 data.status。" value={draft.statusFields} disabled={readOnly} placeholder="例如 status" onValueChange={(value) => setDraft((current) => ({ ...current, statusFields: value }))} />
-                  <TagListField id="video-contract-progress-fields" label="任务进度路径" help="查询响应中生成进度的 JSON 路径，按顺序读取，例如 progress 或 data.progress；无法提供进度时可以留空。" value={draft.progressFields} disabled={readOnly} placeholder="例如 progress" onValueChange={(value) => setDraft((current) => ({ ...current, progressFields: value }))} />
-                  <TagListField id="video-contract-queued-statuses" label="排队状态" help="上游返回这些状态时，任务保持排队中。" value={draft.queuedStatuses} disabled={readOnly} placeholder="例如 queued" onValueChange={(value) => setDraft((current) => ({ ...current, queuedStatuses: value }))} />
-                  <TagListField id="video-contract-processing-statuses" label="处理中状态" help="上游返回这些状态时，任务显示为生成中。" value={draft.processingStatuses} disabled={readOnly} placeholder="例如 in_progress" onValueChange={(value) => setDraft((current) => ({ ...current, processingStatuses: value }))} />
-                  <TagListField id="video-contract-success-statuses" label="成功状态" help="上游任务查询接口返回这些状态值时，系统认为视频已生成完成，例如 completed 或 succeeded。" value={draft.successStatuses} disabled={readOnly} placeholder="例如 completed" onValueChange={(value) => setDraft((current) => ({ ...current, successStatuses: value }))} />
-                  <TagListField id="video-contract-failure-statuses" label="失败状态" help="上游任务查询接口返回这些状态值时，系统停止轮询并标记生成失败，例如 failed 或 cancelled。" value={draft.failureStatuses} disabled={readOnly} placeholder="例如 failed" onValueChange={(value) => setDraft((current) => ({ ...current, failureStatuses: value }))} />
+                  <NumericField id="video-contract-poll-interval" label="查询频率" help="创建异步视频任务后，每隔多少秒向上游查询一次任务状态。间隔过短可能触发上游限流。" min={1} max={300} value={polling.interval_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.interval_seconds = value; })} />
+                  <NumericField id="video-contract-poll-timeout" label="最长等待时间" help="上游任务提交成功后最多轮询多长时间；视频任务总时限会自动覆盖该时间和一次轮询间隔。" min={1} max={86400} value={polling.timeout_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.timeout_seconds = value; })} />
+                  <TagListField id="video-contract-task-id-fields" label="任务编号取自" help="创建响应中任务 ID 的 JSON 路径，按顺序读取，例如 id 或 data.task_id。" value={draft.taskIDFields} disabled={readOnly} placeholder="例如 id" onValueChange={(value) => setDraft((current) => ({ ...current, taskIDFields: value }))} />
+                  <TagListField id="video-contract-status-fields" label="生成状态取自" help="查询响应中任务状态的 JSON 路径，按顺序读取，例如 status 或 data.status。" value={draft.statusFields} disabled={readOnly} placeholder="例如 status" onValueChange={(value) => setDraft((current) => ({ ...current, statusFields: value }))} />
+                  <TagListField id="video-contract-progress-fields" label="完成进度取自（选填）" help="查询响应中生成进度的 JSON 路径，按顺序读取，例如 progress 或 data.progress；无法提供进度时可以留空。" value={draft.progressFields} disabled={readOnly} placeholder="例如 progress" onValueChange={(value) => setDraft((current) => ({ ...current, progressFields: value }))} />
+                  <TagListField id="video-contract-queued-statuses" label="哪些值表示排队中" help="上游返回这些状态时，任务保持排队中。" value={draft.queuedStatuses} disabled={readOnly} placeholder="例如 queued" onValueChange={(value) => setDraft((current) => ({ ...current, queuedStatuses: value }))} />
+                  <TagListField id="video-contract-processing-statuses" label="哪些值表示生成中" help="上游返回这些状态时，任务显示为生成中。" value={draft.processingStatuses} disabled={readOnly} placeholder="例如 in_progress" onValueChange={(value) => setDraft((current) => ({ ...current, processingStatuses: value }))} />
+                  <TagListField id="video-contract-success-statuses" label="哪些值表示已完成" help="上游任务查询接口返回这些状态值时，系统认为视频已生成完成，例如 completed 或 succeeded。" value={draft.successStatuses} disabled={readOnly} placeholder="例如 completed" onValueChange={(value) => setDraft((current) => ({ ...current, successStatuses: value }))} />
+                  <TagListField id="video-contract-failure-statuses" label="哪些值表示失败" help="上游任务查询接口返回这些状态值时，系统停止轮询并标记生成失败，例如 failed 或 cancelled。" value={draft.failureStatuses} disabled={readOnly} placeholder="例如 failed" onValueChange={(value) => setDraft((current) => ({ ...current, failureStatuses: value }))} />
                   <Field>
-                    <ContractFieldLabel htmlFor="video-contract-unknown-status" label="未知状态" help="没有匹配以上四组的状态统一归为 unknown。系统会保留原始状态并继续轮询，不会误判为成功或失败。" />
+                    <ContractFieldLabel htmlFor="video-contract-unknown-status" label="遇到其他状态时" help="没有匹配以上四组的状态统一归为 unknown。系统会保留原始状态并继续轮询，不会误判为成功或失败。" />
                     <div id="video-contract-unknown-status" className="flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 text-sm">
-                      <Badge variant="secondary" className="rounded-md font-mono">unknown</Badge>
-                      <span className="text-xs text-muted-foreground">继续轮询</span>
+                      <span className="text-xs text-muted-foreground">继续查询，直到成功、失败或超过最长等待时间</span>
                     </div>
                   </Field>
-                  <TagListField id="video-contract-error-fields" label="错误信息路径" help="任务失败时错误信息的 JSON 路径，按顺序读取；可以留空。" value={draft.errorFields} disabled={readOnly} placeholder="例如 error.message" onValueChange={(value) => setDraft((current) => ({ ...current, errorFields: value }))} />
-                  <TagListField id="video-contract-result-fields" label="结果地址路径" help="任务成功后视频地址的 JSON 路径，按顺序读取，例如 video_url 或 data.output.video_url。" value={draft.resultFields} disabled={readOnly} placeholder="例如 video_url" onValueChange={(value) => setDraft((current) => ({ ...current, resultFields: value }))} />
+                  <TagListField id="video-contract-error-fields" label="失败原因取自（选填）" help="任务失败时错误信息的 JSON 路径，按顺序读取；可以留空。" value={draft.errorFields} disabled={readOnly} placeholder="例如 error.message" onValueChange={(value) => setDraft((current) => ({ ...current, errorFields: value }))} />
+                  <TagListField id="video-contract-result-fields" label="视频下载地址取自" help="任务成功后视频地址的 JSON 路径，按顺序读取，例如 video_url 或 data.output.video_url。" value={draft.resultFields} disabled={readOnly} placeholder="例如 video_url" onValueChange={(value) => setDraft((current) => ({ ...current, resultFields: value }))} />
                 </div>
               </section>
             </ScrollArea>
             <ScrollArea
               data-video-contract-preview
-              className="h-full min-h-0 min-w-0 border-t border-border/70 pt-4 lg:border-t-0 lg:border-l lg:pt-0"
+              className={cn("h-full min-h-0 min-w-0 lg:border-l lg:border-border/70", editorSection !== "preview" && "hidden lg:block")}
               viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"
               viewClass="space-y-3 pb-1"
               ariaLabel="契约预览"
@@ -2208,8 +1919,9 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </details>
             </ScrollArea>
           </fieldset>
-          <DialogFooter className="flex-row flex-wrap [&>button]:flex-1 [&>button]:px-2 [&>button]:text-xs [&>button>svg]:hidden sm:[&>button]:flex-none sm:[&>button]:px-4 sm:[&>button]:text-sm sm:[&>button>svg]:block">
+          <DialogFooter className="grid grid-cols-2 [&>button]:min-w-0 [&>button]:px-2 [&>button]:text-xs [&>button>svg]:hidden sm:flex sm:flex-row sm:[&>button]:flex-none sm:[&>button]:px-4 sm:[&>button]:text-sm sm:[&>button>svg]:block">
             <Button type="button" variant="outline" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
+            <Button type="button" variant="outline" disabled={isSaving || editorLoading} onClick={() => setPluginTargets([{ id: editingItem?.id || "draft", contract: cloneVideoModelContract(normalizedContract), label: readOnly ? "当前查看版本" : "当前编辑快照", reviewPending: !readOnly, warnings: generatedEditingIndex !== null ? [...(generatedDryRun[generatedEditingIndex]?.review_issues || []), ...(generatedDryRun[generatedEditingIndex]?.missing_evidence || [])] : [] }])}><Code2 className="size-4" />生成 New API 插件</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving || editorLoading}><ShieldCheck className="size-4" />校验配置</Button> : null}
             {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving || editorLoading}><FileText className="size-4" />保存草稿</Button> : null}
             {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving || editorLoading}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
@@ -2217,10 +1929,16 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         </DialogContent>
       </Dialog>
   );
-  if (editor) return contractDialog;
+  const pluginDialog = pluginTargets.length > 0 ? <VideoContractPluginDialog targets={pluginTargets} sessionKey={sessionKey} onClose={() => {
+    setPluginTargets([]);
+    if (pluginReturnToReview) setGeneratedReviewOpen(generatedContracts.length > 0);
+    setPluginReturnToReview(false);
+  }} /> : null;
+  if (editor) return <>{contractDialog}{pluginDialog}</>;
 
   return (
     <>
+      {pluginDialog}
       <input
         ref={jsonImportInputRef}
         type="file"
@@ -2259,7 +1977,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                 <WandSparkles className="size-4" />
                 从文档生成
               </Button>
-              <AutoDLContractImport key={sessionKey} disabled={isBulkActionBusy || selectedItems.length > 0} onDraft={(contract) => { setGeneratedContracts([contract]); setGeneratedReviewOpen(true); }} />
+              <AutoDLContractImport key={sessionKey} disabled={isBulkActionBusy || selectedItems.length > 0} onDraft={(contract) => { setGeneratedContracts([contract]); setGeneratedDryRun([]); setGeneratedReviewOpen(true); }} />
               <Button type="button" size="sm" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openCreate}>
                 <Plus className="size-4" />
                 添加契约
@@ -2301,7 +2019,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
           <div className="p-5 sm:p-6"><SettingsEmptyState icon={Film} title="暂无视频模型契约" description="添加后可为模型设置中的视频模型提供参数和请求转换规则。" /></div>
         ) : (
           <div data-video-contract-list className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-            <div className="hidden grid-cols-[32px_minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
+            <div className="hidden grid-cols-[32px_minmax(140px,1.2fr)_minmax(120px,0.95fr)_minmax(150px,1.35fr)_110px_252px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
               <Checkbox
                 checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
                 disabled={isBulkActionBusy}
@@ -2329,7 +2047,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     key={item.id}
                     data-video-contract-row
                     data-selected={selectedContractIds.has(item.id) || undefined}
-                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 data-[selected=true]:bg-primary/[0.04] sm:px-6 xl:grid-cols-[32px_minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] xl:items-center xl:gap-5"
+                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 data-[selected=true]:bg-primary/[0.04] sm:px-6 xl:grid-cols-[32px_minmax(140px,1.2fr)_minmax(120px,0.95fr)_minmax(150px,1.35fr)_110px_252px] xl:items-center xl:gap-5"
                   >
                   <label className="selection-trigger flex items-center gap-2 text-xs text-muted-foreground xl:justify-center" data-disabled={isBulkActionBusy}>
                     <Checkbox
@@ -2397,6 +2115,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openView(item)} aria-label="查看契约" title="查看契约"><Eye className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => void openVersions(item)} aria-label="版本历史" title="版本历史"><History className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))} aria-label="导出契约" title="导出契约"><Download className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => setPluginTargets([{ id: item.id, contract: cloneVideoModelContract(item.contract), label: `已发布版本 v${item.revision}` }])} aria-label="生成 New API 插件" title="生成 New API 插件"><Code2 className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openCopy(item)} aria-label="复制契约" title="复制契约"><Copy className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30 dark:text-rose-300 dark:hover:text-rose-300" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
@@ -2424,18 +2143,18 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       </SettingsCard>
 
       <Dialog open={importOpen} onOpenChange={(open) => !isImporting && setImportOpen(open)}>
-        <DialogContent className="w-[min(calc(100%-2rem),44rem)] gap-5" showCloseButton={!isImporting}>
+        <DialogContent className="w-[min(calc(100%-2rem),58rem)] gap-5" showCloseButton={!isImporting}>
           <DialogHeader className="pr-9">
             <div className="flex items-start gap-3">
               <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/5 text-primary"><WandSparkles className="size-5" /></span>
               <div className="space-y-1.5">
                 <DialogTitle>从文档生成契约</DialogTitle>
-                <DialogDescription>提供接口文档，提取模型能力与请求规则，审核后发布。</DialogDescription>
+                <DialogDescription>{isImporting ? "按步骤读取文档、匹配协议并校验配置，执行记录实时更新。" : importStatus ? "本次执行已结束。查看当前步骤与执行记录，可调整文档或模型后重试。" : "Agent 按需读取文档、匹配协议并校验配置。审核后发布。"}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
           <div className="space-y-5">
-            <section aria-label="文档来源" className="space-y-3">
+            <section aria-label="文档来源" className={cn("space-y-3", importStatus && "hidden")}>
               <div className="grid grid-cols-2 gap-2">
                 {([
                   { value: "file", label: "上传文档", description: "从本地文件提取", icon: FileText },
@@ -2482,40 +2201,35 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                 </div>
               )}
             </section>
-            <div className="grid items-center gap-3 rounded-xl border border-border px-4 py-3.5 sm:grid-cols-[1fr_minmax(0,16rem)]">
-              <div className="space-y-1"><label htmlFor="video-contract-analysis-model" className="text-sm font-medium">分析模型</label><p className="text-xs leading-relaxed text-muted-foreground">使用个人默认文本 Key 生成草稿</p></div>
+            <div className={cn("grid items-center gap-3 rounded-xl border border-border px-4 py-3.5 sm:grid-cols-[1fr_minmax(0,16rem)]", importStatus && "hidden")}>
+              <div className="space-y-1"><label htmlFor="video-contract-analysis-model" className="text-sm font-medium">分析模型</label><p className="text-xs leading-relaxed text-muted-foreground">选择支持工具调用的文本模型，使用个人默认文本 Key</p></div>
               <Select value={importModel || undefined} disabled={isImporting || isLoadingImportOptions || textModels.length === 0} onValueChange={setImportModel}>
                 <SelectTrigger id="video-contract-analysis-model" className="h-10 w-full min-w-0"><SelectValue placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} /></SelectTrigger>
                 <SelectContent>{textModels.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            {isImporting ? (
-              <section aria-live="polite" aria-label="契约生成进度" className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                <div className="flex items-start gap-3">
-                  <LoaderCircle className="size-5 shrink-0 animate-spin text-primary" />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{videoContractImportStatusLabel(importStatus?.stage)}</p>
-                      <span className="text-xs tabular-nums text-muted-foreground">{formatElapsedSeconds(importElapsedSeconds)}</span>
-                    </div>
-                    <p className="break-words text-xs leading-relaxed text-muted-foreground">{importStatus?.message}</p>
-                    <p className="text-xs tabular-nums text-muted-foreground">{videoContractImportStatusSummary(importStatus)}</p>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-            {importError ? (
+            <div className={cn("flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3.5", importStatus && "hidden")}>
+              <div className="space-y-1">
+                <label htmlFor="video-contract-import-plugin" className="text-sm font-medium">生成 New API 插件</label>
+                <p id="video-contract-import-plugin-help" className="text-xs leading-relaxed text-muted-foreground">默认关闭。开启后，文档草稿生成完成时进入插件配置，可逐份生成和下载。</p>
+              </div>
+              <Switch id="video-contract-import-plugin" aria-describedby="video-contract-import-plugin-help" checked={importGeneratePlugin} disabled={isImporting} onCheckedChange={setImportGeneratePlugin} />
+            </div>
+            {importStatus ? <VideoContractImportProgress activity={importStatus} running={isImporting} error={importError} elapsed={formatElapsedSeconds(importElapsedSeconds)} /> : null}
+            <VideoContractAgentDetails entries={importDetails} running={isImporting} />
+            {importError && !importStatus ? (
               <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">
                 <CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="min-w-0 break-words leading-relaxed">{importError}</span>
               </div>
             ) : null}
           </div>
-          <DialogFooter className="border-t border-border pt-4">
+          <DialogFooter className={cn("border-t border-border pt-4", isImporting && "sm:justify-between")}>
+            {!isImporting && importStatus ? <Button type="button" variant="ghost" onClick={clearImportFeedback}>调整文档或模型</Button> : null}
             <Button type="button" variant="outline" onClick={() => isImporting ? importControllerRef.current?.abort() : setImportOpen(false)}>
               {isImporting ? <Square className="size-3.5 fill-current" /> : null}{isImporting ? "停止分析" : "取消"}
             </Button>
             <Button type="button" disabled={isImporting || isLoadingImportOptions || !importModel || (importSourceType === "file" ? !importFile : !importURL.trim())} onClick={() => void generateFromDocument()}>
-              <WandSparkles className={cn("size-4", isImporting && "animate-pulse")} />{isImporting ? `分析中 · ${formatElapsedSeconds(importElapsedSeconds)}` : "生成契约草稿"}
+              <WandSparkles className={cn("size-4", isImporting && "animate-pulse")} />{isImporting ? "分析中" : importStatus ? "重新分析" : importGeneratePlugin ? "生成草稿并配置插件" : "生成契约草稿"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2529,25 +2243,35 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               <div className="space-y-1.5"><DialogTitle>审核生成的契约</DialogTitle><DialogDescription>已生成 {generatedContracts.length} 份草稿，覆盖 {new Set(generatedContracts.flatMap((contract) => contract.models)).size} 个模型。确认参数和素材要求后发布。</DialogDescription></div>
             </div>
           </DialogHeader>
+          {generatedDryRun.some(item => item.limitations?.length || item.notes?.length) ? <details className="rounded-lg border p-3 text-sm"><summary className="cursor-pointer">功能限制与配置说明（不阻止初审）</summary><ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">{generatedDryRun.flatMap(item => [...(item.limitations || []), ...(item.notes || [])]).map((note,index) => <li key={index}>{note}</li>)}</ul></details> : null}
+          {generatedDryRun.length === generatedContracts.length && generatedDryRun.length > 0 && generatedDryRun.every((item, index) => item.passed && item.contract === generatedContracts[index].name) ? (
+            <div role="status" className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm", generatedDryRun.every(item => item.review_passed) ? "border-emerald-600/20 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300" : "border-amber-500/25 bg-amber-500/5 text-amber-800 dark:text-amber-300")}>
+              {generatedDryRun.every(item => item.review_passed) ? <CheckCircle2 className="size-4 shrink-0" /> : <CircleAlert className="size-4 shrink-0" />}
+              <span className="font-medium">{generatedDryRun.every(item => item.review_passed) ? "契约初审通过" : "本地干跑通过 · 契约待确认"}</span>
+              <span className="text-xs opacity-80">已干跑 {generatedDryRun.reduce((sum, item) => sum + item.models_tested, 0)} 个模型规则与 {generatedDryRun.reduce((sum, item) => sum + item.modes_tested, 0)} 个生成模式的代表性样本；未覆盖全部参数组合，尚未实测上游。</span>
+            </div>
+          ) : null}
           {generatedWarnings.length > 0 ? (
-            <section aria-label="文档分析提示" className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 text-sm">
-              <p className="flex items-center gap-2 font-medium"><CircleAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />需要留意</p>
+            <section aria-label="文档分析提示" className="space-y-2 rounded-xl border border-border bg-muted/30 p-4 text-sm">
+              <p className="flex items-center gap-2 font-medium"><FileText className="size-4 shrink-0 text-muted-foreground" />文档分析说明</p>
               <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-muted-foreground">{generatedWarnings.map((warning) => <li key={warning} className="break-words">{warning}</li>)}</ul>
             </section>
           ) : null}
           {generatedPublishError ? <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm leading-relaxed text-destructive">{generatedPublishError}</div> : null}
+          <VideoContractAgentDetails entries={importDetails} running={false} />
           <div className="space-y-3" aria-label="生成的契约草稿">
             {generatedContracts.map((contract, index) => (
               <article key={`${contract.name}-${index}`} className="min-w-0 rounded-xl border border-border bg-background p-4">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
                   <div className="min-w-0 flex-1 space-y-2">
-                    <h3 className="break-words text-sm font-semibold">{contract.name || "未命名契约"}</h3>
+                    <div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-semibold">{contract.name || "未命名契约"}</h3>{generatedDryRun[index]?.passed && generatedDryRun[index]?.contract === contract.name ? <Badge variant={generatedDryRun[index].review_passed ? "success" : "secondary"} className="rounded-md">{generatedDryRun[index].review_passed ? "契约初审通过" : "契约待确认"}</Badge> : null}</div>
                     <div className="flex flex-wrap gap-1.5">{contract.models.map((model) => <Badge key={model} variant="secondary" className="max-w-full break-all whitespace-normal rounded-md font-mono text-[11px]">{model}</Badge>)}</div>
                   </div>
                   <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" disabled={isPublishingGeneratedContracts} onClick={() => removeGeneratedContract(index)} aria-label={`移除 ${contract.name || "未命名契约"}`}><Trash2 className="size-4" /></Button>
                 </div>
                 <ContractModelProfileSummary contract={contract} />
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">接口协议：<span className="font-medium text-foreground">{videoContractDriverLabel(contract.driver)}</span>{contract.driver === "custom-video" ? " · 请确认自定义接口路径和字段映射" : contract.transport.create_path || contract.transport.query_path ? " · 使用自定义接口路径" : " · 使用内置接口路径"}</p>
                 <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border/70 pt-3">
                   <dl className={cn("flex flex-wrap gap-x-6 gap-y-2 text-xs", Boolean(contract.model_profiles?.length) && "hidden")}>
                     <div><dt className="text-muted-foreground">时长</dt><dd className="mt-1 font-medium">{formatDurationRange(contract.capability.seconds)}</dd></div>

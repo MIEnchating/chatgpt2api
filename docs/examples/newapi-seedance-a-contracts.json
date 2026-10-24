@@ -1,0 +1,534 @@
+{
+  "version": 4,
+  "contracts": [
+    {
+      "contract": {
+        "name": "Dramaya Seedance A 视频",
+        "models": [
+          "seedance2.0-A",
+          "seedance2.5-A"
+        ],
+        "priority": 0,
+        "driver": "custom-video",
+        "transport": {
+          "local_material": "url",
+          "multipart_file_field": "",
+          "multipart_repeatable": false,
+          "multipart_mixed_urls": false,
+          "create_path": "/v1/videos",
+          "query_path": "/v1/videos/{task_id}"
+        },
+        "artifact": {
+          "mode": "task_content",
+          "content_path": "/v1/videos/{task_id}/content",
+          "auth": "relay",
+          "allowed_hosts": []
+        },
+        "capability": {
+          "sizes": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "Auto"
+          ],
+          "seconds": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "resolutions": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default_size": "16:9",
+          "default_seconds": 4,
+          "default_resolution": "480p",
+          "references": {
+            "image": 9,
+            "video": 3,
+            "audio": 3,
+            "total": 12
+          },
+          "first_frame_image_limit": 1,
+          "reference_mode": true,
+          "audio_control": "none",
+          "watermark": false
+        },
+        "generation": {
+          "selection": "infer",
+          "default_mode": "text-to-video",
+          "modes": [
+            {
+              "id": "text-to-video",
+              "label": "文生视频",
+              "kind": "text",
+              "request_value": "text-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 0,
+                  "max": 0
+                }
+              }
+            },
+            {
+              "id": "image-to-video",
+              "label": "首尾帧生视频",
+              "kind": "image",
+              "request_value": "image-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "last_frame": {
+                  "min": 1,
+                  "max": 1
+                },
+                "image": {
+                  "min": 0,
+                  "max": 0
+                },
+                "video": {
+                  "min": 0,
+                  "max": 0
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 0
+                },
+                "total": {
+                  "min": 2,
+                  "max": 2
+                }
+              }
+            },
+            {
+              "id": "reference-to-video",
+              "label": "参考素材生视频",
+              "kind": "reference",
+              "request_value": "reference-to-video",
+              "materials": {
+                "first_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "last_frame": {
+                  "min": 0,
+                  "max": 0
+                },
+                "image": {
+                  "min": 0,
+                  "max": 9
+                },
+                "video": {
+                  "min": 0,
+                  "max": 3
+                },
+                "audio": {
+                  "min": 0,
+                  "max": 3
+                },
+                "total": {
+                  "min": 1,
+                  "max": 12
+                }
+              }
+            }
+          ]
+        },
+        "rules": [
+          {
+            "when": {
+              "field": "first_frame",
+              "operator": "present"
+            },
+            "require": [
+              "last_frame"
+            ],
+            "force_values": {
+              "size": "Auto"
+            },
+            "message": "首尾帧必须成对使用，画幅比例为 Auto"
+          }
+        ],
+        "request": {
+          "duration_field": "duration",
+          "duration_value_type": "number",
+          "aspect_ratio_field": "aspect_ratio",
+          "resolution_field": "resolution",
+          "generate_audio_field": "",
+          "watermark_field": "",
+          "generation_mode_field": "",
+          "first_frame_field": "first_frame_url",
+          "last_frame_field": "last_frame_url",
+          "reference_images_field": "image_urls",
+          "reference_videos_field": "reference_video_urls",
+          "reference_audios_field": "reference_audio_urls"
+        },
+        "polling": {
+          "interval_seconds": 5,
+          "timeout_seconds": 1800,
+          "task_id_fields": [
+            "id"
+          ],
+          "status_fields": [
+            "status"
+          ],
+          "progress_fields": [
+            "progress"
+          ],
+          "error_fields": [
+            "error.message"
+          ],
+          "queued_statuses": [
+            "queued"
+          ],
+          "processing_statuses": [
+            "in_progress"
+          ],
+          "success_statuses": [
+            "completed"
+          ],
+          "failure_statuses": [
+            "failed"
+          ],
+          "result_fields": [
+            "video_url",
+            "data[0].url"
+          ]
+        },
+        "model_profiles": [
+          {
+            "model": "seedance2.0-A",
+            "capability": {
+              "sizes": [
+                "16:9",
+                "9:16",
+                "1:1",
+                "4:3",
+                "3:4",
+                "21:9",
+                "Auto"
+              ],
+              "seconds": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ],
+              "default_size": "16:9",
+              "default_seconds": 4,
+              "default_resolution": "480p",
+              "references": {
+                "image": 9,
+                "video": 3,
+                "audio": 3,
+                "total": 12
+              },
+              "first_frame_image_limit": 1,
+              "reference_mode": true,
+              "audio_control": "none",
+              "watermark": false
+            },
+            "generation": {
+              "selection": "infer",
+              "default_mode": "text-to-video",
+              "modes": [
+                {
+                  "id": "text-to-video",
+                  "label": "文生视频",
+                  "kind": "text",
+                  "request_value": "text-to-video",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 0,
+                      "max": 0
+                    }
+                  }
+                },
+                {
+                  "id": "image-to-video",
+                  "label": "首尾帧生视频",
+                  "kind": "image",
+                  "request_value": "image-to-video",
+                  "materials": {
+                    "first_frame": {
+                      "min": 1,
+                      "max": 1
+                    },
+                    "last_frame": {
+                      "min": 1,
+                      "max": 1
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 2,
+                      "max": 2
+                    }
+                  }
+                },
+                {
+                  "id": "reference-to-video",
+                  "label": "参考素材生视频",
+                  "kind": "reference",
+                  "request_value": "reference-to-video",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 9
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 3
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 3
+                    },
+                    "total": {
+                      "min": 1,
+                      "max": 12
+                    }
+                  }
+                }
+              ]
+            },
+            "rules": [
+              {
+                "when": {
+                  "field": "first_frame",
+                  "operator": "present"
+                },
+                "require": [
+                  "last_frame"
+                ],
+                "force_values": {
+                  "size": "Auto"
+                },
+                "message": "首尾帧必须成对使用，画幅比例为 Auto"
+              }
+            ]
+          },
+          {
+            "model": "seedance2.5-A",
+            "capability": {
+              "sizes": [
+                "16:9",
+                "9:16",
+                "1:1",
+                "4:3",
+                "3:4",
+                "21:9",
+                "Auto"
+              ],
+              "seconds": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ],
+              "default_size": "16:9",
+              "default_seconds": 4,
+              "default_resolution": "480p",
+              "references": {
+                "image": 30,
+                "video": 10,
+                "audio": 10,
+                "total": 50
+              },
+              "first_frame_image_limit": 0,
+              "reference_mode": true,
+              "audio_control": "none",
+              "watermark": false
+            },
+            "generation": {
+              "selection": "infer",
+              "default_mode": "text-to-video",
+              "modes": [
+                {
+                  "id": "text-to-video",
+                  "label": "文生视频",
+                  "kind": "text",
+                  "request_value": "text-to-video",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "total": {
+                      "min": 0,
+                      "max": 0
+                    }
+                  }
+                },
+                {
+                  "id": "reference-to-video",
+                  "label": "参考素材生视频",
+                  "kind": "reference",
+                  "request_value": "reference-to-video",
+                  "materials": {
+                    "first_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "last_frame": {
+                      "min": 0,
+                      "max": 0
+                    },
+                    "image": {
+                      "min": 0,
+                      "max": 30
+                    },
+                    "video": {
+                      "min": 0,
+                      "max": 10
+                    },
+                    "audio": {
+                      "min": 0,
+                      "max": 10
+                    },
+                    "total": {
+                      "min": 1,
+                      "max": 50
+                    }
+                  }
+                }
+              ]
+            },
+            "rules": []
+          }
+        ]
+      },
+      "enabled": false
+    }
+  ]
+}

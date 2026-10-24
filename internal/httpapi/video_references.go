@@ -31,6 +31,7 @@ const (
 )
 
 type videoMultipartFile struct {
+	Field       string
 	Data        []byte
 	Filename    string
 	ContentType string

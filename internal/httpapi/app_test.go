@@ -4339,6 +4339,13 @@ const (
 	testAdminPassword = "AdminPass123!"
 )
 
+// Route tests need real password verification without repeatedly paying the
+// production bcrypt cost. Bootstrap tests construct NewApp directly.
+var testAdminPasswordHash = sync.OnceValues(func() (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(testAdminPassword), bcrypt.MinCost)
+	return string(hash), err
+})
+
 func adminSessionToken(t *testing.T, app *App) string {
 	t.Helper()
 	identity, token, err := app.auth.LoginPassword(testAdminUsername, testAdminPassword)
@@ -4589,11 +4596,35 @@ func newTestApp(t *testing.T) *App {
 	t.Setenv("STORAGE_BACKEND", "sqlite")
 	t.Setenv("STORAGE_DATABASE_URL", "")
 	unsetTestEnv(t, "OBJECT_STORAGE_SETTINGS")
+	seedHTTPTestAdmin(t, root)
 	app, err := NewApp()
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
 	return app
+}
+
+func seedHTTPTestAdmin(t *testing.T, root string) {
+	t.Helper()
+	hash, err := testAdminPasswordHash()
+	if err != nil {
+		t.Fatalf("hash test admin password: %v", err)
+	}
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("create test data directory: %v", err)
+	}
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(dataDir, "chatgpt2api.db")))
+	if err != nil {
+		t.Fatalf("open test admin storage: %v", err)
+	}
+	defer backend.Close()
+	if err := backend.SaveJSONDocument("auth_users.json", map[string]any{"items": []map[string]any{{
+		"id": service.AuthRoleAdmin, "username": testAdminUsername, "name": "管理员",
+		"password_hash": hash, "role": service.AuthRoleAdmin, "enabled": true,
+	}}}); err != nil {
+		t.Fatalf("seed test admin: %v", err)
+	}
 }
 
 func unsetTestEnv(t *testing.T, key string) {

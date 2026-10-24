@@ -60,6 +60,18 @@ func fetchVideoContractDocumentSet(ctx context.Context, value string, client vid
 	}
 	remainingBytes := maxVideoContractDocumentBytes - len(initial.data)
 	links := make([]videoContractDocumentLink, 0)
+	loadingShell := isVideoContractHTML(initial.contentType, initial.name) && videoContractHTMLIsLoadingShell(initial.data)
+	if loadingShell {
+		// Loading placeholders and navigation are not API documentation.
+		initialContent = ""
+		catalog, err := discoverVideoContractDynamicCatalog(ctx, initial, &remainingBytes, client)
+		if err != nil {
+			return "", videoContractImportSource{}, fmt.Errorf("读取动态文档失败：%w", err)
+		}
+		if catalog {
+			return fetchVideoContractDynamicCatalog(ctx, initial, remainingBytes, client)
+		}
+	}
 
 	if isVideoContractLLMSIndex(initial.url) {
 		links = discoverVideoContractMarkdownLinks(string(initial.data), initial.url)
@@ -76,13 +88,19 @@ func fetchVideoContractDocumentSet(ctx context.Context, value string, client vid
 			remainingBytes -= len(index.data)
 			links = append(links, discoverVideoContractMarkdownLinks(string(index.data), index.url)...)
 		}
-		if len(uniqueVideoContractDocumentLinks(links, initial.url)) == 0 && isVideoContractHTML(initial.contentType, initial.name) {
-			links = discoverVideoContractHTMLLinks(initial.data, initial.url)
+		if isVideoContractHTML(initial.contentType, initial.name) {
+			links = append(links, discoverVideoContractHTMLLinks(initial.data, initial.url)...)
 		}
 	}
 
 	links = uniqueVideoContractDocumentLinks(links, initial.url)
 	if len(links) == 0 {
+		if loadingShell {
+			return "", videoContractImportSource{}, errors.New(videoContractDynamicPageError)
+		}
+		if strings.TrimSpace(initialContent) == "" {
+			return "", videoContractImportSource{}, errors.New("链接页面没有可读取的正文或相关文档链接；若正文需要 JavaScript 加载，请提供 Markdown、OpenAPI 文档链接或上传文档")
+		}
 		return initialContent, videoContractImportSource{Type: "url", Name: initial.name}, nil
 	}
 	warnings := make([]string, 0, 1)
@@ -101,6 +119,9 @@ func fetchVideoContractDocumentSet(ctx context.Context, value string, client vid
 
 func fetchSelectedVideoContractDocuments(ctx context.Context, initialContent string, source videoContractImportSource, selected []int, client videoContractHTTPClient) (string, videoContractImportSource, error) {
 	if source.Site == nil || len(selected) == 0 {
+		if strings.TrimSpace(initialContent) == "" {
+			return "", videoContractImportSource{}, errors.New("入口页面没有可读取的正文或所选接口详情；如果页面显示“加载中”，请提供公开文档数据接口或上传文档")
+		}
 		source.Site = nil
 		return initialContent, source, nil
 	}
@@ -116,34 +137,36 @@ func fetchSelectedVideoContractDocuments(ctx context.Context, initialContent str
 	}
 	remainingBytes := source.Site.remainingBytes
 	sections := make([]string, 0, len(selectedSet))
-	failed := 0
 	for _, link := range source.Site.links {
 		if _, exists := selectedSet[link.index]; !exists {
 			continue
 		}
+		name := strings.Join(strings.Fields(firstNonEmpty(link.name, link.url.Path)), " ")
 		if remainingBytes <= 0 {
-			failed++
-			continue
+			return "", videoContractImportSource{}, fmt.Errorf("无法读取所选文档页面 %q：已达到文档总大小限制，已停止生成", name)
 		}
 		page, fetchErr := fetchVideoContractURL(ctx, link.url.String(), remainingBytes, client)
-		if fetchErr != nil || !sameHTTPOrigin(source.Site.baseURL, page.url) {
-			failed++
-			continue
+		if fetchErr != nil {
+			return "", videoContractImportSource{}, fmt.Errorf("读取所选文档页面 %q 失败，已停止生成：%w", name, fetchErr)
+		}
+		if !sameHTTPOrigin(source.Site.baseURL, page.url) {
+			return "", videoContractImportSource{}, fmt.Errorf("所选文档页面 %q 重定向到其他站点，已停止生成", name)
 		}
 		remainingBytes -= len(page.data)
-		content, extractErr := extractVideoContractDocument(page.data, page.name, page.contentType)
-		if extractErr != nil || strings.TrimSpace(content) == "" {
-			failed++
-			continue
+		if isVideoContractHTML(page.contentType, page.name) && videoContractHTMLIsLoadingShell(page.data) {
+			return "", videoContractImportSource{}, fmt.Errorf("所选文档页面 %q 没有可读取的正文：%s", name, videoContractDynamicPageError)
 		}
-		name := strings.Join(strings.Fields(firstNonEmpty(link.name, page.name)), " ")
+		content, extractErr := extractVideoContractDocument(page.data, page.name, page.contentType)
+		if extractErr != nil {
+			return "", videoContractImportSource{}, fmt.Errorf("解析所选文档页面 %q 失败，已停止生成：%w", name, extractErr)
+		}
+		if strings.TrimSpace(content) == "" {
+			return "", videoContractImportSource{}, fmt.Errorf("所选文档页面 %q 没有可读取的正文，已停止生成；请提供静态文档链接或上传文档", name)
+		}
 		sections = append(sections, "## 文档页面："+name+"\n\n"+content)
 	}
 	if len(sections) == 0 {
 		return "", videoContractImportSource{}, errors.New("分析模型选择的文档页面均读取失败")
-	}
-	if failed > 0 {
-		source.Warnings = append(source.Warnings, fmt.Sprintf("有 %d 个分析模型选择的页面读取失败或超出总大小限制", failed))
 	}
 	source.Name = fmt.Sprintf("%s（入口及 %d 个相关页面）", source.Site.baseURL.Hostname(), len(sections))
 	source.Site = nil
@@ -155,6 +178,8 @@ func fetchVideoContractURL(ctx context.Context, value string, limit int, client 
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fetchedVideoContractDocument{}, errors.New("文档链接无效")
 	}
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return fetchedVideoContractDocument{}, errors.New("文档链接无效")
@@ -181,12 +206,23 @@ func fetchVideoContractURL(ctx context.Context, value string, limit int, client 
 	}
 	finalURL := parsed
 	if response.Request != nil && response.Request.URL != nil {
-		finalURL = response.Request.URL
+		resolved := *response.Request.URL
+		finalURL = &resolved
+	}
+	if finalURL.Host == "" || finalURL.User != nil || finalURL.Scheme != "http" && finalURL.Scheme != "https" {
+		return fetchedVideoContractDocument{}, errors.New("文档重定向地址无效")
+	}
+	finalURL.Fragment = ""
+	finalURL.RawFragment = ""
+	contentType := response.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	if mediaType == "" || strings.EqualFold(mediaType, "application/octet-stream") {
+		contentType = http.DetectContentType(data)
 	}
 	return fetchedVideoContractDocument{
 		data:        data,
 		name:        videoContractDocumentResponseName(response, finalURL),
-		contentType: response.Header.Get("Content-Type"),
+		contentType: contentType,
 		url:         finalURL,
 	}, nil
 }

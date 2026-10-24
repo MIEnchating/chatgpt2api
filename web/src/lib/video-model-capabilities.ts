@@ -6,6 +6,7 @@ import {
 export type VideoModelCapabilitySource = string | VideoModelContract;
 
 type SharedVideoCapability = {
+  seconds_range?: VideoModelContract["capability"]["seconds_range"];
   sizes: string[];
   seconds: number[];
   resolutions: string[];
@@ -72,7 +73,8 @@ export function videoSizeOptions(source: VideoModelCapabilitySource): string[] {
 }
 
 export function videoSecondsOptions(source: VideoModelCapabilitySource): number[] {
-  return [...videoCapability(source).seconds];
+  const cap = videoCapability(source);
+  return cap.seconds_range ? [cap.default_seconds] : [...cap.seconds];
 }
 
 export function videoDefaultSeconds(source: VideoModelCapabilitySource) {
@@ -83,7 +85,7 @@ export function videoDefaultSeconds(source: VideoModelCapabilitySource) {
 export function resolveVideoSeconds(source: VideoModelCapabilitySource, requested?: number) {
   const options = videoSecondsOptions(source);
   if (typeof requested === "number" && Number.isInteger(requested)) {
-    if (options.includes(requested)) return requested;
+    if (videoSecondsIsValid(source, requested)) return requested;
     // Model contracts are installed asynchronously. Keep a broadly valid stored
     // value until the matching contract is available instead of replacing it with 0.
     if (options.length === 0 && requested >= 1 && requested <= 3600) return requested;
@@ -164,12 +166,12 @@ export function videoComposerWatermarkSupported(source: VideoModelCapabilitySour
 }
 
 export function videoSecondsIsValid(source: VideoModelCapabilitySource, value: number) {
-  return Number.isInteger(value) && videoSecondsOptions(source).includes(value);
+  const range = videoCapability(source).seconds_range;
+  return Number.isSafeInteger(value) && (range ? value >= range.min && (range.max == null || value <= range.max) && (value-range.min) % range.step === 0 : videoSecondsOptions(source).includes(value));
 }
 
 export function videoAllowsCustomDuration(source: VideoModelCapabilitySource) {
-  void source;
-  return false;
+  return Boolean(videoCapability(source).seconds_range);
 }
 
 export function videoResolutionIsValid(source: VideoModelCapabilitySource, value: string) {
@@ -273,7 +275,7 @@ export function videoWorkbenchDisplayResolution(source: VideoModelCapabilitySour
 
 export function videoWorkbenchDisplaySeconds(source: VideoModelCapabilitySource, seconds: string | number) {
   const requested = Math.floor(Number(seconds));
-  if (Number.isFinite(requested) && videoSecondsOptions(source).includes(requested)) return String(requested);
+  if (videoSecondsIsValid(source, requested)) return String(requested);
   return String(videoDefaultSeconds(source));
 }
 

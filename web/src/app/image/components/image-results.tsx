@@ -7,7 +7,7 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
 import { GenerationProgress } from "@/components/generation/generation-progress";
 import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
-import { videoTaskErrorMessage } from "@/lib/video-task-error";
+import { isVideoSaveFailure, videoTaskErrorMessage } from "@/lib/video-task-error";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -949,6 +949,7 @@ export function ImageResults({
                     }
                     if (video && image.status !== "success") {
                       const failed = image.status === "error";
+                      const saveFailed = failed && isVideoSaveFailure(image);
                       const cancelled = image.status === "cancelled";
                       const phase = getStoredImageLoadingPhase(image, turn);
                       const running = phase === "running";
@@ -960,12 +961,12 @@ export function ImageResults({
                             <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", failed ? "bg-destructive/10 text-destructive" : cancelled ? "bg-muted text-muted-foreground" : "bg-brand-soft text-brand")}>
                               {failed ? <AlertCircle className="size-4" /> : cancelled ? <CircleStop className="size-4" /> : running ? <LoaderCircle className="size-4 animate-spin" /> : <Clock3 className="size-4" />}
                             </span>
-                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在准备视频" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
+                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{saveFailed ? "视频已生成，保存失败" : failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在保存视频" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
                             {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
                           </div>
                           {failed || cancelled ? (
                             <div className="space-y-3 p-4 sm:p-5">
-                              <p className="text-sm leading-6 text-muted-foreground">{failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
+                              <p className="text-sm leading-6 text-muted-foreground">{saveFailed ? "上游已生成视频，但成品下载或保存失败。重试保存只获取已有视频，不会重新生成。" : failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
                               {failed ? errorMessage.length > 280 ? (
                                 <details className="group rounded-xl border border-destructive/15 bg-destructive/5 text-xs">
                                   <summary className="cursor-pointer px-3 py-2.5 font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看完整错误信息</summary>
@@ -992,7 +993,7 @@ export function ImageResults({
                             <span className="text-[11px] text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel}</span>
                             <div className="flex items-center gap-2">
                               {failed || cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine className="size-3.5" />调整设置</Button> : null}
-                              {failed ? <Button type="button" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy || !turn.prompt.trim()} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw className="size-3.5" />重试视频生成</Button> : null}
+                              {failed ? <Button type="button" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy || (!saveFailed && !turn.prompt.trim())} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw className="size-3.5" />{saveFailed ? "重试保存视频" : "重试视频生成"}</Button> : null}
                               {!failed && !cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop className="size-3.5" />终止生成</Button> : null}
                             </div>
                           </div>

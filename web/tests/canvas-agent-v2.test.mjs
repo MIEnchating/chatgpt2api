@@ -23,13 +23,21 @@ mock.module("@/lib/api", () => ({
     if (submitOverride) return submitOverride(input);
     return { id: `agent-task-${++taskCounter}` };
   },
-  fetchCreationTasks: async () => {
+
+}));
+
+const actualEvents = { ...await import("../src/lib/creation-task-events.ts") };
+mock.module("@/lib/creation-task-events", () => ({
+  ...actualEvents,
+  waitForCreationTask: async (id, options) => {
     const reply = agentReplies.shift() || { text_response: "完成" };
     const taskStatus = typeof reply === "object" && reply.task_status ? reply.task_status : "success";
-    return {
-      items: [{ id: `agent-task-${taskCounter}`, status: taskStatus, error: typeof reply === "object" ? reply.error : undefined, data: taskStatus === "success" ? [typeof reply === "string" ? { text_response: reply } : reply] : [] }],
-      missing_ids: [],
-    };
+    if (taskStatus === "running") return new Promise((_, reject) => {
+      const abort = () => reject(new DOMException("Aborted", "AbortError"));
+      options.signal.addEventListener("abort", abort, { once: true });
+      if (options.signal.aborted) abort();
+    });
+    return { id, status: taskStatus, error: typeof reply === "object" ? reply.error : undefined, data: taskStatus === "success" ? [typeof reply === "string" ? { text_response: reply } : reply] : [] };
   },
 }));
 
@@ -40,6 +48,7 @@ beforeAll(() => {
 });
 afterAll(() => {
   mock.module("@/lib/api", () => actualAPI);
+  mock.module("@/lib/creation-task-events", () => actualEvents);
   installVideoModelContracts([]);
   globalThis.window = originalWindow;
 });

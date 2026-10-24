@@ -1,4 +1,4 @@
-import { httpRequest } from "@/lib/request";
+import { httpRequest, httpRequestEventStream } from "@/lib/request";
 import { installImageModelDefinitions, type ImageModelDefinitions } from "@/lib/image-model-definitions";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import {
@@ -319,13 +319,26 @@ export type VideoModelContractMutation = {
 
 export type VideoModelContractImportResult = {
   contracts: VideoModelContract[];
+  dry_run: Array<{
+    contract: string;
+    passed: boolean;
+    models_tested: number;
+    modes_tested: number;
+    checks: string[];
+    evidence_complete: boolean;
+    missing_evidence: string[];
+    review_passed: boolean;
+    review_issues: string[];
+    limitations?: string[];
+    notes?: string[];
+  }>;
   source: { type: "file" | "url"; name: string };
   warnings: string[];
   model: string;
 };
 
 export type VideoModelContractImportProgress = {
-  stage: "reading_document" | "planning_documents" | "reading_documents" | "document_ready" | "preparing" | "generating" | "upstream_connected" | "receiving" | "validating" | "repairing" | "retrying" | "heartbeat" | "completed" | "failed";
+  stage: "reading_document" | "planning_documents" | "reading_documents" | "document_ready" | "preparing" | "matching_protocol" | "generating" | "upstream_connected" | "receiving" | "validating" | "repairing" | "retrying" | "heartbeat" | "dry_run" | "completed" | "failed";
   message: string;
   attempt?: number;
   max_attempts?: number;
@@ -333,7 +346,23 @@ export type VideoModelContractImportProgress = {
   max_request_attempts?: number;
   elapsed_seconds?: number;
   received_characters?: number;
+  document_revision?: number;
+  validation_current?: boolean;
   result?: VideoModelContractImportResult;
+  detail?: VideoContractAgentDetail;
+};
+
+export type VideoContractAgentDetail = {
+  id: string;
+  kind: "tool" | "model" | "correction";
+  name: string;
+  status: "running" | "completed" | "partial" | "failed";
+  input?: string;
+  output?: string;
+  summary?: string;
+  error?: string;
+  round?: number;
+  request_attempt?: number;
 };
 
 export type VideoModelContractTransferDocument = {
@@ -616,6 +645,7 @@ export type CreationTask = {
   upstream_status?: "unknown" | "queued" | "in_progress" | "completed" | "failed" | string;
   /** Upstream video generation progress, clamped to 0-100. */
   progress?: number;
+  can_recover_video?: boolean;
   mode: GenerationTaskMode;
   model?: ImageModel;
   size?: string;
@@ -1338,6 +1368,12 @@ export async function fetchCreationTasks(
   };
 }
 
+export async function recoverVideoContent(clientTaskId: string, requestOptions?: CreationTaskRequestOptions) {
+  return httpRequest<CreationTask>(`/api/creation-tasks/${encodeURIComponent(clientTaskId)}/video-content`, {
+    ...creationTaskRequestAuth(requestOptions), method: "POST", body: {}, timeout: 310_000,
+  });
+}
+
 export async function cancelCreationTask(
   clientTaskId: string,
   requestOptions?: CreationTaskRequestOptions,
@@ -1483,6 +1519,7 @@ export async function fetchAdminVideoModelContracts(options: { signal?: AbortSig
 
 export async function importVideoModelContract(input: {
   sourceType: "file" | "url";
+  generatePlugin: boolean;
   file?: File | null;
   url?: string;
   model?: string;
@@ -1492,60 +1529,33 @@ export async function importVideoModelContract(input: {
 }) {
   const formData = new FormData();
   formData.append("source_type", input.sourceType);
+  formData.append("generate_plugin", String(input.generatePlugin));
   if (input.file) formData.append("file", input.file);
   if (input.url?.trim()) formData.append("url", input.url.trim());
   if (input.model?.trim()) formData.append("model", input.model.trim());
   if (input.tokenName?.trim()) formData.append("token_name", input.tokenName.trim());
-  let responseOffset = 0;
-  let pendingLine = "";
   let result: VideoModelContractImportResult | undefined;
-  let streamError = "";
-  let parseError = "";
-  const consumeProgress = (responseText: string, flush = false) => {
-    if (responseText.length < responseOffset) {
-      responseOffset = 0;
-      pendingLine = "";
-    }
-    pendingLine += responseText.slice(responseOffset);
-    responseOffset = responseText.length;
-    const lines = pendingLine.split("\n");
-    pendingLine = lines.pop() || "";
-    if (flush && pendingLine.trim()) {
-      lines.push(pendingLine);
-      pendingLine = "";
-    }
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const progress = JSON.parse(line) as VideoModelContractImportProgress;
-        if (!progress || typeof progress.stage !== "string" || typeof progress.message !== "string") {
-          parseError = "文档分析进度响应格式无效";
-          continue;
-        }
-        input.onProgress?.(progress);
-        if (progress.stage === "completed" && progress.result) result = progress.result;
-        if (progress.stage === "failed") streamError = progress.message;
-      } catch {
-        parseError = "文档分析进度响应格式无效";
-      }
-    }
-  };
-  const responseText = await httpRequest<string>("/api/admin/video-model-contracts/import", {
+  await httpRequestEventStream("/api/admin/video-model-contracts/import", {
     method: "POST",
     body: formData,
-    headers: { Accept: "application/x-ndjson" },
     timeout: 600_000,
     signal: input.signal,
-    responseType: "text",
-    onDownloadProgress: (event) => {
-      const target = event.event?.currentTarget || event.event?.target;
-      if (typeof target?.responseText === "string") consumeProgress(target.responseText);
+    onData: (data) => {
+      let progress: VideoModelContractImportProgress;
+      try {
+        progress = JSON.parse(data);
+      } catch {
+        throw new Error("文档分析 SSE 事件格式无效，请重试");
+      }
+      if (!progress || typeof progress.stage !== "string" || typeof progress.message !== "string") {
+        throw new Error("文档分析进度响应格式无效");
+      }
+      input.onProgress?.(progress);
+      if (progress.stage === "failed") throw new Error(progress.message);
+      if (progress.stage === "completed" && progress.result) result = progress.result;
     },
   });
-  consumeProgress(responseText, true);
-  if (streamError) throw new Error(streamError);
-  if (parseError) throw new Error(parseError);
-  if (!result) throw new Error("文档分析完成，但未返回契约草稿");
+  if (!result) throw new Error("分析连接已结束，但未收到完成事件；请检查后端日志后重试");
   return result;
 }
 
@@ -1631,6 +1641,38 @@ export type VideoModelContractPreviewResult = {
   submit?: { task_id: string; error: string };
   query?: { status: "unknown" | "queued" | "in_progress" | "completed" | "failed"; progress?: number; error: string; result_url?: string };
 };
+
+export type NewAPIVideoPluginOptions = {
+  key: string;
+  version: string;
+  base_url: string;
+  models: string[];
+  auth_mode: "bearer" | "header" | "none";
+  auth_header: string;
+  download_mode: "signed_url" | "task_content" | "authenticated_url";
+  result_fields: string[];
+};
+
+export type NewAPIVideoPluginResult = {
+  filename: string; source: string; warnings: string[];
+  contract: VideoModelContract;
+  options: NewAPIVideoPluginOptions;
+  test_cases: Array<{
+    model: string;
+    mode: VideoModelContract["generation"]["modes"][number];
+    input: Record<string, string | number | boolean | Record<string, string | number | boolean>>;
+    expected: Record<string, string | number | boolean | Record<string, string | number | boolean>>;
+  }>;
+};
+
+export async function generateNewAPIVideoPlugin(input: {
+  contract: VideoModelContract;
+  options: NewAPIVideoPluginOptions;
+}, options: { signal?: AbortSignal } = {}) {
+  return httpRequest<NewAPIVideoPluginResult>("/api/admin/video-model-contracts/newapi-plugin", {
+    method: "POST", body: input, signal: options.signal,
+  });
+}
 
 export async function previewVideoModelContract(input: {
   contract: VideoModelContract;

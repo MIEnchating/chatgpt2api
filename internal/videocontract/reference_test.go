@@ -57,7 +57,7 @@ func TestReferenceForContractPreservesModelProfileRevision(t *testing.T) {
 	defer backend.Close()
 	svc := NewVideoModelContractService(backend)
 	contract := testVideoContract(t, "Profile history", "profile-history-video")
-	contract.ModelProfiles = []protocol.VideoModelContractProfile{{Model: contract.Models[0], Capability: contract.Capability, Generation: contract.Generation, Validation: contract.Validation, Rules: contract.Rules}}
+	contract.ModelProfiles = []protocol.VideoModelContractProfile{{Model: contract.Models[0], Capability: contract.Capability, Generation: contract.Generation, Rules: contract.Rules}}
 	contract.ModelProfiles[0].Capability.DefaultSeconds = 8
 	created, err := svc.Create(contract, true)
 	if err != nil {
