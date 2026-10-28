@@ -28,6 +28,6 @@ export function canvasTextGenerationPlan(sourceNode: CanvasNode): CanvasTextGene
     instruction,
     requestPrompt,
     count: sourceNode.type === "config" ? Math.max(1, Math.min(15, Math.floor(sourceNode.generation_count || 1))) : 1,
-    createsChildNodes: sourceNode.type === "config" || editingTextNode,
+    createsChildNodes: sourceNode.type === "config",
   };
 }

@@ -54,7 +54,23 @@ input[type="number"]::-webkit-outer-spin-button {
   to { transform: translateX(var(--overflow-marquee-distance)); }
 }
 
+@keyframes canvas-connection-flow {
+  from { stroke-dashoffset: var(--flow-offset); }
+  to { stroke-dashoffset: calc(var(--flow-offset) - 144px); }
+}
+
+.canvas-connection-flow {
+  stroke-dashoffset: var(--flow-offset);
+  animation: canvas-connection-flow 2.2s linear infinite;
+}
+
+.canvas-connection-flow-tail { --flow-offset: 0px; stroke-dasharray: 60 84; opacity: 0.12; }
+.canvas-connection-flow-trail { --flow-offset: -18px; stroke-dasharray: 42 102; opacity: 0.3; }
+.canvas-connection-flow-neck { --flow-offset: -36px; stroke-dasharray: 24 120; opacity: 0.6; }
+.canvas-connection-flow-head { --flow-offset: -48px; stroke-dasharray: 12 132; opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
+  .canvas-connection-flow { animation: none; }
   [style*="overflow-marquee"] { animation: none !important; }
 }
 
@@ -455,6 +471,7 @@ input[type="number"]::-webkit-outer-spin-button {
   --shadow-dialog: 0 24px 64px rgba(15, 23, 42, 0.2);
   --canvas-connection-muted: #9aa3af;
   --canvas-connection-active: #1456f0;
+  --canvas-connection-flow: #215fe6;
   --canvas-connection-shadow: rgba(20, 86, 240, 0.26);
   --canvas-grid-dot: rgba(100, 116, 139, 0.22);
   --canvas-grid-line: rgba(100, 116, 139, 0.10);
@@ -492,6 +509,7 @@ input[type="number"]::-webkit-outer-spin-button {
   --foreground: oklch(0.985 0 0);
   --canvas-connection-muted: #717b89;
   --canvas-connection-active: #6ea0ff;
+  --canvas-connection-flow: #f2f8ff;
   --canvas-connection-shadow: rgba(110, 160, 255, 0.3);
   --canvas-grid-dot: rgba(203, 213, 225, 0.18);
   --canvas-grid-line: rgba(203, 213, 225, 0.08);
@@ -812,4 +830,17 @@ input[type="number"]::-webkit-outer-spin-button {
 .tool-dragging,
 .tool-dragging * {
   cursor: var(--tool-cursor) !important;
+}
+
+/* Canvas overlays follow the node and stay out of the way during manipulation. */
+[data-canvas-interacting] [data-canvas-node-overlays] {
+  opacity: 0;
+}
+[data-canvas-interacting] [data-canvas-node-overlays] * {
+  pointer-events: none !important;
+}
+[data-canvas-node-editor] .canvas-prompt-scroll-frame,
+[data-canvas-node-editor] .canvas-prompt-editor-resize {
+  max-height: none;
+  resize: none;
 }

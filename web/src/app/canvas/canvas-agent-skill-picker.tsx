@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Check, FilePlus2, LoaderCircle, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, ChevronDown, Check, FilePlus2, LoaderCircle, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,12 @@ import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
 import { cn } from "@/lib/utils";
 import { deleteAgentSkill, fetchAgentSkills, saveAgentSkill, type AgentSkill, type AgentSkillInput } from "@/services/api/agent-skills";
 
-export function CanvasAgentSkillPicker(props: { selectedIds: string[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+export function CanvasAgentSkillPicker(props: { selectedIds: string[]; onChange: (ids: string[]) => void; disabled?: boolean; compact?: boolean }) {
   const revision = useAuthSessionRevision();
   return <SkillPicker key={revision} {...props} />;
 }
 
-function SkillPicker({ selectedIds, onChange, disabled }: { selectedIds: string[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+function SkillPicker({ selectedIds, onChange, disabled, compact }: { selectedIds: string[]; onChange: (ids: string[]) => void; disabled?: boolean; compact?: boolean }) {
   const [items, setItems] = useState<AgentSkill[]>([]);
   const [open, setOpen] = useState(false);
   const [manage, setManage] = useState(false);
@@ -48,8 +48,8 @@ function SkillPicker({ selectedIds, onChange, disabled }: { selectedIds: string[
 
   return <>
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} className="gap-1.5"><BookOpen className="size-4" />Skill{selectedIds.length ? ` · ${selectedIds.length}` : ""}</Button></PopoverTrigger>
-      <PopoverContent scrollable={false} className="w-80 overflow-hidden p-3" align="start">
+      <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label="创作技能" title="Skill" className={cn("relative h-8 gap-1 text-xs", compact ? "size-8 shrink-0 rounded-xl p-0 text-muted-foreground @max-[320px]/agent:size-7" : "min-w-0 shrink rounded-full bg-muted/60 px-2.5")}><BookOpen className="size-[18px] shrink-0" />{compact ? (selectedIds.length ? <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-brand text-[9px] text-white">{selectedIds.length}</span> : null) : <><span className="truncate">Skill{selectedIds.length ? ` · ${selectedIds.length}` : ""}</span><ChevronDown className="size-3 shrink-0" /></>}</Button></PopoverTrigger>
+      <PopoverContent scrollable={false} className="w-[min(320px,calc(100vw-2rem))] overflow-hidden p-3" side="top" align="start">
         <div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium">创作 Skill</span><Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); setManage(true); }}><Settings2 className="size-3.5" />管理</Button></div>
         <p className="mb-2 text-xs text-muted-foreground">最多选 5 个，优先采用所选创作规则。</p>
         {loading ? <LoaderCircle className="mx-auto my-4 size-5 animate-spin" /> : error ? <div className="text-xs text-destructive">{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>重试</Button></div> : null}

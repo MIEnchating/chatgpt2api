@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ComponentProps } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -22,12 +23,12 @@ function ManagementPage({
     <section
       data-management-page
       className={cn(
-        "flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)] overflow-x-hidden overflow-y-auto",
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
         className
       )}
       {...props}
     >
-      {children}
+      <ScrollArea className="h-full" viewportClassName="h-full" viewClass="flex min-h-full flex-col gap-[var(--page-section-gap)]" viewStyle={{ height: "100%" }}>{children}</ScrollArea>
     </section>
   );
 }

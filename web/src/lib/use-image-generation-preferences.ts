@@ -55,6 +55,7 @@ const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   default_video_model: "",
   default_audio_model: "",
   canvas_default_image_count: 1,
+  node_regenerate_behavior: "new-node",
   default_audio_voice: "",
   default_audio_format: "",
   default_audio_speed: 1,
@@ -73,6 +74,7 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
     ? value!.default_audio_format as ImageGenerationPreferences["default_audio_format"]
     : "";
   return {
+    node_regenerate_behavior: value?.node_regenerate_behavior === "overwrite" ? "overwrite" : "new-node",
     api_mode: apiMode,
     stream: value?.stream === true,
     partial_images: normalizedImagePartialImages(value?.partial_images),

@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
@@ -5,6 +6,7 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import {
   appendContentEditableInline,
   contentEditableTextBeforeCaret,
+  copyContentEditableSelection,
   deleteAdjacentContentEditableReference,
   getContentEditableMentionKeyAction,
   moveContentEditableMentionIndex,
@@ -16,7 +18,14 @@ import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ImageLightbox } from "@/components/image-lightbox";
 
+import { CanvasAgentAttachmentChip } from "./canvas-agent-attachments";
+import type { CanvasAssistantReference } from "./agent/canvas-agent-types";
+
+const EMPTY_ATTACHMENTS: CanvasAssistantReference[] = [];
+
 type CanvasAgentPromptChipInputProps = {
+  attachments?: CanvasAssistantReference[];
+  onRemoveAttachments?: (ids: string[]) => void;
   value: string;
   references: CanvasResourceReference[];
   onChange: (value: string) => void;
@@ -40,9 +49,12 @@ type PromptToken =
   | { type: "text"; value: string }
   | { type: "reference"; label: string; value: string };
 
-export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, readOnly, className, style, placeholder, placeholderClassName }: CanvasAgentPromptChipInputProps) {
+export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, attachments = EMPTY_ATTACHMENTS, onRemoveAttachments, readOnly, className, style, placeholder, placeholderClassName }: CanvasAgentPromptChipInputProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
+  const initializedRef = useRef(false);
+  const caretRef = useRef<Range | null>(null);
+  const [attachmentTargets, setAttachmentTargets] = useState<Map<string, HTMLElement>>(new Map());
   const lastEmittedRef = useRef(value);
   const [mention, setMention] = useState<MentionState | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -61,7 +73,9 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (document.activeElement === editor && value === lastEmittedRef.current) return;
+    if (initializedRef.current && value === lastEmittedRef.current) return;
+    initializedRef.current = true;
+    caretRef.current = null;
     editor.textContent = "";
     editor.append(createPromptFragment(tokens, referenceByLabel, setImagePreview));
     lastEmittedRef.current = value;
@@ -74,10 +88,72 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     pendingReferences?.forEach((reference) => appendReferenceChip(editor, reference, setImagePreview, true));
   }, [pendingReferences]);
 
+  useEffect(() => {
+    if (readOnly) return;
+    const rememberCaret = () => {
+      const editor = editorRef.current;
+      const selection = window.getSelection();
+      if (!editor || !selection?.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return;
+      const element = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+      if (element?.closest("[contenteditable='false']")) return;
+      caretRef.current = range.cloneRange();
+    };
+    document.addEventListener("selectionchange", rememberCaret);
+    return () => document.removeEventListener("selectionchange", rememberCaret);
+  }, [readOnly]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const nextTargets = new Map<string, HTMLElement>();
+    const byID = new Map(attachments.map((item) => [item.id, item]));
+    editor.querySelectorAll<HTMLElement>("[data-attachment-id]").forEach((chip) => {
+      const id = chip.dataset.attachmentId!;
+      if (!byID.has(id) || nextTargets.has(id)) removeReferenceChip(chip);
+      else nextTargets.set(id, chip);
+    });
+    for (const attachment of attachments) {
+      if (nextTargets.has(attachment.id)) continue;
+      const chip = document.createElement("span");
+      chip.contentEditable = "false";
+      chip.dataset.attachmentId = attachment.id;
+      chip.className = "mx-0.5 my-0.5 inline-flex h-7 max-w-[calc(50%-0.75rem)] select-none items-center gap-1 rounded-lg border border-border/60 bg-muted/20 px-1 text-xs leading-none whitespace-nowrap align-middle";
+      const trailingSpace = document.createTextNode(" ");
+      const range = caretRef.current;
+      if (range && editor.contains(range.commonAncestorContainer)) {
+        // Keep the insertion point through async uploads without deleting selected text.
+        range.collapse(false);
+        const fragment = document.createDocumentFragment();
+        fragment.append(chip, trailingSpace);
+        range.insertNode(fragment);
+      } else {
+        appendContentEditableInline(editor, chip, trailingSpace);
+      }
+      const nextCaret = document.createRange();
+      nextCaret.setStart(trailingSpace, trailingSpace.length);
+      nextCaret.collapse(true);
+      caretRef.current = nextCaret;
+      if (document.activeElement === editor) {
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(nextCaret.cloneRange());
+      }
+      nextTargets.set(attachment.id, chip);
+    }
+    setAttachmentTargets((current) => current.size === nextTargets.size && [...nextTargets].every(([id, target]) => current.get(id) === target) ? current : nextTargets);
+  }, [attachments, referenceByLabel, tokens, value]);
+
   function emitChange(nextValue: string) {
     lastEmittedRef.current = nextValue;
     onChange(nextValue);
-    if (editorRef.current) onReferenceIDsChange?.(referenceIDsFromEditor(editorRef.current));
+    if (editorRef.current) {
+      onReferenceIDsChange?.(referenceIDsFromEditor(editorRef.current));
+      const remaining = new Set(Array.from(editorRef.current.querySelectorAll<HTMLElement>("[data-attachment-id]")).map((chip) => chip.dataset.attachmentId));
+      const removed = attachments.filter((item) => !remaining.has(item.id)).map((item) => item.id);
+      if (removed.length) onRemoveAttachments?.(removed);
+    }
   }
 
   function commitPendingReferences() {
@@ -110,6 +186,8 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     const editor = editorRef.current;
     if (!editor) return;
     if (isEmptyEditorPlaceholder(editor)) editor.replaceChildren();
+    const selection = window.getSelection();
+    if (selection?.rangeCount && editor.contains(selection.getRangeAt(0).commonAncestorContainer)) caretRef.current = selection.getRangeAt(0).cloneRange();
     emitChange(serializePromptEditor(editor));
     syncMention();
   }
@@ -139,7 +217,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     emitChange(serializePromptEditor(editor));
   }
 
-  const showPlaceholder = !value.trim() && !pendingReferences?.length;
+  const showPlaceholder = !value.trim() && !pendingReferences?.length && !attachments.length;
 
   return (
     <div className="relative w-full">
@@ -152,7 +230,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
         aria-multiline="true"
         aria-readonly={readOnly}
         aria-label={placeholder}
-        className={`${className || ""} overflow-y-auto whitespace-pre-wrap break-words outline-none [&_[data-pending-reference=true]]:opacity-50`}
+        className={`${className || ""} whitespace-pre-wrap break-words outline-none [&_[data-pending-reference=true]]:opacity-50`}
         style={{ ...style, cursor: "text" }}
         onFocus={commitPendingReferences}
         onPointerDown={commitPendingReferences}
@@ -163,10 +241,17 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           if (selection?.isCollapsed && selection.anchorNode === tail && selection.anchorOffset === 0 && tail instanceof Text && tail.data === "\n") tail.data = "\uFEFF";
           syncFromEditor();
         }}
+        onCopy={(event) => {
+          if (copyContentEditableSelection(event.currentTarget, event.clipboardData, serializePromptEditor)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
         onPaste={(event) => {
           const image = Array.from(event.clipboardData.files).find((file) => file.type.startsWith("image/"));
           if (image && onPasteImage) {
             event.preventDefault();
+            event.stopPropagation();
             onPasteImage(image);
             return;
           }
@@ -196,9 +281,9 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
             else closeMention();
             return;
           }
-          if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentContentEditableReference(event.key, "refLabel", { trimAdjacentWhitespace: true })) {
+          if ((event.key === "Backspace" || event.key === "Delete") && (deleteAdjacentContentEditableReference(event.key, "attachmentId", { trimAdjacentWhitespace: true }) || deleteAdjacentContentEditableReference(event.key, "refLabel", { trimAdjacentWhitespace: true }))) {
             event.preventDefault();
-            requestAnimationFrame(syncFromEditor);
+            syncFromEditor();
             return;
           }
           if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && onSubmit) {
@@ -211,6 +296,23 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
         onPointerUp={() => requestAnimationFrame(syncMention)}
         onBlur={() => window.setTimeout(closeMention, 120)}
       />
+      {attachments.map((attachment) => {
+        const target = attachmentTargets.get(attachment.id);
+        return target ? createPortal(<CanvasAgentAttachmentChip attachment={attachment} onPreview={setImagePreview} onRemove={readOnly ? undefined : () => {
+          const editor = editorRef.current;
+          if (!editor) return;
+          const caret = document.createRange();
+          caret.setStartBefore(target);
+          caret.collapse(true);
+          target.remove();
+          caretRef.current = caret;
+          editor.focus({ preventScroll: true });
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(caret.cloneRange());
+          syncFromEditor();
+        }} />, target, attachment.id) : null;
+      })}
       {mention && candidates.length ? <MentionMenu rect={mention.rect} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} onSelect={insertReference} /> : null}
       {imagePreview ? <ImageLightbox images={[{ id: "agent-reference", src: imagePreview }]} currentIndex={0} open onOpenChange={(open) => { if (!open) setImagePreview(null); }} onIndexChange={() => undefined} /> : null}
     </div>
@@ -241,7 +343,7 @@ function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRec
   const top = clamp(showAbove ? anchor.top - gap - menuHeight : anchor.bottom + gap, 8, window.innerHeight - menuHeight - 8);
 
   return createPortal(
-    <div data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl" style={{ left, top }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
+    <ScrollArea data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl" viewClass="" viewportClassName="overscroll-contain" manageKeyboard={false} style={{ left, top }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
       {references.map((reference, index) => (
         <button
           key={reference.id}
@@ -263,7 +365,7 @@ function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRec
           <span className="min-w-0 flex-1"><span className="block font-medium">{reference.label}</span><span className="block truncate opacity-65">{reference.text || reference.title}</span></span>
         </button>
       ))}
-    </div>,
+    </ScrollArea>,
     document.body,
   );
 }
@@ -325,7 +427,9 @@ function referenceIDsFromEditor(editor: HTMLElement) {
 }
 
 function serializePromptEditor(editor: HTMLElement) {
-  return serializeContentEditable(editor, (element) => element.dataset.refLabel);
+  const text = editor.cloneNode(true) as HTMLElement;
+  text.querySelectorAll("[data-attachment-id]").forEach((chip) => chip.remove());
+  return serializeContentEditable(text, (element) => element.dataset.refLabel);
 }
 
 function isEmptyEditorPlaceholder(editor: HTMLElement) {

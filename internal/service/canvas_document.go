@@ -176,8 +176,9 @@ type CanvasAgentMessage struct {
 }
 
 type CanvasAgentPanel struct {
-	Open  bool `json:"open"`
-	Width int  `json:"width"`
+	Mode  string `json:"mode"`
+	Open  bool   `json:"open"`
+	Width int    `json:"width"`
 }
 
 type CanvasDocument struct {
@@ -220,11 +221,12 @@ type CanvasWorkspaceResult struct {
 }
 
 type canvasWorkspace struct {
-	Version                       int              `json:"version"`
-	Generation                    int64            `json:"generation"`
-	ActiveProjectID               string           `json:"active_project_id"`
-	Projects                      []CanvasDocument `json:"projects"`
-	PendingStorageObjectDeletions []string         `json:"pending_storage_object_deletions,omitempty"`
+	Shares                        map[string]string `json:"shares,omitempty"`
+	Version                       int               `json:"version"`
+	Generation                    int64             `json:"generation"`
+	ActiveProjectID               string            `json:"active_project_id"`
+	Projects                      []CanvasDocument  `json:"projects"`
+	PendingStorageObjectDeletions []string          `json:"pending_storage_object_deletions,omitempty"`
 }
 
 type canvasActiveProject struct {
@@ -259,7 +261,7 @@ func DefaultCanvasDocument() CanvasDocument {
 		ID:                    newCanvasProjectID(),
 		Title:                 "我的画布",
 		Background:            "dots",
-		AgentPanel:            &CanvasAgentPanel{Width: 390},
+		AgentPanel:            &CanvasAgentPanel{Width: 390, Mode: "floating"},
 		AgentAutoTitlePending: true,
 		Nodes:                 []CanvasNode{},
 		Connections:           []CanvasConnection{},
@@ -963,6 +965,11 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 		seen[document.ID] = struct{}{}
 		workspace.Projects[index] = document
 	}
+	for projectID := range workspace.Shares {
+		if _, exists := seen[projectID]; !exists {
+			delete(workspace.Shares, projectID)
+		}
+	}
 	if len(workspace.Projects) == 0 {
 		workspace.ActiveProjectID = ""
 	} else if _, exists := seen[workspace.ActiveProjectID]; !exists {
@@ -1123,9 +1130,15 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		return CanvasDocument{}, err
 	}
 	if input.AgentPanel == nil {
-		input.AgentPanel = &CanvasAgentPanel{Width: 390}
+		input.AgentPanel = &CanvasAgentPanel{Width: 390, Mode: "floating"}
 	} else if input.AgentPanel.Width < 320 || input.AgentPanel.Width > 760 {
 		return CanvasDocument{}, invalidCanvasDocument("canvas agent panel width is invalid")
+	}
+	if input.AgentPanel.Mode == "" {
+		input.AgentPanel.Mode = "floating"
+	}
+	if input.AgentPanel.Mode != "floating" && input.AgentPanel.Mode != "docked" {
+		return CanvasDocument{}, invalidCanvasDocument("canvas agent panel mode is invalid")
 	}
 	if err := validateCanvasPendingAgentRequest(input.PendingAgentRequest); err != nil {
 		return CanvasDocument{}, err

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 
 import {
   contentEditableTextBeforeCaret,
+  copyContentEditableSelection,
   deleteAdjacentContentEditableReference,
   getContentEditableMentionKeyAction,
   insertPlainTextAtContentEditableSelection,
@@ -12,7 +13,7 @@ import {
   removeActiveContentEditableMention,
   serializeContentEditable,
 } from "@/app/canvas/canvas-contenteditable";
-import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, canvasConfigUsesConnectedText, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
+import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigPromptDisplay, canvasConfigInputLabel, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CanvasNode } from "@/services/api/canvas";
@@ -22,9 +23,11 @@ type ComposerToken =
   | { type: "text"; value: string }
   | { type: "reference"; nodeID: string };
 
-export function CanvasConfigComposer({ node, inputs, children, promptTools, onComposerChange }: {
+export function CanvasConfigComposer({ node, inputs, referenceCandidates, onReferenceSelect, children, promptTools, onComposerChange }: {
   node: CanvasNode;
   inputs: CanvasConfigInput[];
+  referenceCandidates: CanvasConfigInput[];
+  onReferenceSelect: (nodeID: string) => void;
   children?: ReactNode;
   promptTools?: ReactNode;
   onComposerChange: (value: string, commit?: boolean) => void;
@@ -36,34 +39,24 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   inputsRef.current = inputs;
   composerChangeRef.current = onComposerChange;
   const value = node.composer_content ?? node.prompt ?? "";
-  const hasExplicitComposerContent = node.composer_content !== undefined;
   const inputsSignature = JSON.stringify(inputs);
-  const usesConnectedText = canvasConfigUsesConnectedText(inputs);
   const [mention, setMention] = useState<{ query: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [previewInput, setPreviewInput] = useState<CanvasConfigInput | null>(null);
   const candidates = useMemo(() => {
     if (!mention) return [];
     const query = mention.query.trim().toLowerCase();
-    return inputs.filter((input) => !query || `${canvasConfigInputLabel(input, inputs)} ${input.title} ${input.text || ""}`.toLowerCase().includes(query));
-  }, [inputs, mention]);
+    return referenceCandidates.filter((input) => !query || `${canvasConfigInputLabel(input, inputs)} ${input.title} ${input.text || ""}`.toLowerCase().includes(query));
+  }, [inputs, referenceCandidates, mention]);
 
   useEffect(() => {
     if (document.activeElement === editorRef.current) return;
     const editor = editorRef.current;
     if (!editor) return;
     const currentInputs = inputsRef.current;
-    const connectedTextInputs = currentInputs.filter((input) => input.type === "text" && Boolean(input.text?.trim()));
     const inputByID = new Map(currentInputs.map((input) => [input.nodeID, input]));
     const tokens = parseComposerTokens(value);
     editor.textContent = "";
-    if (!hasExplicitComposerContent && !tokens.length && connectedTextInputs.length) {
-      connectedTextInputs.forEach((input) => {
-        const chip = createReferenceChip(input, currentInputs, setPreviewInput, () => removeReferenceChip(chip, editor, composerChangeRef.current));
-        editor.append(chip, document.createTextNode(" "));
-      });
-      return;
-    }
     tokens.forEach((token) => {
       if (token.type === "text") {
         editor.append(document.createTextNode(token.value));
@@ -75,7 +68,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
         editor.append(chip);
       }
     });
-  }, [hasExplicitComposerContent, inputsSignature, value]);
+  }, [inputsSignature, value]);
 
   function closeMention() {
     setMention(null);
@@ -84,7 +77,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
 
   function syncMention() {
     const match = /@([^\s@]*)$/.exec(contentEditableTextBeforeCaret());
-    if (!match || !inputs.length) return closeMention();
+    if (!match || !referenceCandidates.length) return closeMention();
     setMention({ query: match[1] || "" });
     setActiveIndex(0);
   }
@@ -99,29 +92,10 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   function insertReference(input: CanvasConfigInput) {
     const editor = editorRef.current;
     if (!editor) return;
-    const textBeforeMention = contentEditableTextBeforeCaret();
     removeActiveContentEditableMention();
-    const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
-    const beforeMention = textBeforeMention.replace(/@([^\s@]*)$/, "");
-    const needsLeadingSpace = Boolean(beforeMention && !/\s$/.test(beforeMention));
-    const space = document.createTextNode(" ");
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (range) {
-      range.insertNode(space);
-      range.insertNode(chip);
-      if (needsLeadingSpace) range.insertNode(document.createTextNode(" "));
-      range.setStartAfter(space);
-      range.collapse(true);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    } else {
-      if (needsLeadingSpace) editor.append(document.createTextNode(" "));
-      editor.append(chip, space);
-      placeContentEditableCaretAtEnd(editor);
-    }
     closeMention();
     onComposerChange(serializeEditor(editor));
+    onReferenceSelect(input.nodeID);
   }
 
   const previewImages = previewInput?.url ? [{ id: previewInput.nodeID, src: previewInput.url, fileName: previewInput.title }] : [];
@@ -130,19 +104,13 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   return (
     <div
       data-canvas-no-zoom
-      className="rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-elevated)] backdrop-blur-xl"
+      className="min-w-0"
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="min-w-0 space-y-1">
-          <p className="text-xs font-semibold">组装提示词</p>
-          <p className="text-xs leading-5 text-muted-foreground">输入 @ 引用已连接资源，发送时按当前连接编号。</p>
-        </div>
-      </div>
       <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-          {!value.trim() && !usesConnectedText ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}
+          {!value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用画布图片或文本</div> : null}
           <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
           <div
             ref={editorRef}
@@ -153,6 +121,12 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
             suppressContentEditableWarning
             className="min-h-28 w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
             onInput={() => { if (!composingRef.current) syncFromEditor(); }}
+            onCopy={(event) => {
+              if (copyContentEditableSelection(event.currentTarget, event.clipboardData, (selection) => canvasConfigPromptDisplay(serializeEditor(selection), inputs))) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
             onPaste={(event) => {
               const text = event.clipboardData.getData("text/plain");
               if (!text) return;
@@ -252,7 +226,7 @@ function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect 
   return createPortal(
     <ScrollArea
       data-canvas-config-mention-menu
-      className="fixed z-[140] max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      className="pointer-events-auto fixed z-[140] max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       viewportClassName="p-1"
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
@@ -274,7 +248,7 @@ function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect 
         >
           <ResourcePreview input={input} />
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">{canvasConfigInputLabel(input, allInputs)}</span>
+            <span className="block font-medium">{canvasConfigInputLabel(input, allInputs.some((item) => item.nodeID === input.nodeID) ? allInputs : [...allInputs, input])} · {input.title}</span>
             <span className="block truncate text-muted-foreground">{input.text || input.title}</span>
           </span>
         </button>
@@ -295,7 +269,7 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
   const chip = document.createElement("span");
   chip.contentEditable = "false";
   chip.dataset.referenceNodeId = input.nodeID;
-  chip.dataset.tooltip = input.text || input.title;
+  if (input.type === "text" && input.text) chip.dataset.tooltip = input.text;
   chip.className = "mx-px inline-flex h-7 max-w-40 items-center gap-1 overflow-hidden rounded-md border border-border bg-card px-2 text-xs leading-none align-middle text-foreground";
 
   const icon = document.createElement("span");
@@ -303,7 +277,7 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
   icon.className = input.type === "image" ? "text-brand" : "text-amber-600 dark:text-amber-300";
   const label = document.createElement("span");
   label.className = "block truncate";
-  label.textContent = `${canvasConfigInputLabel(input, inputs)} · ${input.type === "text" ? input.text || input.title : input.title}`;
+  label.textContent = canvasConfigInputLabel(input, inputs);
   chip.append(icon, label);
   if (onDelete) {
     const remove = document.createElement("button");

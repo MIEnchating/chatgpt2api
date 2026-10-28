@@ -115,7 +115,7 @@ export function StorageProviderCard() {
       </CardHeader>
       <ScrollArea className="min-h-0 flex-1">
       <CardContent className="space-y-5 p-4 sm:p-5">
-        <div className="overflow-x-auto border-b border-border/70 pb-4">
+        <ScrollArea className="border-b border-border/70 pb-4" viewClass="min-w-full w-max" >
           <div role="tablist" aria-label="个人素材存储类型" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1" onKeyDown={(event) => {
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
@@ -126,7 +126,7 @@ export function StorageProviderCard() {
             <button type="button" role="tab" id="storage-tab-s3" aria-controls="storage-panel-s3" tabIndex={activeType === "s3" ? 0 : -1} aria-selected={activeType === "s3"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "s3" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("s3")}><Database className="size-4" />S3 / R2</button>
             <button type="button" role="tab" id="storage-tab-webdav" aria-controls="storage-panel-webdav" tabIndex={activeType === "webdav" ? 0 : -1} aria-selected={activeType === "webdav"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "webdav" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("webdav")}><Cloud className="size-4" />WebDAV</button>
           </div>
-        </div>
+        </ScrollArea>
         <div className="flex min-h-16 items-center justify-between gap-4 border-y border-border/70 py-3">
           <div><p className="text-sm font-medium">启用当前外部存储</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">S3/R2 与 WebDAV 不能同时启用；关闭后使用服务器本机</p></div>
           <Switch checked={provider.enabled} onCheckedChange={setProviderEnabled} />

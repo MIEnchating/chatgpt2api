@@ -503,7 +503,7 @@ function LogsContent() {
   return (
     <ManagementPage data-logs-layout aria-label="请求日志">
       <ManagementPanel className="flex-1">
-        <ManagementToolbar className="max-h-[38dvh] overflow-y-auto overscroll-contain">
+        <ScrollArea className="max-h-[38dvh] shrink-0" viewportClassName="overscroll-contain"><ManagementToolbar>
           <form className="space-y-3" onSubmit={handleSearch}>
             <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:flex-wrap 2xl:items-center">
               <SearchInput aria-label="搜索日志摘要或接口" placeholder="搜索摘要或接口" value={filters.summary || ""} onValueChange={(value) => updateFilter("summary", value)} containerClassName="flex-1" />
@@ -598,7 +598,7 @@ function LogsContent() {
               </div>
             </div>
           </form>
-        </ManagementToolbar>
+        </ManagementToolbar></ScrollArea>
 
         <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
           <div className="flex items-baseline gap-1.5">

@@ -1576,7 +1576,7 @@ function CreativeWorkflowWorkspaceContent({
                   {categories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1" role="group" aria-label="工作流范围">
+              <ScrollArea className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full items-center gap-1"  role="group" ariaLabel="工作流范围">
                 {workflowScopeOptions.map((option) => {
                   const Icon = option.icon;
                   return (
@@ -1595,7 +1595,7 @@ function CreativeWorkflowWorkspaceContent({
                     </button>
                   );
                 })}
-              </div>
+              </ScrollArea>
             </div>
             <div data-workflow-actions className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
               {workflowActions}
@@ -1805,7 +1805,7 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
             <DialogDescription>{counts.running ? `${counts.running} 个工作流任务正在执行` : tasks.length ? `共 ${tasks.length} 条工作流运行记录` : "运行工作流后，任务记录会显示在这里"}</DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-5 py-3 sm:px-6">
-            <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1" role="tablist" aria-label="任务状态">
+            <ScrollArea className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full items-center gap-1"  role="tablist" ariaLabel="任务状态">
               {filters.map((option) => (
                 <button
                   key={option.value}
@@ -1822,7 +1822,7 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
                   <span className="tabular-nums text-[10px] opacity-70">{counts[option.value]}</span>
                 </button>
               ))}
-            </div>
+            </ScrollArea>
             {counts.success + counts.failed > 0 ? <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={clearing} onClick={() => setClearConfirmOpen(true)}>{clearing ? <LoaderCircle className="animate-spin" /> : <Trash2 />}{clearing ? "清理中" : "清理历史"}</Button> : null}
           </div>
           <ScrollArea className="max-h-[min(62dvh,560px)]" viewportClassName="overscroll-contain">
@@ -2025,14 +2025,14 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
                   <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/50 lg:min-h-[520px]">
                     <AuthenticatedImage src={activeImage.url} alt={`${title} 结果 ${selectedImage + 1}`} className="max-h-[62dvh] w-full object-contain" />
                   </div>
-                  <div className="mt-2 flex min-h-16 gap-2 overflow-x-auto pb-1">
+                  <ScrollArea className="mt-2 min-h-16" viewClass="flex w-max min-w-full gap-2 pb-1" >
                     {task.images.map((image, index) => (
                       <button key={`${image.url}-${index}`} type="button" aria-label={`查看第 ${index + 1} 张结果`} onClick={() => setSelectedImage(index)} className={cn("relative aspect-square size-16 shrink-0 overflow-hidden rounded-md border bg-muted", selectedImage === index ? "border-primary ring-2 ring-primary/20" : "border-border")}>
                         <AuthenticatedImage src={image.url} alt="" className="size-full object-cover" placeholderClassName="min-h-0" />
                         <span className="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-[10px] text-white">{index + 1}</span>
                       </button>
                     ))}
-                  </div>
+                  </ScrollArea>
                   <p className="mt-1 text-xs text-muted-foreground">{activeImage.width && activeImage.height ? `${activeImage.width} × ${activeImage.height}` : "尺寸未记录"}{activeImage.bytes ? ` · ${formatWorkflowBytes(activeImage.bytes)}` : ""}</p>
                 </>
               ) : (

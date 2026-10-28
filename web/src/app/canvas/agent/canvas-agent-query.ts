@@ -14,6 +14,6 @@ export function queryCanvasAgentNodes(nodes: CanvasNode[], query: Record<string,
     page,
     pageSize,
     hasMore: page * pageSize < matched.length,
-    nodes: matched.slice((page - 1) * pageSize, page * pageSize).map(summarizeCanvasAgentNode),
+    nodes: matched.slice((page - 1) * pageSize, page * pageSize).map((node) => summarizeCanvasAgentNode(node)),
   };
 }

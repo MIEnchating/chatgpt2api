@@ -52,15 +52,19 @@ export function deleteAdjacentContentEditableReference(
   const range = selection.getRangeAt(0);
   const target = adjacentReferenceNode(range, key, referenceDataKey);
   if (!target) return false;
+  const deletion = range.cloneRange();
+  if (key === "Backspace") deletion.setStartBefore(target);
+  else deletion.setEndAfter(target);
+  deletion.deleteContents();
+  deletion.collapse(true);
+  const caret = document.createTextNode("");
+  deletion.insertNode(caret);
   if (options.trimAdjacentWhitespace) {
-    target.parentNode?.normalize();
-    const previousSibling = target.previousSibling;
-    const nextSibling = target.nextSibling;
+    const previousSibling = caret.previousSibling;
+    const nextSibling = caret.nextSibling;
     if (previousSibling?.nodeType === Node.TEXT_NODE) previousSibling.textContent = (previousSibling.textContent || "").replace(/[ \u00A0]$/, "");
     if (nextSibling?.nodeType === Node.TEXT_NODE) nextSibling.textContent = (nextSibling.textContent || "").replace(/^[ \u00A0]/, "");
   }
-  const caret = document.createTextNode("");
-  target.replaceWith(caret);
   range.setStart(caret, 0);
   range.collapse(true);
   selection.removeAllRanges();
@@ -70,6 +74,17 @@ export function deleteAdjacentContentEditableReference(
 
 export function serializeContentEditable(editor: HTMLElement, serializeReference: ReferenceSerializer) {
   return serializeContentEditableNodes(editor.childNodes, serializeReference).replace(/\uFEFF/g, "");
+}
+
+export function copyContentEditableSelection(editor: HTMLElement, clipboard: DataTransfer, serialize: (selection: HTMLElement) => string) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return false;
+  const fragment = document.createElement("div");
+  fragment.append(range.cloneContents());
+  clipboard.setData("text/plain", serialize(fragment));
+  return true;
 }
 
 export function removeActiveContentEditableMention() {
@@ -140,7 +155,8 @@ function adjacentReferenceNode(range: Range, key: string, referenceDataKey: stri
   const previous = key === "Backspace";
   if (container.nodeType === Node.TEXT_NODE) {
     const text = container.textContent || "";
-    if ((previous && offset > 0) || (!previous && offset < text.length)) return null;
+    const between = previous ? text.slice(0, offset) : text.slice(offset);
+    if (!/^[ \u00A0\uFEFF]*$/.test(between)) return null;
     return findReferenceSibling(container, previous, referenceDataKey);
   }
   const children = Array.from(container.childNodes);
@@ -149,6 +165,6 @@ function adjacentReferenceNode(range: Range, key: string, referenceDataKey: stri
 
 function findReferenceSibling(node: Node, previous: boolean, referenceDataKey: string, includeSelf = false): HTMLElement | null {
   let current: Node | null = includeSelf ? node : previous ? node.previousSibling : node.nextSibling;
-  while (current?.nodeType === Node.TEXT_NODE && !(current.textContent || "").trim()) current = previous ? current.previousSibling : current.nextSibling;
+  while (current?.nodeType === Node.TEXT_NODE && /^[ \u00A0\uFEFF]*$/.test(current.textContent || "")) current = previous ? current.previousSibling : current.nextSibling;
   return current instanceof HTMLElement && current.dataset[referenceDataKey] ? current : null;
 }

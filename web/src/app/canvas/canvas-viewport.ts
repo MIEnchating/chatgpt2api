@@ -1,7 +1,7 @@
 export type CanvasViewport = { zoom: number; x: number; y: number };
 
 export const CANVAS_MIN_ZOOM = 0.05;
-export const CANVAS_MAX_ZOOM = 5;
+export const CANVAS_MAX_ZOOM = 8;
 
 export function clampCanvasZoom(value: number) {
   return Math.min(CANVAS_MAX_ZOOM, Math.max(CANVAS_MIN_ZOOM, value));

@@ -12,6 +12,8 @@ import type { CanvasNode } from "@/services/api/canvas";
 import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameters";
 import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select";
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
+import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
+import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
@@ -36,21 +38,21 @@ export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveS
     return <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-4 text-center"><span className="grid size-12 shrink-0 place-items-center rounded-xl bg-violet-500/12 text-violet-600 dark:text-violet-300"><AudioLines className="size-6" /></span>{node.url ? <audio aria-label={node.title || "画布音频"} data-canvas-no-pan data-canvas-no-zoom src={node.url} controls preload="metadata" className="w-full min-w-0" onMouseDown={(event) => event.stopPropagation()} /> : <><p className="text-xs text-muted-foreground">空音频节点</p><p className="text-[11px] text-muted-foreground/70">可上传音频，或添加文字合成语音</p></>}</div>;
   }
   if (node.type === "panorama") {
-    return node.url ? <CanvasPanoramaViewer src={node.url} alt={node.title || "全景图"} proxyGeneratedPanorama={Boolean(node.task_id && !node.storage_key)} expandOnDoubleClick onMoveStart={onPanoramaMoveStart} onOpen={onPanoramaOpen} /> : <div className="flex size-full flex-col items-center justify-center gap-3 bg-muted/35 px-4 text-center text-muted-foreground"><span className="grid size-12 place-items-center rounded-xl bg-cyan-500/12 text-cyan-600 dark:text-cyan-300"><ImageIcon className="size-5" /></span><span className="text-xs">空全景图节点</span><span className="text-[11px] text-muted-foreground/70">描述场景，生成可沉浸浏览的 360° 全景图</span></div>;
+    return node.url ? <CanvasPanoramaViewer src={node.url} alt={node.title || "全景图"} proxyGeneratedPanorama={Boolean(node.task_id && !node.storage_key)} onMoveStart={onPanoramaMoveStart} onOpen={onPanoramaOpen} /> : <div className="flex size-full flex-col items-center justify-center gap-3 bg-muted/35 px-4 text-center text-muted-foreground"><span className="grid size-12 place-items-center rounded-xl bg-cyan-500/12 text-cyan-600 dark:text-cyan-300"><ImageIcon className="size-5" /></span><span className="text-xs">空全景图节点</span><span className="text-[11px] text-muted-foreground/70">描述场景，生成可沉浸浏览的 360° 全景图</span></div>;
   }
   return null;
 }
 
-export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTokenName, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
+export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSelect, models, audioReferences, relayTokenName, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
   const [prompt, setPrompt] = useState(node.prompt || "");
   const model = node.generation_audio_model || models[0] || "";
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
-        <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
+        <div className="overflow-hidden">
           <PromptTextareaFrame className="h-32 min-h-24">
-            <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
+            <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
           </PromptTextareaFrame>
           <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
             <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
@@ -113,15 +115,15 @@ function AudioSpeedInput({ label, value, min, max, onChange }: { label: string; 
   return <label className="grid gap-1 text-xs"><span className="text-muted-foreground">{label}</span><Input type="number" min={min} max={max} step={0.05} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { const number = Number(draft); const normalized = Number.isFinite(number) ? Math.max(min, Math.min(max, Number(number.toFixed(2)))) : 1; setDraft(String(normalized)); onChange(normalized); }} /></label>;
 }
 
-export function CanvasPanoramaPromptPanel({ node, imageModel, imageModels, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; imageModel: string; imageModels: string[]; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
+export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReferenceSelect, imageModel, imageModels, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; imageModel: string; imageModels: string[]; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
   const prompt = node.panorama_source_prompt ?? node.prompt ?? "";
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
-        <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
+        <div className="overflow-hidden">
           <PromptTextareaFrame className="h-36 min-h-28">
-            <Textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
+            <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
           </PromptTextareaFrame>
           <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} /><CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /></div>
         </div>

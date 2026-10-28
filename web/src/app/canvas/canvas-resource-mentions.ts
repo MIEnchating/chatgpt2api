@@ -47,15 +47,29 @@ export function filterCanvasResourceMentions(
   ));
 }
 
-export function insertCanvasResourceMention(
+export function consumeCanvasResourceMention(
   value: string,
   mention: CanvasResourceMention,
   selectionEnd: number,
-  reference: CanvasResourceReference,
 ) {
-  const inserted = `${reference.label} `;
   return {
-    value: `${value.slice(0, mention.start)}${inserted}${value.slice(selectionEnd)}`,
-    cursor: mention.start + inserted.length,
+    value: `${value.slice(0, mention.start)}${value.slice(selectionEnd)}`,
+    cursor: mention.start,
   };
+}
+
+export function remapCanvasResourceLabels(
+  value: string,
+  before: readonly { nodeID: string; label: string }[],
+  after: readonly { nodeID: string; label: string }[],
+) {
+  const nextLabels = new Map(after.map((reference) => [reference.nodeID, reference.label]));
+  const labels = new Map(before.map((reference) => [reference.label, nextLabels.get(reference.nodeID) || ""]));
+  const alternatives = [...labels.keys()].sort((a, b) => b.length - a.length).map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!alternatives.length) return value;
+  // Match ID tokens as a whole so a numbered label never changes a node ID.
+  const pattern = new RegExp(`@\\[node:([^\\]]+)\\]|(${alternatives.join("|")})(?!\\d)`, "g");
+  return value.replace(pattern, (token, nodeID: string | undefined, label: string | undefined) => nodeID
+    ? nextLabels.has(nodeID) ? token : ""
+    : labels.get(label || "") || "");
 }

@@ -139,9 +139,9 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
           <div className="grid shrink-0 gap-3 px-4 pt-3 sm:px-6">
             <SearchInput value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
             <div className="flex flex-wrap items-center justify-between gap-2">
-            <div role="group" aria-label="素材类型" className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1">
+            <ScrollArea role="group" ariaLabel="素材类型" className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full gap-1" >
               {kinds.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => setKind(item.value)} className={cn("h-8 shrink-0 rounded-md px-2.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring", kind === item.value && "bg-card text-foreground shadow-sm")}>{item.label}</button>)}
-            </div>
+            </ScrollArea>
             {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : null}
             </div>
           </div>

@@ -27,6 +27,7 @@ docs/examples/*
 !docs/examples/newapi-seedance-a-contracts.json
 !docs/windows-desktop.md
 !docs/canvas-alignment.md
+!docs/canvas-agent-kernel.md
 !docs/channel-parameter-translation.md
 !docs/user-quota-allocation-requirements.md
 !jshook/docs/

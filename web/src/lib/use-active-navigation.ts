@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 export function useActiveNavigation(activeKey: string) {
-  const navigationRef = useRef<HTMLElement>(null);
+  const navigationRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const navigation = navigationRef.current;

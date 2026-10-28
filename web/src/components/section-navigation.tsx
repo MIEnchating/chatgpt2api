@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { LucideIcon } from "lucide-react";
 
 import { useActiveNavigation } from "@/lib/use-active-navigation";
@@ -43,8 +44,7 @@ export function SectionNavigation<T extends string>({
         <p className="mt-1 hidden break-words text-xs leading-5 text-muted-foreground lg:block">{description}</p>
       </div>
       <nav
-        ref={navigationRef}
-        className="hide-scrollbar flex min-w-0 gap-1 overflow-x-auto p-1 lg:grid lg:overflow-visible"
+        className="min-w-0"
         aria-label={ariaLabel}
         onKeyDown={(event) => {
           if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
@@ -55,7 +55,7 @@ export function SectionNavigation<T extends string>({
           const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
           buttons[next]?.focus();
         }}
-      >
+      ><ScrollArea viewportRef={navigationRef} manageKeyboard={false} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 p-1 lg:grid lg:w-full">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.id === activeId;
@@ -78,7 +78,7 @@ export function SectionNavigation<T extends string>({
             </button>
           );
         })}
-      </nav>
+      </ScrollArea></nav>
     </aside>
   );
 }

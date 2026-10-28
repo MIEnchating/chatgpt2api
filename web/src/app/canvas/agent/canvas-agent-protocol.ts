@@ -16,6 +16,7 @@ export function parseCanvasAgentToolArguments(value: unknown): Pick<CanvasAgentT
 export function normalizeCanvasAgentBatch(toolCalls: CanvasAgentToolCall[], toolError?: string) {
   if (toolError) throw new Error(toolError);
   if (toolCalls.length > MAX_AGENT_ACTIONS_PER_TURN) throw new Error(`每批最多执行 ${MAX_AGENT_ACTIONS_PER_TURN} 个工具操作`);
+  if (toolCalls.filter((call) => call.name === "ask_user_question").length > 1) throw new Error("每次只提出一个关键问题");
   const ids = new Set<string>();
   return toolCalls.map((call) => {
     if (!call.id || ids.has(call.id)) throw new Error("工具调用 ID 缺失或重复");

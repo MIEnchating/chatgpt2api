@@ -510,7 +510,7 @@ test("workflow tasks expose a complete details dialog", () => {
 
 test("workflow task history stays out of the template page and opens on demand", () => {
   assert.match(workflowSource, /function WorkflowTaskHistoryDialog/);
-  assert.match(workflowSource, /role="tablist" aria-label="任务状态"/);
+  assert.match(workflowSource, /role="tablist" ariaLabel="任务状态"/);
   assert.match(workflowSource, /<WorkflowTaskHistoryDialog[\s\S]*?onOpenTask=/);
   assert.doesNotMatch(workflowSource, /<section aria-labelledby="workflow-task-title"/);
 });

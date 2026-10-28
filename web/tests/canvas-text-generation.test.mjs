@@ -13,7 +13,7 @@ test("canvas and Agent resolve text models only from the configured list", () =>
   assert.equal(resolveCanvasTextModel("", []), "");
 });
 
-test("edits an existing text node into one child without replacing the source", () => {
+test("regenerates an existing text result in the same node without children", () => {
   assert.deepEqual(canvasTextGenerationPlan(node("text", {
     prompt: "原始文案",
     composer_content: "改得更简洁",
@@ -23,7 +23,7 @@ test("edits an existing text node into one child without replacing the source", 
     instruction: "改得更简洁",
     requestPrompt: "请根据要求修改以下文本。\n\n原文：\n原始文案\n\n修改要求：\n改得更简洁",
     count: 1,
-    createsChildNodes: true,
+    createsChildNodes: false,
   });
 });
 
@@ -35,6 +35,19 @@ test("generates into an empty text node in place", () => {
     count: 1,
     createsChildNodes: false,
   });
+});
+
+test("text input is independent from the existing result and overwrite uses both", () => {
+  const source = node("text", { prompt: "已有生成结果", composer_content: "改为两句话" });
+  const plan = canvasTextGenerationPlan(source);
+  assert.equal(plan.instruction, "改为两句话");
+  assert.equal(plan.sourceContent, "已有生成结果");
+  assert.equal(plan.createsChildNodes, false);
+  assert.ok(plan.requestPrompt.includes("已有生成结果"));
+  assert.ok(plan.requestPrompt.includes("改为两句话"));
+  assert.equal(source.prompt, "已有生成结果");
+  assert.equal(source.composer_content, "改为两句话");
+  assert.equal(canvasTextGenerationPlan(node("text", { prompt: "已有生成结果" })).instruction, "");
 });
 
 test("config text generation clamps count and uses composer input", () => {

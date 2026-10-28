@@ -1,3 +1,4 @@
+import { CANVAS_AGENT_INTERACTION_PROMPT } from "./canvas-agent-interaction";
 import type { AgentSkill } from "@/services/api/agent-skills";
 import type { CanvasAgentPhase } from "./canvas-agent-types";
 import { serializeCanvasAgentContext, type CanvasAgentContext } from "./canvas-agent-context";
@@ -16,14 +17,15 @@ import { VIDEO_SINGLE_SHOT_SKILL } from "./skills/video-single-shot";
 import { WORKFLOW_SKILL } from "./skills/workflow";
 
 export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: string, context: CanvasAgentContext, selectedSkills: AgentSkill[] = [], checkpoint?: string) {
-    const facts = "\n\n事实以当前工具结果和当前画布为准；历史摘要中的节点和任务状态必须重新核对。自动生成关闭时仅创建节点，不得声称已提交生成。每批最多 12 个操作；未知节点 ID 先用 query_canvas_nodes 检索；用户说继续或下一步时先查媒体任务当前状态。";
+    const facts = "\n\n事实以当前工具结果和当前画布为准；历史摘要中的节点和任务状态必须重新核对。自动生成关闭时仅创建节点，不得声称已提交生成。每批最多 12 个操作；未知节点 ID 先用 query_canvas_nodes 检索；用户说继续或下一步时先查媒体任务当前状态。资料已分批分析时，使用摘要中的真实节点 ID 引用原图，不得当作媒体已经生成。画布节点标有 detailsOmitted 时必须按需 get_node 读取正文和参数；omittedNodeCount 大于零时用 query_canvas_nodes 分页检索，每次只读取当前步骤需要的资料。把复杂请求拆成有依赖顺序的步骤，完成当前步骤后继续；依赖生成结果的下一步必须先核对任务完成状态。执行记忆中已成功提交的操作不要重复提交，待完成任务先查询状态。";
     const memory = checkpoint ? "\n\n长期对话记忆：\n" + checkpoint : "";
     if (selectedSkills.length) {
-      return [CORE_SKILL, "本轮采用用户所选 Skill 的创作流程和输出格式。用户当前明确指令优先；不得绕过工具校验和自动生成设置。附属文件仅按下列索引调用 read_skill_file 读取。", ...selectedSkills.map((skill) => `Skill ${skill.name}（ID: ${skill.id}）\n${skill.content}\n附属文件：${(skill.file_paths || Object.keys(skill.files || {})).join("、") || "无"}`)].join("\n\n") + facts + memory + "\n\n当前画布：" + serializeCanvasAgentContext(context);
+      return [CORE_SKILL, CANVAS_AGENT_INTERACTION_PROMPT, "本轮采用用户所选 Skill 的创作流程和输出格式。用户当前明确指令优先；不得绕过工具校验和自动生成设置。附属文件仅按下列索引调用 read_skill_file 读取。", ...selectedSkills.map((skill) => `Skill ${skill.name}（ID: ${skill.id}）\n${skill.content}\n附属文件：${(skill.file_paths || Object.keys(skill.files || {})).join("、") || "无"}`)].join("\n\n") + facts + memory + "\n\n当前画布：" + serializeCanvasAgentContext(context);
     }
     const intent = buildIntentText(userText, context);
     const selectedTypes = new Set<string>(context.nodes.filter((node) => context.selectedNodeIds.includes(node.id)).map((node) => node.type));
-    const skills = [CORE_SKILL, WORKFLOW_SKILL];
+    const staticDeliverable = /平面广告|海报|宣传图|主图|详情图|横幅|静态广告/.test(userText) && !/视频|短剧|宣传片|动画|分镜/.test(userText);
+    const skills = staticDeliverable ? [CORE_SKILL, CANVAS_AGENT_INTERACTION_PROMPT] : [CORE_SKILL, WORKFLOW_SKILL, CANVAS_AGENT_INTERACTION_PROMPT];
 
     const oneOffMedia =
         /生成一张|生成图片|生图|改图|生成视频|视频生成|文生视频|图生视频|生成音频|独立音频|生成旁白|旁白音频|配音|音色|朗读/.test(userText) &&
@@ -46,7 +48,7 @@ export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: s
     const wantsVideo =
         phase === "video" ||
         selectedTypes.has("video") ||
-        /生成视频|做视频|视频生成|文生视频|图生视频|让.+动起来|动画化|渲染镜头|生成片段|视频续写|续写视频|编辑视频|修改视频|重绘视频|运镜|一镜到底/.test(intent);
+        /生成视频|做视频|宣传视频|宣传片|短剧|剧情短片|视频生成|文生视频|图生视频|让.+动起来|动画化|渲染镜头|生成片段|视频续写|续写视频|编辑视频|修改视频|重绘视频|运镜|一镜到底/.test(intent);
     const wantsExtension =
         wantsVideo &&
         (/续写|继续视频|接着视频|延长|下一段|后续片段|前传|向前补拍|补拍|连续片段|连续镜头|一镜到底|同机位|串行|链式/.test(intent) ||
@@ -65,11 +67,11 @@ export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: s
         /独立音频|音色|配音|声音样本|角色声音|角色音色|对白音频|旁白|最终对白|最终旁白|朗读|语音/.test(intent);
     const wantsOrganize = phase === "references" || phase === "review" || phase === "complete" || /分组|整理|布局|归类|排列|收纳|画布太乱|自动整理/.test(intent);
 
-    if (wantsScript) skills.push(SCRIPT_SKILL);
-    if (wantsImage) skills.push(IMAGE_SKILL);
+    if (wantsScript && !staticDeliverable) skills.push(SCRIPT_SKILL);
+    if (wantsImage || staticDeliverable || /短剧/.test(intent)) skills.push(IMAGE_SKILL);
     if (wantsCharacterSheet) skills.push(IMAGE_CHARACTER_SHEET_SKILL);
     if (wantsStoryboard) skills.push(IMAGE_STORYBOARD_SKILL);
-    if (wantsVideo) {
+    if (wantsVideo && !staticDeliverable) {
         skills.push(VIDEO_SKILL);
         if (wantsExtension) skills.push(VIDEO_EXTENSION_SKILL);
         if (wantsVideoEdit) skills.push(VIDEO_EDITING_SKILL);

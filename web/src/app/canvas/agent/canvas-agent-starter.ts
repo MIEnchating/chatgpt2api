@@ -7,63 +7,21 @@ import type {
   CanvasPendingAgentAsset,
 } from "@/app/canvas/agent/canvas-agent-types";
 import type { MyAsset } from "@/lib/my-assets";
-import { videoDefaultResolution, videoDefaultSize, videoSizeOptions } from "@/lib/video-model-capabilities";
 import type { CanvasNode } from "@/services/api/canvas";
 
 const STARTER_NODE_GAP = 360;
 
-export function defaultCanvasAgentStarterConfig(videoModel = "") {
-  return {
-    autoGenerateMedia: false,
-    textApiMode: "chat" as const,
-    textReasoningEnabled: false,
-    textStreaming: false,
-    activeSkillIds: [],
-    imageQuality: "",
-    imageSize: "1:1",
-    videoQuality: videoDefaultResolution(videoModel),
-    videoSize: preferredCanvasAgentVideoSize(
-      videoSizeOptions(videoModel),
-      videoDefaultSize(videoModel),
-    ),
-  };
+export function defaultCanvasAgentStarterConfig(): CanvasAgentConfig {
+  return normalizeCanvasAgentConfig(null);
 }
 
-export function preferredCanvasAgentVideoSize(options: readonly string[], fallback: string) {
-  const landscape = options.filter((value) => {
-    const dimensions = value.match(/^(\d+)(?::|x)(\d+)$/i);
-    return dimensions ? Number(dimensions[1]) > Number(dimensions[2]) : false;
-  });
-  return landscape.find((value) => value === "16:9")
-    || (landscape.includes(fallback) ? fallback : landscape[0])
-    || (options.includes(fallback) ? fallback : options[0])
-    || fallback
-    || "16:9";
-}
-
-export function normalizeCanvasAgentConfig(
-  value: Partial<CanvasAgentConfig> | null | undefined,
-  defaults: CanvasAgentConfig,
-  options: Record<"imageQuality" | "imageSize" | "videoQuality" | "videoSize", readonly string[]>,
-): CanvasAgentConfig {
-  const select = (key: keyof typeof options) => {
-    const available = options[key];
-    const current = typeof value?.[key] === "string" ? value[key].trim() : "";
-    if (available.includes(current)) return current;
-    const fallback = defaults[key].trim();
-    if (available.includes(fallback)) return fallback;
-    return available[0] || "";
-  };
+export function normalizeCanvasAgentConfig(value: Partial<CanvasAgentConfig> | null | undefined): CanvasAgentConfig {
   return {
-    autoGenerateMedia: value?.autoGenerateMedia === true,
-    textApiMode: value?.textApiMode === "responses" ? "responses" : "chat",
+    autoGenerateMedia: value?.autoGenerateMedia !== false,
+    textApiMode: value?.textApiMode === "chat" ? "chat" : "responses",
     textReasoningEnabled: value?.textReasoningEnabled === true,
     textStreaming: value?.textStreaming === true,
     activeSkillIds: Array.isArray(value?.activeSkillIds) ? [...new Set(value.activeSkillIds.filter((id) => typeof id === "string" && id.trim()))] : [],
-    imageQuality: select("imageQuality"),
-    imageSize: select("imageSize"),
-    videoQuality: select("videoQuality"),
-    videoSize: select("videoSize"),
   };
 }
 

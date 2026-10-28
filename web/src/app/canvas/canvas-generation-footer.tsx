@@ -30,14 +30,14 @@ export function CanvasGenerationFooter({
   onStop: () => void;
 }) {
   return (
-    <div className={cn("shrink-0 -mx-3 -mb-3 border-t border-border/80 bg-card/95 p-3 backdrop-blur-xl", className)}>
-      <div className={cn("grid gap-2", secondaryAction && "grid-cols-[auto_minmax(0,1fr)]")}>
+    <div className={cn("shrink-0", className)}>
+      <div className="flex items-center justify-end gap-2">
         {secondaryAction ? (
           <Button
             type="button"
             variant="outline"
             size="lg"
-            className="h-10 min-w-0 rounded-lg px-3 text-xs"
+            className="h-8 min-w-0 rounded-lg px-3 text-xs"
             disabled={secondaryAction.disabled || secondaryAction.loading}
             aria-busy={secondaryAction.loading}
             onClick={secondaryAction.onClick}
@@ -50,20 +50,14 @@ export function CanvasGenerationFooter({
           type="button"
           size="lg"
           variant={running ? "destructive" : "default"}
-          className="h-10 w-full min-w-0 rounded-lg text-sm font-semibold"
+          className="size-8 min-w-0 rounded-xl p-0"
+          title={running ? "停止生成" : "开始生成"}
           disabled={disabled || stopping}
           aria-busy={stopping}
           aria-label={running ? "停止生成" : "开始生成"}
           onClick={running ? onStop : onGenerate}
         >
-          {running ? (
-            <>
-              {stopping ? <LoaderCircle className="animate-spin" /> : <Square className="size-3.5 fill-current" />}
-              {stopping ? "停止中" : "停止生成"}
-            </>
-          ) : (
-            <><ArrowUp className="size-4" />开始生成</>
-          )}
+          {stopping ? <LoaderCircle className="animate-spin" /> : running ? <Square className="size-3.5 fill-current" /> : <ArrowUp className="size-4" />}
         </Button>
       </div>
     </div>

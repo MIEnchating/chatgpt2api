@@ -1,5 +1,7 @@
 "use client";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { useEffect, useState } from "react";
 import { ChevronDown, LogOut, ShieldCheck, UserCircle2 } from "lucide-react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
@@ -295,14 +297,13 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
           </div>
         </div>
         <nav
-          ref={navigationRef}
           aria-label="主导航"
-          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch xl:gap-1.5 xl:px-1 xl:py-1 [@media(min-width:1280px)]:[justify-content:safe_center]"
-        >
+          className="col-span-2 row-start-2 -mx-1 min-w-0 xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch"
+        ><ScrollArea viewportRef={navigationRef} manageKeyboard={false} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 px-1 pb-0.5 xl:gap-1.5 xl:py-1 [@media(min-width:1280px)]:justify-center">
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} onPreloadRoute={onPreloadRoute} />
           ))}
-        </nav>
+        </ScrollArea></nav>
         <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 xl:col-start-3 xl:gap-1.5 xl:justify-self-end">
           {canAccessImageTasks ? <ImageTaskQueue key={`task-queue:${session.key}`} className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
           <AnnouncementCenter key={`announcements:${session.key}`} sessionKey={session.key} />

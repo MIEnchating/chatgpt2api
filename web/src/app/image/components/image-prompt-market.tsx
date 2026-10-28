@@ -492,7 +492,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             <div className="min-w-0">
               <h1 className="font-display text-xl font-semibold leading-tight sm:text-2xl">提示词库</h1>
               <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
-                搜索、筛选并收藏提示词，也可以保存为文本素材或套用到创作台。
+                搜索、筛选并收藏提示词，也可以保存为文本素材或套用。
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
@@ -530,10 +530,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-start">
               <span className="pt-1.5 text-xs font-medium text-muted-foreground">标签</span>
               <div className="flex min-w-0 items-start gap-2">
-                <div className={cn(
-                  "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-hidden pb-0.5 transition-[max-height] duration-200",
-                  tagsExpanded ? "max-h-40 overflow-y-auto" : "max-h-8",
-                )}>
+                <ScrollArea className={cn("min-w-0 flex-1 transition-[max-height] duration-200", tagsExpanded ? "max-h-40" : "max-h-8 [&>div[aria-hidden]]:hidden")} viewportClassName={tagsExpanded ? undefined : "!overflow-hidden"} viewClass="flex flex-wrap items-center gap-1.5 pb-0.5">
                   <button
                     type="button"
                     onClick={() => setTagFilters([])}
@@ -560,7 +557,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                       {tag}
                     </TooltipButton>
                   ))}
-                </div>
+                </ScrollArea>
                 <Button
                   type="button"
                   variant="ghost"
@@ -770,7 +767,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                 <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4">
                   {selectedPrompt && onSavePrompt ? <Button type="button" variant="outline" disabled={saveBusyIds.has(selectedPrompt.id)} onClick={() => void savePrompt(selectedPrompt)}>{saveBusyIds.has(selectedPrompt.id) ? <><LoaderCircle className="size-4 animate-spin" />保存中</> : "保存到我的素材"}</Button> : null}
                   {selectedPrompt ? <Button type="button" variant="outline" onClick={() => void copyPrompt(selectedPrompt)}><ClipboardCopy className="size-4" />复制提示词</Button> : null}
-                  {selectedPrompt ? <Button type="button" onClick={() => void onApplyPrompt(selectedPrompt)}>套用到创作台</Button> : null}
+                  {selectedPrompt ? <Button type="button" onClick={() => void onApplyPrompt(selectedPrompt)}>套用</Button> : null}
                 </div>
               </div>
             </div>

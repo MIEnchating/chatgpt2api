@@ -106,11 +106,11 @@ export function SettingsCard({
           </CardContent>
         </ScrollArea>
       ) : (
-        <div data-settings-card-body className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+        <ScrollArea data-settings-card-body className="min-h-0 min-w-0 flex-1" viewClass="flex flex-col" viewportClassName="overscroll-contain">
           <CardContent className={cn("min-w-0 p-4 sm:p-5", contentClassName)}>
             {children}
           </CardContent>
-        </div>
+        </ScrollArea>
       )}
     </Card>
   );

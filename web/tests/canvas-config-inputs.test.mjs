@@ -90,9 +90,10 @@ test("configuration generation requires prompt text or at least one usable input
   assert.equal(canGenerateCanvasConfig({ ...config, generation_mode: "audio" }, [{ nodeID: "text", type: "text", title: "台词", text: "你好" }]), true);
 });
 
-test("an explicitly cleared composer cannot generate from deleted references", () => {
+test("an empty composer can use connected cards but cannot generate after removing them", () => {
   const inputs = [{ nodeID: "text", type: "text", title: "文字", text: "已连接文字" }];
-  assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "" }), inputs), false);
+  assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "" }), []), false);
+  assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "" }), inputs), true);
   assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "继续生成" }), inputs), true);
 });
 

@@ -43,7 +43,7 @@ export function CanvasCameraControl({
           <Camera />摄像机
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(680px,calc(100vw-1rem))] overflow-y-auto p-4">
+      <PopoverContent side="top" align="end" className="max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(680px,calc(100vw-1rem))] p-4">
         <div className="mb-4 flex items-start justify-between gap-4 border-b border-border pb-3">
           <div className="min-w-0 space-y-1">
             <h3 className="text-sm font-semibold">摄像机控制</h3>

@@ -6,11 +6,12 @@ const source = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url)
 const controls = source("app/canvas/canvas-workspace-controls.tsx");
 const page = source("app/canvas/page.tsx");
 const engine = source("app/canvas/canvas-engine.tsx");
+const toolbar = source("app/canvas/canvas-node-toolbar.tsx");
 const sidePanel = source("app/canvas/canvas-side-panel.tsx");
 const agent = source("app/canvas/canvas-agent-panel.tsx");
 const picker = source("app/canvas/canvas-asset-picker.tsx");
 
-test("canvas dock anchors to the workspace independently of either sidebar", () => {
+test("canvas dock stays centered across the entire workspace", () => {
   assert.match(controls, /CANVAS_DOCK_BREAKPOINT = 560/);
   assert.match(controls, /props\.width < CANVAS_DOCK_BREAKPOINT/);
   assert.match(controls, /bottom-\[max\(1rem,env\(safe-area-inset-bottom\)\)\]/);
@@ -19,23 +20,24 @@ test("canvas dock anchors to the workspace independently of either sidebar", () 
   assert.doesNotMatch(page, /workspaceWidth < 768 && sidePanel\.open/);
   assert.match(page, /<\/div>\s*\{showWorkspaceControls \? <div data-canvas-workspace-overlay/);
   assert.match(page, /--canvas-dock-clearance/);
-  for (const panel of [sidePanel, agent, engine]) {
+  for (const panel of [sidePanel, agent]) {
     assert.match(panel, /bottom: "var\(--canvas-dock-clearance\)"/);
   }
+  assert.match(toolbar, /bottom-\[var\(--canvas-dock-clearance\)\]/);
 });
 
-test("node settings can replace the Agent without unmounting its conversation", () => {
-  assert.match(page, /panelNodeID=\{panelNodeID\} nodePanelReturnsToAgent=\{agentOpen\}/);
-  assert.match(page, /open=\{agentOpen && !panelNodeID\}/);
-  assert.match(engine, /nodePanelReturnsToAgent \? "返回 Agent" : "关闭节点抽屉"/);
+test("node editing follows the selected node and keeps the Agent available", () => {
+  assert.match(engine, /<CanvasNodeToolbar key=\{actionNode.id\}[^>]*expanded=\{editorOpen\}/);
+  assert.match(engine, /<CanvasNodeEditor/);
+  assert.doesNotMatch(engine, /data-canvas-node-drawer|nodePanelReturnsToAgent/);
+  assert.match(page, /open=\{agentOpen\}/);
+  assert.doesNotMatch(page, /agentOpen && !panelNodeID/);
   const activate = page.slice(page.indexOf("function activateNode("), page.indexOf("function toggleCanvasFreeResize("));
   assert.match(activate, /setAgentReferenceNodeClick/);
-  assert.match(activate, /setPanelNodeID\(node\?\.type === "group" \? "" : node\?\.id \|\| ""\)/);
   assert.doesNotMatch(activate, /if \(agentOpen\)|setAgentOpen\(false\)/);
 });
 
-test("mobile node and Agent panels provide an outside target that closes the active panel", () => {
-  assert.match(engine, /data-canvas-node-drawer-backdrop[\s\S]*?aria-label="关闭节点面板"[\s\S]*?inset-0[\s\S]*?md:hidden[\s\S]*?onClick=\{\(\) => onNodePanelToggle\(panelNode\.id\)\}/);
+test("the mobile Agent provides an outside target that closes the panel", () => {
   assert.match(agent, /data-canvas-agent-backdrop[\s\S]*?className="[^"\n]*inset-0[^"\n]*md:hidden[^"\n]*"[\s\S]*?aria-label="关闭 Agent"[\s\S]*?onClick=\{onClose\}/);
 });
 

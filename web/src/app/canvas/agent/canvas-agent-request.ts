@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { waitForCreationTask, CreationTaskTimeoutError } from "@/lib/creation-task-events";
 import {
   cancelCreationTask,
@@ -20,6 +21,8 @@ export type CanvasAgentModelTurn = {
 };
 
 export type RequestCanvasAgentTurnInput = {
+  taskId?: string;
+  onTaskCreated?: (taskId: string) => Promise<void>;
   apiMode?: "chat" | "responses";
   reasoningEnabled?: boolean;
   stream?: boolean;
@@ -46,13 +49,16 @@ export async function requestCanvasAgentTurn(input: RequestCanvasAgentTurnInput)
 
 async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: CanvasAgentToolDefinition[] }) {
   throwIfAborted(input.signal);
+  const taskId = input.taskId || `canvas-agent-${nanoid()}`;
+  if (input.onTaskCreated) await input.onTaskCreated(taskId);
+  throwIfAborted(input.signal);
   let submitted;
   try {
     submitted = await createChatGenerationTask({
-      clientTaskId: `canvas-agent-${crypto.randomUUID()}`,
+      clientTaskId: taskId,
       prompt: input.prompt,
       model: input.model,
-      apiMode: input.apiMode || "chat",
+      apiMode: input.apiMode || "responses",
       reasoningEnabled: input.reasoningEnabled === true,
       stream: input.stream === true,
       maxOutputTokens: input.maxOutputTokens,
@@ -70,7 +76,7 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
     throw normalizeRequestError(error);
   }
 
-  const cancelSubmitted = () => { void cancelCreationTask(submitted.id).catch(() => undefined); };
+  const cancelSubmitted = () => { if (input.signal?.reason !== "canvas-detached") void cancelCreationTask(submitted.id).catch(() => undefined); };
   input.signal?.addEventListener("abort", cancelSubmitted, { once: true });
   try {
     if (input.signal?.aborted) {

@@ -166,6 +166,46 @@ func TestCanvasDocumentServiceRejectsInvalidAgentSessions(t *testing.T) {
 	}
 }
 
+func TestCanvasDocumentServiceAgentPanelModes(t *testing.T) {
+	for _, mode := range []string{"", "floating", "docked", "invalid"} {
+		t.Run(mode, func(t *testing.T) {
+			service := NewCanvasDocumentService(newTestStorageBackend(t))
+			document, err := loadCanvas(service, "panel-mode-owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if document.AgentPanel == nil || document.AgentPanel.Mode != "floating" {
+				t.Fatalf("default panel = %#v", document.AgentPanel)
+			}
+			document.AgentPanel = &CanvasAgentPanel{Open: true, Width: 480, Mode: mode}
+			saved, err := service.SaveAtRevision("panel-mode-owner", document)
+			if mode == "invalid" {
+				if !errors.Is(err, ErrInvalidCanvasDocument) {
+					t.Fatalf("SaveAtRevision() error = %v, want ErrInvalidCanvasDocument", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := mode
+			if want == "" {
+				want = "floating"
+			}
+			if saved.AgentPanel.Mode != want {
+				t.Fatalf("saved mode = %q, want %q", saved.AgentPanel.Mode, want)
+			}
+			reloaded, err := loadCanvas(service, "panel-mode-owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reloaded.AgentPanel.Mode != want || reloaded.AgentPanel.Width != 480 || !reloaded.AgentPanel.Open {
+				t.Fatalf("reloaded panel = %#v", reloaded.AgentPanel)
+			}
+		})
+	}
+}
+
 func TestCanvasDocumentServiceRejectsInvalidAgentPanelWidth(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
 	document, err := loadCanvas(service, "invalid-agent-panel-owner")

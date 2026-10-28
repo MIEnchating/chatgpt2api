@@ -38,17 +38,29 @@ test("empty image parameter changes resize around the current center", () => {
     height: 226.66666666666666,
   });
   assert.deepEqual(canvasEmptyImageFrameFromSize({ x: 100, y: 100, width: 340, height: 240 }, "1024x1536"), {
-    x: 190,
-    y: 100,
-    width: 160,
-    height: 240,
+    x: 156.66666666666669,
+    y: 50,
+    width: 226.66666666666666,
+    height: 340,
   });
   assert.equal(canvasEmptyImageFrameFromSize({ x: 0, y: 0, width: 340, height: 240 }, ""), null);
 });
 
 test("generated media frames follow the reference aspect-ratio sizing contract", () => {
-  assert.deepEqual(canvasNodeSizeFromRatio("16:9", 420, 236), { width: 419.55555555555554, height: 236 });
-  assert.deepEqual(canvasNodeSizeFromRatio("9:16", 420, 236), { width: 132.75, height: 236 });
+  assert.deepEqual(canvasNodeSizeFromRatio("16:9", 420, 236), { width: 420, height: 236.25 });
+  assert.deepEqual(canvasNodeSizeFromRatio("9:16", 420, 236), { width: 236.25, height: 420 });
   assert.deepEqual(canvasNodeSizeFromRatio("1536x1024", 340, 240), { width: 340, height: 226.66666666666666 });
   assert.deepEqual(canvasNodeSizeFromRatio("auto", 340, 240), null);
+});
+
+
+test("ratio changes preserve a resized node's longest edge and center", () => {
+  let node = { x: 20, y: 40, width: 800, height: 450 };
+  const center = { x: 420, y: 265 };
+  for (const ratio of ["9:16", "16:9", "1:1", "9:16", "16:9"]) {
+    node = canvasEmptyImageFrameFromSize(node, ratio);
+    assert.equal(Math.max(node.width, node.height), 800);
+    assert.equal(node.x + node.width / 2, center.x);
+    assert.equal(node.y + node.height / 2, center.y);
+  }
 });

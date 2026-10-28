@@ -1843,7 +1843,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
 
               <section className={cn("flex flex-col gap-4", editorSection !== "response" && "hidden")}>
                 <SectionTitle description="创建视频任务后，系统定时查询生成状态，并从上游返回的 JSON 中读取任务编号、进度和视频地址。">读取任务结果</SectionTitle>
-                <div className="space-y-2 rounded-lg bg-muted/35 p-3 text-xs leading-5 text-muted-foreground"><p>例如上游返回下列内容：任务编号填 data.id，生成状态填 data.status，完成进度填 data.progress，视频下载地址填 data.video_url。</p><pre className="overflow-x-auto rounded-md bg-background p-3 font-mono text-foreground">{JSON.stringify({ data: { id: "task_123", status: "completed", progress: 100, video_url: "https://example.com/video.mp4" } }, null, 2)}</pre><p>“data.progress”表示 data 对象中的 progress 字段。多项按填写顺序读取；选填字段没有对应数据时可留空。</p></div>
+                <div className="space-y-2 rounded-lg bg-muted/35 p-3 text-xs leading-5 text-muted-foreground"><p>例如上游返回下列内容：任务编号填 data.id，生成状态填 data.status，完成进度填 data.progress，视频下载地址填 data.video_url。</p><ScrollArea className="rounded-md bg-background font-mono text-foreground" viewClass="w-max min-w-full p-3" tag="pre">{JSON.stringify({ data: { id: "task_123", status: "completed", progress: 100, video_url: "https://example.com/video.mp4" } }, null, 2)}</ScrollArea><p>“data.progress”表示 data 对象中的 progress 字段。多项按填写顺序读取；选填字段没有对应数据时可留空。</p></div>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
                   <NumericField id="video-contract-poll-interval" label="查询频率" help="创建异步视频任务后，每隔多少秒向上游查询一次任务状态。间隔过短可能触发上游限流。" min={1} max={300} value={polling.interval_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.interval_seconds = value; })} />
                   <NumericField id="video-contract-poll-timeout" label="最长等待时间" help="上游任务提交成功后最多轮询多长时间；视频任务总时限会自动覆盖该时间和一次轮询间隔。" min={1} max={86400} value={polling.timeout_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.polling.timeout_seconds = value; })} />
@@ -1897,7 +1897,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     {isPreviewing ? <LoaderCircle className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
                     运行模拟
                   </Button>
-                  {previewResult ? <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100"><code>{JSON.stringify(previewResult, null, 2)}</code></pre> : null}
+                  {previewResult ? <ScrollArea className="max-h-72 rounded-lg bg-zinc-950 font-mono text-xs leading-5 text-zinc-100" viewClass="whitespace-pre-wrap break-words p-3" tag="pre"><code>{JSON.stringify(previewResult, null, 2)}</code></ScrollArea> : null}
                 </div>
               </details>
               <details className="group overflow-hidden rounded-lg border border-border/70 bg-background">
@@ -2312,14 +2312,14 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               <div className="px-3 py-3"><p className="text-lg font-semibold text-foreground">{pendingImportSummary.created}</p><p className="text-xs text-muted-foreground">新增</p></div>
               <div className="px-3 py-3"><p className="text-lg font-semibold text-foreground">{pendingImportSummary.updated}</p><p className="text-xs text-muted-foreground">更新</p></div>
             </div>
-            <div className="max-h-52 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+            <ScrollArea className="max-h-52 rounded-lg border border-border" viewClass="divide-y divide-border" >
               {pendingJSONImport?.bundle.contracts.map((item, index) => (
                 <div key={`${item.contract.name}-${index}`} className="flex min-w-0 items-center justify-between gap-3 px-3 py-2.5">
                   <span className="truncate text-sm font-medium text-foreground">{item.contract.name || "未命名契约"}</span>
                   <Badge variant={item.enabled ? "success" : "secondary"} className="shrink-0 rounded-md">{item.enabled ? "启用" : "停用"}</Badge>
                 </div>
               ))}
-            </div>
+            </ScrollArea>
             {pendingImportSummary.updated > 0 ? <p className="text-sm text-muted-foreground">同名契约将更新，未出现在文件中的现有契约不会改变。</p> : null}
           </div>
           <DialogFooter>
@@ -2338,7 +2338,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
             <DialogTitle>契约版本历史</DialogTitle>
             <DialogDescription>{versionsItem?.contract.name} · 当前第 {versionsItem?.revision} 版</DialogDescription>
           </DialogHeader>
-          <div className="max-h-[min(60dvh,520px)] overflow-y-auto rounded-lg border border-border">
+          <ScrollArea className="max-h-[min(60dvh,520px)] rounded-lg border border-border" viewClass="" >
             {isLoadingVersions ? (
               <div className="flex min-h-32 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
             ) : versions.length === 0 ? (
@@ -2364,7 +2364,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                 })}
               </div>
             )}
-          </div>
+          </ScrollArea>
           <DialogFooter><Button type="button" variant="outline" disabled={isRollingBack} onClick={closeVersions}>关闭</Button></DialogFooter>
         </DialogContent>
       </Dialog>

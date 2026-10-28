@@ -42,8 +42,8 @@ export function releaseCanvasAgentRun(slot: CanvasAgentRunSlot, controller: Abor
   return true;
 }
 
-export function abortCanvasAgentRun(slot: CanvasAgentRunSlot) {
+export function abortCanvasAgentRun(slot: CanvasAgentRunSlot, reason?: "canvas-detached") {
   if (!slot.current) return false;
-  slot.current.abort();
+  slot.current.abort(reason);
   return true;
 }

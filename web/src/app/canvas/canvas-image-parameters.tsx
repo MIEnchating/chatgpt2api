@@ -148,6 +148,9 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
         <ScrollArea
           ref={panelRef}
           data-canvas-parameter-panel
+          data-canvas-no-pan
+          role="dialog"
+          ariaLabel="图片参数"
           className="fixed z-[1200] rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-elevated)]"
           style={{
             left: panelPlacement.left,
@@ -160,6 +163,13 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            buttonRef.current?.querySelector("button")?.focus();
+          }}
         >
         <div className="p-3 pr-4">{parameterFields}</div>
         </ScrollArea>,

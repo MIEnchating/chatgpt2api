@@ -28,17 +28,12 @@ test("empty profile model selectors stay controlled and disabled", () => {
 
 test("canvas Agent uses only configured models and cannot start without its text model", () => {
   assert.doesNotMatch(librarySource, /DEFAULT_IMAGE_MODEL/);
-  assert.match(librarySource, /const imageModel = resolveConfiguredModel\(\s*configuredImageModels,/);
-  assert.match(librarySource, /setAgentTextModel\(textModel\);\s*setAgentImageModel\(imageModel\);\s*setAgentVideoModel\(videoModel\);/);
   assert.match(librarySource, /if \(!prompt \|\| !agentTextModel \|\| busy \|\| uploadingAsset\) return;/);
   assert.match(librarySource, /disabled=\{!agentPrompt\.trim\(\) \|\| !agentTextModel \|\| uploadingAsset \|\| busy\}/);
 });
 
-test("canvas Agent clears models on a successful empty response but preserves them on fetch failure", () => {
-  assert.match(librarySource, /setAgentImageModel\(imageModel\)/);
-  assert.match(librarySource, /setAgentVideoModel\(videoModel\)/);
+test("canvas Agent clears its text model on an empty response and preserves it on fetch failure", () => {
+  assert.match(librarySource, /setAgentTextModel\(textModel\)/);
   assert.match(librarySource, /\.catch\(\(\) => undefined\)/);
   assert.doesNotMatch(librarySource, /\.catch\(\(\) => \{[\s\S]*?setAgent(?:Text|Image|Video)Model\(""\)/);
-  assert.match(librarySource, /AgentStarterParameterMenu disabled=\{!agentImageModel\}/);
-  assert.match(librarySource, /AgentStarterParameterMenu disabled=\{!agentVideoModel\}/);
 });

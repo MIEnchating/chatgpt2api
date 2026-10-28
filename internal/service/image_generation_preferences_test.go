@@ -31,11 +31,12 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preferences(default) error = %v", err)
 	}
-	if defaults.APIMode != "images" || defaults.Stream || defaults.PartialImages != 1 || defaults.ResponseFormatB64JSON || defaults.CodexCLICompatibility || defaults.CanvasDefaultImageCount != 1 || defaults.DefaultAudioVoice != "" || defaults.DefaultAudioFormat != "" || defaults.DefaultAudioSpeed != 1 {
+	if defaults.NodeRegenerateBehavior != "new-node" || defaults.APIMode != "images" || defaults.Stream || defaults.PartialImages != 1 || defaults.ResponseFormatB64JSON || defaults.CodexCLICompatibility || defaults.CanvasDefaultImageCount != 1 || defaults.DefaultAudioVoice != "" || defaults.DefaultAudioFormat != "" || defaults.DefaultAudioSpeed != 1 {
 		t.Fatalf("default preferences = %#v", defaults)
 	}
 
 	want := ImageGenerationPreferences{
+		NodeRegenerateBehavior:  "overwrite",
 		APIMode:                 "responses",
 		Stream:                  true,
 		PartialImages:           3,
@@ -312,5 +313,29 @@ func TestInitializeRelayTokensPreservesExplicitChoicesAndEmptySelections(t *test
 	p, err = s.Preferences("alice")
 	if err != nil || !reflect.DeepEqual(p.DefaultVideoRelayTokens, []string{"first", "second"}) {
 		t.Fatalf("reinitialized=%#v err=%v", p, err)
+	}
+}
+
+func TestImageGenerationPreferencesRegenerationBehavior(t *testing.T) {
+	for _, behavior := range []string{"new-node", "overwrite", "", "invalid"} {
+		input := defaultImageGenerationPreferences()
+		input.NodeRegenerateBehavior = behavior
+		got, err := normalizeImageGenerationPreferences(input)
+		if behavior == "invalid" {
+			if err == nil {
+				t.Fatal("accepted invalid regeneration behavior")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := behavior
+		if want == "" {
+			want = "new-node"
+		}
+		if got.NodeRegenerateBehavior != want {
+			t.Fatalf("behavior=%q want=%q", got.NodeRegenerateBehavior, want)
+		}
 	}
 }

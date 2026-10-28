@@ -31,6 +31,7 @@ function LegacyImageRoute() {
 
 export const appRoutes: AppRouteConfig[] = [
   lazyRoute("/", () => import("@/app/page")),
+  lazyRoute("/share/canvas/:token", () => import("@/app/canvas/shared-page")),
   lazyRoute("/login", () => import("@/app/login/page")),
   lazyRoute("/canvas/:projectID", () => import("@/app/canvas/route"), "/canvas"),
   lazyRoute("/canvas/editor", () => import("@/app/canvas/route"), "/canvas"),

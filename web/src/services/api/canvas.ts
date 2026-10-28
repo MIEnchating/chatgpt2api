@@ -112,6 +112,7 @@ export type CanvasConnection = {
 
 export type CanvasAssistantReference = {
   id: string;
+  source?: "attachment";
   type: CanvasNode["type"];
   title: string;
   label?: string;
@@ -163,6 +164,7 @@ export type CanvasDocument = {
   active_agent_session_id?: string;
   agent_config?: Record<string, unknown>;
   agent_panel?: {
+    mode?: "floating" | "docked";
     open: boolean;
     width: number;
   };
@@ -224,4 +226,22 @@ export async function importCanvasProject(document: CanvasDocument) {
     method: "POST",
     body: { action: "import", document },
   });
+}
+
+export type CanvasShare = { token: string };
+
+export function fetchCanvasShare(projectID: string) {
+  return httpRequest<CanvasShare>(`/api/canvas/shares?project_id=${encodeURIComponent(projectID)}`);
+}
+
+export function createCanvasShare(projectID: string) {
+  return httpRequest<CanvasShare>(`/api/canvas/shares?project_id=${encodeURIComponent(projectID)}`, { method: "POST" });
+}
+
+export function revokeCanvasShare(projectID: string) {
+  return httpRequest<CanvasShare>(`/api/canvas/shares?project_id=${encodeURIComponent(projectID)}`, { method: "DELETE" });
+}
+
+export function fetchSharedCanvas(token: string, signal?: AbortSignal) {
+  return httpRequest<{ document: CanvasDocument }>(`/api/canvas-shares/${encodeURIComponent(token)}`, { redirectOnUnauthorized: false, signal });
 }

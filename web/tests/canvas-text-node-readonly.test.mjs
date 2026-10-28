@@ -6,19 +6,19 @@ const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx",
 const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
 
 test("text nodes render content without an inline editor", () => {
-  assert.match(engineSource, /node\.prompt \|\| <span[^>]*>暂无文字内容/);
+  assert.match(engineSource, /node\.prompt \|\| <span[^>]*>等待生成结果/);
   assert.doesNotMatch(engineSource, /CanvasResourceMentionTextarea/);
   assert.doesNotMatch(engineSource, /contentEditable/);
 });
 
-test("text content stays editable only in the side panel", () => {
+test("text generation input stays separate from the read-only result", () => {
   const panelSource = pageSource.slice(
-    pageSource.indexOf("function CanvasTextContentPanel"),
+    pageSource.indexOf("function CanvasTextPromptPanel"),
     pageSource.indexOf("function CanvasNodePromptPanel"),
   );
-  assert.match(pageSource, /placeholder="输入文字内容"/);
-  assert.match(pageSource, /<CanvasTextContentPanel/);
-  assert.match(pageSource, /onContentChange=\{\(value, commit\) => updateNodePrompt\(node\.id, value, commit\)\}/);
-  assert.doesNotMatch(panelSource, /CanvasInlineModelSelect/);
-  assert.doesNotMatch(panelSource, /生成文本/);
+  assert.match(panelSource, /aria-label="文本生成要求"/);
+  assert.match(panelSource, /useState\(node\.composer_content \|\| ""\)/);
+  assert.match(pageSource, /<CanvasTextPromptPanel/);
+  assert.match(pageSource, /onPromptChange=\{\(value, commit\) => updateNodeComposerContent\(node\.id, value, commit\)\}/);
+  assert.doesNotMatch(panelSource, /onPromptChange.*node\.prompt/);
 });

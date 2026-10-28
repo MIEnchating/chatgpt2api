@@ -132,7 +132,7 @@ function buildExplicitCanvasGenerationContext(
   let imageCount = 0;
   let videoCount = 0;
   let audioCount = 0;
-  const resolvedPrompt = prompt.replace(CANVAS_CONFIG_REFERENCE_PATTERN, (_token, nodeID: string) => {
+  const resolveReference = (nodeID: string) => {
     const input = inputByID.get(nodeID);
     if (!input) return "";
     const existing = labelByID.get(input.nodeID);
@@ -158,7 +158,10 @@ function buildExplicitCanvasGenerationContext(
     labelByID.set(input.nodeID, label);
     textBlocks.push(`【${label}】\n${input.text || ""}`);
     return `【${label}】`;
-  });
+  };
+  const resolvedPrompt = prompt.replace(CANVAS_CONFIG_REFERENCE_PATTERN, (_token, nodeID: string) => resolveReference(nodeID));
+  // Reference cards are backed by connections, independent of the written instructions.
+  inputs.forEach((input) => resolveReference(input.nodeID));
   const frames = canvasVideoFrameReferences(sourceNode, inputs);
   const frameURLs = new Set([frames.firstFrameURL, frames.lastFrameURL].filter((url): url is string => Boolean(url)));
   const effectiveReferenceImageURLs = referenceImageURLs.filter((url) => !frameURLs.has(url));
@@ -197,7 +200,7 @@ export function canvasGenerationReferenceImageURLs(
   maximum: number,
 ) {
   const sourceURL = String(node.url || "").trim();
-  return [...new Set([...upstreamURLs, sourceURL].map((url) => url.trim()).filter(Boolean))]
+  return [...new Set([...upstreamURLs, ...(!sourceURL ? node.generation_reference_urls || [] : []), sourceURL].map((url) => url.trim()).filter(Boolean))]
     .slice(0, Math.max(0, maximum));
 }
 

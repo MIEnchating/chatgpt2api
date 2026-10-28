@@ -10,7 +10,7 @@ import {
   Image as ImageIcon,
   Images,
   LoaderCircle,
-  PanelLeftClose,
+  ArrowLeftToLine,
   Plus,
   RefreshCcw,
   Search,
@@ -243,12 +243,12 @@ export function CanvasSidePanel({
       <aside
         aria-label="画布资源侧栏"
         className={cn(
-          "absolute inset-y-0 left-0 z-10 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col border-r bg-card/98 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl transition-[opacity,transform,box-shadow,border-color] duration-300 ease-in-out motion-reduce:transition-none md:max-w-none [@media(max-height:540px)]:rounded-xl [@media(max-height:540px)]:border [@media(max-height:540px)]:shadow-xl",
+          "absolute top-0 bottom-[var(--canvas-dock-clearance)] left-0 z-10 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col border-r bg-card/98 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl transition-[opacity,transform,box-shadow,border-color] duration-300 ease-in-out motion-reduce:transition-none md:bottom-[var(--canvas-side-panel-bottom)] md:max-w-none [@media(max-height:540px)]:rounded-xl [@media(max-height:540px)]:border [@media(max-height:540px)]:shadow-xl",
           open
             ? "pointer-events-auto translate-x-0 border-border opacity-100 shadow-xl md:shadow-none"
             : "pointer-events-none -translate-x-full border-transparent opacity-0 shadow-none",
         )}
-        style={{ width, bottom: "var(--canvas-dock-clearance)" }}
+        style={{ width }}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-3">
           <div
@@ -268,15 +268,12 @@ export function CanvasSidePanel({
             }}
           >
             <SidePanelTab data-canvas-panel-tab="canvas" active={tab === "canvas"} onClick={() => onTabChange("canvas")}>画布</SidePanelTab>
-            <SidePanelTab data-canvas-panel-tab="assets" active={tab === "assets"} onClick={() => onTabChange("assets")}>素材库</SidePanelTab>
+            <SidePanelTab data-canvas-panel-tab="assets" active={tab === "assets"} onClick={() => onTabChange("assets")}>生成历史</SidePanelTab>
             <SidePanelTab data-canvas-panel-tab="prompts" active={tab === "prompts"} onClick={() => onTabChange("prompts")}>提示词库</SidePanelTab>
           </div>
-          <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground" aria-label="收起侧栏" title="收起侧栏" onClick={() => onOpenChange(false)}>
-            <PanelLeftClose className="size-4" />
-          </Button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden" role="tabpanel" aria-label={tab === "canvas" ? "画布节点" : tab === "assets" ? "素材库" : "提示词库"}>
+        <div className="min-h-0 flex-1 overflow-hidden" role="tabpanel" aria-label={tab === "canvas" ? "画布节点" : tab === "assets" ? "生成历史" : "提示词库"}>
           {tab === "canvas" ? (
             <CanvasNodesTab nodes={nodes} selectedNodeIDs={selectedNodeIDs} onFocusNode={(nodeID) => { onFocusNode(nodeID); closeOnMobile(); }} />
           ) : tab === "assets" ? (
@@ -284,6 +281,13 @@ export function CanvasSidePanel({
           ) : (
             <CanvasPromptsTab sessionKey={sessionKey} onInsert={insertPrompt} />
           )}
+        </div>
+
+        <div data-canvas-side-panel-footer className="flex h-16 shrink-0 items-center justify-between gap-3 border-t border-border/70 px-3">
+          <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-muted-foreground hover:text-foreground" aria-label="收起侧栏" title="收起侧栏" onClick={() => onOpenChange(false)}>
+            <ArrowLeftToLine className="size-4" />
+          </Button>
+          <span role="status" className="text-xs tabular-nums text-muted-foreground">共 {nodes.length} 节点</span>
         </div>
 
         <button
@@ -468,7 +472,7 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 space-y-2.5 border-b border-border/70 bg-muted/15 p-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">我的素材</span>
+          <span className="text-sm font-semibold text-foreground">生成历史</span>
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{images.length}</span>
           <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 gap-1.5 rounded-lg px-2 text-xs" onClick={onOpenAssets}>
             <FolderOpen className="size-3.5" />全部素材

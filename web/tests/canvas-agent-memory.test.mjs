@@ -55,3 +55,27 @@ test("treats image bytes as media and keeps encrypted reasoning out of summaries
   assert.doesNotMatch(summaryInput, /opaque-reasoning|data:image/);
   assert.match(summaryInput, /红衣/);
 });
+
+test("compacts completed tool rounds within the active user turn without orphaning calls", async () => {
+  const messages = history().slice(0, 4);
+  const result = await compactCanvasAgentHistory({
+    messages, checkpoint: "原约束", includeActiveProgress: true,
+    summarize: async (previous, text) => {
+      assert.equal(previous, "原约束");
+      assert.deepEqual(JSON.parse(text), messages.slice(1));
+      return "原约束；已调用 a 查询节点，未提交生成";
+    },
+  });
+  assert.equal(result.compacted, true);
+  assert.deepEqual(result.messages, [messages[0]]);
+  assert.match(result.checkpoint, /已调用 a/);
+  assert.equal(messages.length, 4);
+});
+
+test("never compacts incomplete or orphaned tool results in the active turn", async () => {
+  for (const messages of [history().slice(0, 2), [history()[0], history()[2]]]) {
+    const result = await compactCanvasAgentHistory({ messages, includeActiveProgress: true, summarize: async () => { throw new Error("must not summarize"); } });
+    assert.equal(result.compacted, false);
+    assert.equal(result.messages, messages);
+  }
+});

@@ -48,12 +48,12 @@ export function buildCanvasInputIndex(
 }
 
 export function canvasGenerationInputsFromIndex(nodeID: string, index: CanvasInputIndex) {
+  const directInputs = index.configInputsByNodeID.get(nodeID) || [];
   const configNodeID = index.configTargetBySourceID.get(nodeID);
-  if (configNodeID) {
-    const inputs = (index.configInputsByNodeID.get(configNodeID) || []).filter((input) => input.nodeID !== nodeID);
-    if (inputs.length) return inputs;
-  }
-  return index.configInputsByNodeID.get(nodeID) || [];
+  if (!configNodeID) return directInputs;
+  const inputs = (index.configInputsByNodeID.get(configNodeID) || []).filter((input) => input.nodeID !== nodeID);
+  const existingIDs = new Set(inputs.map((input) => input.nodeID));
+  return [...inputs, ...directInputs.filter((input) => !existingIDs.has(input.nodeID))];
 }
 
 export function canvasConfigInputs(
@@ -83,7 +83,6 @@ export function canvasConfigUsesConnectedText(inputs: readonly CanvasConfigInput
 
 export function canGenerateCanvasConfig(node: CanvasNode, inputs: readonly CanvasConfigInput[]) {
   const hasComposerContent = Boolean(String(node.composer_content ?? node.prompt ?? "").trim());
-  if (node.composer_content !== undefined) return hasComposerContent;
   if (node.generation_mode === "audio") {
     return hasComposerContent || inputs.some((input) => input.type === "text" && Boolean(input.text));
   }

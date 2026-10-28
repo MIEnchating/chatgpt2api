@@ -30,6 +30,7 @@ func (e *ImageGenerationPreferenceStorageError) Unwrap() error {
 }
 
 type ImageGenerationPreferences struct {
+	NodeRegenerateBehavior  string                       `json:"node_regenerate_behavior"`
 	APIMode                 string                       `json:"api_mode"`
 	Stream                  bool                         `json:"stream"`
 	PartialImages           int                          `json:"partial_images"`
@@ -155,7 +156,7 @@ func NewImageGenerationPreferenceService(backend storage.Backend) *ImageGenerati
 }
 
 func defaultImageGenerationPreferences() ImageGenerationPreferences {
-	return ImageGenerationPreferences{APIMode: "images", PartialImages: 1, CanvasDefaultImageCount: 1, DefaultAudioSpeed: 1, Workbench: defaultCreationWorkbenchPreferences()}
+	return ImageGenerationPreferences{NodeRegenerateBehavior: "new-node", APIMode: "images", PartialImages: 1, CanvasDefaultImageCount: 1, DefaultAudioSpeed: 1, Workbench: defaultCreationWorkbenchPreferences()}
 }
 
 func defaultCreationWorkbenchPreferences() CreationWorkbenchPreferences {
@@ -239,6 +240,12 @@ func (s *ImageGenerationPreferenceService) UpdateProfile(ownerID string, input I
 }
 
 func normalizeImageGenerationPreferences(input ImageGenerationPreferences) (ImageGenerationPreferences, error) {
+	if input.NodeRegenerateBehavior == "" {
+		input.NodeRegenerateBehavior = "new-node"
+	}
+	if input.NodeRegenerateBehavior != "new-node" && input.NodeRegenerateBehavior != "overwrite" {
+		return ImageGenerationPreferences{}, fmt.Errorf("node_regenerate_behavior must be new-node or overwrite")
+	}
 	if input.PartialImages < 0 || input.PartialImages > 3 {
 		return ImageGenerationPreferences{}, fmt.Errorf("partial_images must be an integer between 0 and 3")
 	}
@@ -435,6 +442,9 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 		if normalized, normalizeErr := normalizeCreationWorkbenchPreferences(workbench); normalizeErr == nil {
 			preferences.Workbench = normalized
 		}
+	}
+	if behavior := util.Clean(value["node_regenerate_behavior"]); behavior == "overwrite" || behavior == "new-node" {
+		preferences.NodeRegenerateBehavior = behavior
 	}
 	if count, ok := util.StrictInt(value["canvas_default_image_count"]); ok && count >= 1 && count <= 15 {
 		preferences.CanvasDefaultImageCount = count

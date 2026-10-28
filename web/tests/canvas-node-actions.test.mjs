@@ -9,7 +9,6 @@ const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.met
 const specialNodesSource = readFileSync(new URL("../src/app/canvas/canvas-special-nodes.tsx", import.meta.url), "utf8");
 const generationFooterSource = readFileSync(new URL("../src/app/canvas/canvas-generation-footer.tsx", import.meta.url), "utf8");
 const imageComposerSource = readFileSync(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8");
-const agentSettingsSource = readFileSync(new URL("../src/app/canvas/canvas-agent-generation-settings.tsx", import.meta.url), "utf8");
 const agentPanelSource = readFileSync(new URL("../src/app/canvas/canvas-agent-panel.tsx", import.meta.url), "utf8");
 const canvasLibrarySource = readFileSync(new URL("../src/app/canvas/library-page.tsx", import.meta.url), "utf8");
 const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
@@ -22,12 +21,15 @@ const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue
 const canvasTaskQueueStoreSource = readFileSync(new URL("../src/store/canvas-task-queue.ts", import.meta.url), "utf8");
 const imageToolsSource = readFileSync(new URL("../src/app/canvas/canvas-image-tools.tsx", import.meta.url), "utf8");
 
-test("the side drawer exposes the complete supported image operation set", () => {
-  for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "复制提示词", "查看大图", "沉浸查看", "下载", "存入我的素材", "复制节点"]) {
+test("node tools retain media operations and leave generic commands in the context menu", () => {
+  for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "下载", "存入我的素材"]) {
     assert.match(actionsSource, new RegExp(label));
   }
-  assert.match(engineSource, /id: "actions", label: "操作"/);
-  assert.match(engineSource, /renderNodeActions\(panelNode\)/);
+  assert.doesNotMatch(engineSource, /id: "actions", label: "操作"/);
+  assert.match(pageSource, /onClick=\{onCopyContent\}/);
+  assert.match(pageSource, /onClick=\{onDuplicate\}>复制节点/);
+  assert.doesNotMatch(actionsSource, /复制节点|复制提示词|复制文字/);
+  assert.match(actionsSource, /更多节点操作/);
   assert.doesNotMatch(actionsSource, /ActionSection title="生成"/);
 });
 
@@ -45,20 +47,20 @@ test("canvas image tool drags release window listeners on every exit path", () =
   assert.ok((imageToolsSource.match(/startDragging\(move, /g) || []).length >= 2);
 });
 
-test("the quick action rail supports every actionable node type", () => {
+test("the horizontal quick actions support every actionable node type", () => {
   for (const nodeType of ["image", "panorama", "video", "audio", "text", "director"]) {
     assert.match(actionsSource, new RegExp(`node\\.type === "${nodeType}"`));
   }
-  for (const callback of ["onPreview", "onDownload", "onCopyPrompt", "onReversePrompt", "onSaveAsset", "onDuplicate", "onToggleFreeResize", "onTextToImage", "onOpenDirector"]) {
+  for (const callback of ["onDownload", "onReversePrompt", "onSaveAsset", "onDuplicate", "onToggleFreeResize", "onTextToImage", "onOpenDirector"]) {
     assert.match(pageSource, new RegExp(`${callback}=\\{`));
   }
-  assert.match(actionsSource, /max-h-full/);
-  assert.match(actionsSource, /\[scrollbar-width:none\]/);
+  assert.match(actionsSource, /<ScrollArea/);
+  assert.match(actionsSource, /viewClass="flex w-max min-w-full items-center gap-1"/);
 });
 
 test("text, video, audio, panorama, config, and director actions use real page handlers", () => {
-  assert.match(pageSource, /function renderNodeActions\(node: CanvasNode\)/);
-  assert.match(pageSource, /onImageOperation=\{openImageOperation\}/);
+  assert.match(pageSource, /function renderNodeQuickActions\(node: CanvasNode\)/);
+  assert.match(pageSource, /onImageOperation=\{\(operation\) => void openCanvasImageTool\(node.id, operation\)\}/);
   assert.match(pageSource, /onTextToImage=\{\(\) => generateFromTextNode\(node\.id\)\}/);
   assert.match(pageSource, /setOpenDirectorNodeID\(node\.id\)/);
   assert.match(pageSource, /saveCanvasNodeAsset\(node\.id\)/);
@@ -68,8 +70,17 @@ test("text, video, audio, panorama, config, and director actions use real page h
   assert.match(actionsSource, /node\.type === "director"/);
 });
 
-test("node hover operations remain absent from the rendered canvas", () => {
-  assert.doesNotMatch(engineSource, /data-canvas-node-toolbar/);
+test("node actions require a single selected node in selection mode", () => {
+  assert.match(engineSource, /const actionNode = !exporting && tool === "select" && selectedNodeIDs.size === 1/);
+  assert.match(engineSource, /<CanvasNodeToolbar key=\{actionNode.id\}/);
+});
+
+test("media nodes have a dedicated preview action and double click focuses the node", () => {
+  assert.match(actionsSource, /aria-label="预览" onClick=\{onPreview\}/);
+  assert.match(pageSource, /onPreview=\{\(\) => setPreviewNodeID\(node\.id\)\}/);
+  assert.match(engineSource, /onDoubleClick=\{\(event\) => \{[\s\S]{0,180}onFocusNode\(node\.id\)/);
+  assert.doesNotMatch(specialNodesSource, /expandOnDoubleClick onMoveStart/);
+  assert.match(pageSource, /onFocusNode=\{focusCanvasNode\}/);
 });
 
 test("optional canvas image information only shows dimensions and file size", () => {
@@ -84,37 +95,24 @@ test("optional canvas image information only shows dimensions and file size", ()
   assert.doesNotMatch(pageSource, /replaceNodes\(hydratedNodes\)/);
 });
 
-test("canvas node chrome supports compact details, collapsible tools, and overflow marquee titles", () => {
+test("canvas node chrome supports compact details and overflow marquee titles", () => {
   assert.match(pageSource, /<InfoSection title="基础信息">/);
   assert.match(pageSource, /<InfoSection title="生成信息">/);
   assert.match(pageSource, /copyable/);
-  assert.match(actionsSource, /data-collapsed=\{collapsed \|\| undefined\}/);
-  assert.match(actionsSource, /展开工具栏/);
-  assert.match(actionsSource, /<ChevronUp/);
-  assert.doesNotMatch(actionsSource, /<ChevronDown/);
-  assert.match(actionsSource, /transition-transform duration-300 ease-in-out/);
-  assert.match(actionsSource, /collapsed && "rotate-180"/);
-  assert.match(actionsSource, /inert=\{collapsed\}/);
-  assert.match(actionsSource, /transition-\[grid-template-rows,transform\] duration-300 ease-in-out/);
-  assert.match(actionsSource, /transitionDelay: collapsed/);
-  assert.doesNotMatch(actionsSource, /hover:scale-105[^"\n]*active:scale-90/);
-  assert.match(actionsSource, /grid-rows-\[0fr\]/);
-  assert.match(actionsSource, /grid-rows-\[1fr\]/);
-  assert.match(engineSource, /renderNodeQuickActions && canvasSize\.width >= 720/);
-  assert.ok((engineSource.match(/<OverflowMarqueeText/g) || []).length >= 2);
+  assert.match(engineSource, /<OverflowMarqueeText text=\{node.title/);
   assert.match(globalStylesSource, /@keyframes overflow-marquee/);
 });
 
-test("the canvas side panel animates without unmounting and uses the material library label", () => {
+test("the canvas side panel animates without unmounting and uses the generation history label", () => {
   assert.doesNotMatch(canvasSidePanelSource, /if \(!open\) return null/);
   assert.match(canvasSidePanelSource, /--canvas-side-panel-width/);
   assert.match(canvasSidePanelSource, /open \? width : 0/);
   assert.match(canvasSidePanelSource, /transition-\[opacity,transform,box-shadow,border-color\] duration-300 ease-in-out/);
-  assert.match(canvasSidePanelSource, />素材库<\/SidePanelTab>/);
+  assert.match(canvasSidePanelSource, />生成历史<\/SidePanelTab>/);
   assert.doesNotMatch(canvasSidePanelSource, />资产<\/SidePanelTab>/);
-  assert.match(pageSource, /<PanelLeftClose className=\{cn\("absolute inset-0/);
-  assert.match(pageSource, /<PanelLeftOpen className=\{cn\("absolute inset-0/);
-  assert.match(pageSource, /active:scale-90/);
+  assert.doesNotMatch(pageSource, /aria-label=\{sidePanel.open \? "收起侧栏"/);
+  assert.match(canvasSidePanelSource, /data-canvas-side-panel-footer[\s\S]*?aria-label="收起侧栏"/);
+  assert.match(canvasSidePanelSource, /共 \{nodes.length\} 节点/);
 });
 
 test("the canvas side panel resize target stays outside its internal scrollbar", () => {
@@ -200,9 +198,9 @@ test("canvas routes every generation through the key matched to its actual node 
 test("shared tooltips include a directional arrow and comfortable trigger spacing", () => {
   assert.match(tooltipSource, /sideOffset = 10/);
   assert.match(tooltipSource, /<TooltipPrimitive\.Arrow/);
-  assert.match(tooltipSource, /<svg viewBox="0 0 30 10" preserveAspectRatio="none" className="overflow-visible"/);
-  assert.match(tooltipSource, /className="fill-popover" d="M-2-1H32L15 10Z"/);
-  assert.match(tooltipSource, /d="M0 0 15 10 30 0"/);
+  assert.match(tooltipSource, /<svg viewBox="0 0 14 7" preserveAspectRatio="none" className="overflow-visible"/);
+  assert.match(tooltipSource, /className="fill-popover" d="M0-2H14V-.5L7 6.5 0-.5Z"/);
+  assert.match(tooltipSource, /d="M0-.5 7 6.5 14-.5"/);
   assert.match(tooltipSource, /width=\{14\}/);
   assert.match(tooltipSource, /vectorEffect="non-scaling-stroke"/);
 });
@@ -220,14 +218,14 @@ test("canvas controls use available canvas width without horizontal scrolling", 
   assert.doesNotMatch(controlsSource, /overflow-x-auto/);
 });
 
-test("every canvas prompt editor can resize without hiding its parameter panel", () => {
+test("canvas prompt editors keep scrollable input and parameter panels", () => {
   assert.match(globalStylesSource, /\.canvas-prompt-scroll-frame \{[\s\S]*?max-height: max\(5rem, min\(40vh, calc\(100dvh - 26rem\)\)\);[\s\S]*?resize: vertical;/);
-  assert.ok((pageSource.match(/<PromptTextareaFrame/g) || []).length >= 3);
+  assert.ok((pageSource.match(/<PromptTextareaFrame/g) || []).length >= 1);
   assert.ok((specialNodesSource.match(/<PromptTextareaFrame/g) || []).length >= 2);
   assert.match(promptScrollFrameSource, /<ScrollArea className="h-full"/);
   assert.match(promptScrollFrameSource, /querySelector\("textarea"\)/);
   assert.match(promptScrollFrameSource, /Math\.max\(frame\.clientHeight, textarea\.scrollHeight\)/);
-  assert.ok((pageSource.match(/className="h-0 min-h-0 flex-1"/g) || []).length >= 2);
+  assert.ok((pageSource.match(/className="h-0 min-h-0 flex-1"/g) || []).length >= 1);
   assert.ok((specialNodesSource.match(/<AppScrollArea className="min-h-0 flex-1"/g) || []).length >= 2);
   assert.match(configComposerSource, /canvas-prompt-editor-resize relative h-28/);
   assert.match(configComposerSource, /<ScrollArea className="h-full" viewportClassName="h-full"/);
@@ -238,7 +236,7 @@ test("every canvas prompt editor can resize without hiding its parameter panel",
 test("config prompt references use a stable standalone picker and reliable deletion", () => {
   assert.match(configComposerSource, /createPortal\(/);
   assert.match(configComposerSource, /data-canvas-config-mention-menu/);
-  assert.match(configComposerSource, /className="fixed z-\[140\]/);
+  assert.match(configComposerSource, /className="pointer-events-auto fixed z-\[140\]/);
   assert.match(configComposerSource, /composerCaretRect\(editor\)/);
   assert.match(configComposerSource, /remove\.addEventListener\("pointerdown", deleteReference\)/);
   assert.match(configComposerSource, /onChange\(serializeEditor\(editor\), true\)/);
@@ -249,7 +247,7 @@ test("config prompt references use a stable standalone picker and reliable delet
 test("every canvas parameter panel uses the shared generation footer", () => {
   assert.ok((pageSource.match(/<CanvasGenerationFooter/g) || []).length >= 3);
   assert.ok((specialNodesSource.match(/<CanvasGenerationFooter/g) || []).length >= 2);
-  assert.match(generationFooterSource, /h-10 w-full/);
+  assert.match(generationFooterSource, /size-8 min-w-0 rounded-xl p-0/);
   assert.match(generationFooterSource, /variant=\{running \? "destructive" : "default"\}/);
 });
 
@@ -258,18 +256,10 @@ test("canvas and creator video parameters use the shared settings panel", () => 
   assert.match(imageComposerSource, /<VideoSettingsPanel/);
 });
 
-test("both canvas Agent entries reuse the shared image and video settings panels", () => {
-  assert.match(agentSettingsSource, /<ImageSettingsPanel/);
-  assert.match(agentSettingsSource, /<VideoSettingsPanel/);
+test("both Agent entries let the request determine media instead of exposing fixed parameters", () => {
   for (const source of [agentPanelSource, canvasLibrarySource]) {
-    assert.match(source, /<CanvasAgentImageSettings/);
-    assert.match(source, /<CanvasAgentVideoSettings/);
-  }
-});
-
-test("Agent parameter popovers rely on the global no-autofocus policy", () => {
-  for (const source of [agentPanelSource, canvasLibrarySource]) {
-    assert.doesNotMatch(source, /onOpenAutoFocus/);
+    assert.doesNotMatch(source, /CanvasAgentImageSettings|CanvasAgentVideoSettings|ParameterMenu/);
+    assert.match(source, /<CanvasAgentSkillPicker/);
   }
 });
 
@@ -277,27 +267,22 @@ test("Agent entry names are consistent across canvas and workflows", () => {
   for (const source of [pageSource, agentPanelSource, canvasLibrarySource, workflowSource]) {
     assert.doesNotMatch(source, /创作 Agent|画布 Agent|AI 创建|Agent 创建画布|Agent 创建工作流/);
   }
-  assert.match(agentPanelSource, /"history" \? "历史对话" : "Agent"/);
+  assert.match(agentPanelSource, /"history" \? "历史对话" : activeSession.title \|\| "Agent"/);
   assert.match(canvasLibrarySource, /<Bot \/>Agent<\/Button>/);
   assert.match(workflowSource, /<Bot \/>Agent<\/Button>/);
 });
 
 test("Agent allows node settings while preserving references and idle new chat", () => {
-  assert.match(pageSource, /panelNodeID=\{panelNodeID\} nodePanelReturnsToAgent=\{agentOpen\}/);
-  assert.match(pageSource, /onClick=\{\(\) => \{\s*setPanelNodeID\(""\);\s*setAgentOpen\(true\)/);
+  assert.match(pageSource, /panelNodeID=\{panelNodeID\}/);
+  assert.match(pageSource, /onAgent=\{\(\) => \{[\s\S]*?setPanelNodeID\(""\);\s*setAgentOpen\(true\)/);
   assert.match(agentPanelSource, /aria-label="新对话" disabled=\{busy\}/);
   assert.doesNotMatch(agentPanelSource, /aria-label="新对话" disabled=\{!activeSession\.messages\.length\}/);
 });
 
-test("Agent panel resizing releases global listeners across every lifecycle exit", () => {
-  assert.match(agentPanelSource, /resizeCleanupRef = useRef<\(\(\) => void\) \| null>\(null\)/);
-  assert.match(agentPanelSource, /resizeCleanupRef\.current\?\.\(\);[\s\S]*?resizeCleanupRef\.current = null;[\s\S]*?document\.body\.style\.cursor = ""/);
-  for (const eventName of ["mousemove", "mouseup"]) {
-    assert.match(agentPanelSource, new RegExp(`document\\.addEventListener\\("${eventName}"`));
-    assert.match(agentPanelSource, new RegExp(`document\\.removeEventListener\\("${eventName}"`));
-  }
-  assert.match(agentPanelSource, /window\.addEventListener\("blur", stop\)/);
-  assert.match(agentPanelSource, /window\.removeEventListener\("blur", stop\)/);
+test("Agent panel has a fixed width without resize handles or listeners", () => {
+  assert.doesNotMatch(agentPanelSource, /onWidthChange|startResize|resizeCleanupRef|调整右侧面板宽度/);
+  assert.doesNotMatch(pageSource, /setAgentWidth/);
+  assert.match(agentPanelSource, /CANVAS_AGENT_WIDTH/);
 });
 
 test("Agent submission claims synchronous ownership before hydrating references", () => {

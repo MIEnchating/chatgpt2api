@@ -1,11 +1,19 @@
+import { resolveCanvasAgentMediaSettings } from "../src/app/canvas/agent/canvas-agent-media-settings.ts";
+import { normalizeCanvasAgentConfig } from "../src/app/canvas/agent/canvas-agent-starter.ts";
+import { summarizeCanvasAgentTask } from "../src/app/canvas/agent/canvas-agent-context.ts";
+import { installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
+import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
+import { canvasAgentStarterAttachment } from "../src/app/canvas/agent/canvas-agent-attachments.ts";
+import { canvasAgentQuestionMediaChoice } from "../src/app/canvas/agent/canvas-agent-interaction.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { canvasAgentAttachmentURLs } from "../src/app/canvas/agent/canvas-agent-reference.ts";
 import { canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
 import { applyCanvasVideoTaskProgressNodes } from "../src/app/canvas/canvas-task-results.ts";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
-import { buildCanvasGenerationContext, canvasGenerationReferenceImageURLs } from "../src/app/canvas/canvas-generation-context.ts";
+import { buildCanvasGenerationContext, canvasGenerationReferenceImageURLs, canvasGenerationNeedsRecovery } from "../src/app/canvas/canvas-generation-context.ts";
 import { prepareImageEditReferences } from "../src/lib/image-edit-references.ts";
 import { appendCanvasHistorySnapshot, canvasHistoryLeaseExpired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, commitCanvasGenerationHistory } from "../src/app/canvas/canvas-history.ts";
 import { canvasSaveRequired, flushCanvasSaves } from "../src/app/canvas/canvas-save.ts";
@@ -16,6 +24,7 @@ import { expandCanvasBatchNodeIDs } from "../src/app/canvas/canvas-batches.ts";
 
 // Execute the actual page handlers with controlled state and I/O dependencies.
 function pageHandler(file, name, dependencies) {
+  dependencies = { canvasGenerationNeedsRecovery, persistGenerationCheckpoint: async () => {}, imageGenerationPreferences: { node_regenerate_behavior: "new-node", workbench: { video_generate_audio: false } }, ...dependencies };
   const source = ts.createSourceFile(file, readFileSync(new URL(`../src/app/canvas/${file}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let declaration;
   function visit(node) {
@@ -30,8 +39,30 @@ function pageHandler(file, name, dependencies) {
   return new Function(...Object.keys(dependencies), `${code}\nreturn handler;`)(...Object.values(dependencies));
 }
 
-function textGenerationHarness() {
-  const nodesRef = { current: [{ id: "text", type: "text", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1, composer_content: "Write a caption" }] };
+test("canvas copy shortcuts preserve selected chat text even when keyboard focus is on the page", () => {
+  for (const modifier of ["ctrlKey", "metaKey"]) {
+    let copiedNodes = 0;
+    let selectedText = "Agent 中选中的文字";
+    const keydown = pageHandler("page.tsx", "keydown", {
+      window: { getSelection: () => ({ toString: () => selectedText }) },
+      copySelected: () => { copiedNodes++; },
+    });
+    const event = () => ({ key: "c", [modifier]: true, target: { tagName: "BODY", closest: () => null }, prevented: false, preventDefault() { this.prevented = true; } });
+    const textCopy = event();
+    keydown(textCopy);
+    assert.equal(textCopy.prevented, false, "browser must copy the selected text");
+    assert.equal(copiedNodes, 0, "selected canvas nodes must not override chat text");
+    selectedText = "";
+    const nodeCopy = event();
+    keydown(nodeCopy);
+    assert.equal(nodeCopy.prevented, true);
+    assert.equal(copiedNodes, 1, "node copying must still work without a text selection");
+  }
+});
+
+function textGenerationHarness(prompt = "", overrides = {}) {
+  const nodesRef = { current: [{ id: "text", type: "text", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1, prompt, composer_content: "Write a caption" }] };
+  const connectionsRef = { current: [] };
   const documentRef = { current: { id: "project", nodes: nodesRef.current } };
   const canvasOperationEpochRef = { current: 1 };
   const historyRef = { current: [] };
@@ -44,42 +75,60 @@ function textGenerationHarness() {
   const polling = new Promise((resolve) => { pollStarted = resolve; });
   const dependencies = {
     nodesRef, documentRef, canvasOperationEpochRef, historyRef, mountedRef: { current: true },
-    connectionsRef: { current: [] }, activeGenerationsRef: { current: new Map() },
+    connectionsRef, activeGenerationsRef: { current: new Map() },
     canvasTextGenerationPlan, buildCanvasGenerationContext, appendCanvasHistorySnapshot,
     textModel: "gpt-5", textModels: ["gpt-5"], nextTokenNameForModel: () => "text-key",
     randomID: () => "test-id", MAX_HISTORY: 50, cloneDocument: structuredClone,
     captureDocument: () => ({ ...documentRef.current, nodes: nodesRef.current }),
     CANVAS_NODE_DEFAULT_SIZE: { text: { width: 340, height: 240 } },
     registerActiveGeneration: (value) => { controller = value; return {}; },
-    replaceNodes: (value) => { nodesRef.current = value; }, replaceConnections: () => {},
+    replaceNodes: (value) => { nodesRef.current = value; }, replaceConnections: (value) => { connectionsRef.current = value; },
     canvasTextGenerationMessages: async () => [], createChatGenerationTask: async () => ({ id: "server-task" }),
     addActiveGenerationTask: () => {}, completeActiveGeneration: () => {},
     waitForTask: async () => { pollStarted(); return new Promise((resolve, reject) => { resolvePoll = resolve; rejectPoll = reject; }); },
     commitGenerationHistory: (value) => commits.push(value),
     toast: { error: (message) => errors.push(message), success: () => {} },
+    ...overrides,
   };
   return {
-    run: pageHandler("page.tsx", "runTextGeneration", dependencies), nodesRef, documentRef, canvasOperationEpochRef, errors, commits, polling,
+    run: pageHandler("page.tsx", "runTextGeneration", dependencies), nodesRef, connectionsRef, documentRef, canvasOperationEpochRef, errors, commits, polling,
     abort: () => { controller.abort(); rejectPoll(new DOMException("Aborted", "AbortError")); },
     complete: () => resolvePoll({ id: "server-task", status: "success", data: [{ text_response: "Caption" }] }),
   };
 }
 
-test("canvas starts with its overlay sidebar closed on narrow screens", () => {
+test("text regeneration keeps the node and connections even with the new-node preference", async () => {
+  const harness = textGenerationHarness("Previous result");
+  const pending = harness.run("text");
+  await harness.polling;
+  assert.deepEqual(harness.nodesRef.current.map((node) => node.id), ["text"]);
+  assert.equal(harness.nodesRef.current[0].prompt, "Previous result");
+  assert.deepEqual(harness.connectionsRef.current, []);
+  harness.nodesRef.current[0].composer_content = "Draft for the next request";
+  harness.complete();
+  await pending;
+  assert.deepEqual(harness.nodesRef.current.map((node) => node.id), ["text"]);
+  assert.equal(harness.nodesRef.current[0].prompt, "Caption");
+  assert.equal(harness.nodesRef.current[0].composer_content, "Draft for the next request");
+  assert.deepEqual(harness.connectionsRef.current, []);
+  assert.deepEqual(harness.errors, []);
+});
+
+test("canvas starts with its sidebar closed and restores an explicit desktop preference", () => {
   for (const wide of [false, true]) {
     for (const stored of [null, { open: true }, { open: false }]) {
       const result = pageHandler("page.tsx", "storedCanvasSidePanel", {
-        DEFAULT_SIDE_PANEL: { open: true, width: 304, tab: "canvas" }, SIDE_PANEL_STORAGE_KEY: "panel",
+        DEFAULT_SIDE_PANEL: { open: false, width: 304, tab: "canvas" }, SIDE_PANEL_STORAGE_KEY: "panel",
         window: { matchMedia: () => ({ matches: wide }), localStorage: { getItem: () => JSON.stringify(stored) } },
       })();
-      assert.equal(result.open, wide && stored?.open !== false);
+      assert.equal(result.open, wide && stored?.open === true);
       assert.equal(result.width, 304);
     }
     const result = pageHandler("page.tsx", "storedCanvasSidePanel", {
-      DEFAULT_SIDE_PANEL: { open: true, width: 304, tab: "canvas" }, SIDE_PANEL_STORAGE_KEY: "panel",
+      DEFAULT_SIDE_PANEL: { open: false, width: 304, tab: "canvas" }, SIDE_PANEL_STORAGE_KEY: "panel",
       window: { matchMedia: () => ({ matches: wide }), localStorage: { getItem: () => { throw new Error("Storage denied"); } } },
     })();
-    assert.equal(result.open, wide);
+    assert.equal(result.open, false);
   }
 });
 
@@ -321,7 +370,7 @@ test("copying one child of a group produces a pasteable detached node", async ()
     nodesRef: { current: [{ ...child, id: "group", type: "group", group_id: undefined }, child] },
     connectionsRef: { current: [] }, selectedNodeIDs: new Set(["child"]), clipboardRef,
     expandCanvasBatchNodeIDs, expandCanvasGroupNodeIDs,
-    navigator: { clipboard: { writeText: async () => {} } }, toast: { success: () => {} },
+    copyClipboardText: async () => {}, toast: { success: () => {} },
   })();
   assert.equal(clipboardRef.current.nodes.length, 1);
   assert.equal(clipboardRef.current.nodes[0].group_id, undefined);
@@ -329,38 +378,27 @@ test("copying one child of a group produces a pasteable detached node", async ()
   assert.equal(child.group_id, "group");
 });
 
-test("failed initial Agent saves preserve concurrent edits and retries reuse inserted assets", async () => {
-  const original = { id: "original", type: "text", prompt: "Before save" };
-  const request = { prompt: "Use this asset", assets: [{ nodeId: "asset", payload: { kind: "text" }, reference: {} }] };
+test("initial Agent requests remain durable until submission and assets remain attachments", async () => {
+  const original = { id: "original", type: "text", prompt: "Before request" };
+  const request = { prompt: "Use this asset", assets: [{ nodeId: "asset", payload: { kind: "text", title: "Brief", content: "Asset" }, reference: { id: "asset", label: "文本1" } }] };
   const nodesRef = { current: [original] };
   const documentRef = { current: { id: "project", pending_agent_request: request } };
-  let finishSave;
-  let notifySave;
-  let saving = new Promise((resolve) => { notifySave = resolve; });
+  const canvasOperationEpochRef = { current: 1 };
+  const initialRequests = [];
   const run = pageHandler("page.tsx", "consumePendingAgentRequest", {
-    nodesRef, documentRef, mountedRef: { current: true }, canvasOperationEpochRef: { current: 1 },
-    canvasCenterPosition: () => ({ x: 0, y: 0 }),
-    canvasPendingAgentAssetNode: (asset) => ({ id: asset.nodeId, type: "text", prompt: "Asset" }),
-    replaceNodes: (nodes) => { nodesRef.current = nodes; }, DEFAULT_AGENT_PANEL: {}, scheduleSave: () => {},
-    persistCanvas: () => { notifySave(); return new Promise((resolve) => { finishSave = resolve; }); },
-    pushHistory: () => {}, setAgentOpen: () => {}, setInitialAgentRequest: () => {},
+    nodesRef, documentRef, mountedRef: { current: true }, canvasOperationEpochRef,
+    canvasAgentStarterAttachment, DEFAULT_AGENT_PANEL: {}, scheduleSave: () => {},
+    setAgentOpen: () => {}, setInitialAgentRequest: (value) => initialRequests.push(value),
   });
-  const pending = run(request, "project", 1);
-  await saving;
-  nodesRef.current = nodesRef.current.map((node) => node.id === "original" ? { ...node, prompt: "Edited during save" } : node);
-  nodesRef.current.push({ id: "new", type: "text", prompt: "Created during save" });
-  finishSave(false);
-  await pending;
-  assert.equal(nodesRef.current[0].prompt, "Edited during save");
-  assert.deepEqual(nodesRef.current.map((node) => node.id), ["original", "asset", "new"]);
+  await run(request, "project", 1);
+  await run(request, "project", 1);
+  assert.deepEqual(nodesRef.current, [original]);
   assert.equal(documentRef.current.pending_agent_request, request);
-
-  saving = new Promise((resolve) => { notifySave = resolve; });
-  const retry = run(request, "project", 1);
-  await saving;
-  finishSave(true);
-  await retry;
-  assert.deepEqual(nodesRef.current.map((node) => node.id), ["original", "asset", "new"]);
+  assert.equal(initialRequests[0].references[0].source, "attachment");
+  assert.equal(initialRequests[0].references[0].text, "Asset");
+  assert.equal(initialRequests[0].references[0].id, initialRequests[1].references[0].id);
+  const consume = pageHandler("page.tsx", "onInitialRequestConsumed", { documentRef, renderedCanvasID: "project", setInitialAgentRequest: () => {}, scheduleSave: () => {} });
+  consume();
   assert.equal(documentRef.current.pending_agent_request, undefined);
 });
 
@@ -389,9 +427,78 @@ test("typing a node title keeps the insertion caret after the initial selection"
   assert.equal(selections, 1);
 });
 
-test("Agent manual generation creates configured media nodes without submitting tasks", async () => {
+test("Agent recovery waits for active submissions and streamed results without generating again", async () => {
+  for (const status of ["loading", "success"]) {
+    let settle;
+    const settled = new Promise((resolve) => { settle = resolve; });
+    const node = { id: "saved-node", type: "image", generation_status: status, url: status === "success" ? "/streamed.png" : "", task_id: "local-submitting-task" };
+    const nodesRef = { current: [node] };
+    const run = pageHandler("page.tsx", "executeCanvasAgentAction", {
+      nodesRef, connectionsRef: { current: [] }, documentRef: { current: { agent_config: { autoGenerateMedia: true } } },
+      activeGenerationsRef: { current: new Map([[node.id, { settled, submittedTaskIDs: new Set() }]]) },
+      normalizeCanvasAgentConfig, summarizeCanvasAgentTask,
+      runGeneration: () => { throw new Error("must not generate again"); },
+      recoverCanvasTasks: () => { throw new Error("must not query a client task before submission completes"); },
+    });
+    let completed = false;
+    const pending = run({ name: "generate_node", arguments: { nodeId: node.id } }, []).then((result) => { completed = true; return result; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(completed, false);
+    nodesRef.current = [{ ...node, task_id: "confirmed-task", url: "/result.png", generation_status: "success" }];
+    settle();
+    const result = await pending;
+    assert.equal(result.ok, true);
+    assert.equal(result.taskId, "confirmed-task");
+    assert.equal(result.status, "success");
+  }
+});
+
+test("generation confirmation preserves custom approval instead of forcing deferral", () => {
+  for (const [answer, expected] of [["确认生成这三张白底图", "generate"], ["稍后再生成，先整理文案", "defer"], ["先修改一下构图", undefined]]) {
+    let submitted;
+    const choose = pageHandler("canvas-agent-panel.tsx", "chooseMediaGeneration", {
+      activeSession: { messages: [{ id: "user", role: "user", references: [] }, { id: "assistant", role: "assistant" }] },
+      canvasAgentQuestionMediaChoice,
+      retryMessage: () => { throw new Error("custom answers must retain their text"); },
+      submit: (...args) => { submitted = args; },
+    });
+    choose(answer);
+    assert.equal(submitted[0], answer);
+    assert.equal(submitted[3].mediaGenerationChoice, expected);
+  }
+});
+
+test("Agent generation choice overrides manual mode without changing global configuration", async () => {
+  for (const autoGenerateMedia of [false, true]) {
+    for (const generateMedia of [false, true]) {
+      const node = { id: "saved-node", type: "image", prompt: "保留提示词", generation_status: "idle" };
+      const nodesRef = { current: [node] };
+      const documentRef = { current: { agent_config: { autoGenerateMedia } } };
+      let submitted = 0;
+      const run = pageHandler("page.tsx", "executeCanvasAgentAction", {
+        nodesRef, connectionsRef: { current: [] }, documentRef,
+        activeGenerationsRef: { current: new Map() }, normalizeCanvasAgentConfig, summarizeCanvasAgentTask,
+        runGeneration: async (_id, _prompt, _retry, options) => {
+          submitted++;
+          nodesRef.current = [{ ...node, generation_status: "success", url: "/generated.png", task_id: "generated-task" }];
+          options.onSubmitted("generated-task");
+        },
+      });
+      const result = await run({ name: "generate_node", arguments: { nodeId: node.id } }, [], { generateMedia });
+      assert.equal(result.ok, true);
+      assert.equal(result.submitted, generateMedia);
+      assert.equal(submitted, generateMedia ? 1 : 0);
+      assert.equal(documentRef.current.agent_config.autoGenerateMedia, autoGenerateMedia);
+      assert.equal(nodesRef.current.length, 1);
+      assert.equal(nodesRef.current[0].prompt, node.prompt);
+    }
+  }
+});
+
+test("Agent generation respects manual mode and reports the actual submitted task state", async () => {
+  installVideoModelContracts(structuredClone(contractDocument.contracts));
   for (const name of ["generate_image", "edit_image", "generate_video", "generate_audio"]) {
-    for (const [configuredSize, requestedSize, aspect] of name === "generate_video" ? [["16:9", "9:16", 9 / 16], ["9:16", "1:1", 1], ["9:16", undefined, 9 / 16], [undefined, undefined, 16 / 9]] : [[undefined, undefined, undefined]]) {
+    for (const [configuredSize, requestedSize, aspect] of name === "generate_video" ? [["16:9", "9:16", 9 / 16], ["9:16", "1:1", 1], ["9:16", "16:9", 16 / 9]] : [[undefined, undefined, undefined]]) {
       for (const autoGenerateMedia of [false, true]) {
         for (const waitForMedia of [undefined, false]) {
           let finishGeneration;
@@ -401,11 +508,12 @@ test("Agent manual generation creates configured media nodes without submitting 
           let submitted = 0, history = 0;
           const dependencies = {
             nodesRef, connectionsRef, documentRef: { current: { agent_config: { autoGenerateMedia } } }, selectedNodeIDsRef: { current: new Set() },
-            imageModel: "image-model", videoModel: "video-model", audioModel: "audio-model",
-            imageModels: ["image-model"], videoModels: ["video-model"], audioModels: ["audio-model"],
+            normalizeCanvasAgentConfig, summarizeCanvasAgentTask, activeGenerationsRef: { current: new Map() },
+            imageModel: "image-model", videoModel: "seedance2.0-A", audioModel: "audio-model",
+            imageModels: ["image-model"], videoModels: ["seedance2.0-A"], audioModels: ["audio-model"],
             nextTokenNameForModel: () => autoGenerateMedia ? "key" : "",
             resolvedAgentConfig: { autoGenerateMedia, videoSize: configuredSize }, canvasNodeSizeFromRatio, canvasVideoParameters: () => ({ generation_video_size: "16:9" }), imageGenerationPreferences: { canvas_default_image_count: 1 },
-            canvasAgentSourceNodeIDs: () => ["reference"], canvasAgentMediaLayoutSources: (_kind, _nodes, sources) => sources,
+            resolveCanvasAgentMediaSettings, canvasAgentAttachmentURLs, canvasAgentSourceNodeIDs: () => ["reference"], canvasAgentMediaLayoutSources: (_kind, _nodes, sources) => sources,
             canvasAgentNodePosition: (size) => ({ x: 100, y: 200 - size.height / 2 }), canvasCenterPosition: () => ({ x: 0, y: 0 }),
             canvasNodeFallbackTitle: (kind) => kind, randomID: () => "generated", createdAt: () => "now",
             CANVAS_NODE_DEFAULT_SIZE: { image: { width: 300, height: 300 }, video: { width: 400, height: 225 }, audio: { width: 320, height: 100 } },
@@ -415,13 +523,20 @@ test("Agent manual generation creates configured media nodes without submitting 
             buildVideoNode: (fields, point) => ({ id: "generated-video", type: "video", ...fields, ...point }),
             replaceNodes: (nodes) => { nodesRef.current = nodes; }, replaceConnections: (edges) => { connectionsRef.current = edges; },
             setSelectedNodeIDs: () => {}, setSelectedConnectionID: () => {}, pushHistory: () => { history += 1; },
-            runGeneration: async (_id, _prompt, _retry, options) => { submitted += 1; options.onSubmitted?.("confirmed-task"); if (waitForMedia === false) await generationCompletion; }, summarizeCanvasAgentTask: () => ({ status: "idle" }),
+            runGeneration: async (id, _prompt, _retry, options) => {
+              submitted += 1;
+              nodesRef.current = nodesRef.current.map((node) => node.id === id ? { ...node, task_id: "confirmed-task", generation_status: "loading" } : node);
+              options.onSubmitted?.("confirmed-task");
+              if (waitForMedia === false) await generationCompletion;
+              nodesRef.current = nodesRef.current.map((node) => node.id === id ? { ...node, url: "/generated.png", generation_status: "success" } : node);
+            },
           };
           const run = pageHandler("page.tsx", "executeCanvasAgentAction", dependencies);
-          const result = await run({ name, arguments: { prompt: "保留参考细节", title: "成品", size: requestedSize } }, [], { waitForMedia });
+          const result = await run({ name, arguments: { prompt: "保留参考细节", title: "成品", size: requestedSize || "1:1", count: 1, seconds: 8, generateAudio: false } }, [], { waitForMedia });
           finishGeneration();
           assert.equal(result.ok, true, JSON.stringify(result));
           assert.equal(result.submitted, autoGenerateMedia);
+          assert.equal(result.status, autoGenerateMedia ? waitForMedia === false ? "loading" : "success" : "idle");
           if (autoGenerateMedia && waitForMedia === false) assert.equal(result.taskId, "confirmed-task");
           assert.equal(submitted, autoGenerateMedia ? 1 : 0);
           assert.equal(nodesRef.current.length, 2);
@@ -706,4 +821,57 @@ test("manual video creation centers the actual frame at the requested position",
     create("video");
     assert.deepEqual(point, { x: 40, y: 50 });
   }
+});
+
+test("text generation persists the original node and task ID before submitting", async () => {
+  let saved;
+  const harness = textGenerationHarness("", {
+    persistGenerationCheckpoint: async () => { saved = structuredClone(harness.nodesRef.current); },
+    createChatGenerationTask: async (request) => {
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0].generation_status, "loading");
+      assert.equal(saved[0].task_id, request.clientTaskId);
+      return { id: request.clientTaskId };
+    },
+  });
+  const pending = harness.run("text");
+  await harness.polling;
+  harness.complete();
+  await pending;
+  assert.deepEqual(harness.errors, []);
+});
+
+test("a failed generation checkpoint cannot submit a text task", async () => {
+  let submissions = 0;
+  const harness = textGenerationHarness("", {
+    persistGenerationCheckpoint: async () => { throw new Error("保存失败"); },
+    createChatGenerationTask: async () => { submissions++; return { id: "unexpected" }; },
+  });
+  await harness.run("text");
+  assert.equal(submissions, 0);
+  assert.equal(harness.nodesRef.current[0].generation_status, "error");
+  assert.match(harness.errors.join(" "), /保存失败/);
+});
+
+test("refresh recovery observes a late submission instead of replacing its task", async () => {
+  const progress = [];
+  const pending = [];
+  const errors = [];
+  const recover = pageHandler("page.tsx", "recoverCanvasTasks", {
+    fetchCreationTasks: async () => ({ items: [], missing_ids: ["original-task"] }),
+    isCurrentCanvasRecovery: () => true,
+    waitForCreationTask: async (id, options) => {
+      assert.equal(id, "original-task");
+      options.onProgress({ id, status: "running" });
+      return { id, status: "success", data: [{ text_response: "Recovered" }] };
+    },
+    persistCreationTaskOutputs: async (task) => task,
+    applyRecoveredCanvasTask: (task) => { progress.push(task); return { terminal: task.status === "success" }; },
+    markCanvasTaskRecoveryPending: (id) => pending.push(id),
+    markCanvasTaskRecoveryError: (...args) => errors.push(args),
+  });
+  await recover("project", 1, ["original-task"], "session", new AbortController().signal);
+  assert.deepEqual(progress.map((task) => task.status), ["running", "success"]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(pending, []);
 });

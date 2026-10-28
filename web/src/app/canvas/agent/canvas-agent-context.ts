@@ -1,13 +1,17 @@
+import { canvasAgentMediaCapabilities } from "./canvas-agent-media-settings";
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentState } from "./canvas-agent-types";
+import { estimateCanvasAgentTokens } from "./canvas-agent-memory";
 
 export type CanvasAgentGenerationConfig = {
+  capabilities?: ReturnType<typeof canvasAgentMediaCapabilities>;
   autoGenerateMedia?: boolean;
   textModel: string;
   imageModel: string;
   videoModel: string;
   audioModel: string;
   imageQuality: string;
+  imageResolution?: string;
   imageSize: string;
   videoQuality: string;
   videoSize: string;
@@ -38,6 +42,7 @@ export type CanvasAgentContextNode = {
   taskId?: string;
   error?: string;
   groupId?: string;
+  detailsOmitted?: boolean;
 };
 
 export type CanvasAgentContext = {
@@ -48,6 +53,7 @@ export type CanvasAgentContext = {
   connections: CanvasConnection[];
   generation: CanvasAgentGenerationConfig;
   tasks: Array<{ nodeId: string; type: CanvasNode["type"]; status: string; taskId: string; error?: string }>;
+  omittedNodeCount?: number;
 };
 
 export function buildCanvasAgentContext(input: {
@@ -79,14 +85,15 @@ export function buildCanvasAgentContext(input: {
     project: { id: input.projectId, title: input.projectTitle, nodeCount: input.nodes.length, connectionCount: input.connections.length },
     agentState: input.agentState,
     selectedNodeIds,
-    nodes: orderedNodes.map(summarizeCanvasAgentNode),
+    nodes: orderedNodes.map((node) => summarizeCanvasAgentNode(node)),
+    omittedNodeCount: input.nodes.length - orderedNodes.length,
     connections: input.connections.filter((connection) => included.has(connection.from_node_id) && included.has(connection.to_node_id)),
-    generation: input.generation,
+    generation: { ...input.generation, capabilities: canvasAgentMediaCapabilities(input.generation.imageModel, input.generation.videoModel) },
     tasks: orderedNodes.flatMap((node) => node.task_id || node.audio_task_id ? [{ nodeId: node.id, type: node.type, status: node.generation_status || "idle", taskId: node.task_id || node.audio_task_id || "", ...(node.generation_error ? { error: node.generation_error } : {}) }] : []),
   };
 }
 
-export function summarizeCanvasAgentNode(node: CanvasNode): CanvasAgentContextNode {
+export function summarizeCanvasAgentNode(node: CanvasNode, fullContent = false): CanvasAgentContextNode {
   const isText = node.type === "text";
   const model = node.type === "video" ? node.generation_video_model : node.type === "audio" ? node.generation_audio_model : node.type === "config" && node.generation_mode === "text" ? node.generation_text_model : node.generation_model;
   const size = node.type === "video" ? node.generation_video_size : node.generation_size;
@@ -94,12 +101,13 @@ export function summarizeCanvasAgentNode(node: CanvasNode): CanvasAgentContextNo
     id: node.id,
     type: node.type,
     title: node.title || node.type,
-    text: isText && node.prompt ? node.prompt.slice(0, 4000) : undefined,
+    text: isText && node.prompt ? (fullContent ? node.prompt : node.prompt.slice(0, 4000)) : undefined,
     mediaUrl: !isText && node.url && !node.url.startsWith("data:") ? node.url : undefined,
     hasMedia: !isText ? Boolean(node.url) : undefined,
     status: node.generation_status || "idle",
     progress: node.generation_progress,
-    prompt: node.prompt?.slice(0, 4000),
+    prompt: fullContent ? node.prompt : node.prompt?.slice(0, 4000),
+    detailsOmitted: !fullContent && (node.prompt?.length || 0) > 4000 || undefined,
     model,
     size,
     seconds: node.generation_video_seconds,
@@ -124,4 +132,29 @@ export function summarizeCanvasAgentTask(node: CanvasNode) {
 
 export function serializeCanvasAgentContext(context: CanvasAgentContext) {
   return JSON.stringify(context);
+}
+
+export function limitCanvasAgentContext(context: CanvasAgentContext, tokenBudget: number): CanvasAgentContext {
+  if (estimateCanvasAgentTokens(context) <= tokenBudget) return context;
+  const nodes = context.nodes.map((node) => ({
+    ...node,
+    title: node.title.slice(0, 200),
+    text: undefined,
+    prompt: undefined,
+    mediaUrl: undefined,
+    error: node.error?.slice(0, 200),
+    detailsOmitted: true,
+  }));
+  const limited = {
+    ...context,
+    nodes,
+    connections: [] as CanvasConnection[],
+    tasks: context.tasks.map((task) => ({ ...task, error: task.error?.slice(0, 200) })),
+    omittedNodeCount: Math.max(0, context.project.nodeCount - nodes.length),
+  };
+  while (nodes.length && estimateCanvasAgentTokens(limited) > tokenBudget) {
+    nodes.pop();
+    limited.omittedNodeCount += 1;
+  }
+  return limited;
 }

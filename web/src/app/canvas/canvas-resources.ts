@@ -1,5 +1,6 @@
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
-import { buildCanvasInputIndex, canvasConfigInputLabel, canvasGenerationInputsFromIndex, type CanvasConfigInput, type CanvasInputIndex } from "./canvas-config-inputs.ts";
+import { canCreateCanvasConnection } from "./canvas-connections.ts";
+import { buildCanvasInputIndex, canvasConfigInputLabel, canvasGenerationInputsFromIndex, type CanvasConfigInput } from "./canvas-config-inputs.ts";
 
 export type CanvasResourceReference = {
   id: string;
@@ -32,24 +33,6 @@ export function buildAllCanvasResourceReferences(nodes: readonly CanvasNode[]) {
   });
 }
 
-export function canvasNodeMentionReferences(
-  nodeID: string,
-  nodes: readonly CanvasNode[],
-  connections: readonly CanvasConnection[],
-) {
-  return canvasNodeMentionReferencesFromIndex(nodeID, buildCanvasInputIndex(nodes, connections));
-}
-
-function canvasNodeMentionReferencesFromIndex(nodeID: string, inputIndex: CanvasInputIndex) {
-  if (!nodeID) return [];
-  const inputs = canvasGenerationInputsFromIndex(nodeID, inputIndex);
-  if (inputs.length) return inputs.map((input) => canvasInputReference(input, inputs));
-  const node = inputIndex.nodeByID.get(nodeID);
-  const input = node ? canvasNodeInput(node) : null;
-  if (!input) return [];
-  return [canvasInputReference(input, [input])];
-}
-
 function canvasInputReference(input: CanvasConfigInput, inputs: readonly CanvasConfigInput[]): CanvasResourceReference {
   return {
     id: input.nodeID,
@@ -80,4 +63,27 @@ function canvasNodeInput(node: CanvasNode): CanvasConfigInput | null {
 
 function canvasResourceKind(node: CanvasNode): CanvasResourceReference["kind"] | null {
   return canvasNodeInput(node)?.type || null;
+}
+
+// Existing inputs keep their numbering; a newly chosen resource takes the next slot.
+export function canvasNodeReferenceCandidates(nodeID: string, nodes: readonly CanvasNode[], connections: readonly CanvasConnection[]) {
+  const inputs = canvasGenerationInputsFromIndex(nodeID, buildCanvasInputIndex(nodes, connections));
+  const connected = inputs.filter((input) => input.nodeID !== nodeID);
+  const connectedIDs = new Set(connected.map((input) => input.nodeID));
+  const descendants = new Set([nodeID]);
+  const queue = [nodeID];
+  while (queue.length) {
+    const current = queue.pop();
+    connections.filter((edge) => edge.from_node_id === current).forEach((edge) => {
+      if (descendants.has(edge.to_node_id)) return;
+      descendants.add(edge.to_node_id);
+      queue.push(edge.to_node_id);
+    });
+  }
+  const available = nodes.flatMap((node) => {
+    if (connectedIDs.has(node.id) || descendants.has(node.id) || !canCreateCanvasConnection(node.id, nodeID, connections, nodes)) return [];
+    const input = canvasNodeInput(node);
+    return input ? [canvasInputReference(input, [...connected, input])] : [];
+  });
+  return [...connected.map((input) => canvasInputReference(input, connected)), ...available];
 }

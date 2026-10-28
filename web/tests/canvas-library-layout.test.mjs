@@ -11,17 +11,18 @@ const managementPageSource = readFileSync(new URL("../src/components/management-
 const logsSource = readFileSync(new URL("../src/app/logs/page.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
-test("every page shares the same full-width application shell", () => {
-  assert.match(appShellSource, /w-full max-w-none flex-col gap-\[var\(--page-section-gap\)\]/);
+test("pages share the full-width shell while the canvas owns its navigation", () => {
+  assert.match(appShellSource, /w-full max-w-none flex-col/);
+  assert.match(appShellSource, /!canvasEditor && "gap-\[var\(--page-section-gap\)\]/);
+  assert.match(appShellSource, /!canvasEditor \? <TopNav/);
   assert.doesNotMatch(appShellSource, /max-w-\[1480px\]/);
   assert.doesNotMatch(appShellSource, /useLocation/);
 });
 
 test("navigation and content sections share one vertical spacing token", () => {
   assert.match(globalStylesSource, /--page-section-gap: 1rem/);
-  for (const pageSource of [source, managementPageSource]) {
-    assert.match(pageSource, /flex h-full min-h-0(?: min-w-0)? flex-col gap-\[var\(--page-section-gap\)\]/);
-  }
+  assert.match(source, /flex h-full min-h-0(?: min-w-0)? flex-col gap-\[var\(--page-section-gap\)\]/);
+  assert.match(managementPageSource, /<ScrollArea[^>]+viewClass="flex min-h-full flex-col gap-\[var\(--page-section-gap\)\]"/);
   for (const pageSource of [assetsSource, usersSource, rbacSource]) {
     assert.match(pageSource, /<ManagementPage/);
   }

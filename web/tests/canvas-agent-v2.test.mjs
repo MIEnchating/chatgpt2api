@@ -53,16 +53,17 @@ afterAll(() => {
   globalThis.window = originalWindow;
 });
 
-const { buildCanvasAgentContext, summarizeCanvasAgentTask } = await import("../src/app/canvas/agent/canvas-agent-context.ts");
+const { buildCanvasAgentContext, summarizeCanvasAgentTask, summarizeCanvasAgentNode } = await import("../src/app/canvas/agent/canvas-agent-context.ts");
 const { buildAllCanvasResourceReferences } = await import("../src/app/canvas/canvas-resources.ts");
 const { arrangeCanvasAgentNodes, CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE, canvasAgentMediaLayoutSources, canvasAgentNodePosition, canvasAgentSourceNodeIDs, canvasAgentVideoDurationHint, canvasAgentVideoSupportsAudio, validateCanvasAgentVideoSeconds } = await import("../src/app/canvas/agent/canvas-agent-generation.ts");
-const { clearCanvasAgentSessionReferences, syncCanvasAgentSessions } = await import("../src/app/canvas/agent/canvas-agent-sessions.ts");
-const { canvasAgentStarterLabel, canvasInsertPayloadFromMyAsset, canvasPendingAgentAssetNode, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig, normalizeCanvasAgentConfig, preferredCanvasAgentVideoSize } = await import("../src/app/canvas/agent/canvas-agent-starter.ts");
+const { isCanvasAgentSession, canCreateCanvasAgentSession, MAX_CANVAS_AGENT_SESSIONS, clearCanvasAgentSessionReferences, syncCanvasAgentSessions } = await import("../src/app/canvas/agent/canvas-agent-sessions.ts");
+const { canvasAgentStarterLabel, canvasInsertPayloadFromMyAsset, canvasPendingAgentAssetNode, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig, normalizeCanvasAgentConfig } = await import("../src/app/canvas/agent/canvas-agent-starter.ts");
 const { buildCanvasAgentSkillPrompt } = await import("../src/app/canvas/agent/canvas-agent-skills.ts");
 const { runCanvasAgent, createCanvasAgentState } = await import("../src/app/canvas/agent/canvas-agent-runtime.ts");
 const { abortCanvasAgentRun, beginCanvasAgentRunEpoch, claimCanvasAgentRun, createCanvasAgentRunLifecycle, invalidateCanvasAgentRunLifecycle, isCurrentCanvasAgentRun, mountCanvasAgentRunLifecycle, releaseCanvasAgentRun } = await import("../src/app/canvas/agent/canvas-agent-run-gate.ts");
 const { CANVAS_AGENT_TOOLS, normalizeCanvasAgentAction } = await import("../src/app/canvas/agent/canvas-agent-tools.ts");
 const { requestCanvasAgentTurn } = await import("../src/app/canvas/agent/canvas-agent-request.ts");
+const { estimateCanvasAgentTokens } = await import("../src/app/canvas/agent/canvas-agent-memory.ts");
 
 function context(state = createCanvasAgentState()) {
   return buildCanvasAgentContext({
@@ -106,6 +107,24 @@ function toolReply(calls, textResponse = "") {
 }
 
 describe("canvas agent v2 tool contract", () => {
+  test("submits unique tasks when randomUUID is unavailable on an HTTP origin", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(crypto, "randomUUID");
+    Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
+    try {
+      const input = { model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [] };
+      const first = await requestCanvasAgentTurn(input);
+      const second = await requestCanvasAgentTurn(input);
+      assert.equal(first.content, "完成");
+      assert.equal(second.content, "完成");
+      const ids = submittedInputs.slice(-2).map((item) => item.clientTaskId);
+      assert.ok(ids.every((id) => /^canvas-agent-[\w-]+$/.test(id)));
+      assert.notEqual(ids[0], ids[1]);
+    } finally {
+      if (descriptor) Object.defineProperty(crypto, "randomUUID", descriptor);
+      else delete crypto.randomUUID;
+    }
+  });
+
   test("cancels a planning task acknowledged after the run was stopped", async () => {
     let resolveSubmission;
     submitOverride = () => new Promise((resolve) => { resolveSubmission = resolve; });
@@ -183,24 +202,17 @@ describe("canvas agent v2 tool contract", () => {
     assert.equal(isCurrentCanvasAgentRun(lifecycle, secondEpoch), true);
   });
 
-  test("normalizes empty Agent parameters to visible generation defaults", () => {
-    assert.deepEqual(defaultCanvasAgentStarterConfig(), {
-      autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [],
-      imageQuality: "",
-      imageSize: "1:1",
-      videoQuality: "",
-      videoSize: "16:9",
-    });
-    assert.deepEqual(normalizeCanvasAgentConfig(
-      { imageQuality: "", imageSize: "auto", videoQuality: "", videoSize: "" },
-      { imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" },
-      { imageQuality: ["", "low", "medium", "high"], imageSize: ["1:1", "16:9", "9:16"], videoQuality: ["720p", "1080p"], videoSize: ["16:9", "9:16"] },
-    ), { autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [], imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" });
+  test("Agent configuration stores runtime preferences without fixed media parameters", () => {
+    const defaults = { autoGenerateMedia: true, textApiMode: "responses", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [] };
+    assert.deepEqual(defaultCanvasAgentStarterConfig(), defaults);
+    assert.equal(normalizeCanvasAgentConfig({ autoGenerateMedia: false }).autoGenerateMedia, false);
+    assert.deepEqual(normalizeCanvasAgentConfig({ imageQuality: "high", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" }), defaults);
     for (const textStreaming of [undefined, false, true, "true"]) {
-      assert.equal(normalizeCanvasAgentConfig({ textStreaming }, defaultCanvasAgentStarterConfig(), { imageQuality: [""], imageSize: ["1:1"], videoQuality: [""], videoSize: ["16:9"] }).textStreaming, textStreaming === true);
+      assert.equal(normalizeCanvasAgentConfig({ textStreaming }).textStreaming, textStreaming === true);
     }
-    assert.equal(preferredCanvasAgentVideoSize(["1:1", "16:9", "9:16"], "1:1"), "16:9");
-    assert.equal(preferredCanvasAgentVideoSize(["1024x1024", "1280x720", "720x1280"], "1024x1024"), "1280x720");
+    for (const [textApiMode, expected] of [[undefined, "responses"], ["responses", "responses"], ["chat", "chat"]]) {
+      assert.equal(normalizeCanvasAgentConfig({ textApiMode }).textApiMode, expected);
+    }
   });
 
   test("matches the reference starter asset labels, payloads, ids, metadata, and centered placement", () => {
@@ -245,7 +257,7 @@ describe("canvas agent v2 tool contract", () => {
       arguments: { fromNodeId: "text-1", toNodeId: "image-1" },
     });
     assert.throws(() => normalizeCanvasAgentAction("run_shell", {}), /不允许/);
-    assert.throws(() => normalizeCanvasAgentAction("edit_image", { prompt: "修改", sourceNodeIds: [] }), /图片来源/);
+    assert.throws(() => normalizeCanvasAgentAction("edit_image", { prompt: "修改", sourceNodeIds: [], size: "1:1", count: 1 }), /图片来源/);
     const generatedID = normalizeCanvasAgentAction("get_canvas_summary", {}).id;
     assert.match(generatedID, /^[\w-]{21}$/);
   });
@@ -366,10 +378,11 @@ describe("canvas agent v2 tool contract", () => {
     const message = sessions[0].messages[0];
     assert.equal(message.status, "waiting");
     assert.equal(message.activity, undefined);
-    assert.match(message.text, /页面关闭而中断/);
+    assert.match(message.text, /恢复上次执行/);
+    assert.equal(sessions[0].resumeAssistantMessageId, "message-1");
     assert.equal(message.references[0].title, "旧标题");
-    assert.equal(message.references[0].url, undefined);
-    assert.equal(message.references[0].dataUrl, "/new.png");
+    assert.equal(message.references[0].url, "/new.png");
+    assert.equal(message.references[0].dataUrl, undefined);
   });
 
   test("clears stored media content when a referenced node is deleted", () => {
@@ -448,7 +461,8 @@ describe("canvas agent v2 runtime", () => {
     });
     assert.deepEqual(executed, ["get_canvas_summary"]);
     assert.equal(result.reply, "已读取真实画布");
-    assert.equal(checkpoints.length, 2);
+    assert.ok(checkpoints.some((checkpoint) => checkpoint.protocolMessages.some((message) => message.role === "tool" && JSON.parse(message.content).code === "execution_not_started")));
+    assert.ok(checkpoints.at(-1).protocolMessages.some((message) => message.role === "tool" && JSON.parse(message.content).nodeCount === 2));
     assert.match(JSON.stringify(result.protocolMessages), /nodeCount/);
   });
 
@@ -493,7 +507,7 @@ describe("canvas agent v2 runtime", () => {
     agentReplies.push(
       toolReply([
         { name: "set_agent_state", arguments: { phase: "video", approvedNodeIds: ["text-1"] } },
-        { name: "generate_video", arguments: { prompt: "镜头", sourceNodeIds: [] } },
+        { name: "generate_video", arguments: { size: "16:9", seconds: 10, generateAudio: false, prompt: "镜头", sourceNodeIds: [] } },
       ]),
       { text_response: "视频任务已提交" },
     );
@@ -518,8 +532,8 @@ describe("canvas agent v2 runtime", () => {
   test("runs a pure media batch concurrently", async () => {
     agentReplies.push(
       toolReply([
-        { name: "generate_image", arguments: { prompt: "A", sourceNodeIds: [] } },
-        { name: "generate_image", arguments: { prompt: "B", sourceNodeIds: [] } },
+        { name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "A", sourceNodeIds: [] } },
+        { name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "B", sourceNodeIds: [] } },
       ]),
       { text_response: "两项已提交" },
     );
@@ -628,14 +642,14 @@ describe("canvas agent reliability and memory", () => {
   });
 
   test("passes streaming and protocol choices through every planning and tool turn", async () => {
-    for (const apiMode of ["chat", "responses"]) {
+    for (const apiMode of [undefined, "chat", "responses"]) {
       for (const stream of [undefined, false, true]) {
         const offset = submittedInputs.length;
         agentReplies.push(toolReply([{ name: "get_canvas_summary" }]), "你好");
         await run({ userText: "你好", apiMode, reasoningEnabled: true, stream });
         assert.equal(submittedInputs.length - offset, 2);
         for (const input of submittedInputs.slice(offset)) {
-          assert.equal(input.apiMode, apiMode);
+          assert.equal(input.apiMode, apiMode ?? "responses");
           assert.equal(input.reasoningEnabled, true);
           assert.equal(input.stream, stream === true);
         }
@@ -685,4 +699,877 @@ test("compacts long history before requesting a planning turn and persists the c
     assert.ok(checkpoints.some((value) => value.contextCheckpoint === "用户已确认红色产品"));
     assert.equal(history[0].content.length, "已确认红色产品".length * 25000);
   } finally { submitOverride = undefined; }
+});
+
+const productReferences = (count) => Array.from({ length: count }, (_, index) => ({
+  id: `product-${index}`, type: "image", title: `产品角度 ${index}`, label: `图片${index + 1}`, dataUrl: `data:image/png;base64,${index}`,
+}));
+
+test("analyzes all images in batches before executing the requested workflow in both APIs", async () => {
+  for (const apiMode of ["chat", "responses"]) {
+    const offset = submittedInputs.length;
+    const seen = [];
+    const events = [];
+    const checkpoints = [];
+    let planned = 0;
+    const executed = [];
+    submitOverride = async (input) => {
+      if (input.prompt === "分批分析创作资料") {
+        assert.deepEqual(input.tools, []);
+        const batch = input.messages.at(-1).content;
+        for (const [index, part] of batch.entries()) {
+          if (part.type !== "image_url") continue;
+          const number = Number(part.image_url.url.split(",")[1]);
+          assert.ok(batch[index - 1].text.includes(`节点 product-${number}（`));
+          seen.push(number);
+        }
+        agentReplies.push(`保留原产品结构，先白底后宣传；已分析节点 ${seen.map((id) => `product-${id}`).join("、")}`);
+      } else {
+        assert.equal(seen.length, 28);
+        planned += 1;
+        agentReplies.push(planned === 1 ? toolReply([{ name: "edit_image", arguments: { size: "1:1", count: 1, prompt: "白底产品图，保留结构", sourceNodeIds: ["product-0", "product-27"] } }]) : "白底图任务已提交");
+      }
+      return { id: `agent-task-${++taskCounter}` };
+    };
+    try {
+      const result = await run({ apiMode, stream: true, userText: "先做产品白底图，再做宣传图", references: productReferences(28),
+        onEvent: (value) => events.push(value), onCheckpoint: (value) => checkpoints.push(value),
+        executeAction: async (action) => { executed.push(action); return { ok: true, taskId: "white-background", status: "loading" }; },
+      });
+      assert.deepEqual(seen, Array.from({ length: 28 }, (_, index) => index));
+      assert.equal(executed.length, 1);
+      assert.deepEqual(executed[0].arguments.sourceNodeIds, ["product-0", "product-27"]);
+      assert.deepEqual(result.state.pendingTaskIds, ["white-background"]);
+      assert.ok(events.some((event) => /分批分析/.test(event.label)));
+      assert.ok(checkpoints.some((checkpoint) => JSON.stringify(checkpoint.protocolMessages).includes("已分析节点")));
+      assert.doesNotMatch(JSON.stringify(result.protocolMessages), /base64/);
+      const requests = submittedInputs.slice(offset);
+      assert.ok(requests.every((request) => request.apiMode === apiMode && request.stream === true));
+      const planning = requests.filter((request) => request.tools.length);
+      assert.equal(planning.length, 2);
+      assert.ok(planning.every((request) => estimateCanvasAgentTokens({ messages: request.messages, tools: request.tools }) < 64_000 / 1.15));
+      for (const reference of productReferences(28)) assert.ok(JSON.stringify(planning[0].messages).includes(`节点 ${reference.id}（`));
+    } finally { submitOverride = undefined; }
+  }
+});
+
+test("automatically splits a single oversized text request and keeps its final constraints", async () => {
+  const offset = submittedInputs.length;
+  const fragments = [];
+  const userText = "请制作产品白底图；" + "功能资料🙂".repeat(20_000) + "最后要求：不得改变门的方向";
+  submitOverride = async (input) => {
+    if (input.prompt === "分批分析创作资料") {
+      fragments.push(...input.messages.at(-1).content.map((part) => part.text));
+      agentReplies.push("制作产品白底图，不得改变门的方向");
+    } else agentReplies.push("需要哪个尺寸？");
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    const result = await run({ userText });
+    assert.equal(fragments.join(""), userText);
+    assert.match(result.protocolMessages[0].content, /不得改变门的方向/);
+    const planning = submittedInputs.slice(offset).find((request) => request.tools.length);
+    assert.ok(planning.prompt.length < 1_000);
+    assert.ok(estimateCanvasAgentTokens(planning.messages) < 64_000 / 1.15);
+  } finally { submitOverride = undefined; }
+});
+
+test("failed image analysis preserves original references and never executes canvas actions", async () => {
+  const references = productReferences(20);
+  const before = structuredClone(references);
+  const checkpoints = [];
+  let executed = 0;
+  let analyzed = 0;
+  submitOverride = async () => {
+    analyzed += 1;
+    if (analyzed === 2) throw new Error("analysis unavailable");
+    agentReplies.push("第一批结果");
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    await assert.rejects(run({ references, onCheckpoint: (value) => checkpoints.push(value), executeAction: async () => { executed += 1; return { ok: true }; } }), /analysis unavailable/);
+    assert.equal(executed, 0);
+    assert.equal(checkpoints.length, 1);
+    for (const reference of references) assert.ok(checkpoints[0].protocolMessages[0].content.includes(`节点 ${reference.id}（`));
+    assert.deepEqual(references, before);
+  } finally { submitOverride = undefined; }
+});
+
+test("model context rejection reduces the batch size and resumes without replaying actions", async () => {
+  let plans = 0;
+  let analyses = 0;
+  let executed = 0;
+  submitOverride = async (input) => {
+    if (input.prompt === "分批分析创作资料") {
+      analyses += 1;
+      agentReplies.push("图片 product-0 至 product-5 的产品资料，保留外观");
+    } else {
+      plans += 1;
+      if (plans === 1) throw new Error("maximum context length exceeded");
+      agentReplies.push(plans === 2 ? toolReply([{ name: "get_canvas_summary" }]) : "分析完成");
+    }
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    const result = await run({ references: productReferences(6), executeAction: async () => { executed += 1; return { ok: true }; } });
+    assert.ok(analyses > 1);
+    assert.equal(plans, 3);
+    assert.equal(executed, 1);
+    assert.equal(result.reply, "分析完成");
+  } finally { submitOverride = undefined; }
+});
+
+test("large tool results are summarized while retaining native call/result pairs", async () => {
+  let plans = 0;
+  let analyzed = 0;
+  submitOverride = async (input) => {
+    if (input.prompt === "分批分析创作资料") {
+      analyzed += 1;
+      agentReplies.push("get_canvas_summary 返回真实产品节点 product-1，尚未生成媒体");
+    } else {
+      plans += 1;
+      if (plans === 2) {
+        const call = input.messages.find((message) => message.tool_calls?.length);
+        const result = input.messages.find((message) => message.role === "tool");
+        assert.equal(result.tool_call_id, call.tool_calls[0].id);
+        assert.match(result.content, /product-1/);
+      }
+      agentReplies.push(plans === 1 ? toolReply([{ name: "get_canvas_summary" }]) : "已读取");
+    }
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    await run({ executeAction: async () => ({ ok: true, nodes: [{ id: "product-1", text: "产品详情".repeat(20_000) }] }) });
+    assert.ok(analyzed > 1);
+    assert.equal(plans, 2);
+  } finally { submitOverride = undefined; }
+});
+
+test("compacts completed actions in the current turn and continues without submitting them twice", async () => {
+  let plans = 0;
+  let summaries = 0;
+  const executed = [];
+  submitOverride = async (input) => {
+    if (input.prompt === "整理对话记忆") {
+      summaries += 1;
+      agentReplies.push("已创建 node-0 到 node-9 十个文本节点；不要重复创建，下一步检查结果");
+    } else {
+      plans += 1;
+      if (plans === 2) {
+        assert.match(input.messages[0].content, /已创建 node-0/);
+        assert.ok(!input.messages.some((message) => message.role === "tool"));
+      }
+      agentReplies.push(plans === 1 ? toolReply(Array.from({ length: 10 }, (_, index) => ({ name: "create_text_node", arguments: { title: `说明 ${index}`, content: "产品要求".repeat(1_500) } }))) : "十个文本节点已创建");
+    }
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    const result = await run({ executeAction: async (action) => { executed.push(action); return { ok: true, nodeId: `node-${executed.length - 1}` }; } });
+    assert.equal(executed.length, 10);
+    assert.ok(summaries > 0);
+    assert.equal(plans, 2);
+    assert.match(result.contextCheckpoint, /已创建 node-0/);
+  } finally { submitOverride = undefined; }
+});
+
+test("analysis rejects truncated output and tool calls without committing a partial summary", async () => {
+  for (const reply of [{ finish_reason: "length", text_response: "半段摘要" }, toolReply([{ name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "错误执行", sourceNodeIds: [] } }])]) {
+    const checkpoints = [];
+    let executed = 0;
+    agentReplies.push(reply);
+    await assert.rejects(run({ references: productReferences(20), onCheckpoint: (value) => checkpoints.push(value), executeAction: async () => { executed += 1; return { ok: true }; } }), /分批分析未完整返回/);
+    assert.equal(executed, 0);
+    assert.equal(checkpoints.length, 1);
+    assert.doesNotMatch(checkpoints[0].protocolMessages[0].content, /半段摘要/);
+  }
+});
+
+test("cancelling image analysis stops the entire workflow before canvas execution", async () => {
+  const controller = new AbortController();
+  let executed = 0;
+  const cancelledOffset = cancelledTasks.length;
+  agentReplies.push({ task_status: "running" });
+  const pending = run({ signal: controller.signal, references: productReferences(20), executeAction: async () => { executed += 1; return { ok: true }; } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(executed, 0);
+  assert.equal(cancelledTasks.length, cancelledOffset + 1);
+});
+
+test("large saved plans are reduced for planning without rewriting the approved source", async () => {
+  const state = { ...createCanvasAgentState(), approvedPlan: "已确认的方案".repeat(20_000) + "产品必须朝左" };
+  let plans = 0;
+  let analyses = 0;
+  submitOverride = async (input) => {
+    if (input.prompt === "分批分析创作资料") {
+      analyses += 1;
+      agentReplies.push("已确认：产品必须朝左");
+    } else {
+      plans += 1;
+      assert.match(input.messages[0].content, /产品必须朝左/);
+      assert.ok(estimateCanvasAgentTokens(input.messages) < 64_000 / 1.15);
+      agentReplies.push(plans === 1 ? toolReply([{ name: "get_canvas_summary" }]) : "已检查方案");
+    }
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    const result = await run({ initialState: state });
+    assert.ok(analyses > 1);
+    assert.equal(plans, 2);
+    assert.equal(result.state.approvedPlan, state.approvedPlan);
+  } finally { submitOverride = undefined; }
+});
+
+test("message image attachments reach the model without claiming to be canvas nodes", async () => {
+  const offset = submittedInputs.length;
+  agentReplies.push("图片包含产品外观。");
+  const attachment = { id: "attachment-product", source: "attachment", type: "image", title: "product.png", url: "/api/files/product/content", storageKey: "server:product", dataUrl: "data:image/png;base64,AAAA" };
+  await run({ userText: "描述这张图片", references: [attachment] });
+  const user = submittedInputs[offset].messages.findLast((message) => message.role === "user");
+  assert.ok(user.content.some((part) => part.type === "image_url" && part.image_url.url === attachment.dataUrl));
+  const captions = user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+  assert.match(captions, /消息附件/);
+  assert.doesNotMatch(captions, /节点 attachment-product/);
+  const saved = { ...attachment, dataUrl: undefined };
+  const session = { id: "attachment-session", messages: [{ id: "user-upload", role: "user", text: "描述这张图片", references: [saved] }] };
+  assert.deepEqual(syncCanvasAgentSessions([session], [])[0].messages[0].references, [saved]);
+});
+
+const { resolveCanvasAgentQuestion } = await import("../src/app/canvas/agent/canvas-agent-interaction.ts");
+const questionArguments = { question: "这组海报采用哪种风格？", reason: "风格会影响整组图片的一致性。", options: ["纪实摄影", "手绘插画"], kind: "clarification" };
+
+test("human input pauses the entire batch before any canvas side effects", async () => {
+  const offset = submittedInputs.length;
+  const executed = [];
+  const checkpoints = [];
+  agentReplies.push(toolReply([
+    { id: "write-before-question", name: "create_text_node", arguments: { title: "过早执行", content: "不应该出现" } },
+    { id: "question-1", name: "ask_user_question", arguments: questionArguments },
+    { id: "write-after-question", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "不应该生成", sourceNodeIds: [] } },
+  ]));
+  const result = await run({ userText: "制作一组海报", executeAction: async (action) => { executed.push(action); return { ok: true }; }, onCheckpoint: (value) => checkpoints.push(structuredClone(value)) });
+  assert.equal(submittedInputs.length - offset, 1);
+  assert.deepEqual(executed, []);
+  assert.equal(result.state.pendingQuestion.id, "question-1");
+  assert.equal(result.reply, questionArguments.question);
+  const outputs = result.protocolMessages.filter((item) => item.role === "tool");
+  assert.equal(outputs.length, 2);
+  assert.ok(outputs.every((item) => JSON.parse(item.content).code === "awaiting_user"));
+  assert.deepEqual(checkpoints.at(-1).state.pendingQuestion, result.state.pendingQuestion);
+});
+
+test("saved questions resume with a tool answer in Chat and Responses without replaying prior actions", async () => {
+  for (const apiMode of ["chat", "responses"]) {
+    const executed = [];
+    const responseItems = [{ type: "reasoning", id: "ask-reasoning", encrypted_content: "opaque", summary: [] }, { type: "function_call", id: "ask-item", call_id: "ask-style", name: "ask_user_question", arguments: JSON.stringify(questionArguments) }];
+    agentReplies.push(toolReply([{ id: "already-written", name: "create_text_node", arguments: { title: "需求", content: "海报" } }]), { ...toolReply([{ id: "ask-style", name: "ask_user_question", arguments: questionArguments }]), response_items: responseItems });
+    const paused = await run({ apiMode, executeAction: async (action) => { executed.push(action.id); return { ok: true, nodeId: "created-node" }; } });
+    const stored = JSON.parse(JSON.stringify(paused));
+    const offset = submittedInputs.length;
+    agentReplies.push(toolReply([{ id: "after-answer", name: "create_text_node", arguments: { title: "风格", content: "手绘插画" } }]), "已按手绘插画保存方案");
+    const result = await run({ apiMode, initialState: stored.state, protocolMessages: stored.protocolMessages, userText: "手绘插画", executeAction: async (action) => { executed.push(action.id); return { ok: true }; } });
+    assert.deepEqual(executed, ["already-written", "after-answer"]);
+    assert.equal(result.state.pendingQuestion, undefined);
+    const request = submittedInputs[offset];
+    const answer = request.messages.find((message) => message.role === "tool" && message.tool_call_id === "ask-style");
+    assert.deepEqual(JSON.parse(answer.content), { ok: true, answer: "手绘插画" });
+    assert.ok(request.messages.indexOf(answer) < request.messages.findLastIndex((message) => message.role === "user"));
+    assert.deepEqual(request.messages.find((message) => message.tool_calls?.some((call) => call.id === "ask-style")).response_items, responseItems);
+    assert.equal(result.protocolMessages.filter((message) => message.role === "tool" && message.toolCallId === "ask-style").length, 1);
+  }
+});
+
+test("question cancellation and stale answers cannot silently grant permission", async () => {
+  agentReplies.push(toolReply([{ id: "confirm-1", name: "ask_user_question", arguments: { ...questionArguments, kind: "confirmation" } }]));
+  const paused = await run();
+  const offset = submittedInputs.length;
+  assert.throws(() => resolveCanvasAgentQuestion(paused.state, paused.protocolMessages, "  "), /回答/);
+  const cancelled = resolveCanvasAgentQuestion(paused.state, paused.protocolMessages, "", true);
+  assert.equal(cancelled.state.pendingQuestion, undefined);
+  assert.equal(JSON.parse(cancelled.protocolMessages.at(-1).content).code, "user_cancelled");
+  assert.throws(() => resolveCanvasAgentQuestion(paused.state, cancelled.protocolMessages, "同意"), /状态已变化/);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(run({ initialState: paused.state, protocolMessages: paused.protocolMessages, userText: "同意", signal: controller.signal }), { name: "AbortError" });
+  assert.equal(submittedInputs.length, offset);
+  assert.ok(paused.state.pendingQuestion);
+});
+
+test("structured plans validate nested arguments and persist without invoking canvas tools", async () => {
+  const plan = { explanation: "先定稿再生成", steps: [{ id: "script", title: "确认剧本", status: "in_progress" }, { id: "images", title: "生成分镜", status: "pending" }] };
+  assert.throws(() => normalizeCanvasAgentAction("update_plan", { ...plan, steps: [{ ...plan.steps[0], unexpected: true }] }), /未知工具参数/);
+  assert.throws(() => normalizeCanvasAgentAction("update_plan", { ...plan, steps: [plan.steps[0], plan.steps[0]] }), /不得重复/);
+  assert.throws(() => normalizeCanvasAgentAction("update_plan", { ...plan, steps: plan.steps.map((step) => ({ ...step, status: "in_progress" })) }), /最多一个/);
+  assert.throws(() => normalizeCanvasAgentAction("ask_user_question", { ...questionArguments, options: ["重复", "重复"] }), /不得重复/);
+  assert.throws(() => normalizeCanvasAgentAction("ask_user_question", { ...questionArguments, question: "" }), /不能为空/);
+  const checkpoints = [];
+  agentReplies.push(toolReply([{ id: "plan", name: "update_plan", arguments: plan }]), "已列出执行步骤");
+  const result = await run({ executeAction: async () => { throw new Error("plan must stay in the runtime"); }, onCheckpoint: (value) => checkpoints.push(structuredClone(value)) });
+  assert.deepEqual(result.state.plan, plan);
+  assert.deepEqual(checkpoints.at(-1).state.plan, plan);
+  assert.equal(JSON.parse(result.protocolMessages.find((message) => message.role === "tool").content).ok, true);
+});
+
+test("a failed structural action prevents dependent actions in the same batch", async () => {
+  const executed = [];
+  agentReplies.push(toolReply([
+    { id: "failed-script", name: "create_text_node", arguments: { title: "剧本", content: "正文" } },
+    { id: "dependent-image", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "基于剧本", sourceNodeIds: [] } },
+  ]), "剧本未保存，请处理后继续");
+  const result = await run({ executeAction: async (action) => { executed.push(action.id); return { ok: false, code: "storage_failed" }; } });
+  assert.deepEqual(executed, ["failed-script"]);
+  assert.equal(JSON.parse(result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "dependent-image").content).code, "dependency_failed");
+});
+
+test("stopping a sequential batch saves completed results and does not start its remaining tools", async () => {
+  const controller = new AbortController();
+  const checkpoints = [];
+  const executed = [];
+  const offset = submittedInputs.length;
+  agentReplies.push(toolReply([
+    { id: "saved-script", name: "create_text_node", arguments: { title: "剧本", content: "正文" } },
+    { id: "unstarted-image", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "分镜", sourceNodeIds: [] } },
+  ]));
+  await assert.rejects(run({
+    signal: controller.signal,
+    executeAction: async (action) => {
+      const saved = checkpoints.at(-1).protocolMessages;
+      assert.ok(saved.some((message) => message.role === "tool" && message.toolCallId === action.id && JSON.parse(message.content).code === "execution_unknown"));
+      executed.push(action.id);
+      return { ok: true, nodeId: "script-created" };
+    },
+    onCheckpoint: (value) => {
+      checkpoints.push(structuredClone(value));
+      if (value.protocolMessages.some((message) => message.role === "tool" && JSON.parse(message.content).nodeId === "script-created")) controller.abort();
+    },
+  }), { name: "AbortError" });
+  assert.deepEqual(executed, ["saved-script"]);
+  assert.equal(submittedInputs.length - offset, 1);
+  const outputs = checkpoints.at(-1).protocolMessages.filter((message) => message.role === "tool").map((message) => JSON.parse(message.content));
+  assert.equal(outputs[0].nodeId, "script-created");
+  assert.equal(outputs[1].code, "execution_not_started");
+});
+
+test("parallel cancellation keeps completed task IDs and ignores late settlements", async () => {
+  const controller = new AbortController();
+  const checkpoints = [];
+  let settleLate;
+  agentReplies.push(toolReply([
+    { id: "submitted-image", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "第一张", sourceNodeIds: [] } },
+    { id: "unknown-image", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "第二张", sourceNodeIds: [] } },
+  ]));
+  await assert.rejects(run({
+    signal: controller.signal,
+    executeAction: async (action) => action.id === "submitted-image"
+      ? { ok: true, nodeId: "image-saved", taskId: "media-running", status: "loading" }
+      : new Promise((resolve) => { settleLate = resolve; }),
+    onCheckpoint: (value) => {
+      checkpoints.push(structuredClone(value));
+      if (value.state.pendingTaskIds.includes("media-running")) controller.abort();
+    },
+  }), { name: "AbortError" });
+  const saved = structuredClone(checkpoints.at(-1));
+  assert.deepEqual(saved.state.pendingTaskIds, ["media-running"]);
+  assert.equal(JSON.parse(saved.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "unknown-image").content).code, "execution_unknown");
+  const count = checkpoints.length;
+  settleLate({ ok: true, nodeId: "late-node", taskId: "late-task", status: "success" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(checkpoints.length, count);
+  assert.deepEqual(checkpoints.at(-1), saved);
+});
+
+test("interrupted checkpoints restore paired calls in Chat and Responses without replaying a batch", async () => {
+  const controller = new AbortController();
+  let runningCheckpoint;
+  let refreshCheckpoint;
+  agentReplies.push(toolReply([
+    { id: "unknown-script", name: "create_text_node", arguments: { title: "剧本", content: "正文" } },
+    { id: "unstarted-dependent", name: "generate_image", arguments: { size: "1:1", count: 1, prompt: "分镜", sourceNodeIds: [] } },
+  ]));
+  await assert.rejects(run({
+    signal: controller.signal,
+    onCheckpoint: (value) => { runningCheckpoint = structuredClone(value); },
+    executeAction: async () => {
+      refreshCheckpoint = structuredClone(runningCheckpoint);
+      controller.abort();
+      return new Promise(() => {});
+    },
+  }), { name: "AbortError" });
+  for (const apiMode of ["chat", "responses"]) {
+    const offset = submittedInputs.length;
+    const restored = syncCanvasAgentSessions([{
+      id: "interrupted", title: "中断的对话", messages: [{ id: "reply", role: "assistant", text: "", status: "running" }],
+      agentState: refreshCheckpoint.state, protocolMessages: refreshCheckpoint.protocolMessages,
+    }], [], true)[0];
+    assert.equal(restored.messages[0].status, "waiting");
+    const executed = [];
+    agentReplies.push(toolReply([{ id: "check-current-canvas", name: "get_canvas_summary" }]), "已核对画布");
+    await run({ apiMode, initialState: restored.agentState, protocolMessages: restored.protocolMessages, userText: "继续", executeAction: async (action) => { executed.push(action.id); return { ok: true }; } });
+    assert.deepEqual(executed, ["check-current-canvas"]);
+    const messages = submittedInputs[offset].messages;
+    const calls = messages.filter((message) => message.tool_calls).flatMap((message) => message.tool_calls);
+    assert.ok(calls.length >= 2);
+    for (const call of calls) assert.equal(messages.filter((message) => message.role === "tool" && message.tool_call_id === call.id).length, 1);
+    assert.equal(JSON.parse(messages.find((message) => message.tool_call_id === "unknown-script").content).code, "execution_unknown");
+    assert.equal(JSON.parse(messages.find((message) => message.tool_call_id === "unstarted-dependent").content).code, "execution_not_started");
+  }
+});
+
+test("node details expose the complete script while summaries indicate omitted content", () => {
+  const prompt = "开场".repeat(3000) + "片尾必须保留的对白";
+  const node = { id: "long-script", type: "text", title: "长剧本", prompt };
+  assert.equal(summarizeCanvasAgentNode(node).prompt.length, 4000);
+  assert.equal(summarizeCanvasAgentNode(node).detailsOmitted, true);
+  assert.equal(summarizeCanvasAgentNode(node, true).text, prompt);
+  assert.equal(summarizeCanvasAgentNode(node, true).detailsOmitted, undefined);
+});
+
+test("the session limit prevents creating an unsaveable 25th conversation", () => {
+  assert.equal(MAX_CANVAS_AGENT_SESSIONS, 24);
+  assert.equal(canCreateCanvasAgentSession(Array(23).fill({})), true);
+  assert.equal(canCreateCanvasAgentSession(Array(24).fill({})), false);
+});
+
+test("video durations honor contract ranges instead of only the default duration", () => {
+  const contracts = structuredClone(contractDocument.contracts);
+  const ranged = { ...structuredClone(contracts[0]), name: "Range test", models: ["range-test"] };
+  ranged.capability.seconds_range = { min: 2, max: 90, step: 2 };
+  ranged.capability.default_seconds = 10;
+  installVideoModelContracts([...contracts, ranged]);
+  try {
+    assert.equal(validateCanvasAgentVideoSeconds("range-test", 40), "");
+    assert.match(validateCanvasAgentVideoSeconds("range-test", 41), /步长 2/);
+    assert.match(validateCanvasAgentVideoSeconds("range-test", 92), /最多 90/);
+    assert.match(canvasAgentVideoDurationHint("range-test").range, /2 秒起/);
+    assert.equal(normalizeCanvasAgentAction("generate_video", { prompt: "长片段", sourceNodeIds: [], size: "16:9", generateAudio: false, seconds: 40 }).arguments.seconds, 40);
+    const args = { prompt: "长片段", sourceNodeIds: [], size: "16:9", generateAudio: false, seconds: 4500 };
+    delete ranged.capability.seconds_range.max;
+    installVideoModelContracts([...contracts, ranged]);
+    assert.equal(validateCanvasAgentVideoSeconds("range-test", 4500), "");
+    assert.equal(normalizeCanvasAgentAction("generate_video", args).arguments.seconds, 4500);
+    assert.throws(() => normalizeCanvasAgentAction("generate_video", { ...args, seconds: -1 }), /seconds/);
+    assert.throws(() => normalizeCanvasAgentAction("generate_video", { ...args, seconds: Number.MAX_SAFE_INTEGER + 1 }), /seconds/);
+  } finally { installVideoModelContracts(contracts); }
+});
+
+
+test("persisted sessions reject malformed nested values before rendering", () => {
+  const session = { id: "s", title: "对话", createdAt: "now", updatedAt: "now", messages: [{ id: "u", role: "user", text: "创作" }], agentState: createCanvasAgentState(), protocolMessages: [{ role: "user", content: "创作" }] };
+  assert.equal(isCanvasAgentSession(session), true);
+  for (const mutate of [
+    (s) => { s.agentState.pendingTaskIds = null; },
+    (s) => { s.agentState.plan = { explanation: "计划", steps: "bad" }; },
+    (s) => { s.agentState.pendingQuestion = { id: "q", question: "方向？", reason: "影响结果", request: "创作", kind: "clarification", options: 4 }; },
+    (s) => { s.messages[0].references = [{ id: "x", title: "图片", type: "image", text: {} }]; },
+    (s) => { s.protocolMessages = [{ role: "assistant", toolCalls: {} }]; },
+    (s) => { s.protocolMessages = [{ role: "user", content: [null] }]; },
+    (s) => { s.activeSkillIds = {}; },
+  ]) { const invalid = structuredClone(session); mutate(invalid); assert.equal(isCanvasAgentSession(invalid), false, JSON.stringify(invalid)); }
+});
+
+test("missing delivery parameters stop the batch before any generation executes", async () => {
+  const executed = [];
+  agentReplies.push(toolReply([{ id: "missing", name: "generate_video", arguments: { prompt: "宣传片", sourceNodeIds: [] } }]), toolReply([{ id: "ask", name: "ask_user_question", arguments: { question: "宣传视频要多长、什么比例和声音？", reason: "交付参数尚未明确", options: [], kind: "clarification" } }]));
+  const result = await run({ userText: "制作宣传视频", executeAction: async (action) => { executed.push(action); return { ok: true }; } });
+  assert.deepEqual(executed, []);
+  assert.equal(result.state.pendingQuestion.id, "ask");
+  assert.match(result.reply, /比例和声音/);
+});
+
+test("retry keeps the existing user turn and reuses completed node operations", async () => {
+  for (const apiMode of ["chat", "responses"]) {
+    const call = { id: "saved", name: "create_text_node", arguments: { title: "方案", content: "正文" } };
+    const history = [{ role: "user", content: "创建方案" }, { role: "assistant", toolCalls: [call] }, { role: "tool", toolCallId: call.id, name: call.name, content: JSON.stringify({ ok: true, nodeId: "existing" }) }];
+    const offset = submittedInputs.length;
+    agentReplies.push(toolReply([{ ...call, id: "repeated" }]), "已恢复原任务");
+    const result = await run({ apiMode, resume: true, userText: "创建方案", protocolMessages: history, executeAction: async () => { throw new Error("must not repeat completed writes"); } });
+    assert.equal(submittedInputs[offset].messages.filter((message) => message.role === "user").length, 1);
+    assert.equal(result.protocolMessages.filter((message) => message.role === "user").length, 1);
+    assert.equal(JSON.parse(result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "repeated").content).nodeId, "existing");
+  }
+});
+
+test("three saved image edits stay waiting for manual generation instead of completing the plan", async () => {
+  const { canvasAgentWaitingReason } = await import("../src/app/canvas/agent/canvas-agent-runtime.ts");
+  const initialState = { ...createCanvasAgentState(), plan: { explanation: "", steps: [{ id: "white", title: "三视角白底图", status: "in_progress" }, { id: "review", title: "核对成图", status: "pending" }] } };
+  const calls = ["正面", "斜前方", "背面"].map((title, index) => ({ id: `edit-${index}`, name: "edit_image", arguments: { title, prompt: "产品白底图，保留机身标识，不加文案", size: "1:1", count: 1, sourceNodeIds: [], attachmentIds: ["product-photo"] } }));
+  agentReplies.push(toolReply(calls), "三个节点已保存，等待手动生成");
+  const offset = submittedInputs.length;
+  const result = await run({ initialState, executeAction: async (action) => ({ ok: true, submitted: false, nodeId: action.id, status: "idle" }) });
+  assert.equal(result.waiting, true);
+  assert.equal(submittedInputs.length - offset, 2);
+  assert.equal(canvasAgentWaitingReason(result.state, result.protocolMessages), "待手动生成 · 3 个节点");
+  assert.equal(canvasAgentWaitingReason(result.state, result.protocolMessages, calls.map((call) => ({ id: call.id, status: "success" }))), "");
+});
+
+test("an early final reply continues an unfinished plan and preserves completed operations", async () => {
+  const plan = { explanation: "", steps: [{ id: "draft", title: "整理需求", status: "completed" }, { id: "write", title: "写入方案", status: "in_progress" }] };
+  agentReplies.push(toolReply([{ id: "plan", name: "update_plan", arguments: plan }]), "需求已整理", toolReply([{ id: "write", name: "create_text_node", arguments: { title: "方案", content: "最终方案" } }, { id: "finish", name: "update_plan", arguments: { ...plan, steps: plan.steps.map((step) => ({ ...step, status: "completed" })) } }]), "方案已写入");
+  const executed = [];
+  const result = await run({ executeAction: async (action) => { executed.push(action.id); return { ok: true, nodeId: "plan-node" }; } });
+  assert.deepEqual(executed, ["write"]);
+  assert.equal(result.waiting, false);
+  assert.ok(result.state.plan.steps.every((step) => step.status === "completed"));
+});
+
+function savedMediaRun() {
+  const calls = ["正面", "斜前方", "背面"].map((title, index) => ({ id: `saved-edit-${index}`, name: "edit_image", arguments: { title, prompt: "产品白底图", size: "1:1", count: 1, sourceNodeIds: [], attachmentIds: ["product-photo"] } }));
+  const protocolMessages = [{ role: "user", content: "三张产品白底图" }, { role: "assistant", toolCalls: calls }, ...calls.map((call, index) => ({ role: "tool", name: call.name, toolCallId: call.id, content: JSON.stringify({ ok: true, submitted: false, nodeId: `existing-${index}`, status: "idle" }) }))];
+  const plan = { explanation: "", steps: [{ id: "white", title: "生成三张白底图", status: "in_progress" }, { id: "review", title: "核对成图", status: "pending" }] };
+  return { calls, protocolMessages, initialState: { ...createCanvasAgentState(), plan } };
+}
+
+function mediaContext(state, autoGenerateMedia = true) {
+  const result = context(state);
+  return { ...result, generation: { ...result.generation, autoGenerateMedia } };
+}
+
+test("resume submits the three saved nodes before planning and waits for all real results", async () => {
+  const saved = savedMediaRun();
+  const completions = new Map();
+  const checkpoints = [];
+  const offset = submittedInputs.length;
+  const executed = [];
+  agentReplies.push(toolReply([{ id: "review", name: "get_node", arguments: { nodeId: "existing-0" } }]), toolReply([{ id: "complete", name: "update_plan", arguments: { ...saved.initialState.plan, steps: saved.initialState.plan.steps.map((item) => ({ ...item, status: "completed" })) } }]), "三张白底图已生成并核对");
+  const pending = run({ ...saved, resume: true, getContext: mediaContext, onCheckpoint: (value) => checkpoints.push(structuredClone(value)), executeAction: async (action) => {
+    executed.push(action);
+    if (action.name === "generate_node") return new Promise((resolve) => completions.set(action.arguments.nodeId, resolve));
+    return { ok: true, nodeId: "existing-0", status: "success" };
+  } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(executed.map((action) => action.arguments.nodeId), ["existing-0", "existing-1", "existing-2"]);
+  assert.equal(submittedInputs.length, offset);
+  for (let index = 0; index < 2; index++) completions.get(`existing-${index}`)({ ok: true, submitted: true, nodeId: `existing-${index}`, taskId: `media-${index}`, status: "success" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(submittedInputs.length, offset);
+  completions.get("existing-2")({ ok: true, submitted: true, nodeId: "existing-2", taskId: "media-2", status: "success" });
+  const result = await pending;
+  assert.equal(result.waiting, false);
+  assert.deepEqual(result.state.pendingTaskIds, []);
+  assert.deepEqual(result.state.completedTaskIds, ["media-0", "media-1", "media-2"]);
+  assert.ok(result.state.plan.steps.every((item) => item.status === "completed"));
+  assert.equal(result.protocolMessages.filter((message) => message.role === "user").length, 1);
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.state.completedTaskIds.length === 2));
+  const resumedCalls = result.protocolMessages.filter((message) => message.role === "assistant").flatMap((message) => message.toolCalls || []).filter((call) => call.name === "generate_node");
+  assert.equal(resumedCalls.length, 3);
+  assert.ok(resumedCalls.every((call) => result.protocolMessages.some((message) => message.role === "tool" && message.toolCallId === call.id)));
+});
+
+test("retrying a manual run respects the disabled generation setting", async () => {
+  const saved = savedMediaRun();
+  agentReplies.push("自动生成关闭，请开启后继续");
+  const result = await run({ ...saved, resume: true, getContext: (state) => mediaContext(state, false), executeAction: async () => { throw new Error("must not generate while disabled"); } });
+  assert.equal(result.waiting, true);
+  assert.deepEqual(result.state.completedTaskIds, []);
+});
+
+test("deferring media continues independent writing, preserves nodes and records the user's choice", async () => {
+  const saved = savedMediaRun();
+  const executed = [];
+  const plan = { explanation: "先完成文案，成图和审核暂缓", steps: [
+    ...saved.initialState.plan.steps.map((step) => ({ ...step, status: "deferred" })),
+    { id: "copy", title: "整理后续文案", status: "completed" },
+  ] };
+  agentReplies.push(toolReply([{ id: "write-copy", name: "create_text_node", arguments: { title: "宣传文案", content: "后续文案与提示词" } }]), toolReply([{ id: "deferred-plan", name: "update_plan", arguments: plan }]), "文案已整理，图片和成图审核暂缓。");
+  const result = await run({ ...saved, resume: true, mediaGenerationChoice: "defer", getContext: mediaContext, executeAction: async (action) => { executed.push(action); return { ok: true, nodeId: "copy-node" }; } });
+  assert.deepEqual(executed.map((action) => action.name), ["create_text_node"]);
+  assert.equal(result.state.mediaGenerationDeferred, true);
+  assert.equal(result.waiting, false);
+  assert.deepEqual(result.state.plan.steps.map((step) => step.status), ["deferred", "deferred", "completed"]);
+  assert.match(result.protocolMessages.findLast((message) => message.role === "user").content, /暂不生成，继续规划/);
+  assert.deepEqual(result.protocolMessages.filter((message) => message.role === "tool" && message.name === "edit_image"), saved.protocolMessages.filter((message) => message.role === "tool"));
+});
+
+test("persisted media deferral blocks generation even after retries and global setting changes", async () => {
+  const saved = savedMediaRun();
+  agentReplies.push(toolReply([{ id: "unwanted-generation", name: "generate_node", arguments: { nodeId: "existing-0" } }]), "图片仍暂缓，可以继续修改文案。");
+  const result = await run({ ...saved, initialState: { ...saved.initialState, mediaGenerationDeferred: true, plan: undefined }, resume: true, getContext: mediaContext, executeAction: async () => { throw new Error("deferral must prevent all media side effects"); } });
+  assert.equal(result.state.mediaGenerationDeferred, true);
+  const blocked = result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "unwanted-generation");
+  assert.equal(JSON.parse(blocked.content).code, "media_generation_deferred");
+  assert.equal(result.waiting, false);
+});
+
+test("explicit generation resumes deferred nodes without requiring global auto generation", async () => {
+  const saved = savedMediaRun();
+  const executed = [];
+  agentReplies.push("已有图片已生成。");
+  const result = await run({ ...saved, initialState: { ...saved.initialState, mediaGenerationDeferred: true, plan: undefined }, resume: true, mediaGenerationChoice: "generate", getContext: (state) => mediaContext(state, false), executeAction: async (action) => {
+    executed.push(action);
+    return { ok: true, submitted: true, nodeId: action.arguments.nodeId, status: "success" };
+  } });
+  assert.equal(result.state.mediaGenerationDeferred, false);
+  assert.deepEqual(executed.map((action) => [action.name, action.arguments.nodeId]), [0, 1, 2].map((index) => ["generate_node", `existing-${index}`]));
+  assert.match(result.protocolMessages.findLast((message) => message.role === "user").content, /立即生成已有待处理节点/);
+  assert.equal(result.waiting, false);
+});
+
+test("explicit generation authorization clears an old deferral on a resumed run", async () => {
+  const saved = savedMediaRun();
+  const checkpoints = [];
+  const executed = [];
+  const result = await run({
+    ...saved,
+    initialState: { ...saved.initialState, mediaGenerationDeferred: true },
+    resume: true,
+    mediaGenerationChoice: "generate",
+    getContext: (state) => mediaContext(state, false),
+    onCheckpoint: (checkpoint) => checkpoints.push(structuredClone(checkpoint)),
+    executeAction: async (action) => { executed.push(action); return { ok: true, submitted: true, nodeId: action.arguments.nodeId, status: "success" }; },
+  });
+  assert.equal(result.state.mediaGenerationDeferred, false);
+  assert.deepEqual(executed.map((action) => action.arguments.nodeId), ["existing-0", "existing-1", "existing-2"]);
+  assert.equal(checkpoints.at(-1).state.mediaGenerationDeferred, false);
+  assert.ok(result.protocolMessages.some((message) => message.role === "user" && /明确授权立即生成/.test(String(message.content))));
+});
+
+test("a new explicit generation message submits deferred nodes with global auto generation disabled", async () => {
+  const saved = savedMediaRun();
+  const executed = [];
+  agentReplies.push("三张图片已提交并完成。");
+  const result = await run({
+    ...saved,
+    initialState: { ...saved.initialState, mediaGenerationDeferred: true },
+    resume: false,
+    userText: "你帮我生成吧",
+    getContext: (state) => mediaContext(state, false),
+    executeAction: async (action) => { executed.push(action); return { ok: true, submitted: true, nodeId: action.arguments.nodeId, status: "success" }; },
+  });
+  assert.equal(result.state.mediaGenerationDeferred, false);
+  assert.deepEqual(executed.map((action) => action.arguments.nodeId), ["existing-0", "existing-1", "existing-2"]);
+  assert.match(JSON.stringify(submittedInputs.at(-1).messages), /用户本轮明确授权生成/);
+});
+
+test("confirming generation in a pending question clears the deferral and resumes existing nodes", async () => {
+  const saved = savedMediaRun();
+  const question = { id: "media-confirmation", name: "ask_user_question", arguments: { question: "要立即生成这些图片吗？", reason: "需要确认是否提交任务", options: ["立即生成", "暂不生成"], kind: "confirmation", purpose: "media_generation" } };
+  const protocolMessages = [...saved.protocolMessages, { role: "assistant", toolCalls: [question] }];
+  const initialState = {
+    ...saved.initialState,
+    mediaGenerationDeferred: true,
+    pendingQuestion: { id: question.id, question: question.arguments.question, reason: question.arguments.reason, options: question.arguments.options, kind: question.arguments.kind, purpose: question.arguments.purpose, request: "制作三张白底产品图" },
+  };
+  const executed = [];
+  agentReplies.push(
+    toolReply([{ id: "complete-plan", name: "update_plan", arguments: { ...saved.initialState.plan, steps: saved.initialState.plan.steps.map((step) => ({ ...step, status: "completed" })) } }]),
+    "三张白底图已完成。",
+  );
+  const result = await run({ ...saved, initialState, protocolMessages, userText: "立即生成", mediaGenerationChoice: "generate", getContext: (state) => mediaContext(state, false), executeAction: async (action) => {
+    executed.push(action);
+    return { ok: true, submitted: true, nodeId: action.arguments.nodeId, status: "success" };
+  } });
+  assert.deepEqual(executed.map((action) => [action.name, action.arguments.nodeId]), [0, 1, 2].map((index) => ["generate_node", `existing-${index}`]));
+  assert.equal(result.state.mediaGenerationDeferred, false);
+  assert.equal(result.state.pendingQuestion, undefined);
+  assert.match(result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === question.id).content, /立即生成/);
+  assert.equal(result.waiting, false);
+});
+
+test("media deferral cannot mark nonexistent outputs as completed or conceal running tasks", async () => {
+  const saved = savedMediaRun();
+  agentReplies.push(toolReply([{ id: "false-completion", name: "update_plan", arguments: { ...saved.initialState.plan, steps: saved.initialState.plan.steps.map((step) => ({ ...step, status: "completed" })) } }]), "生成步骤仍暂缓。", "生成步骤仍暂缓。");
+  const result = await run({ ...saved, resume: true, mediaGenerationChoice: "defer", getContext: mediaContext, executeAction: async () => { throw new Error("no external actions expected"); } });
+  assert.equal(JSON.parse(result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "false-completion").content).code, "media_not_finished");
+  assert.ok(result.state.plan.steps.some((step) => step.status !== "completed"));
+  const { canvasAgentWaitingReason } = await import("../src/app/canvas/agent/canvas-agent-runtime.ts");
+  assert.equal(canvasAgentWaitingReason(result.state, result.protocolMessages, [{ id: "existing-0", status: "loading" }]), "等待生成结果 · 1 个节点");
+});
+
+test("resumed generation failures cannot complete the plan or duplicate existing nodes", async () => {
+  const saved = savedMediaRun();
+  const executed = [];
+  agentReplies.push(toolReply([{ id: "premature-complete", name: "update_plan", arguments: { ...saved.initialState.plan, steps: saved.initialState.plan.steps.map((item) => ({ ...item, status: "completed" })) } }]), "图片生成失败，原节点已保留");
+  const result = await run({ ...saved, resume: true, getContext: mediaContext, executeAction: async (action) => {
+    executed.push(action);
+    return { ok: false, submitted: true, nodeId: action.arguments.nodeId, taskId: `failed-${action.arguments.nodeId}`, status: "error", message: "生成服务失败" };
+  } });
+  assert.equal(result.waiting, true);
+  assert.equal(executed.length, 3);
+  assert.ok(executed.every((action) => action.name === "generate_node"));
+  assert.deepEqual(result.state.plan, saved.initialState.plan);
+  assert.deepEqual(result.state.pendingTaskIds, []);
+  assert.equal(JSON.parse(result.protocolMessages.find((message) => message.role === "tool" && message.toolCallId === "premature-complete").content).code, "media_not_finished");
+});
+
+test("repeated media calls resume their existing node instead of replaying creation", async () => {
+  const { executeCanvasAgentResumedAction } = await import("../src/app/canvas/agent/canvas-agent-execution.ts");
+  const saved = savedMediaRun();
+  const action = normalizeCanvasAgentAction("edit_image", saved.calls[0].arguments, "repeat");
+  const executed = [];
+  const result = await executeCanvasAgentResumedAction(saved.protocolMessages, action, async (next) => {
+    executed.push(next);
+    return { ok: true, nodeId: next.arguments.nodeId, status: "success" };
+  });
+  assert.deepEqual(executed.map(({ name, arguments: args }) => ({ name, args })), [{ name: "generate_node", args: { nodeId: "existing-0" } }]);
+  assert.equal(result.nodeId, "existing-0");
+});
+
+test("stopping saved-node recovery preserves checkpoints and does not start a model turn", async () => {
+  const controller = new AbortController();
+  const checkpoints = [];
+  const offset = submittedInputs.length;
+  const pending = run({ ...savedMediaRun(), resume: true, signal: controller.signal, getContext: mediaContext,
+    onCheckpoint: (value) => checkpoints.push(structuredClone(value)), executeAction: async () => new Promise(() => {}) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  await assert.rejects(pending, /已停止/);
+  assert.equal(submittedInputs.length, offset);
+  assert.ok(checkpoints.at(-1).protocolMessages.filter((message) => message.role === "tool").every((message) => JSON.parse(message.content)));
+  assert.deepEqual(checkpoints.at(-1).state.completedTaskIds, []);
+});
+
+test("a second retry only regenerates the failed saved node", async () => {
+  const saved = savedMediaRun();
+  agentReplies.push("第三张失败，可以重试");
+  const first = await run({ ...saved, resume: true, getContext: mediaContext, executeAction: async (action) => ({
+    ok: action.arguments.nodeId !== "existing-2", submitted: true, nodeId: action.arguments.nodeId,
+    taskId: `first-${action.arguments.nodeId}`, status: action.arguments.nodeId === "existing-2" ? "error" : "success",
+  }) });
+  assert.equal(first.waiting, true);
+  const executed = [];
+  agentReplies.push(toolReply([{ id: "complete-retry", name: "update_plan", arguments: { ...saved.initialState.plan, steps: saved.initialState.plan.steps.map((step) => ({ ...step, status: "completed" })) } }]), "三张图已完成");
+  const result = await run({ resume: true, initialState: first.state, protocolMessages: first.protocolMessages, getContext: mediaContext, executeAction: async (action) => {
+    executed.push(action);
+    return { ok: true, submitted: true, nodeId: action.arguments.nodeId, taskId: "retried-third", status: "success" };
+  } });
+  assert.deepEqual(executed.map((action) => [action.name, action.arguments.nodeId]), [["generate_node", "existing-2"]]);
+  assert.equal(result.waiting, false);
+  assert.deepEqual(result.state.pendingTaskIds, []);
+  assert.deepEqual(result.state.completedTaskIds, ["first-existing-0", "first-existing-1", "retried-third"]);
+  assert.equal(result.protocolMessages.filter((message) => message.role === "user").length, 1);
+});
+
+test("a model task is saved before submission and reuses its saved ID on recovery", async () => {
+  const input = { model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [] };
+  const order = [];
+  let savedID;
+  submitOverride = async (request) => {
+    assert.equal(request.clientTaskId, savedID);
+    order.push("submit");
+    return { id: savedID };
+  };
+  try {
+    await requestCanvasAgentTurn({ ...input, onTaskCreated: async (id) => { savedID = id; order.push("save"); } });
+    const original = savedID;
+    await requestCanvasAgentTurn({ ...input, taskId: original, onTaskCreated: async (id) => { assert.equal(id, original); order.push("save"); } });
+    assert.deepEqual(order, ["save", "submit", "save", "submit"]);
+    assert.equal(new Set(submittedInputs.slice(-2).map((request) => request.clientTaskId)).size, 1);
+  } finally { submitOverride = undefined; }
+});
+
+test("failed checkpoint persistence prevents model submission", async () => {
+  const before = submittedInputs.length;
+  await assert.rejects(requestCanvasAgentTurn({ model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [], onTaskCreated: async () => { throw new Error("save failed"); } }), /save failed/);
+  assert.equal(submittedInputs.length, before);
+});
+
+test("leaving a canvas keeps a pending model task alive for restoration", async () => {
+  const controller = new AbortController();
+  let checkpoint;
+  const offset = submittedInputs.length;
+  const cancelled = cancelledTasks.length;
+  agentReplies.push({ task_status: "running" });
+  const pending = run({ signal: controller.signal, onCheckpoint: (value) => { checkpoint = structuredClone(value); } });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(submittedInputs.length, offset + 1);
+  assert.equal(checkpoint.state.pendingModelTaskId, submittedInputs[offset].clientTaskId);
+  controller.abort("canvas-detached");
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(cancelledTasks.length, cancelled);
+  agentReplies.push("已接回原对话");
+  const restored = await run({ resume: true, initialState: checkpoint.state, protocolMessages: checkpoint.protocolMessages });
+  assert.equal(submittedInputs[offset + 1].clientTaskId, submittedInputs[offset].clientTaskId);
+  assert.equal(restored.state.pendingModelTaskId, undefined);
+  assert.equal(restored.protocolMessages.filter((message) => message.role === "user").length, 1);
+});
+
+test("detaching before submission acknowledgement does not cancel the acknowledged task", async () => {
+  let acknowledge;
+  const controller = new AbortController();
+  const cancelled = cancelledTasks.length;
+  submitOverride = () => new Promise((resolve) => { acknowledge = resolve; });
+  try {
+    const pending = requestCanvasAgentTurn({ model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [], signal: controller.signal });
+    controller.abort("canvas-detached");
+    acknowledge({ id: "persisted-during-refresh" });
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.equal(cancelledTasks.length, cancelled);
+  } finally { submitOverride = undefined; }
+});
+
+test("a running media checkpoint restores its original node without repeating creation", async () => {
+  const controller = new AbortController();
+  let checkpoint;
+  let persisted;
+  let started;
+  const ready = new Promise((resolve) => { started = resolve; });
+  agentReplies.push(toolReply([{ id: "image-call", name: "generate_image", arguments: { prompt: "A red cup", title: "Cup", size: "1:1", count: 1, sourceNodeIds: [] } }]));
+  const pending = run({
+    signal: controller.signal,
+    getContext: (state) => ({ ...context(state), generation: { ...context(state).generation, autoGenerateMedia: true } }),
+    onCheckpoint: (value) => { checkpoint = structuredClone(value); },
+    persist: async () => { persisted = structuredClone(checkpoint); },
+    executeAction: async (action, progress) => {
+      assert.equal(action.name, "generate_image");
+      progress({ ok: true, submitted: true, nodeId: "original-image", taskId: "original-task", status: "loading" });
+      persisted = structuredClone(checkpoint);
+      started();
+      return new Promise(() => {});
+    },
+  });
+  await ready;
+  assert.equal(persisted.state.pendingModelTaskId, undefined);
+  assert.deepEqual(persisted.state.pendingTaskIds, ["original-task"]);
+  controller.abort("canvas-detached");
+  await assert.rejects(pending, { name: "AbortError" });
+  const executed = [];
+  agentReplies.push("已读取原节点结果");
+  const restored = await run({ resume: true, initialState: persisted.state, protocolMessages: persisted.protocolMessages,
+    getContext: (state) => ({ ...context(state), generation: { ...context(state).generation, autoGenerateMedia: true } }),
+    executeAction: async (action) => { executed.push(action); return { ok: true, submitted: true, nodeId: "original-image", taskId: "original-task", status: "success" }; },
+  });
+  assert.deepEqual(executed.map((action) => [action.name, action.arguments.nodeId]), [["generate_node", "original-image"]]);
+  assert.deepEqual(restored.state.pendingTaskIds, []);
+  assert.deepEqual(restored.state.completedTaskIds, ["original-task"]);
+});
+
+test("only active assistant turns are marked for automatic restoration", () => {
+  const base = { id: "session", title: "Test", agentState: createCanvasAgentState(), protocolMessages: [], createdAt: "now", updatedAt: "now" };
+  for (const status of ["thinking", "running", "waiting", "success", "error"]) {
+    const session = { ...base, messages: [{ id: "user", role: "user", text: "Create" }, { id: "assistant", role: "assistant", text: "", status }] };
+    const restored = syncCanvasAgentSessions([session], [], true)[0];
+    assert.equal(restored.resumeAssistantMessageId, ["thinking", "running"].includes(status) ? "assistant" : undefined);
+    assert.ok(isCanvasAgentSession(restored));
+  }
+});
+
+test("execution trace preserves commentary and reports actual tool progress before completion", async () => {
+  const trace = [];
+  let savedProgress = false;
+  agentReplies.push(toolReply([{ id: "trace-image", name: "generate_image", arguments: { title: "杯子", prompt: "红色杯子", size: "1:1", count: 1, sourceNodeIds: [] } }], "我先创建图片节点，再等待生成结果。"), "图片已完成。");
+  const result = await run({
+    onTrace: (entry) => trace.push(structuredClone(entry)),
+    onCheckpoint: () => { savedProgress = trace.some((entry) => entry.type === "operation" && entry.nodeId === "cup"); },
+    executeAction: async (_action, onProgress) => {
+      assert.equal(trace[0].type, "text");
+      assert.equal(trace.at(-1).status, "running");
+      onProgress({ ok: true, nodeId: "cup", taskId: "cup-task", status: "running", submitted: true });
+      assert.equal(savedProgress, true);
+      assert.equal(trace.at(-1).label, "图片节点已创建");
+      return { ok: true, nodeId: "cup", taskId: "cup-task", status: "success", submitted: true };
+    },
+  });
+  assert.equal(trace.at(-1).status, "success");
+  assert.equal(new Set(trace.filter((entry) => entry.type === "operation").map((entry) => entry.id)).size, 1);
+  assert.equal(trace[0].text, "我先创建图片节点，再等待生成结果。");
+  assert.equal(result.reply, "图片已完成。");
+});
+
+test("execution trace records failed operations without claiming success", async () => {
+  const trace = [];
+  agentReplies.push(toolReply([{ id: "trace-failed", name: "get_canvas_summary", arguments: {} }]), "读取失败。");
+  await run({ onTrace: (entry) => trace.push(entry), executeAction: async () => { throw new Error("读取服务暂不可用"); } });
+  assert.equal(trace.at(-1).status, "error");
+  assert.match(trace.at(-1).detail, /读取服务暂不可用/);
 });

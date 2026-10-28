@@ -426,6 +426,7 @@ const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   default_video_model: "",
   default_audio_model: "",
   canvas_default_image_count: 1,
+  node_regenerate_behavior: "new-node",
   default_audio_voice: "",
   default_audio_format: "",
   default_audio_speed: 1,
@@ -761,8 +762,10 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
         </section>
 
         <section className="space-y-4 border-t border-border/70 pt-5">
-          <div><h2 className="text-sm font-semibold text-foreground">画布默认参数</h2><p className="mt-1 text-xs text-muted-foreground">仅用于新建的图片和音频节点；不同音频模型会自动使用其支持的选项范围。</p></div>
+          <div><h2 className="text-sm font-semibold text-foreground">画布默认参数</h2><p className="mt-1 text-xs text-muted-foreground">设置节点再生成方式，以及新建节点的默认参数。已有节点保留自身参数。</p></div>
           <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>已有内容的节点再次生成时</span><Select value={preferences.node_regenerate_behavior} disabled={isLoading || isSaving} onValueChange={(node_regenerate_behavior: ImageGenerationPreferences["node_regenerate_behavior"]) => setPreferences((current) => ({ ...current, node_regenerate_behavior }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new-node">新建衍生节点，保留原结果</SelectItem><SelectItem value="overwrite">覆盖当前节点</SelectItem></SelectContent></Select></label>
+            <label className="flex items-center justify-between gap-3 text-sm font-medium"><span>视频同步生成声音<span className="mt-1 block text-xs font-normal text-muted-foreground">与工作台声音选项同步，作为新建视频节点和 Agent 的默认值；实际以模型能力为准。</span></span><Switch checked={preferences.workbench.video_generate_audio} disabled={isLoading || isSaving} onCheckedChange={(video_generate_audio) => setPreferences((current) => ({ ...current, workbench: { ...current.workbench, video_generate_audio } }))} /></label>
             <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认生图张数</span><NumberInput min={1} max={15} step={1} value={preferences.canvas_default_image_count} controlsLayout="split" suffix="张" disabled={isLoading || isSaving} onValueChange={(value) => setPreferences((current) => ({ ...current, canvas_default_image_count: Math.max(1, Math.min(15, Math.floor(Number(value) || 1))) }))} /></label>
             <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认音频声音</span><Select value={selectedAudioVoice} disabled={isLoading || audioChoices.voices.length === 0} onValueChange={(default_audio_voice) => setPreferences((current) => ({ ...current, default_audio_voice }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent>{audioChoices.voices.map((voice) => <SelectItem key={voice} value={voice}>{voice}</SelectItem>)}</SelectContent></Select></label>
             <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认音频格式</span><Select value={selectedAudioFormat} disabled={isLoading || audioChoices.formats.length <= 1} onValueChange={(default_audio_format: ImageGenerationPreferences["default_audio_format"]) => setPreferences((current) => ({ ...current, default_audio_format }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent>{audioChoices.formats.map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></label>
@@ -1007,8 +1010,8 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
           onSelect={selectSection}
         />
         <section id={activeSection} aria-label={profileItems.find((item) => item.id === activeSection)?.label} className="h-full min-h-0 min-w-0 overflow-hidden rounded-xl">
-          <div hidden={activeSection !== "account"} className="h-full overflow-y-auto overscroll-contain"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
-          <div hidden={activeSection !== "keys"} className="h-full overflow-y-auto overscroll-contain"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
+          <div hidden={activeSection !== "account"} className="h-full"><ScrollArea className="h-full" viewportClassName="overscroll-contain"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></ScrollArea></div>
+          <div hidden={activeSection !== "keys"} className="h-full"><ScrollArea className="h-full" viewportClassName="overscroll-contain"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></ScrollArea></div>
           <div hidden={activeSection !== "creation"} className="h-full min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
           <div hidden={activeSection !== "storage"} className="h-full min-h-0"><StorageProviderCard /></div>
         </section>

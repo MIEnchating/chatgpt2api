@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
   type PointerEvent,
   type TextareaHTMLAttributes,
@@ -16,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   filterCanvasResourceMentions,
   findCanvasResourceMention,
-  insertCanvasResourceMention,
+  consumeCanvasResourceMention,
   isCanvasPromptSubmitKey,
   type CanvasResourceMention,
 } from "@/app/canvas/canvas-resource-mentions";
@@ -28,8 +27,8 @@ type CanvasResourceMentionTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAr
   references: readonly CanvasResourceReference[];
   onChange: (value: string) => void;
   onSubmit?: () => void;
+  onReferenceSelect?: (reference: CanvasResourceReference) => void;
   containerClassName?: string;
-  highlightLabels?: boolean;
 };
 
 export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, CanvasResourceMentionTextareaProps>(function CanvasResourceMentionTextarea({
@@ -37,29 +36,18 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
   references,
   onChange,
   onSubmit,
+  onReferenceSelect,
   containerClassName,
-  highlightLabels = true,
   className,
   style,
-  onSelect,
-  onKeyUp,
-  onPointerUp,
   onKeyDown,
-  onScroll,
   onBlur,
   ...props
 }, forwardedRef) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const [mention, setMention] = useState<CanvasResourceMention | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [hasSelection, setHasSelection] = useState(false);
   const candidates = useMemo(() => filterCanvasResourceMentions(mention, references), [mention, references]);
-  const activeLabels = useMemo(() => (
-    highlightLabels
-      ? Array.from(new Set(references.filter((reference) => reference.active).map((reference) => reference.label))).sort((a, b) => b.length - a.length)
-      : []
-  ), [highlightLabels, references]);
 
   function closeMention() {
     setMention(null);
@@ -72,48 +60,20 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
     if (next) setActiveIndex(0);
   }
 
-  function updateSelectionState() {
-    const textarea = textareaRef.current;
-    setHasSelection(Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd));
-  }
-
-  function syncOverlayScroll() {
-    if (!overlayRef.current || !textareaRef.current) return;
-    overlayRef.current.scrollTop = textareaRef.current.scrollTop;
-    overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
-  }
-
   function selectReference(reference: CanvasResourceReference) {
     if (!mention) return;
-    const next = insertCanvasResourceMention(value, mention, textareaRef.current?.selectionEnd ?? value.length, reference);
+    const next = consumeCanvasResourceMention(value, mention, textareaRef.current?.selectionEnd ?? value.length);
     closeMention();
     onChange(next.value);
+    onReferenceSelect?.(reference);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
     });
   }
 
-  const showOverlay = Boolean(activeLabels.length && !hasSelection);
-  const mergedStyle = {
-    ...style,
-    color: showOverlay ? "transparent" : style?.color,
-    caretColor: style?.caretColor || style?.color || "var(--foreground)",
-    ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
-  } satisfies CSSProperties;
-
   return (
     <div className={cn("relative w-full", containerClassName)}>
-      {showOverlay ? (
-        <div
-          ref={overlayRef}
-          aria-hidden="true"
-          className={cn("block w-full min-w-0", className, "pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words")}
-          style={style}
-        >
-          <MentionHighlightText value={value || String(props.placeholder || "")} labels={activeLabels} placeholder={!value} />
-        </div>
-      ) : null}
       <textarea
         {...props}
         ref={(node) => {
@@ -123,27 +83,11 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
         }}
         value={value}
         className={cn("block w-full min-w-0", className)}
-        style={mergedStyle}
+        style={style}
         onChange={(event) => {
           const next = event.target.value;
           onChange(next);
           syncMention(next, event.target.selectionStart);
-          requestAnimationFrame(() => {
-            syncOverlayScroll();
-            updateSelectionState();
-          });
-        }}
-        onSelect={(event) => {
-          updateSelectionState();
-          onSelect?.(event);
-        }}
-        onKeyUp={(event) => {
-          updateSelectionState();
-          onKeyUp?.(event);
-        }}
-        onPointerUp={(event) => {
-          updateSelectionState();
-          onPointerUp?.(event);
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
@@ -179,12 +123,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
           }
           onKeyDown?.(event);
         }}
-        onScroll={(event) => {
-          syncOverlayScroll();
-          onScroll?.(event);
-        }}
         onBlur={(event) => {
-          setHasSelection(false);
           window.setTimeout(closeMention, 120);
           onBlur?.(event);
         }}
@@ -200,15 +139,6 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
     </div>
   );
 });
-
-function MentionHighlightText({ value, labels, placeholder }: { value: string; labels: string[]; placeholder: boolean }) {
-  if (placeholder) return <span className="text-muted-foreground/55">{value}</span>;
-  if (!labels.length) return <>{value}</>;
-  const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
-  return value.split(pattern).map((part, index) => labels.includes(part) ? (
-    <span key={`${part}-${index}`} className="rounded-md bg-brand/12 px-1 py-0.5 font-medium text-brand ring-1 ring-ring/20">{part}</span>
-  ) : <span key={`${part}-${index}`}>{part}</span>);
-}
 
 function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect }: {
   textarea: HTMLTextAreaElement;
@@ -235,7 +165,7 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
   return createPortal(
     <ScrollArea
       data-canvas-resource-mention-menu
-      className="fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      className="pointer-events-auto fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       viewportClassName="p-1"
       style={{ left, top }}
       onPointerDown={stop}
@@ -264,7 +194,7 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
               : reference.kind === "image" ? <ImageIcon className="size-4" /> : <FileText className="size-4" />}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">{reference.label}</span>
+            <span className="block truncate font-medium">{reference.label} · {reference.title}</span>
             <span className="block truncate text-muted-foreground">{reference.text || reference.title}</span>
           </span>
         </button>
@@ -277,8 +207,4 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
 function clamp(value: number, minimum: number, maximum: number) {
   if (maximum < minimum) return minimum;
   return Math.min(Math.max(value, minimum), maximum);
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

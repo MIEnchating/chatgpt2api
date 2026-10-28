@@ -118,6 +118,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			DefaultVideoModel:       strings.TrimSpace(requestedModels[2].model),
 			DefaultAudioModel:       strings.TrimSpace(requestedModels[3].model),
 			CanvasDefaultImageCount: canvasDefaultImageCount,
+			NodeRegenerateBehavior:  util.Clean(body["node_regenerate_behavior"]),
 			DefaultAudioVoice:       strings.TrimSpace(util.Clean(body["default_audio_voice"])),
 			DefaultAudioFormat:      defaultAudioFormat,
 			DefaultAudioSpeed:       defaultAudioSpeed,

@@ -696,7 +696,7 @@ export function ImageComposer({
       />
 
       {displayReferenceImages.length > 0 ? (
-        <div className="hide-scrollbar mb-2 flex max-h-20 gap-2 overflow-x-auto px-1 py-1 sm:mb-3">
+        <ScrollArea className="mb-2 max-h-20 sm:mb-3" viewClass="flex w-max min-w-full gap-2 px-1 py-1" >
           {displayReferenceImages.map((image, index) => (
             <div key={image.id} className="relative size-14 shrink-0 sm:size-16">
               <button
@@ -739,7 +739,7 @@ export function ImageComposer({
               )}
             </div>
           ))}
-        </div>
+        </ScrollArea>
       ) : null}
 
       <div
@@ -986,7 +986,7 @@ export function ImageComposer({
                                   <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片按顺序指定开场和收尾画面，中间动作由提示词引导。" : "提供人物、场景或物品的外观依据，不限定开场构图，也不保证跨镜头完全一致。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
                                   <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
                                   <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
-                                  {displayReferenceImages.length > 0 ? <div className="flex gap-1.5 overflow-x-auto">{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</div> : null}
+                                  {displayReferenceImages.length > 0 ? <ScrollArea className="" viewClass="flex w-max min-w-full gap-1.5" >{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</ScrollArea> : null}
                                   <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} onChange={onVideoReferenceImageURLsChange} />
                                   {activeVideoImageLimit === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考图片</p> : null}
                                 </section> : null}

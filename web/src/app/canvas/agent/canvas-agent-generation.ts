@@ -1,4 +1,4 @@
-import { videoAudioControl, videoSecondsOptions } from "@/lib/video-model-capabilities";
+import { videoAudioControl, videoSecondsIsValid, videoSecondsOptions } from "@/lib/video-model-capabilities";
 import { videoModelContract } from "@/lib/video-model-contracts";
 import type { CanvasNode } from "@/services/api/canvas";
 
@@ -113,6 +113,8 @@ export function arrangeCanvasAgentNodes(nodes: readonly CanvasNode[], requestedN
 
 export function canvasAgentVideoDurationHint(modelName: string): CanvasAgentVideoDurationHint {
   const values = videoSecondsOptions(modelName);
+  const range = videoModelContract(modelName)?.capability.seconds_range;
+  if (range) return { values, range: `${range.min} 秒起${range.max == null ? "，无固定上限" : `，最多 ${range.max} 秒`}，步长 ${range.step} 秒` };
   if (values.length === 0) return { values: [], range: "未配置视频模型契约" };
   return { values, range: values.length === 1 ? `仅 ${values[0]} 秒` : `可选 ${values.join("、")} 秒` };
 }
@@ -120,8 +122,7 @@ export function canvasAgentVideoDurationHint(modelName: string): CanvasAgentVide
 export function validateCanvasAgentVideoSeconds(modelName: string, seconds: number) {
   if (!Number.isFinite(seconds)) return "视频时长无效，请先向用户确认单镜头时长";
   if (!videoModelContract(modelName)) return `视频模型 ${modelName || "未选择"} 未配置启用的视频模型契约`;
-  const options = videoSecondsOptions(modelName);
-  if (!options.includes(seconds)) return `当前视频模型仅支持 ${options.join("、")} 秒`;
+  if (!videoSecondsIsValid(modelName, seconds)) return `当前视频模型仅支持 ${canvasAgentVideoDurationHint(modelName).range.replace(/^可选 /, "")}`;
   return "";
 }
 

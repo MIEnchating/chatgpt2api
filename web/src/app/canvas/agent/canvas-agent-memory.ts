@@ -14,17 +14,32 @@ export function estimateCanvasAgentTokens(value: unknown) {
 }
 
 export function isCanvasAgentContextLimitError(error: unknown) {
-  return error instanceof Error && /context.{0,24}(?:length|limit|window)|maximum.{0,12}tokens|token.{0,12}limit|上下文.{0,10}(?:超|限)/i.test(error.message);
+  return error instanceof Error && /context.{0,24}(?:length|limit|window)|maximum.{0,12}tokens|token.{0,12}limit|(?:input|prompt) is too long|too many input tokens|上下文.{0,10}(?:超|限)/i.test(error.message);
 }
 
 export async function compactCanvasAgentHistory(input: {
   messages: CanvasAgentProtocolMessage[];
   checkpoint?: string;
   recentTokenBudget?: number;
+  includeActiveProgress?: boolean;
   summarize: (previous: string | undefined, history: string) => Promise<string>;
 }) {
   // Keep complete user turns, including every tool request and its responses.
   const starts = input.messages.flatMap((message, index) => message.role === "user" ? [index] : []);
+  if (input.includeActiveProgress) {
+    const start = starts.at(-1);
+    const progress = start === undefined ? [] : input.messages.slice(start + 1);
+    const pending = new Set<string>();
+    for (const message of progress) {
+      if (message.role === "assistant") message.toolCalls?.forEach((call) => pending.add(call.id));
+      if (message.role === "tool") {
+        if (!pending.delete(message.toolCallId)) return { compacted: false, messages: input.messages, checkpoint: input.checkpoint };
+      }
+    }
+    if (!progress.length || pending.size) return { compacted: false, messages: input.messages, checkpoint: input.checkpoint };
+    const checkpoint = await summarizeMessages(progress, input.checkpoint, input.summarize);
+    return { compacted: true, messages: input.messages.slice(0, start! + 1), checkpoint };
+  }
   if (starts.length < 2) return { compacted: false, messages: input.messages, checkpoint: input.checkpoint };
   let cut = starts.at(-1)!;
   let recentTokens = estimateCanvasAgentTokens(input.messages.slice(cut));
@@ -34,19 +49,24 @@ export async function compactCanvasAgentHistory(input: {
     recentTokens += cost;
     cut = starts[index];
   }
-  const historicalText = JSON.stringify(input.messages.slice(0, cut).map((message) => {
+  const checkpoint = await summarizeMessages(input.messages.slice(0, cut), input.checkpoint, input.summarize);
+  return { compacted: true, messages: input.messages.slice(cut), checkpoint };
+}
+
+async function summarizeMessages(messages: CanvasAgentProtocolMessage[], checkpoint: string | undefined, summarize: (previous: string | undefined, history: string) => Promise<string>) {
+  const historicalText = JSON.stringify(messages.map((message) => {
     if (message.role === "assistant") return { role: message.role, content: message.content, toolCalls: message.toolCalls };
     if (message.role === "tool") return message;
     return { role: message.role, content: typeof message.content === "string" ? message.content : message.content.filter((part) => part.type === "text") };
   }));
-  let nextCheckpoint = input.checkpoint;
+  let nextCheckpoint = checkpoint;
   // Stage all summaries before replacing any persisted history.
   for (const chunk of splitSummaryChunks(historicalText)) {
-    const summary = (await input.summarize(nextCheckpoint, chunk)).trim();
+    const summary = (await summarize(nextCheckpoint, chunk)).trim();
     if (!summary || estimateCanvasAgentTokens(summary) > SUMMARY_MAX_TOKENS) throw new Error("对话摘要为空或过长，原始历史已保留");
     nextCheckpoint = summary;
   }
-  return { compacted: true, messages: input.messages.slice(cut), checkpoint: nextCheckpoint };
+  return nextCheckpoint;
 }
 
 function splitSummaryChunks(text: string) {

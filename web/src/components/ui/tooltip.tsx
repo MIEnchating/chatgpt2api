@@ -52,11 +52,12 @@ function TooltipContent({ className, sideOffset = 10, children, ...props }: Reac
       >
         {children}
         <TooltipPrimitive.Arrow width={14} height={7} asChild>
-          <svg viewBox="0 0 30 10" preserveAspectRatio="none" className="overflow-visible" aria-hidden="true">
-            <path className="fill-popover" d="M-2-1H32L15 10Z" />
+          <svg viewBox="0 0 14 7" preserveAspectRatio="none" className="overflow-visible" aria-hidden="true">
+            {/* Cover the content border before drawing the two exposed arrow edges. */}
+            <path className="fill-popover" d="M0-2H14V-.5L7 6.5 0-.5Z" />
             <path
               className="fill-none stroke-border/70"
-              d="M0 0 15 10 30 0"
+              d="M0-.5 7 6.5 14-.5"
               strokeWidth={1}
               strokeLinecap="round"
               strokeLinejoin="round"

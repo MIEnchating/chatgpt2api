@@ -392,7 +392,8 @@ function isTerminalCanvasTask(task: CreationTask) {
 function fitCanvasTaskImageSize(width: number, height: number, maxWidth: number, maxHeight: number) {
   const safeWidth = Math.max(1, width);
   const safeHeight = Math.max(1, height);
-  const scale = Math.min(1, maxWidth / safeWidth, maxHeight / safeHeight);
+  const edge = Math.max(maxWidth, maxHeight);
+  const scale = Math.min(1, edge / safeWidth, edge / safeHeight);
   return { width: safeWidth * scale, height: safeHeight * scale };
 }
 

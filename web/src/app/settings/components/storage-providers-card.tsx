@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { CircleHelp, Clock3, Cloud, Gauge, HardDrive, LoaderCircle, Plus, Save, Server, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -165,7 +166,7 @@ export function StorageProvidersCard() {
       action={<Button type="button" onClick={() => void saveConfig()} disabled={isSaving}>{isSaving ? <LoaderCircle className="animate-spin" /> : <Save />}保存</Button>}
     >
       <div>
-        <div className="overflow-x-auto border-b border-border/70 pb-4">
+        <ScrollArea className="border-b border-border/70 pb-4" viewClass="min-w-full w-max" >
           <div role="tablist" aria-label="素材存储设置" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1" onKeyDown={(event) => {
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
@@ -182,7 +183,7 @@ export function StorageProvidersCard() {
               return <button key={tab.id} id={`storage-tab-${tab.id}`} type="button" role="tab" tabIndex={active ? 0 : -1} aria-selected={active} aria-controls={`storage-panel-${tab.id}`} onClick={() => setActiveTab(tab.id)} className={cn("flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4", active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}><Icon className="size-4" />{tab.label}</button>;
             })}
           </div>
-        </div>
+        </ScrollArea>
 
         {activeTab === "local" ? <section id="storage-panel-local" role="tabpanel" aria-labelledby="storage-tab-local" className="max-w-6xl space-y-6 pt-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -262,7 +263,7 @@ export function StorageProvidersCard() {
               </div>
               <div className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
                 <StorageField label="配置名称"><Input className={settingsInputClassName} value={provider.name} onChange={(event) => patchProvider(index, { name: event.target.value })} placeholder={providerTypeLabel(provider.type)} /></StorageField>
-                <StorageField label={provider.type === "webdav" ? "WebDAV 服务器地址" : "S3 / R2 服务地址"}><Input className={settingsInputClassName} value={provider.endpoint} onChange={(event) => patchProvider(index, { endpoint: event.target.value })} placeholder={provider.type === "webdav" ? "https://dav.example.com" : "https://account.r2.cloudflarestorage.com"} /></StorageField>
+                <StorageField label={provider.type === "webdav" ? "WebDAV 服务器地址" : "S3 / R2 服务地址"} hint={provider.type === "webdav" ? "管理员存储支持服务器可访问的内网 WebDAV 地址；个人存储仅支持公网地址。" : undefined}><Input className={settingsInputClassName} value={provider.endpoint} onChange={(event) => patchProvider(index, { endpoint: event.target.value })} placeholder={provider.type === "webdav" ? "https://dav.example.com" : "https://account.r2.cloudflarestorage.com"} /></StorageField>
                 {provider.type === "s3" ? <>
                   <StorageField label="存储桶名称"><Input className={settingsInputClassName} value={provider.bucket} onChange={(event) => patchProvider(index, { bucket: event.target.value })} placeholder="media-assets" /></StorageField>
                   <StorageField label="区域"><Input className={settingsInputClassName} value={provider.region} onChange={(event) => patchProvider(index, { region: event.target.value })} placeholder="auto" /></StorageField>

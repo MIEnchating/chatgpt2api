@@ -10,15 +10,26 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
     const frame = frameRef.current;
     const textarea = frame?.querySelector("textarea");
     if (!frame || !textarea) return;
+    const viewport = frame.querySelector<HTMLElement>("[data-slot='scroll-area-viewport']");
+    const scrollTop = viewport?.scrollTop || 0;
     textarea.style.height = "0px";
     textarea.style.height = `${Math.max(frame.clientHeight, textarea.scrollHeight)}px`;
+    // Measuring the collapsed textarea must not reset the surrounding scroll position.
+    if (viewport) viewport.scrollTop = scrollTop;
   }, []);
 
   useLayoutEffect(() => {
     const frame = frameRef.current;
     const textarea = frame?.querySelector("textarea");
     if (!frame || !textarea) return;
-    const scheduleSync = () => requestAnimationFrame(syncTextareaHeight);
+    let frameID: number | null = null;
+    const scheduleSync = () => {
+      if (frameID !== null) cancelAnimationFrame(frameID);
+      frameID = requestAnimationFrame(() => {
+        frameID = null;
+        syncTextareaHeight();
+      });
+    };
     syncTextareaHeight();
     textarea.addEventListener("input", scheduleSync);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleSync);
@@ -26,6 +37,7 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
     return () => {
       textarea.removeEventListener("input", scheduleSync);
       observer?.disconnect();
+      if (frameID !== null) cancelAnimationFrame(frameID);
     };
   }, [children, syncTextareaHeight]);
 

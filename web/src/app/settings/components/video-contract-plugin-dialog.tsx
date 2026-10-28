@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect, useRef, useState } from "react";
 import { Code2, Copy, Download, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -204,7 +205,7 @@ function VideoContractPluginView({ targets, selectedIndex, draft, onChange, onSe
             <ul className="list-disc space-y-1 pl-5 text-xs leading-5 text-muted-foreground">{result.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
             <details className="rounded-lg border border-border">
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium">查看中文注释源码</summary>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all border-t border-border bg-muted/40 p-3 font-mono text-xs leading-5"><code>{result.source}</code></pre>
+              <ScrollArea className="max-h-72 border-t border-border bg-muted/40 font-mono text-xs leading-5" viewClass="whitespace-pre-wrap break-all p-3" tag="pre"><code>{result.source}</code></ScrollArea>
             </details>
           </section> : null}
         </div>

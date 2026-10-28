@@ -67,6 +67,8 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/api/workflows/agent-draft", a.handleWorkflowAgentDraft),
 		subtree("/api/workflows", a.handleWorkflows),
 		exact("", "/api/canvas", a.handleCanvasDocument),
+		exact("", "/api/canvas/shares", a.handleCanvasShare),
+		prefix("/api/canvas-shares/", a.handlePublicCanvasShare),
 		exact(http.MethodPost, "/api/canvas/images", a.handleCanvasImageUpload),
 		exact(http.MethodPost, "/api/creation-tasks/video-reference-uploads", a.handleVideoReferenceUpload),
 		exact(http.MethodPost, "/api/creation-tasks/video-image-reference-uploads", a.handleVideoImageReferenceUpload),

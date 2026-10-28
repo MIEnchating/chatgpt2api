@@ -1,5 +1,6 @@
+import { CanvasAgentAssetMenu, CanvasAgentComposer, CanvasAgentComposerToolbar, CanvasAgentSendButton } from "./canvas-agent-composer";
 import { CanvasAgentSkillPicker } from "@/app/canvas/canvas-agent-skill-picker";
-import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, Image as ImageIcon, LoaderCircle, Menu, Pencil, Plus, Sparkles, Trash2, Upload, Video, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, LoaderCircle, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,18 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  CanvasAgentImageSettings,
-  CanvasAgentVideoSettings,
-} from "@/app/canvas/canvas-agent-generation-settings";
-import {
-  canvasAgentImageSettingsSummary,
-  canvasAgentVideoSettingsSummary,
-} from "@/app/canvas/canvas-agent-generation-settings-summary";
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { CanvasAssetPicker } from "@/app/canvas/canvas-asset-picker";
@@ -27,9 +19,8 @@ import { canvasProjectPath } from "@/lib/canvas-project-route";
 import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasAgentConfig, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "@/app/canvas/agent/canvas-agent-types";
 import { fetchModelConfig } from "@/lib/api";
-import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { resolveConfiguredVideoModel } from "@/lib/video-model-capabilities";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import {
@@ -70,8 +61,6 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const agentUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [agentTextModel, setAgentTextModel] = useState("");
-  const [agentImageModel, setAgentImageModel] = useState("");
-  const [agentVideoModel, setAgentVideoModel] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -104,29 +93,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
           imageGenerationPreferences.default_text_model,
           config.default_text_model,
         );
-        const configuredImageModels = configuredModelNames(config.image_models)
-          .filter((model) => model.toLowerCase() !== "auto");
-        const imageModel = resolveConfiguredModel(
-          configuredImageModels,
-          imageGenerationPreferences.default_image_model,
-          config.default_image_model,
-        );
-        const videoModel = resolveConfiguredVideoModel(
-          config.video_models,
-          imageGenerationPreferences.workbench.video_model,
-          imageGenerationPreferences.default_video_model,
-          config.default_video_model,
-        );
         setAgentTextModel(textModel);
-        setAgentImageModel(imageModel);
-        setAgentVideoModel(videoModel);
-        setAgentConfig(defaultCanvasAgentStarterConfig(videoModel));
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_text_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady]);
+  }, [imageGenerationPreferences.default_text_model, imageGenerationPreferencesReady]);
 
   async function createAndOpen() {
     if (busy) return;
@@ -439,7 +412,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-brand" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
-          <div data-canvas-agent-starter className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+          <CanvasAgentComposer data-canvas-agent-starter className="flex-1">
             <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-1">
               {pendingAssets.length ? <div className="mb-2 flex flex-wrap gap-1.5">{pendingAssets.map((asset) => <span key={asset.nodeId} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border bg-muted/40 pl-2 pr-1 text-[11px]"><span className="max-w-52 truncate">{asset.reference.label} · {asset.reference.title}</span><button type="button" className="grid size-5 place-items-center rounded hover:bg-muted" aria-label={`移除${asset.reference.title}`} onClick={() => setPendingAssets((current) => current.filter((item) => item.nodeId !== asset.nodeId))}><X className="size-3" /></button></span>)}</div> : null}
               <Textarea
@@ -460,14 +433,12 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               />
               <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
             </ScrollArea>
-            <div className="mt-2 flex min-w-0 shrink-0 items-center gap-1.5">
-              <AgentStarterAssetMenu uploading={uploadingAsset} busy={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
-              <AgentStarterParameterMenu disabled={!agentImageModel} icon={<ImageIcon />} label="图片参数" summary={canvasAgentImageSettingsSummary(agentConfig.imageQuality, agentConfig.imageSize)}>{agentImageModel ? <CanvasAgentImageSettings model={agentImageModel} quality={agentConfig.imageQuality} size={agentConfig.imageSize} onChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))} /> : null}</AgentStarterParameterMenu>
-              <AgentStarterParameterMenu disabled={!agentVideoModel} icon={<Video />} label="视频参数" summary={canvasAgentVideoSettingsSummary(agentConfig.videoQuality, agentConfig.videoSize)}>{agentVideoModel ? <CanvasAgentVideoSettings model={agentVideoModel} quality={agentConfig.videoQuality} size={agentConfig.videoSize} onChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))} /> : null}</AgentStarterParameterMenu>
-              <Button type="button" size="icon" className="size-10 shrink-0 rounded-full" disabled={!agentPrompt.trim() || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" title="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <LoaderCircle className="animate-spin" /> : <ArrowUp />}</Button>
-            </div>
+            <CanvasAgentComposerToolbar>
+              <CanvasAgentAssetMenu uploading={uploadingAsset} disabled={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
+              <CanvasAgentSendButton disabled={!agentPrompt.trim() || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" title="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <LoaderCircle className="animate-spin" /> : <ArrowUp />}</CanvasAgentSendButton>
+            </CanvasAgentComposerToolbar>
             <input ref={agentUploadInputRef} hidden type="file" accept="image/*,video/*,audio/*" onChange={onAgentUploadChange} />
-          </div>
+          </CanvasAgentComposer>
         </DialogContent>
       </Dialog>
       <CanvasProjectDialog
@@ -490,12 +461,4 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       />
     </section>
   );
-}
-
-function AgentStarterAssetMenu({ uploading, busy, onUpload, onOpenAssets }: { uploading: boolean; busy: boolean; onUpload: () => void; onOpenAssets: () => void }) {
-  return <Popover><PopoverTrigger asChild><Button type="button" size="icon" variant="secondary" className="size-9 shrink-0 rounded-full" aria-label="添加 Agent 素材"><Menu /></Button></PopoverTrigger><PopoverContent side="bottom" align="start" className="w-40 p-1.5"><button type="button" disabled={uploading || busy} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-50" onClick={onUpload}>{uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}上传文件</button><button type="button" disabled={busy} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-50" onClick={onOpenAssets}><FolderOpen className="size-4" />我的素材</button></PopoverContent></Popover>;
-}
-
-function AgentStarterParameterMenu({ disabled = false, icon, label, summary, children }: { disabled?: boolean; icon: React.ReactNode; label: string; summary: string; children: React.ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button type="button" variant="secondary" disabled={disabled} className="h-9 min-w-0 flex-1 !gap-0.5 rounded-full !px-1.5 text-[10px] [&_svg]:size-3" aria-label={label}>{icon}<span className="truncate">{summary}</span></Button></PopoverTrigger><PopoverContent side="bottom" align="center" className="w-[min(calc(100vw-2rem),23rem)] overflow-hidden p-0"><ScrollArea className="max-h-[min(70dvh,32rem)]"><div className="space-y-3 p-3 pr-4"><p className="text-xs font-semibold">{label}</p>{children}</div></ScrollArea></PopoverContent></Popover>;
 }

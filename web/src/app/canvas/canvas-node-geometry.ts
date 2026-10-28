@@ -37,9 +37,10 @@ export function canvasNodeSizeFromRatio(
   if (!match) return null;
   const ratio = Number(match[1]) / Math.max(1, Number(match[2]));
   if (ratio < 0.25 || ratio > 4) return { width: baseWidth, height: baseHeight };
-  return ratio >= baseWidth / baseHeight
-    ? { width: baseWidth, height: baseWidth / ratio }
-    : { width: baseHeight * ratio, height: baseHeight };
+  const edge = Math.max(baseWidth, baseHeight);
+  return ratio >= 1
+    ? { width: edge, height: edge / ratio }
+    : { width: edge * ratio, height: edge };
 }
 
 export function canvasEmptyImageFrameFromSize(
@@ -48,7 +49,8 @@ export function canvasEmptyImageFrameFromSize(
   baseWidth = 340,
   baseHeight = 240,
 ) {
-  const dimensions = canvasNodeSizeFromRatio(size, baseWidth, baseHeight);
+  const edge = Math.max(node.width, node.height) || Math.max(baseWidth, baseHeight);
+  const dimensions = canvasNodeSizeFromRatio(size, edge, edge);
   if (!dimensions) return null;
   return {
     x: node.x + node.width / 2 - dimensions.width / 2,

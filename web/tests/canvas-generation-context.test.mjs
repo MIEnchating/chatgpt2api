@@ -202,13 +202,13 @@ test("a generation configuration combines connected text with additional instruc
   });
 });
 
-test("a node connected to a configuration uses the configuration's other inputs", () => {
+test("a node connected to a configuration combines shared configuration inputs with direct references", () => {
   const nodes = [
     node("source", "image", { url: "/images/source.png" }),
     node("config", "config"),
     node("idea", "text", { prompt: "保留暖色调" }),
     node("reference", "image", { url: "/images/reference.png" }),
-    node("direct", "text", { prompt: "不应读取自己的直接上游" }),
+    node("direct", "text", { prompt: "直接引用的补充要求" }),
   ];
   const connections = [
     { id: "direct-source", from_node_id: "direct", to_node_id: "source" },
@@ -218,13 +218,13 @@ test("a node connected to a configuration uses the configuration's other inputs"
   ];
 
   assert.deepEqual(buildCanvasGenerationContext("source", nodes, connections, "修改主体"), {
-    prompt: "修改主体\n\n保留暖色调",
+    prompt: "修改主体\n\n保留暖色调\n\n直接引用的补充要求",
     referenceImageURLs: ["/images/reference.png"],
     firstFrameURL: null,
     lastFrameURL: null,
     referenceVideoURLs: [],
     referenceAudioURLs: [],
-    textCount: 1,
+    textCount: 2,
     imageCount: 1,
     videoCount: 0,
     audioCount: 0,
@@ -245,7 +245,31 @@ test("explicit configuration references select connected text and media", () => 
   ];
   assert.deepEqual(buildCanvasGenerationContext("config", nodes, connections, "让 @[node:image-b] 参考 @[node:text-a]"), {
     prompt: "让 图片1 参考 【文本1】\n\n【文本1】\n保留主体",
-    referenceImageURLs: ["/images/b.png"],
+    referenceImageURLs: ["/images/b.png", "/images/a.png"],
+    firstFrameURL: null,
+    lastFrameURL: null,
+    referenceVideoURLs: [],
+    referenceAudioURLs: [],
+    textCount: 1,
+    imageCount: 2,
+    videoCount: 0,
+    audioCount: 0,
+  });
+});
+
+test("plain composer content includes card references without inserting labels into the draft", () => {
+  const nodes = [
+    node("config", "config", { composer_content: "只生成一张极简海报" }),
+    node("image", "image", { url: "/images/reference.png" }),
+    node("text", "text", { prompt: "来自文字节点" }),
+  ];
+  const connections = [
+    { id: "image-config", from_node_id: "image", to_node_id: "config" },
+    { id: "text-config", from_node_id: "text", to_node_id: "config" },
+  ];
+  assert.deepEqual(buildCanvasGenerationContext("config", nodes, connections, "只生成一张极简海报"), {
+    prompt: "只生成一张极简海报\n\n【文本1】\n来自文字节点",
+    referenceImageURLs: ["/images/reference.png"],
     firstFrameURL: null,
     lastFrameURL: null,
     referenceVideoURLs: [],
@@ -257,31 +281,7 @@ test("explicit configuration references select connected text and media", () => 
   });
 });
 
-test("plain composer content uses only explicitly referenced connected resources", () => {
-  const nodes = [
-    node("config", "config", { composer_content: "只生成一张极简海报" }),
-    node("image", "image", { url: "/images/reference.png" }),
-    node("text", "text", { prompt: "来自文字节点" }),
-  ];
-  const connections = [
-    { id: "image-config", from_node_id: "image", to_node_id: "config" },
-    { id: "text-config", from_node_id: "text", to_node_id: "config" },
-  ];
-  assert.deepEqual(buildCanvasGenerationContext("config", nodes, connections, "只生成一张极简海报"), {
-    prompt: "只生成一张极简海报",
-    referenceImageURLs: [],
-    firstFrameURL: null,
-    lastFrameURL: null,
-    referenceVideoURLs: [],
-    referenceAudioURLs: [],
-    textCount: 0,
-    imageCount: 0,
-    videoCount: 0,
-    audioCount: 0,
-  });
-});
-
-test("an explicitly cleared composer does not restore deleted connected resources", () => {
+test("clearing the written instructions keeps references until their connections are removed", () => {
   const nodes = [
     node("config", "config", { composer_content: "" }),
     node("image", "image", { url: "/images/reference.png" }),
@@ -292,14 +292,14 @@ test("an explicitly cleared composer does not restore deleted connected resource
     { id: "text-config", from_node_id: "text", to_node_id: "config" },
   ];
   assert.deepEqual(buildCanvasGenerationContext("config", nodes, connections, ""), {
-    prompt: "",
-    referenceImageURLs: [],
+    prompt: "\n\n【文本1】\n来自文字节点",
+    referenceImageURLs: ["/images/reference.png"],
     firstFrameURL: null,
     lastFrameURL: null,
     referenceVideoURLs: [],
     referenceAudioURLs: [],
-    textCount: 0,
-    imageCount: 0,
+    textCount: 1,
+    imageCount: 1,
     videoCount: 0,
     audioCount: 0,
   });
@@ -336,7 +336,7 @@ test("generation context collects connected video and audio references in connec
   });
 });
 
-test("configuration references select only explicitly mentioned video and audio inputs", () => {
+test("configuration card references include unmentioned video and audio inputs", () => {
   const nodes = [
     node("config", "config", { composer_content: "让 @[node:video-b] 跟随 @[node:audio-a]" }),
     node("video-a", "video", { url: "https://cdn.example.com/a.mp4" }),
@@ -355,12 +355,12 @@ test("configuration references select only explicitly mentioned video and audio 
     referenceImageURLs: [],
     firstFrameURL: null,
     lastFrameURL: null,
-    referenceVideoURLs: ["https://cdn.example.com/b.mp4"],
-    referenceAudioURLs: ["https://cdn.example.com/a.mp3"],
+    referenceVideoURLs: ["https://cdn.example.com/b.mp4", "https://cdn.example.com/a.mp4"],
+    referenceAudioURLs: ["https://cdn.example.com/a.mp3", "https://cdn.example.com/b.mp3"],
     textCount: 0,
     imageCount: 0,
-    videoCount: 1,
-    audioCount: 1,
+    videoCount: 2,
+    audioCount: 2,
   });
 });
 

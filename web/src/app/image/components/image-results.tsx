@@ -428,7 +428,7 @@ export function ImageResults({
         <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
           <span className="flex size-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span>
           <p className="text-sm font-semibold">暂时无法读取会话</p>
-          <p className="max-h-36 w-full overflow-auto text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{conversationDetailError}</p>
+          <ScrollArea className="max-h-36 w-full text-sm leading-6 text-muted-foreground" viewClass="[overflow-wrap:anywhere]" tag="p">{conversationDetailError}</ScrollArea>
           <Button type="button" variant="outline" onClick={onRetryConversationDetail}>重试读取</Button>
         </div>
       </div>
@@ -456,7 +456,7 @@ export function ImageResults({
           </div>
           <div className="space-y-3">
             <div className="studio-preset-heading flex items-center justify-between px-1 text-[11px] text-muted-foreground"><span className="font-medium">灵感起点</span><span>选择预设，开启创作</span></div>
-            <div className="hide-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 text-left sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-3">
+            <ScrollArea viewportClassName="snap-x snap-mandatory" viewClass="flex w-max min-w-full gap-3 px-1 pb-2 text-left sm:grid sm:w-full sm:grid-cols-3 lg:grid-cols-3">
               {promptPresets.map((preset) => (
                 <button
                   key={preset.id}
@@ -492,7 +492,7 @@ export function ImageResults({
                   </div>
                 </button>
               ))}
-            </div>
+            </ScrollArea>
           </div>
         </div>
       </div>
@@ -970,9 +970,9 @@ export function ImageResults({
                               {failed ? errorMessage.length > 280 ? (
                                 <details className="group rounded-xl border border-destructive/15 bg-destructive/5 text-xs">
                                   <summary className="cursor-pointer px-3 py-2.5 font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看完整错误信息</summary>
-                                  <p className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-destructive/10 p-3 leading-6 text-muted-foreground [overflow-wrap:anywhere]">{errorMessage}</p>
+                                  <ScrollArea className="max-h-48 border-t border-destructive/10 leading-6 text-muted-foreground" viewClass="whitespace-pre-wrap p-3 [overflow-wrap:anywhere]" tag="p">{errorMessage}</ScrollArea>
                                 </details>
-                              ) : <p className="rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2.5 text-xs leading-6 text-destructive [overflow-wrap:anywhere]">{errorMessage}</p> : image.error ? <p className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/50 p-3 text-xs leading-6 text-muted-foreground [overflow-wrap:anywhere]">{image.error}</p> : null}
+                              ) : <p className="rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2.5 text-xs leading-6 text-destructive [overflow-wrap:anywhere]">{errorMessage}</p> : image.error ? <ScrollArea className="max-h-36 rounded-xl bg-muted/50 text-xs leading-6 text-muted-foreground" viewClass="whitespace-pre-wrap p-3 [overflow-wrap:anywhere]" tag="p">{image.error}</ScrollArea> : null}
                             </div>
                           ) : (
                             <div className="flex min-h-52 flex-col items-center justify-center gap-3 bg-gradient-to-b from-muted/25 to-transparent px-5 py-7 text-center">

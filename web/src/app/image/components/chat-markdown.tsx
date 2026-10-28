@@ -1,5 +1,7 @@
 "use client";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -289,16 +291,16 @@ function renderBlock(block: MarkdownBlock, key: string) {
             {block.language}
           </div>
         ) : null}
-        <pre className="overflow-x-auto p-3 text-[13px] leading-6">
+        <ScrollArea className="text-[13px] leading-6" viewClass="w-max min-w-full p-3" tag="pre">
           <code className="font-mono text-foreground dark:text-foreground">{block.code}</code>
-        </pre>
+        </ScrollArea>
       </div>
     );
   }
 
   if (block.type === "table") {
     return (
-      <div key={key} className="overflow-x-auto rounded-xl border border-border dark:border-border">
+      <ScrollArea key={key} className="rounded-xl border border-border dark:border-border" viewClass="w-max min-w-full" >
         <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
           <thead className="bg-muted/40 text-foreground dark:bg-background dark:text-foreground">
             <tr>
@@ -321,7 +323,7 @@ function renderBlock(block: MarkdownBlock, key: string) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollArea>
     );
   }
 

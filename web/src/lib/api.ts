@@ -419,6 +419,7 @@ export type CreationWorkbenchPreferences = {
 };
 
 export type ImageGenerationPreferences = {
+  node_regenerate_behavior: "new-node" | "overwrite";
   api_mode: ImageAPIMode;
   stream: boolean;
   partial_images: number;
