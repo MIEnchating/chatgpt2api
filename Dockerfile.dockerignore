@@ -64,3 +64,6 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
+
+agent-runtime/node_modules
+agent-runtime/test

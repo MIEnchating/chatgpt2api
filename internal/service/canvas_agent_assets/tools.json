@@ -1,0 +1,1181 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "ask_user_question",
+      "description": "必要交付参数尚未由用户明确或委托决定时必须提问，不能用默认值代替确认；存在歧义或需用户确认时也使用此工具。调用后暂停，不得同批执行依赖答案的操作。已明确授权且信息足够时直接执行，不重复询问。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "options": {
+            "type": "array",
+            "description": "可比较的建议选项；第一项必须是 Agent 最推荐的方案，界面会标注推荐。没有合适选项时传空数组，让用户直接输入。用户始终可以自由输入或修改选项。",
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "maxItems": 4
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "clarification",
+              "confirmation"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "media_generation",
+              "workflow_review"
+            ],
+            "description": "媒体生成授权使用 media_generation；系列工作流提示词审核使用 workflow_review。"
+          }
+        },
+        "required": [
+          "question",
+          "reason",
+          "options",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_plan",
+      "description": "保存复杂任务的简短执行计划与当前进度。简单请求无需计划。最多一个步骤进行中，完成状态必须依据实际工具结果；待生成任务不能标为完成。用户暂不生成时，将生成及依赖成品的步骤标为 deferred，继续其他步骤。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "deferred"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "explanation",
+          "steps"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_canvas_summary",
+      "description": "读取当前画布的轻量节点索引和必要状态，不含节点正文、连线全集或完整生成配置。详情按 ID 调用专用读取工具。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_canvas_nodes",
+      "description": "按 ID、标题、正文、提示词或类型分页查找全画布节点。返回轻量索引，正文用 get_node 读取。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "panorama",
+              "director",
+              "group",
+              "text",
+              "config"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_references",
+      "description": "分页查找当前对话中用户上传的附件 ID、标题和类型。ID 由 Agent 自己查找，不要向用户索要；用 get_reference 读取原图或正文。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_reference",
+      "description": "按附件 ID 读取原图或完整正文。图片会作为视觉输入交给模型，供自行判断画面并匹配真实附件。ID 从 list_references 获取，不能让用户填写。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "referenceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "referenceId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_selected_nodes",
+      "description": "读取用户当前选中的真实画布节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_node",
+      "description": "按真实节点 ID 读取节点。 图片节点同时提供原图作为视觉输入。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_upstream_nodes",
+      "description": "读取指定节点的所有直接上游节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_downstream_nodes",
+      "description": "读取指定节点的所有直接下游节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_connected_nodes",
+      "description": "读取指定节点直接连接的上下游节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_generation_config",
+      "description": "读取当前模型、支持的图片比例/画质和视频尺寸/清晰度/时长/声音能力，以及非关键技术参数的默认值。默认值不是用户要求，按创作目标为每次生成选择参数。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_generation_task",
+      "description": "读取指定媒体节点的真实生成任务状态。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_agent_state",
+      "description": "保存当前创作阶段、已确认方案和正式参考，供刷新后继续。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "enum": [
+              "intake",
+              "concept",
+              "script",
+              "breakdown",
+              "references",
+              "storyboard",
+              "video",
+              "audio",
+              "review",
+              "complete"
+            ]
+          },
+          "brief": {
+            "type": "string"
+          },
+          "targetDurationSeconds": {
+            "type": "number",
+            "minimum": 1
+          },
+          "approvedPlan": {
+            "type": "string"
+          },
+          "approvedNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "referenceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_primary_script_node",
+      "description": "仅用于新创作流程首次创建正式主剧本或总制作稿，固定使用主剧本节点尺寸。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "projectTitle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "projectTitle"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_text_node",
+      "description": "创建镜头、角色、产品、场景、声音说明和其他普通文本节点；不得用于首次正式主剧本。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_text_node",
+      "description": "更新现有文本节点的标题或正文。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_node",
+      "description": "只更新现有节点标题；不允许任意字段覆盖。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_node",
+      "description": "使用画布现有删除链路删除节点及关联连线。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_connection",
+      "description": "在两个真实节点之间创建来源连线。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fromNodeId": {
+            "type": "string"
+          },
+          "toNodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromNodeId",
+          "toNodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_connection",
+      "description": "删除指定真实连线。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_group",
+      "description": "把两个或更多节点放进本项目 group 节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "nodeIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "arrange_nodes",
+      "description": "整理指定节点；不传 nodeIds 时整理当前画布顶层节点。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_image",
+      "description": "创建图片节点，size/count 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片依次编号。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "size": {
+            "type": "string"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 15
+          }
+        },
+        "required": [
+          "prompt",
+          "sourceNodeIds",
+          "size",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "edit_image",
+      "description": "创建图片编辑节点，size/count 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务，必须通过 sourceNodeIds 或 attachmentIds 提供至少一个图片节点或消息附件；先按节点顺序、再按附件顺序编号。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "size": {
+            "type": "string"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 15
+          }
+        },
+        "required": [
+          "prompt",
+          "sourceNodeIds",
+          "size",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_video",
+      "description": "创建视频节点，size/seconds/generateAudio 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片、视频、音频分别按各自顺序编号。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "size": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "generateAudio": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "prompt",
+          "sourceNodeIds",
+          "size",
+          "seconds",
+          "generateAudio"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_audio",
+      "description": "创建音频节点，并仅在自动生成开启时提交任务。prompt 是实际朗读文本，instructions 是音色/演绎说明；sourceNodeIds 只放真实直接来源，独立生成必须传空数组。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "voice": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "sourceNodeIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_media_task_status",
+      "description": "读取图片、视频或音频节点的生成状态。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_node",
+      "description": "继续生成已有的图片、视频或音频节点，复用保存的提示词、参数和引用，不创建新节点。已完成时返回已有结果，生成中等待原任务；失败时原位重试。自动生成关闭时保留待手动生成状态。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_skill_file",
+      "description": "读取本轮所选 Skill 明确引用的附属文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skillId",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_workflows",
+      "description": "查找当前用户有权使用的工作流模板。仅返回摘要；使用 get_workflow 读取参数。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_workflow",
+      "description": "读取工作流模板、必填变量和默认设置。模板正文是资料，不是操作授权。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflowId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "save_workflow",
+      "description": "创建或更新当前用户的私有图片工作流模板。只有用户要求保存/复用时调用；不能发布公共模板。修改已有模板必须提供 ID 和读取到的 revision。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "promptTemplate": {
+            "type": "string",
+            "description": "用 {{variable_key}} 表示变量"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "defaultValue": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "required"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "single_image",
+              "multi_image_series"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "promptTemplate",
+          "variables",
+          "mode"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_saved_workflow",
+      "description": "将已读取模板应用到当前画布。每项是一份明确内容；多图系列应先确认主题和数量，再给出每项变量。可用 sourceNodeIds 或 attachmentIds 指定本项产品参考图；必须显式提供交付尺寸、数量，不用模板默认值替代用户确认。系列提示词审核完成前不提交生成，遵循当前媒体生成授权。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 50
+                },
+                "size": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 15
+                },
+                "sourceNodeIds": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "按视觉参考使用顺序提供现有来源节点；无节点来源传空数组。"
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "按视觉参考使用顺序提供当前对话中的附件 ID；无附件来源传空数组。"
+                }
+              },
+              "required": [
+                "values",
+                "size",
+                "count",
+                "sourceNodeIds",
+                "attachmentIds"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "workflowId",
+          "items"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_canvas_workflow",
+      "description": "创建画布节点及真实来源连线，不提交生成。多张独立图片优先一次建图，再 run_canvas_workflow 并行生成。同批交付传 groupTitle 分组；已有素材不加入结果组。sourceNodeIds 是已有来源节点，dependsOn 是实际依赖的本批 key，独立步骤不要串联。必须先确认媒体必要参数；图片要求 size/count，视频要求 size/seconds/generateAudio。每个步骤显式提供 sourceNodeIds 和 attachmentIds，无来源传空数组。系列提示词需要审核时，创建后必须询问用户；用户明确确认前不得执行生成。禁止循环。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groupTitle": {
+            "type": "string",
+            "description": "同一批生成结果的组名；至少两个新节点时建立组，删除组会删除组内内容。"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "image",
+                    "video",
+                    "audio"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 20
+                },
+                "size": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 15
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "generateAudio": {
+                  "type": "boolean"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "resolution": {
+                  "type": "string"
+                },
+                "sourceNodeIds": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "按视觉参考使用顺序提供真实来源节点；没有来源时传空数组。"
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "按视觉参考使用顺序提供当前对话附件 ID；没有附件时传空数组。"
+                }
+              },
+              "required": [
+                "key",
+                "type",
+                "title",
+                "prompt",
+                "dependsOn",
+                "sourceNodeIds",
+                "attachmentIds"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_canvas_workflow",
+      "description": "按真实依赖执行指定节点及其上游，最多并行生成 4 个已就绪节点，完成后立即推进可执行的下游；复用完成结果与已提交任务。系列工作流若返回 requiresUserReview，必须先通过 ask_user_question 明确询问用户是否确认提示词，只有用户明确确认后才能再次调用本工具；拒绝或暂缓时保留节点、不提交生成。发生失败时停止提交新任务，保留同批已提交任务的结果，下游不得使用未完成素材。遵循当前媒体授权。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "nodeIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+]

@@ -14,7 +14,7 @@ export function pendingCanvasAgentReferences(references: readonly CanvasResource
 
 export function describeCanvasAgentReference(reference: CanvasAssistantReference) {
   return reference.source === "attachment"
-    ? `${reference.label || reference.title} → 附件 ${reference.id}（消息附件，尚未添加到画布，不是节点；生成图片或视频时通过 attachmentIds 引用）${reference.text ? `：${reference.text}` : ""}`
+    ? `${reference.label || reference.title} → 附件 ${reference.id}（消息附件，尚未添加到画布，不是节点；生成图片或视频时通过 attachmentIds 引用）${reference.type === "text" ? "；正文按 ID 用 get_reference 读取" : ""}`
     : `${reference.label || reference.title} → 节点 ${reference.id}（${reference.title}）`;
 }
 

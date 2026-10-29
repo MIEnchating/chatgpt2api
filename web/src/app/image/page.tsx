@@ -82,7 +82,7 @@ import {
 import { isRetryableTaskPollError, normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoDefaultSize, videoDefaultResolution, videoAudioControl, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -138,6 +138,8 @@ import {
 } from "@/lib/api";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { inspectAudioReferenceFile } from "@/lib/audio-reference-file";
+import { imageWorkbenchSettings, videoWorkbenchSettings, workbenchPreferenceSignature, WorkbenchPreferenceSaver } from "@/lib/workbench-preferences";
+import type { ImageWorkbenchSettings, VideoWorkbenchSettings } from "@/lib/api";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { imageSourceToFile } from "@/lib/image-source-file";
 import { resolveConfiguredModel } from "@/lib/model-config-selection";
@@ -167,7 +169,6 @@ import {
   imageTurnUsesReferenceImages as usesReferenceImages,
 } from "@/lib/image-turn-validation";
 import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
-import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
   clearImageConversations,
@@ -205,7 +206,6 @@ import {
 
 type CreationRelayTokenKind = Extract<RelayTokenKind, "image" | "video">;
 
-const COMPOSER_MODE_STORAGE_KEY = "chatgpt2api:image_composer_mode";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
 const RESULTS_BOTTOM_STICKY_THRESHOLD = 96;
@@ -1069,13 +1069,6 @@ function sortImageConversations(conversations: ImageConversation[]) {
   });
 }
 
-function getStoredComposerMode(): ComposerMode {
-  if (typeof window === "undefined") {
-    return "image";
-  }
-  return readImageWorkbenchStorage(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
-}
-
 function serializeImageSizeSelection(selection: ImageSizeSelection): StoredImageSizeSelection {
   return {
     mode: selection.mode,
@@ -1501,7 +1494,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [maskEditBusy, setMaskEditBusy] = useState(false);
   const maskOperationRef = useRef(false);
   const [imagePrompt, setImagePrompt] = useState("");
-  const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
+  const [composerMode, setComposerMode] = useState<ComposerMode>("image");
   const [imageModel, setImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
   const [imageModelConfigReady, setImageModelConfigReady] = useState(false);
   const [imageModelConfigError, setImageModelConfigError] = useState("");
@@ -1522,6 +1515,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     isReady: imageGenerationPreferencesReady,
     loadedSessionKey: imageGenerationPreferencesSessionKey,
   } = useImageGenerationPreferences(session.key);
+  const modelConfigPreferencesRef = useRef(imageGenerationPreferences);
+  modelConfigPreferencesRef.current = imageGenerationPreferences;
   const imageStreamEnabled = imageGenerationPreferences.stream;
   const imagePartialImages = imageGenerationPreferences.partial_images;
   const imageResponseFormatB64JSON = imageGenerationPreferences.response_format_b64_json;
@@ -1538,8 +1533,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoGenerateAudio, setVideoGenerateAudio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_generate_audio);
   const [videoWatermark, setVideoWatermark] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_watermark);
   const [workbenchPreferencesReady, setWorkbenchPreferencesReady] = useState(false);
-  const persistedWorkbenchSignatureRef = useRef("");
+  const initializedWorkbenchSessionRef = useRef("");
   const currentWorkbenchSignatureRef = useRef("");
+  const workbenchBaselinePendingRef = useRef(true);
+  const imageModelSettingsRef = useRef<Record<string, ImageWorkbenchSettings>>({});
+  const videoModelSettingsRef = useRef<Record<string, VideoWorkbenchSettings>>({});
+  const workbenchSaverRef = useRef<WorkbenchPreferenceSaver | null>(null);
   const [videoTaskCount, setVideoTaskCount] = useState(1);
   const [videoFirstFrameURL, setVideoFirstFrameURL] = useState("");
   const [videoLastFrameURL, setVideoLastFrameURL] = useState("");
@@ -1662,13 +1661,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
     }
   }, []);
-  const handleVideoModelChange = useCallback((model: string) => {
+  const handleVideoModelChange = (model: string) => {
     // Keep the previous model's async upload from racing with the new model.
-    // Existing references and raw settings remain available across switches.
+    // References stay in the draft; each model restores its own settings.
     resetReferenceUploads();
-    setVideoParameters({});
+    applyVideoWorkbenchSettings(videoModelSettingsRef.current[model] || defaultVideoWorkbenchSettings(model));
     setVideoModel(model);
-  }, [resetReferenceUploads]);
+  };
   const { refreshTokenModels, routeForModel, nextTokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
@@ -2326,14 +2325,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    writeImageWorkbenchStorage(COMPOSER_MODE_STORAGE_KEY, composerMode);
-  }, [composerMode]);
-
-  useEffect(() => {
     if (!imageCreationModelOptions.some((option) => option.value === imageModel)) {
       const nextModel = referenceImagesRef.current.length > 0
         ? imageCreationModelOptions.find((option) => imageWorkbenchAcceptsReferenceImages(option.value))?.value || defaultImageModel
@@ -2355,24 +2346,25 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (ignore) {
           return;
         }
+        const preferences = modelConfigPreferencesRef.current;
         const imageOptions = modelOptionsFromNames(result.config.image_models);
         const nextImageDefault = resolveConfiguredModel(
           result.config.image_models,
-          imageGenerationPreferences.workbench.image_model,
-          imageGenerationPreferences.default_image_model,
+          preferences.workbench.image_model,
+          preferences.default_image_model,
           result.config.default_image_model,
         );
         setRelayImageModelOptions(imageOptions);
-        setImageModel(nextImageDefault);
+        setImageModel(current => initializedWorkbenchSessionRef.current === session.key && result.config.image_models.includes(current) ? current : nextImageDefault);
         const nextVideoModels = result.config.video_models || [];
         const nextVideoDefault = resolveConfiguredVideoModel(
           nextVideoModels,
-          imageGenerationPreferences.workbench.video_model,
-          imageGenerationPreferences.default_video_model,
+          preferences.workbench.video_model,
+          preferences.default_video_model,
           result.config.default_video_model,
         );
         setVideoModelOptions(nextVideoModels.map((model) => ({ value: model, label: model })));
-        setVideoModel(nextVideoDefault);
+        setVideoModel(current => initializedWorkbenchSessionRef.current === session.key && nextVideoModels.includes(current) ? current : nextVideoDefault);
         setImageModelConfigReady(true);
       })
       .catch((error) => {
@@ -2384,15 +2376,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       ignore = true;
     };
-  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.image_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady, imageModelConfigReloadKey]);
+  }, [imageGenerationPreferencesReady, imageGenerationPreferencesSessionKey, session.key, imageModelConfigReloadKey]);
 
-  useEffect(() => {
-    if (!imageGenerationPreferencesReady || imageGenerationPreferencesSessionKey !== session.key) {
-      setWorkbenchPreferencesReady(false);
-      return;
-    }
-    const workbench = imageGenerationPreferences.workbench;
-    persistedWorkbenchSignatureRef.current = JSON.stringify(workbench);
+  function applyImageWorkbenchSettings(workbench: ImageWorkbenchSettings) {
     setImageSizeMode(isImageSizeMode(workbench.image_size_mode) ? workbench.image_size_mode : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size_mode);
     setImageAspectRatio(isImageAspectRatio(workbench.image_aspect_ratio) ? workbench.image_aspect_ratio : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_aspect_ratio as ImageAspectRatio);
     setImageResolution(isImageResolution(workbench.image_resolution) ? workbench.image_resolution : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_resolution as ImageResolution);
@@ -2404,13 +2390,73 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setImageCount(String(workbench.image_count));
     setImageOutputFormat(isImageOutputFormat(workbench.image_output_format) ? workbench.image_output_format : DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression(workbench.image_output_compression);
+  }
+
+  function defaultVideoWorkbenchSettings(model: string): VideoWorkbenchSettings {
+    return {
+      video_size: videoDefaultSize(model), video_seconds: String(videoDefaultSeconds(model)),
+      video_resolution: videoDefaultResolution(model), video_generate_audio: videoAudioControl(model) === "always",
+      video_watermark: false, video_task_count: 1, video_parameters: {},
+    };
+  }
+
+  function applyVideoWorkbenchSettings(workbench: VideoWorkbenchSettings) {
     setVideoSize(workbench.video_size);
     setVideoSeconds(workbench.video_seconds);
     setVideoResolution(workbench.video_resolution);
     setVideoGenerateAudio(workbench.video_generate_audio);
     setVideoWatermark(workbench.video_watermark);
+    setVideoTaskCount(workbench.video_task_count);
+    setVideoParameters({ ...workbench.video_parameters });
+  }
+
+  useEffect(() => {
+    if (!imageGenerationPreferencesReady || !imageModelConfigReady || imageGenerationPreferencesSessionKey !== session.key) return;
+    if (initializedWorkbenchSessionRef.current === session.key) return;
+    initializedWorkbenchSessionRef.current = session.key;
+    const workbench = imageGenerationPreferences.workbench;
+    imageModelSettingsRef.current = { ...imageGenerationPreferences.image_model_settings };
+    videoModelSettingsRef.current = { ...imageGenerationPreferences.video_model_settings };
+    applyImageWorkbenchSettings(imageModelSettingsRef.current[imageModel] || imageWorkbenchSettings(workbench.image_model === imageModel ? workbench : DEFAULT_CREATION_WORKBENCH_PREFERENCES));
+    applyVideoWorkbenchSettings(videoModelSettingsRef.current[videoModel] || (workbench.video_model === videoModel ? videoWorkbenchSettings(workbench) : defaultVideoWorkbenchSettings(videoModel)));
+    setComposerMode(workbench.composer_mode);
+    currentWorkbenchSignatureRef.current = "";
+    workbenchBaselinePendingRef.current = true;
     setWorkbenchPreferencesReady(true);
-  }, [imageGenerationPreferences, imageGenerationPreferencesReady, imageGenerationPreferencesSessionKey, session.key]);
+  }, [imageGenerationPreferences, imageGenerationPreferencesReady, imageModelConfigReady, imageGenerationPreferencesSessionKey, session.key, imageModel, videoModel]);
+
+  useEffect(() => {
+    const persistenceSessionKey = session.key;
+    const toastId = `workbench-save-${persistenceSessionKey}`;
+    const saver = new WorkbenchPreferenceSaver(async workbench => {
+      if (getCachedAuthSession()?.key !== persistenceSessionKey) { saver.stop(); return; }
+      const { preferences } = await updateCreationWorkbenchPreferences(workbench);
+      if (getCachedAuthSession()?.key !== persistenceSessionKey) return;
+      dispatchImageGenerationPreferencesChanged(persistenceSessionKey, preferences);
+      toast.dismiss(toastId);
+    }, error => {
+      if (getCachedAuthSession()?.key !== persistenceSessionKey) return;
+      toast.error("创作参数尚未保存", {
+        id: toastId, duration: Infinity,
+        description: error instanceof Error ? error.message : "请检查网络后重试，当前修改仍保留在页面中。",
+        action: { label: "重试", onClick: () => void saver.retry() },
+      });
+    });
+    workbenchSaverRef.current = saver;
+    const flush = () => { if (document.visibilityState === "hidden") void saver.flush(); };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!saver.unsaved) return;
+      void saver.flush();
+      event.preventDefault();
+    };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("beforeunload", beforeUnload);
+      if (getCachedAuthSession()?.key === persistenceSessionKey) void saver.flush(); else saver.stop();
+    };
+  }, [session.key]);
 
   useEffect(() => {
     if (
@@ -2418,8 +2464,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       || !imageModelConfigReady
       || imageGenerationPreferencesSessionKey !== session.key
     ) return;
-    const persistenceSessionKey = session.key;
     const workbench: CreationWorkbenchPreferences = {
+      composer_mode: composerMode === "video" ? "video" : "image",
+      video_task_count: videoTaskCount,
+      video_parameters: videoParameters,
       image_model: imageModel,
       image_size: imageSize || DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size,
       image_size_mode: imageSizeMode,
@@ -2442,22 +2490,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       video_generate_audio: videoGenerateAudio,
       video_watermark: videoWatermark,
     };
-    const signature = JSON.stringify(workbench);
+    imageModelSettingsRef.current[imageModel] = imageWorkbenchSettings(workbench);
+    videoModelSettingsRef.current[videoModel] = videoWorkbenchSettings(workbench);
+    const signature = workbenchPreferenceSignature(workbench);
+    if (workbenchBaselinePendingRef.current) {
+      workbenchBaselinePendingRef.current = false;
+      currentWorkbenchSignatureRef.current = signature;
+      return;
+    }
+    if (signature === currentWorkbenchSignatureRef.current) return;
     currentWorkbenchSignatureRef.current = signature;
-    if (signature === persistedWorkbenchSignatureRef.current) return;
-    const timer = window.setTimeout(() => {
-      if (currentSessionKeyRef.current !== persistenceSessionKey) return;
-      void updateCreationWorkbenchPreferences(workbench)
-        .then(({ preferences }) => {
-          if (currentSessionKeyRef.current !== persistenceSessionKey) return;
-          if (currentWorkbenchSignatureRef.current !== signature) return;
-          persistedWorkbenchSignatureRef.current = JSON.stringify(preferences.workbench);
-          dispatchImageGenerationPreferencesChanged(persistenceSessionKey, preferences);
-        })
-        .catch((error) => toast.error(error instanceof Error ? error.message : "创作参数保存失败"));
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
+    workbenchSaverRef.current?.enqueue(workbench);
+  }, [composerMode, imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoParameters, videoTaskCount, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     setConversationDetailId(selectedConversationId);
@@ -3117,6 +3161,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(`模型 ${model} 暂不支持参考图编辑，请先移除参考图`);
       return;
     }
+    applyImageWorkbenchSettings(imageModelSettingsRef.current[model] || imageWorkbenchSettings(DEFAULT_CREATION_WORKBENCH_PREFERENCES));
     setImageModel(model);
   }, []);
 
@@ -5949,5 +5994,5 @@ export default function ImagePage() {
     );
   }
 
-  return <ImagePageContent key={imageConversationOwnerScope(session)} session={session} />;
+  return <ImagePageContent key={session.key} session={session} />;
 }

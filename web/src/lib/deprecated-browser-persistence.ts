@@ -1,6 +1,7 @@
 import { getRememberedLogin } from "@/lib/remembered-login";
 
 const DEPRECATED_EXACT_KEYS = new Set([
+  "chatgpt2api:image_composer_mode",
   "chatgpt2api:image_generation_response_format_b64_json",
   "chatgpt2api:image_generation_codex_cli_compatibility",
   "chatgpt2api:image_generation_snap_to_multiple_16",

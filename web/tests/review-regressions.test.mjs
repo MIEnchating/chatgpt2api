@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const [requestSource, canvasSource, agentRequestSource, imageSource, assetsSource] = await Promise.all([
   readFile(new URL("../src/lib/request.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../src/app/canvas/agent/canvas-agent-request.ts", import.meta.url), "utf8"),
+  readFile(new URL("../../internal/httpapi/canvas_agent.go", import.meta.url), "utf8"),
   readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8"),
 ]);
@@ -27,11 +27,9 @@ describe("review regressions", () => {
     expect(imageSource).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,160}setImageModelConfigReady\(true\)/);
   });
 
-  test("Agent timeout cancels its submitted server task", () => {
-    const cancelAt = agentRequestSource.indexOf("await cancelCreationTask(submitted.id).catch(() => undefined);");
-    const timeoutAt = agentRequestSource.indexOf('throw new CanvasAgentRequestError("Agent 请求超时")');
-    expect(cancelAt).toBeGreaterThan(-1);
-    expect(cancelAt).toBeLessThan(timeoutAt);
+  test("Agent cancellation cancels its submitted server model task", () => {
+    expect(agentRequestSource).toContain("ctx.Err() != nil");
+    expect(agentRequestSource).toContain("a.tasks.CancelTask(identity, req.TaskID)");
   });
 
   test("managed assets expose loading, persistent error, and retry states", () => {

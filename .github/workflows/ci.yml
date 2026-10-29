@@ -39,6 +39,14 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      - name: Install Agents SDK runtime
+        working-directory: agent-runtime
+        run: npm ci --ignore-scripts
+
+      - name: Test Agents SDK runtime
+        working-directory: agent-runtime
+        run: npm test
+
       - name: Install dependencies
         working-directory: web
         run: bun install --frozen-lockfile

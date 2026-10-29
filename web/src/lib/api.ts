@@ -397,6 +397,9 @@ export type LoginPageImageSettings = {
 };
 
 export type CreationWorkbenchPreferences = {
+  composer_mode: "image" | "video";
+  video_task_count: number;
+  video_parameters: import("./video-model-contracts").VideoParameterValues;
   image_model: string;
   image_size: string;
   image_size_mode: "auto" | "ratio" | "custom";
@@ -417,6 +420,9 @@ export type CreationWorkbenchPreferences = {
   video_generate_audio: boolean;
   video_watermark: boolean;
 };
+
+export type ImageWorkbenchSettings = Pick<CreationWorkbenchPreferences, Exclude<Extract<keyof CreationWorkbenchPreferences, `image_${string}`>, "image_model">>;
+export type VideoWorkbenchSettings = Pick<CreationWorkbenchPreferences, Exclude<Extract<keyof CreationWorkbenchPreferences, `video_${string}`>, "video_model">>;
 
 export type ImageGenerationPreferences = {
   node_regenerate_behavior: "new-node" | "overwrite";
@@ -441,6 +447,8 @@ export type ImageGenerationPreferences = {
   default_video_relay_token_names: string[];
   default_audio_relay_token_names: string[];
   workbench: CreationWorkbenchPreferences;
+  image_model_settings: Record<string, ImageWorkbenchSettings>;
+  video_model_settings: Record<string, VideoWorkbenchSettings>;
 };
 
 export type ImageAPIMode = "images" | "responses" | "chat";
@@ -942,13 +950,15 @@ export async function fetchImageGenerationPreferences() {
 
 export async function updateImageGenerationPreferences(
   preferences: ImageGenerationPreferences,
+  workbenchGenerateAudio?: boolean,
 ) {
+  const profile = Object.fromEntries(Object.entries(preferences).filter(([key]) => !["workbench", "image_model_settings", "video_model_settings"].includes(key)));
   const storeResponse = imageGenerationPreferencesCache.beginStore();
   return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PUT",
-      body: preferences,
+      body: { ...profile, ...(workbenchGenerateAudio === undefined ? {} : { workbench_generate_audio: workbenchGenerateAudio }) },
     },
   ).then(storeResponse);
 }
@@ -981,6 +991,7 @@ export async function updateCreationWorkbenchPreferences(
     {
       method: "PATCH",
       body: { workbench },
+      keepalive: true,
     },
   ).then(storeResponse);
 }

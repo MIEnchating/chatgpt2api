@@ -1,9 +1,9 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState } from "react";
-import { Check, ChevronDown, Circle, CircleHelp, Clock, LoaderCircle, MessageSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, Check, ChevronDown, Circle, CircleHelp, Clock, LoaderCircle, MessageSquare, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CanvasAgentAnswerInput } from "./canvas-agent-answer-input";
-import { useCanvasAgentRecommendationCountdown } from "./use-canvas-agent-recommendation-countdown";
+
 import type { CanvasAgentPlan, CanvasAgentQuestion } from "./agent/canvas-agent-types";
 
 export function CanvasAgentQuestionRecord({ question, answer, cancelled }: { question: string; answer?: string; cancelled?: boolean }) {
@@ -13,36 +13,63 @@ export function CanvasAgentQuestionRecord({ question, answer, cancelled }: { que
   </details>;
 }
 
-export function CanvasAgentPlanProgress({ plan }: { plan?: CanvasAgentPlan }) {
+export function CanvasAgentPlanProgress({ plan, running = false }: { plan?: CanvasAgentPlan; running?: boolean }) {
+  const [dismissedPlan, setDismissedPlan] = useState("");
+  const planKey = JSON.stringify(plan);
+  useEffect(() => { if (running) setDismissedPlan(""); }, [running]);
   if (!plan) return null;
   const completed = plan.steps.filter((step) => step.status === "completed").length;
   const deferred = plan.steps.filter((step) => step.status === "deferred").length;
-  return <details className="mb-2 shrink-0 rounded-lg bg-muted/30 px-3 py-2 text-xs" aria-label="Agent 执行计划">
-    <summary className="cursor-pointer text-muted-foreground">执行计划 · {completed}/{plan.steps.length - deferred}{deferred ? ` · ${deferred} 项暂缓` : ""}{plan.steps.find((step) => step.status === "in_progress") ? ` · ${plan.steps.find((step) => step.status === "in_progress")!.title}` : ""}</summary>
-    <ScrollArea className="mt-2 max-h-36" viewClass="space-y-2" viewportClassName="overscroll-contain pr-2">
-      <ol className="space-y-2">{plan.steps.map((step) => <li key={step.id} className="flex items-start gap-2"><span className="mt-0.5 shrink-0" aria-label={{ pending: "待处理", in_progress: "进行中", completed: "已完成", deferred: "暂缓" }[step.status]}>{step.status === "completed" ? <Check className="size-3.5 text-brand" /> : step.status === "deferred" ? <Clock className="size-3.5 text-muted-foreground" /> : step.status === "in_progress" ? <Circle className="size-3.5 fill-brand/30 text-brand" /> : <Circle className="size-3.5 text-muted-foreground" />}</span><span className="min-w-0 break-words leading-5">{step.title}{step.status === "deferred" ? <span className="ml-2 text-muted-foreground">暂缓</span> : null}</span></li>)}</ol>
+  const executing = running && plan.steps.some((step) => step.status === "in_progress");
+  const complete = plan.steps.length > 0 && completed + deferred === plan.steps.length && !running;
+  if (complete && dismissedPlan === planKey) return null;
+  return <div className="relative shrink-0" data-agent-plan><details className="group/plan mb-2 shrink-0 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5 pr-9 text-xs" aria-label="Agent 执行计划">
+    <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">{executing ? <LoaderCircle data-agent-plan-loading className="size-3.5 shrink-0 animate-spin text-brand" /> : <Sparkles className="size-3.5 shrink-0 text-brand" />}<span className="min-w-0 flex-1 truncate font-medium">{plan.steps.find((step) => step.status === "in_progress")?.title || (completed === plan.steps.length - deferred ? "计划已完成" : "接下来的安排")}</span><span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{completed}/{plan.steps.length - deferred}</span><ChevronDown className="size-3 transition-transform group-open/plan:rotate-180" /></summary>
+    <div className="mt-2 flex gap-1" aria-label={`已完成 ${completed} 项，共 ${plan.steps.length - deferred} 项`}>{plan.steps.map((step) => <span key={step.id} className={`h-1 min-w-0 flex-1 rounded-full ${step.status === "completed" ? "bg-brand" : step.status === "in_progress" ? executing ? "bg-brand/45 motion-safe:animate-pulse" : "bg-brand/45" : "bg-border/70"}`} />)}</div>
+    <ScrollArea native className="mt-2 max-h-36" viewClass="space-y-2" viewportClassName="overscroll-contain pr-2">
+      <ol className="space-y-2">{plan.steps.map((step) => <li key={step.id} className="flex items-start gap-2"><span className="mt-0.5 shrink-0" aria-label={step.status === "in_progress" && !running ? "待继续" : { pending: "待处理", in_progress: "进行中", completed: "已完成", deferred: "暂缓" }[step.status]}>{step.status === "completed" ? <Check className="size-3.5 text-brand" /> : step.status === "deferred" ? <Clock className="size-3.5 text-muted-foreground" /> : step.status === "in_progress" ? running ? <LoaderCircle className="size-3.5 animate-spin text-brand" /> : <Circle className="size-3.5 fill-brand/30 text-brand" /> : <Circle className="size-3.5 text-muted-foreground" />}</span><span className="min-w-0 break-words leading-5">{step.title}{step.status === "deferred" ? <span className="ml-2 text-muted-foreground">暂缓</span> : null}</span></li>)}</ol>
     </ScrollArea>
-  </details>;
+  </details>{complete ? <button type="button" aria-label="关闭已完成计划" title="关闭已完成计划" className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setDismissedPlan(planKey)}><X className="size-3.5" /></button> : null}</div>;
 }
 
-export function CanvasAgentQuestionCard({ question, busy, active, onAnswer, onCancel }: {
+export function CanvasAgentQuestionCard({ question, busy, active: _active, onAnswer, onCancel }: {
   question: CanvasAgentQuestion;
   busy: boolean;
   active: boolean;
-  onAnswer: (answer: string) => void;
+  onAnswer: (answer: string) => boolean;
   onCancel?: () => void;
 }) {
   const [answer, setAnswer] = useState("");
-  const recommended = question.options[0]?.trim();
-  const countdown = useCanvasAgentRecommendationCountdown({ scope: question.id, enabled: active && !busy && Boolean(recommended), onAccept: () => {
-    if (recommended) { setAnswer(recommended); onAnswer(recommended); }
-  } });
-  return <form aria-label="Agent 等待回答" className="flex min-h-0 flex-col rounded-xl border border-border bg-card p-3" onSubmit={(event) => { event.preventDefault(); if (answer.trim() && !busy) { countdown.stop(); onAnswer(answer.trim()); } }}>
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-brand"><span className="flex items-center gap-2"><CircleHelp className="size-4" />{question.kind === "confirmation" ? "需要你确认" : "需要你补充信息"}</span>{countdown.seconds !== null ? <span role="timer" className="text-[11px] font-normal tabular-nums text-muted-foreground">{countdown.seconds} 秒后采用推荐</span> : null}</div>
-    <ScrollArea className="min-h-0 max-h-[40cqh]" viewportClassName="pr-1">
-    <p className="mt-2 text-sm leading-5">{question.question}</p>
-    <div className="mt-3"><CanvasAgentAnswerInput options={question.options.map((label) => ({ label }))} value={answer} onChange={setAnswer} onSelect={onAnswer} onInteract={countdown.stop} disabled={busy} /></div>
+  const [submittedAnswer, setSubmittedAnswer] = useState("");
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!busy) { submitting.current = false; setSubmittedAnswer(""); }
+  }, [busy]);
+  function respond(value: string) {
+    if (busy || submitting.current || !value.trim()) return;
+    submitting.current = true;
+    setAnswer(value.trim());
+    try {
+      if (onAnswer(value.trim())) setSubmittedAnswer(value.trim());
+      else submitting.current = false;
+    } catch (error) {
+      submitting.current = false;
+      throw error;
+    }
+  }
+  if (submittedAnswer) return <div data-agent-answer-submitted role="status" className="flex min-w-0 items-center gap-2 px-1 py-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 shrink-0 animate-spin" /><span className="shrink-0">正在继续</span><span className="min-w-0 truncate" title={submittedAnswer}>已回答：{submittedAnswer}</span></div>;
+  const isWorkflowReview = question.purpose === "workflow_review";
+  const isMediaGeneration = question.purpose === "media_generation";
+  const title = isWorkflowReview ? "先审核系列提示词" : isMediaGeneration ? "准备开始生成" : question.kind === "confirmation" ? "这一步，由你决定" : "先对齐一个细节";
+  const subtitle = isWorkflowReview ? "检查并确认后，Agent 才会提交生成" : isMediaGeneration ? "确认后提交媒体任务，也可以暂缓" : question.kind === "confirmation" ? "确认后继续执行" : "你的选择，会决定接下来的创作";
+  return <form aria-label="Agent 等待回答" className="relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-brand/20 bg-gradient-to-b from-brand-soft/50 via-card to-card shadow-[0_4px_24px_-12px_var(--color-brand)]" onSubmit={(event) => { event.preventDefault(); respond(answer); }}>
+    <div className="flex shrink-0 items-center gap-2.5 px-3.5 pb-1 pt-3.5"><span className="grid size-8 place-items-center rounded-xl bg-brand/10 text-brand"><CircleHelp className="size-4" /></span><div><p className="text-xs font-semibold">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{subtitle}</p></div></div>
+    <ScrollArea native data-agent-question-scroll className="min-h-0 max-h-[40cqh]" viewportClassName="px-3.5 pr-5">
+    <p className="mt-2 text-sm font-medium leading-6">{question.question}</p>
+    {question.reason ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{question.reason}</p> : null}
+    {question.options.length ? <p className="mt-2 text-[11px] text-muted-foreground">点击一个选项即可回答并继续</p> : null}
+    <div className="mt-3"><CanvasAgentAnswerInput options={question.options.map((label) => ({ label }))} value={answer} onChange={setAnswer} onSelect={respond} disabled={busy} /></div>
     </ScrollArea>
-    <div className="mt-3 flex justify-end gap-2">{onCancel ? <Button type="button" size="sm" variant="ghost" className="mr-auto" disabled={busy} onClick={() => { countdown.stop(); onCancel(); }}>取消</Button> : null}<Button type="submit" size="sm" disabled={busy || !answer.trim()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}继续</Button></div>
+    <div className="flex shrink-0 items-center justify-end gap-2 p-3.5 pt-3">{onCancel ? <Button type="button" size="sm" variant="ghost" className="mr-auto" disabled={busy} onClick={() => { onCancel(); }}>取消本次请求</Button> : null}{(!question.options.length || answer.trim()) ? <Button type="submit" size="sm" disabled={busy || !answer.trim()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}发送回答<ArrowRight className="size-3.5" /></Button> : null}</div>
   </form>;
 }

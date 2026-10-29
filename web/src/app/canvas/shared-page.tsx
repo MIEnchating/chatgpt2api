@@ -19,6 +19,7 @@ export default function SharedCanvasPage() {
   const [retry, setRetry] = useState(0);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [preview, setPreview] = useState<CanvasNode | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
 
@@ -46,6 +47,7 @@ export default function SharedCanvasPage() {
       } catch (error) {
         if (controller.signal.aborted) return;
         setDocument(null);
+        setPreviewOpen(false);
         setPreview(null);
         setError(error instanceof Error ? error.message : "分享不存在或已取消");
       } finally {
@@ -122,14 +124,14 @@ export default function SharedCanvasPage() {
           })}</svg>
           {nodes.map((node) => <article key={node.id} data-shared-node={node.id} className={cn("absolute rounded-xl border border-border shadow-sm", node.type === "group" ? "bg-muted/30" : "bg-card")} style={{ left: node.x, top: node.y, width: node.width, height: node.height, zIndex: node.type === "group" ? 0 : 1 }}>
             <h2 className="absolute -top-8 left-0 max-w-full truncate text-sm font-medium">{node.title || ({ text: "文字", image: "图片", video: "视频", audio: "音频", panorama: "全景图", config: "生成配置", director: "导演台", group: "分组" }[node.type])}</h2>
-            {node.type === "group" ? null : node.type === "image" || node.type === "panorama" ? node.url ? <button type="button" data-share-interactive className="h-full w-full cursor-zoom-in overflow-hidden rounded-xl" aria-label={`查看${node.title || "图片"}`} onClick={() => setPreview(node)}><img draggable={false} src={node.url} alt={node.title || "画布图片"} className="h-full w-full object-contain" /></button> : <MediaPlaceholder /> : node.type === "video" ? node.url ? <video data-share-interactive controls preload="metadata" src={node.url} className="h-full w-full rounded-xl object-contain" /> : <MediaPlaceholder /> : node.type === "audio" ? node.url ? <div className="flex h-full items-center px-3"><audio data-share-interactive controls preload="metadata" src={node.url} className="w-full" /></div> : <MediaPlaceholder /> : <div data-share-interactive className="h-full cursor-text select-text overflow-auto whitespace-pre-wrap break-words p-4" style={{ fontSize: node.font_size || 14 }}>{node.prompt || (node.type === "director" ? "导演台" : node.type === "config" ? "生成配置" : "")}</div>}
+            {node.type === "group" ? null : node.type === "image" || node.type === "panorama" ? node.url ? <button type="button" data-share-interactive className="h-full w-full cursor-zoom-in overflow-hidden rounded-xl" aria-label={`查看${node.title || "图片"}`} onClick={() => { setPreview(node); setPreviewOpen(true); }}><img draggable={false} src={node.url} alt={node.title || "画布图片"} className="h-full w-full object-contain" /></button> : <MediaPlaceholder /> : node.type === "video" ? node.url ? <video data-share-interactive controls preload="metadata" src={node.url} className="h-full w-full rounded-xl object-contain" /> : <MediaPlaceholder /> : node.type === "audio" ? node.url ? <div className="flex h-full items-center px-3"><audio data-share-interactive controls preload="metadata" src={node.url} className="w-full" /></div> : <MediaPlaceholder /> : <div data-share-interactive className="h-full cursor-text select-text overflow-auto whitespace-pre-wrap break-words p-4" style={{ fontSize: node.font_size || 14 }}>{node.prompt || (node.type === "director" ? "导演台" : node.type === "config" ? "生成配置" : "")}</div>}
           </article>)}
         </div>
       </div>
       <header className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3"><div className="min-w-0 max-w-full rounded-xl border bg-card/95 px-4 py-3 shadow-sm backdrop-blur"><h1 className="truncate text-sm font-semibold">{document.title}</h1><p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Eye className="size-3.5" />只读分享</p></div></header>
       {!nodes.length ? <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">画布暂无内容</p> : null}
       <div data-share-interactive className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border bg-card/95 p-1.5 shadow-sm backdrop-blur"><Button size="icon" variant="ghost" aria-label="缩小" onClick={() => zoom(1 / 1.2)}><Minus /></Button><span className="min-w-12 text-center text-xs tabular-nums">{Math.round(viewport.zoom * 100)}%</span><Button size="icon" variant="ghost" aria-label="放大" onClick={() => zoom(1.2)}><Plus /></Button><Button variant="ghost" onClick={() => fit(document)}><Maximize className="size-4" />适合屏幕</Button></div>
-      <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}><DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{preview?.title || "图片预览"}</DialogTitle><DialogDescription>只读查看画布素材</DialogDescription></DialogHeader>{preview ? <img src={preview.url} alt={preview.title || "画布图片"} className="max-h-[75dvh] w-full object-contain" /> : null}</DialogContent></Dialog>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="sm:max-w-5xl"><DialogHeader><DialogTitle>{preview?.title || "图片预览"}</DialogTitle><DialogDescription>只读查看画布素材</DialogDescription></DialogHeader>{preview ? <img src={preview.url} alt={preview.title || "画布图片"} className="max-h-[75dvh] w-full object-contain" /> : null}</DialogContent></Dialog>
     </>}
   </div>;
 }

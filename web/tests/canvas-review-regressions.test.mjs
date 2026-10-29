@@ -1,3 +1,4 @@
+import { mergeCanvasDocuments } from "../src/app/canvas/canvas-document-merge.ts";
 import { resolveCanvasAgentMediaSettings } from "../src/app/canvas/agent/canvas-agent-media-settings.ts";
 import { normalizeCanvasAgentConfig } from "../src/app/canvas/agent/canvas-agent-starter.ts";
 import { summarizeCanvasAgentTask } from "../src/app/canvas/agent/canvas-agent-context.ts";
@@ -45,6 +46,7 @@ test("canvas copy shortcuts preserve selected chat text even when keyboard focus
     let selectedText = "Agent 中选中的文字";
     const keydown = pageHandler("page.tsx", "keydown", {
       window: { getSelection: () => ({ toString: () => selectedText }) },
+      documentRef: { current: {} },
       copySelected: () => { copiedNodes++; },
     });
     const event = () => ({ key: "c", [modifier]: true, target: { tagName: "BODY", closest: () => null }, prevented: false, preventDefault() { this.prevented = true; } });
@@ -468,6 +470,34 @@ test("generation confirmation preserves custom approval instead of forcing defer
   }
 });
 
+test("generation choices report acceptance so rejected answers remain editable", () => {
+  for (const accepted of [true, false]) {
+    const choose = pageHandler("canvas-agent-panel.tsx", "chooseMediaGeneration", {
+      activeSession: { messages: [{ id: "user", role: "user" }, { id: "assistant", role: "assistant" }] },
+      canvasAgentQuestionMediaChoice,
+      retryMessage: () => accepted,
+      submit: () => accepted ? "started" : "missing-model",
+    });
+    for (const answer of ["立即生成", "暂不生成，继续规划", "确认生成这三张白底图"]) assert.equal(choose(answer), accepted);
+  }
+});
+
+test("Agent node references reveal the canvas on narrow screens without closing desktop panels", () => {
+  for (const [width, visibleWidth, closes] of [[320, 0, true], [390, 390, true], [1200, 780, false]]) {
+    const focused = [];
+    let closed = false;
+    const focus = pageHandler("page.tsx", "focusAgentCanvasNode", {
+      agentAreaRef: { current: { clientWidth: width, clientHeight: 900 } },
+      agentOpen: true, canvasSize: { width: visibleWidth, height: 900 }, CANVAS_AGENT_WIDTH: 420,
+      closeAgentPanel: () => { closed = true; },
+      focusCanvasNode: (...args) => focused.push(args),
+    });
+    focus("result");
+    assert.equal(closed, closes);
+    assert.deepEqual(focused, closes ? [["result", { width, height: 900 }]] : [["result"]]);
+  }
+});
+
 test("Agent generation choice overrides manual mode without changing global configuration", async () => {
   for (const autoGenerateMedia of [false, true]) {
     for (const generateMedia of [false, true]) {
@@ -580,6 +610,10 @@ function canvasHistoryLeaseHarness({ expired = false, expiresDuringSave = false,
   let timerID = 0, historyVersion = 0, persist;
   const dependencies = {
     documentRef, historyRef, redoRef, generationHistoryBaseRef, saveChangeVersionRef, persistedChangeVersionRef,
+    serverDocumentRef: { current: structuredClone(documentRef.current) }, mergeCanvasDocuments,
+    titleRef: { current: documentRef.current.title }, setTitle: () => {},
+    replaceNodes: (nodes) => { documentRef.current.nodes = nodes; }, replaceConnections: (connections) => { documentRef.current.connections = connections; },
+    storedCanvasAgentSessions: () => [], setAgentSessions: () => {}, setActiveAgentSessionID: () => {}, setBackendAgentRun: () => {},
     loadedRef: { current: true }, mountedRef: { current: true },
     saveTimerRef: { current: null }, saveRequestVersionRef: { current: 0 }, saveQueueRef: { current: Promise.resolve() },
     canvasSaveRequired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs,
@@ -604,7 +638,7 @@ function canvasHistoryLeaseHarness({ expired = false, expiresDuringSave = false,
   };
   const scheduleSave = pageHandler("page.tsx", "scheduleSave", { ...dependencies, persistCanvas: () => persist() });
   const expire = pageHandler("page.tsx", "expireCanvasHistoryLease", { ...dependencies, scheduleSave });
-  persist = pageHandler("page.tsx", "persistCanvas", { ...dependencies, expireCanvasHistoryLease: expire });
+  persist = pageHandler("page.tsx", "persistCanvas", { ...dependencies, expireCanvasHistoryLease: expire, applyBackendAgentDocument: pageHandler("page.tsx", "applyBackendAgentDocument", dependencies) });
   const commit = pageHandler("page.tsx", "commitGenerationHistory", { ...dependencies, expireCanvasHistoryLease: expire, scheduleSave, commitCanvasGenerationHistory, MAX_HISTORY: 50 });
   return { persist, expire, commit, documentRef, historyRef, redoRef, generationHistoryBaseRef, originalHistory, requests, stateAtSave, timers, saveChangeVersionRef, persistedChangeVersionRef, advanceTime: (milliseconds) => { now += milliseconds; }, historyVersion: () => historyVersion };
 }

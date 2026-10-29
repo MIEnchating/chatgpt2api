@@ -50,6 +50,7 @@ type RequestOptions = {
     signal?: AbortSignal;
     timeout?: number;
     responseType?: AxiosRequestConfig["responseType"];
+    keepalive?: boolean;
 };
 
 export async function httpRequest<T>(path: string, options: RequestOptions = {}) {
@@ -63,6 +64,7 @@ export async function httpRequest<T>(path: string, options: RequestOptions = {})
         signal,
         timeout,
         responseType,
+        ...(options.keepalive ? { adapter: "fetch", fetchOptions: { keepalive: true } } : {}),
     };
     const response = await request.request<T>(config);
     return response.data;

@@ -96,12 +96,12 @@ test("asset visibility changes stop before the next account write after invalida
 });
 
 test("profile save responses preserve edits made during persistence", async () => {
-  const preferences = { stream: false };
+  const preferences = { stream: false, workbench: { video_generate_audio: false } };
   let current = preferences;
   const request = deferred();
   const published = [];
   const pending = handler("profile/page.tsx", "save", {
-    preferences, sessionKey: "session-a", saveVersionRef: { current: 0 }, currentSessionKeyRef: { current: "session-a" },
+    savedWorkbenchAudioRef: { current: false }, preferences, sessionKey: "session-a", saveVersionRef: { current: 0 }, currentSessionKeyRef: { current: "session-a" },
     setIsSaving: () => {}, setMessage: () => {}, relayTokenNames: {}, relayTokenPreferencesFromNames: () => ({}),
     selectedAudioVoice: "alloy", selectedAudioFormat: "mp3", selectedAudioSpeed: 1,
     updateImageGenerationPreferences: () => request.promise,
@@ -109,10 +109,10 @@ test("profile save responses preserve edits made during persistence", async () =
     dispatchImageGenerationPreferencesChanged: (_key, value) => published.push(value),
   })();
   current = { stream: true };
-  request.resolve({ preferences: { stream: false } });
+  request.resolve({ preferences });
   await pending;
   assert.equal(current.stream, true);
-  assert.deepEqual(published, [{ stream: false }]);
+  assert.deepEqual(published, [preferences]);
 });
 
 test("personal storage saves preserve drafts for each provider independently", async () => {

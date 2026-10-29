@@ -82,7 +82,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
           else if (forwardedRef) forwardedRef.current = node;
         }}
         value={value}
-        className={cn("block w-full min-w-0", className)}
+        className={cn("block w-full min-w-0 outline-none focus-visible:ring-0", className)}
         style={style}
         onChange={(event) => {
           const next = event.target.value;

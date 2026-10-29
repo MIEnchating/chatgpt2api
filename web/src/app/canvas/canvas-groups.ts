@@ -62,8 +62,16 @@ export function findContainingCanvasGroupID(node: CanvasNode, nodes: readonly Ca
     && centerY <= group.y + group.height)?.id;
 }
 
-export function detachCanvasNodesFromRemovedGroups(nodes: readonly CanvasNode[], removedIDs: ReadonlySet<string>) {
-  return nodes
-    .filter((node) => !removedIDs.has(node.id))
-    .map((node) => node.group_id && removedIDs.has(node.group_id) ? { ...node, group_id: undefined } : node);
+export function expandCanvasRemovalNodeIDs(ids: ReadonlySet<string>, nodes: readonly CanvasNode[]) {
+  const removed = new Set(ids);
+  let changed = true;
+  while (changed) {
+    const before = removed.size;
+    for (const node of nodes) {
+      if (node.group_id && removed.has(node.group_id) || node.batch_root_id && removed.has(node.batch_root_id)) removed.add(node.id);
+      if (removed.has(node.id)) node.batch_child_ids?.forEach((id) => removed.add(id));
+    }
+    changed = before !== removed.size;
+  }
+  return removed;
 }

@@ -20,6 +20,9 @@ import {
 } from "@/lib/image-generation-preferences-retry";
 
 export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreferences = {
+  composer_mode: "image",
+  video_task_count: 1,
+  video_parameters: {},
   image_model: "",
   image_size: "1024x1024",
   image_size_mode: "ratio",
@@ -42,6 +45,8 @@ export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreference
 };
 
 const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
+  image_model_settings: {},
+  video_model_settings: {},
   api_mode: "images",
   stream: false,
   partial_images: 1,
@@ -95,9 +100,14 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
     default_image_relay_token_names: Array.isArray(value?.default_image_relay_token_names) ? value.default_image_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
     default_video_relay_token_names: Array.isArray(value?.default_video_relay_token_names) ? value.default_video_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
     default_audio_relay_token_names: Array.isArray(value?.default_audio_relay_token_names) ? value.default_audio_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
+    image_model_settings: value?.image_model_settings || {},
+    video_model_settings: value?.video_model_settings || {},
     workbench: {
       ...DEFAULT_CREATION_WORKBENCH_PREFERENCES,
       ...value?.workbench,
+      composer_mode: value?.workbench?.composer_mode === "video" ? "video" : "image",
+      video_task_count: Math.max(1, Math.min(6, Math.round(Number(value?.workbench?.video_task_count) || 1))),
+      video_parameters: value?.workbench?.video_parameters || {},
       image_model: String(value?.workbench?.image_model || "").trim(),
       image_count: Math.max(1, Math.min(10, Math.round(Number(value?.workbench?.image_count) || 1))),
       image_snap_to_multiple_16: value?.workbench?.image_snap_to_multiple_16 !== false,

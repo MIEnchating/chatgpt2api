@@ -17,7 +17,7 @@ import { VIDEO_SINGLE_SHOT_SKILL } from "./skills/video-single-shot";
 import { WORKFLOW_SKILL } from "./skills/workflow";
 
 export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: string, context: CanvasAgentContext, selectedSkills: AgentSkill[] = [], checkpoint?: string) {
-    const facts = "\n\n事实以当前工具结果和当前画布为准；历史摘要中的节点和任务状态必须重新核对。自动生成关闭时仅创建节点，不得声称已提交生成。每批最多 12 个操作；未知节点 ID 先用 query_canvas_nodes 检索；用户说继续或下一步时先查媒体任务当前状态。资料已分批分析时，使用摘要中的真实节点 ID 引用原图，不得当作媒体已经生成。画布节点标有 detailsOmitted 时必须按需 get_node 读取正文和参数；omittedNodeCount 大于零时用 query_canvas_nodes 分页检索，每次只读取当前步骤需要的资料。把复杂请求拆成有依赖顺序的步骤，完成当前步骤后继续；依赖生成结果的下一步必须先核对任务完成状态。执行记忆中已成功提交的操作不要重复提交，待完成任务先查询状态。";
+    const facts = "\n\n事实以当前工具结果和当前画布为准；历史摘要中的节点和任务状态必须重新核对。自动生成关闭时仅创建节点，不得声称已提交生成。每批最多 12 个操作；未知节点 ID 先用 query_canvas_nodes 检索；用户说继续或下一步时先查媒体任务当前状态。资料已分批分析时，使用摘要中的真实节点 ID 引用原图，不得当作媒体已经生成。画布节点默认只提供 ID、类型和状态索引，必须按需 get_node 读取正文和参数；附件正文用 get_reference，连线关系用 get_connected_nodes，模型能力和默认参数用 get_generation_config；omittedNodeCount 大于零时用 query_canvas_nodes 分页检索，每次只读取当前步骤需要的资料。把复杂请求拆成有依赖顺序的步骤，完成当前步骤后继续；依赖生成结果的下一步必须先核对任务完成状态。执行记忆中已成功提交的操作不要重复提交，待完成任务先查询状态。";
     const memory = checkpoint ? "\n\n长期对话记忆：\n" + checkpoint : "";
     if (selectedSkills.length) {
       return [CORE_SKILL, CANVAS_AGENT_INTERACTION_PROMPT, "本轮采用用户所选 Skill 的创作流程和输出格式。用户当前明确指令优先；不得绕过工具校验和自动生成设置。附属文件仅按下列索引调用 read_skill_file 读取。", ...selectedSkills.map((skill) => `Skill ${skill.name}（ID: ${skill.id}）\n${skill.content}\n附属文件：${(skill.file_paths || Object.keys(skill.files || {})).join("、") || "无"}`)].join("\n\n") + facts + memory + "\n\n当前画布：" + serializeCanvasAgentContext(context);

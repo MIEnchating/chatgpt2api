@@ -1,3 +1,5 @@
+import { canvasAgentToolContent } from "../src/app/canvas/agent/canvas-agent-tool-content.ts";
+import { CANVAS_AGENT_CONVERSATION_PROMPT } from "../src/app/canvas/agent/canvas-agent-conversation.ts";
 import { executeCanvasAgentResumedAction } from "../src/app/canvas/agent/canvas-agent-execution.ts";
 import { canvasAgentActionTrace, canvasCodexItemTrace, upsertCanvasAgentOperationTrace } from "../src/app/canvas/agent/canvas-agent-trace.ts";
 import { canvasAgentWaitingReason, resumeCanvasAgentMedia } from "../src/app/canvas/agent/canvas-agent-runtime.ts";
@@ -29,6 +31,8 @@ function fixture(options = {}) {
     async toolResult(id, result) { toolResults.push({ id, result }); },
   };
   const dependencies = {
+    "./canvas-agent-tool-content": { canvasAgentToolContent },
+    "./canvas-agent-conversation": { CANVAS_AGENT_CONVERSATION_PROMPT },
     "./canvas-agent-reference": { describeCanvasAgentReference },
     "./canvas-agent-interaction": { canvasAgentPlan, canvasAgentQuestion, canvasAgentQuestionMediaChoice },
     react: {
@@ -176,9 +180,27 @@ test("Codex sends image attachments without inventing canvas node identifiers", 
     const input = f.rpcCalls.find((call) => call.method === "turn/start").params.input;
     assert.match(input[0].text, /消息附件/);
     assert.doesNotMatch(input[0].text, /节点 attachment-one/);
-    assert.equal(input[1].url, "data:image/png;base64,AAAA");
+    assert.match(input[1].text, /附件 attachment-one/);
+    assert.equal(input[2].url, "data:image/png;base64,AAAA");
     controller.abort();
     await rejected;
+  } finally { f.cleanup(); }
+});
+
+test("reading an attachment returns visual content to Codex without adding a user upload", async () => {
+  const f = fixture({ executeAction: async () => ({ ok: true, reference: { id: "photo", source: "attachment", type: "image", title: "正面", url: "https://cdn.example.test/product.png" } }) });
+  try {
+    const agent = await f.connect();
+    const pending = agent.run(f.runInput());
+    await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+    f.event({ type: "rpc", message: { id: "read-photo", method: "item/tool/call", params: { threadId: "thread", turnId: "turn", tool: "get_reference", arguments: { referenceId: "photo" }, callId: "read-photo" } } });
+    await flush(); await flush();
+    const content = f.replies.find((reply) => reply.id === "read-photo").result.contentItems;
+    assert.equal(JSON.parse(content[0].text).reference.id, "photo");
+    assert.deepEqual(content[1], { type: "inputImage", imageUrl: "https://cdn.example.test/product.png" });
+    f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
+    const result = await pending;
+    assert.equal(result.protocolMessages.filter((message) => message.role === "user").length, 1);
   } finally { f.cleanup(); }
 });
 
@@ -200,7 +222,7 @@ test("Codex plan and question tools use the current run and wait for a real answ
     assert.equal(questions.length, 1);
     assert.ok(!f.replies.some((reply) => reply.id === "question"));
     assert.equal(f.executions.length, 0);
-    resolveAnswer({ accepted: true, answers: { question: "插画" } }); await flush();
+    resolveAnswer({ accepted: true, answers: { [questions[0].questions[0].id]: "插画" } }); await flush();
     const response = f.replies.find((reply) => reply.id === "question");
     assert.deepEqual(JSON.parse(response.result.contentItems[0].text), { ok: true, answer: "插画" });
     f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
@@ -543,4 +565,56 @@ test("a plain user request releases Codex media deferral without opening global 
     f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "plain-approval", turn: { status: "completed" } } } });
     assert.equal((await pending).state.mediaGenerationDeferred, false);
   } finally { f.cleanup(); }
+});
+
+test("Codex keeps backend workflow review state through progress checkpoints", async () => {
+  const backendState = { phase: "review", pendingTaskIds: [], completedTaskIds: [], pendingWorkflowReview: { nodeIds: ["poster"] }, approvedWorkflowReviewPrompts: { poster: "digest" } };
+  const f = fixture({ executeAction: async () => ({ ok: true, agentState: backendState }) });
+  try {
+    const agent = await f.connect(); const checkpoints = [];
+    const pending = agent.run({ ...f.runInput(), onCheckpoint: checkpoint => checkpoints.push(checkpoint) });
+    await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+    f.event({ type: "rpc", message: { id: "workflow", method: "item/tool/call", params: { threadId: "thread", turnId: "turn", tool: "get_canvas_summary", arguments: {}, callId: "workflow" } } });
+    await flush(); await flush();
+    assert.deepEqual(checkpoints.at(-1).state, backendState);
+    assert.equal(f.executions[0].id, "codex-turn-workflow");
+    f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
+    assert.deepEqual((await pending).state, backendState);
+  } finally { f.cleanup(); }
+});
+test("Codex workflow approval waits for the user and forwards free text or cancellation", async () => {
+  for (const answer of ["确认审核并生成", "暂不生成，请修改颜色", ""]) {
+    let resolveAnswer; let questionID; const answers = [];
+    const f = fixture({ ask: request => { questionID = request.questions[0].id; return new Promise(resolve => { resolveAnswer = resolve; }); } });
+    try {
+      const agent = await f.connect(); const base = f.runInput();
+      const pending = agent.run({ ...base, onWorkflowReviewAnswer: async text => { answers.push(text); return { ...base.initialState, mediaGenerationDeferred: text !== "确认审核并生成" }; } });
+      await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+      f.event({ type: "rpc", message: { id: "review", method: "item/tool/call", params: { threadId: "thread", turnId: "turn", tool: "ask_user_question", arguments: { question: "确认这些提示词吗？", reason: "审核后才生成", options: ["确认审核并生成（推荐）", "暂不生成"], kind: "confirmation", purpose: "workflow_review" }, callId: "review" } } });
+      await flush(); assert.deepEqual(answers, []);
+      resolveAnswer({ accepted: Boolean(answer), answers: { [questionID]: answer } });
+      await flush(); await flush(); assert.deepEqual(answers, [answer]);
+      f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
+      assert.equal((await pending).state.mediaGenerationDeferred, answer !== "确认审核并生成");
+    } finally { f.cleanup(); }
+  }
+});
+
+test("Codex small talk skips prior media recovery and blocks canvas tools", async () => {
+  const f = fixture();
+  try {
+    const agent = await f.connect(); const base = f.runInput();
+    const pending = agent.run({ ...base, userText:"你好啊",conversationOnly:true,resume:true,protocolMessages:[{role:"tool",name:"generate_image",toolCallId:"old",content:JSON.stringify({ok:true,nodeId:"old",submitted:false,status:"idle"})}] });
+    await flush();
+    assert.equal(f.executions.length,0);
+    const instructions=f.rpcCalls.find(call=>call.method==="thread/start").params.developerInstructions;
+    assert.match(instructions,/当前轮只聊天/);
+    assert.doesNotMatch(instructions,/canvas prompt/);
+    f.threadReady[0]({turn:{id:"conversation"}});await flush();
+    f.event({type:"rpc",message:{id:"bad-tool",method:"item/tool/call",params:{threadId:"thread",turnId:"conversation",tool:"get_canvas_summary",arguments:{},callId:"read"}}});
+    await flush();await flush();assert.equal(f.executions.length,0);
+    assert.equal(JSON.parse(f.replies[0].result.contentItems[0].text).code,"conversation_only");
+    f.event({type:"rpc",message:{method:"turn/completed",params:{threadId:"thread",turnId:"conversation",turn:{status:"completed"}}}});
+    await pending;
+  } finally {f.cleanup();}
 });

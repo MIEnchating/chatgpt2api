@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -104,7 +105,17 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 				relayTokenNames[kind] = util.AsStringSlice(value)
 			}
 		}
+		var workbenchGenerateAudio *bool
+		if value, present := body["workbench_generate_audio"]; present {
+			enabled, ok := value.(bool)
+			if !ok {
+				util.WriteError(w, http.StatusBadRequest, "workbench_generate_audio must be a boolean")
+				return
+			}
+			workbenchGenerateAudio = &enabled
+		}
 		preferences, err := a.imagePreferences.UpdateProfile(ownerID, service.ImageGenerationPreferences{
+			WorkbenchGenerateAudio:  workbenchGenerateAudio,
 			APIMode:                 util.Clean(body["api_mode"]),
 			Stream:                  util.ToBool(body["stream"]),
 			PartialImages:           partialImages,
@@ -213,38 +224,30 @@ func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbench
 	if len(workbench) == 0 {
 		return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench must be an object")
 	}
-	count, ok := util.StrictInt(workbench["image_count"])
-	if !ok {
+	if _, ok := util.StrictInt(workbench["image_count"]); !ok {
 		return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_count must be an integer")
 	}
-	return service.CreationWorkbenchPreferences{
-		ImageModel:             util.Clean(workbench["image_model"]),
-		ImageSize:              util.Clean(workbench["image_size"]),
-		ImageSizeMode:          util.Clean(workbench["image_size_mode"]),
-		ImageAspectRatio:       util.Clean(workbench["image_aspect_ratio"]),
-		ImageResolution:        util.Clean(workbench["image_resolution"]),
-		ImageCustomRatio:       util.Clean(workbench["image_custom_ratio"]),
-		ImageCustomWidth:       util.Clean(workbench["image_custom_width"]),
-		ImageCustomHeight:      util.Clean(workbench["image_custom_height"]),
-		ImageSnapToMultiple16:  util.ToBool(workbench["image_snap_to_multiple_16"]),
-		ImageQuality:           util.Clean(workbench["image_quality"]),
-		ImageCount:             count,
-		ImageOutputFormat:      util.Clean(workbench["image_output_format"]),
-		ImageOutputCompression: util.Clean(workbench["image_output_compression"]),
-		VideoModel:             util.Clean(workbench["video_model"]),
-		VideoSize:              util.Clean(workbench["video_size"]),
-		VideoSeconds:           util.Clean(workbench["video_seconds"]),
-		VideoResolution:        util.Clean(workbench["video_resolution"]),
-		VideoGenerateAudio:     util.ToBool(workbench["video_generate_audio"]),
-		VideoWatermark:         util.ToBool(workbench["video_watermark"]),
-	}, nil
+	if value, present := workbench["video_task_count"]; present {
+		if count, ok := util.StrictInt(value); !ok || count < 1 || count > 6 {
+			return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench.video_task_count must be an integer between 1 and 6")
+		}
+	}
+	data, err := json.Marshal(workbench)
+	if err != nil {
+		return service.CreationWorkbenchPreferences{}, err
+	}
+	var result service.CreationWorkbenchPreferences
+	if err := json.Unmarshal(data, &result); err != nil {
+		return result, fmt.Errorf("invalid workbench parameters: %w", err)
+	}
+	return result, nil
 }
 
 func (a *App) validateCreationWorkbenchModels(workbench service.CreationWorkbenchPreferences) error {
-	if workbench.ImageModel != "" && allowedPersonalModel(workbench.ImageModel, a.config.ImageModels()) == "" {
+	if workbench.ComposerMode != "video" && workbench.ImageModel != "" && allowedPersonalModel(workbench.ImageModel, a.config.ImageModels()) == "" {
 		return fmt.Errorf("workbench.image_model is not enabled by the administrator")
 	}
-	if workbench.VideoModel != "" && allowedPersonalModel(workbench.VideoModel, a.configuredVideoModels()) == "" {
+	if workbench.ComposerMode == "video" && workbench.VideoModel != "" && allowedPersonalModel(workbench.VideoModel, a.configuredVideoModels()) == "" {
 		return fmt.Errorf("workbench.video_model is not enabled by the administrator")
 	}
 	return nil

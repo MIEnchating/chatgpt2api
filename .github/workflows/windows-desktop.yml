@@ -28,6 +28,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: Install Agents SDK runtime
+        working-directory: agent-runtime
+        run: npm ci --ignore-scripts
+
+      - name: Test Agents SDK runtime
+        working-directory: agent-runtime
+        run: npm test
+
       - name: Install frontend dependencies
         working-directory: web
         run: bun install --frozen-lockfile

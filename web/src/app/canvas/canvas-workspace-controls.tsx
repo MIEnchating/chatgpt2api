@@ -54,6 +54,7 @@ export function CanvasNodeCreatePalette({ point, viewport, connecting, onCreate 
 }
 
 type CanvasWorkspaceControlsProps = {
+  readOnly?: boolean;
   width: number;
   viewInset: number;
   zoom: number;
@@ -65,6 +66,7 @@ type CanvasWorkspaceControlsProps = {
   hasNodes: boolean;
   assetsOpen: boolean;
   agentOpen: boolean;
+  agentRunning?: boolean;
   onAgent: () => void;
   sidePanelOpen: boolean;
   historyOpen: boolean;
@@ -99,7 +101,7 @@ export function CanvasWorkspaceControls(props: CanvasWorkspaceControlsProps) {
     <div data-canvas-controls className={cn("pointer-events-none absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex items-center", stacked ? "flex-col gap-2" : "h-12 justify-center")}>
       <div data-canvas-view-controls role="group" aria-label="画布视图" style={stacked ? { marginLeft: compact ? 0 : props.viewInset } : { left: props.viewInset }} className={cn(surface, !stacked && "absolute left-0", stacked && !compact && "self-start")}>
         {!props.sidePanelOpen ? <Tooltip><TooltipTrigger asChild><Button variant="ghost" className={cn("h-8 gap-2 rounded-lg px-2 text-xs", compact && "size-8 p-0 has-[>svg]:px-0")} aria-label="资产管理" aria-expanded={props.sidePanelOpen} onClick={props.onManagement}><PanelLeft className="size-4" />{!compact && "资产管理"}</Button></TooltipTrigger><TooltipContent>资产管理</TooltipContent></Tooltip> : null}
-        <ControlButton label="整理画布" disabled={!props.hasNodes} onClick={props.onArrange}><Grid2X2 /></ControlButton>
+        <ControlButton label="整理画布" disabled={props.readOnly || !props.hasNodes} onClick={props.onArrange}><Grid2X2 /></ControlButton>
         <ControlButton label="画布小地图" active={props.miniMapOpen} disabled={!props.hasNodes} onClick={props.onMiniMap}><Map /></ControlButton>
         <ControlButton label={props.showConnections ? "隐藏节点连线" : "显示节点连线"} active={props.showConnections} onClick={props.onToggleConnections}><Waypoints /></ControlButton>
         <ControlButton label="网格吸附" active={props.snapToGrid} onClick={props.onToggleSnap}><Magnet /></ControlButton>
@@ -109,8 +111,8 @@ export function CanvasWorkspaceControls(props: CanvasWorkspaceControlsProps) {
       <div data-canvas-workspace-dock className="flex w-max max-w-full items-center gap-1.5 sm:gap-2">
         <div className={cn(surface, "min-w-0", compact && "[&_button]:size-7 [&_button]:p-0", props.width < 360 && "[&_button]:size-6")}>
           <div data-canvas-toolbar role="group" aria-label="画布操作" className={cn("flex items-center", compact ? "gap-0" : "gap-0.5")}>
-            <Popover open={createOpen} onOpenChange={setCreateOpen}>
-              <PopoverTrigger asChild><Button size="icon" className="size-8 rounded-lg" title="添加节点" aria-label="添加节点"><Plus className="size-4" /></Button></PopoverTrigger>
+            <Popover open={createOpen && !props.readOnly} onOpenChange={setCreateOpen}>
+              <PopoverTrigger asChild><Button size="icon" className="size-8 rounded-lg" title="添加节点" aria-label="添加节点" disabled={props.readOnly}><Plus className="size-4" /></Button></PopoverTrigger>
               <PopoverContent side="top" align="center" className="w-[272px] p-1.5">
                 <p className="px-2 py-2 text-xs font-semibold">添加到画布</p>
                 <NodeOptions onCreate={create} />
@@ -118,23 +120,24 @@ export function CanvasWorkspaceControls(props: CanvasWorkspaceControlsProps) {
               </PopoverContent>
             </Popover>
             <CanvasToolPicker tool={props.tool} onChange={props.onToolChange} />
-            <ControlButton label="素材库" active={props.assetsOpen} onClick={props.onAssets}><FolderOpen /></ControlButton>
-            <ControlButton label="生成历史" active={props.historyOpen} onClick={props.onHistory}><History /></ControlButton>
+            <ControlButton label="素材库" disabled={props.readOnly} active={props.assetsOpen} onClick={props.onAssets}><FolderOpen /></ControlButton>
+            <ControlButton label="生成历史" disabled={props.readOnly} active={props.historyOpen} onClick={props.onHistory}><History /></ControlButton>
             <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
-            <ControlButton label="撤销" disabled={!props.canUndo} onClick={props.onUndo}><Undo2 /></ControlButton>
-            <ControlButton label="重做" disabled={!props.canRedo} onClick={props.onRedo}><Redo2 /></ControlButton>
-            <ControlButton label={props.selectedCount ? `删除所选（${props.selectedCount}）` : "删除所选"} disabled={!props.selectedCount} danger onClick={props.onDelete}><Trash2 /></ControlButton>
+            <ControlButton label="撤销" disabled={props.readOnly || !props.canUndo} onClick={props.onUndo}><Undo2 /></ControlButton>
+            <ControlButton label="重做" disabled={props.readOnly || !props.canRedo} onClick={props.onRedo}><Redo2 /></ControlButton>
+            <ControlButton label={props.selectedCount ? `删除所选（${props.selectedCount}）` : "删除所选"} disabled={props.readOnly || !props.selectedCount} danger onClick={props.onDelete}><Trash2 /></ControlButton>
             <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
             <ControlButton label="快捷键" onClick={props.onShortcuts}><CircleHelp /></ControlButton>
           </div>
         </div>
         {!props.agentOpen ? <Tooltip>
           <TooltipTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" data-canvas-agent-trigger aria-label="打开 Agent" aria-expanded={props.agentOpen} onClick={props.onAgent} className={cn("pointer-events-auto size-12 shrink-0 rounded-full border border-border/80 bg-card/95 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-transform hover:scale-105", compact && "size-10 p-1", props.agentOpen && "border-brand/60 ring-2 ring-brand/20")}>
+            <Button type="button" variant="ghost" size="icon" data-canvas-agent-trigger aria-label={props.agentRunning ? "Agent 正在执行，打开对话" : "打开 Agent"} aria-expanded={props.agentOpen} onClick={props.onAgent} className={cn("pointer-events-auto relative size-12 shrink-0 rounded-full border border-border/80 bg-card/95 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-transform hover:scale-105", compact && "size-10 p-1", props.agentRunning && "border-brand/60 ring-2 ring-brand/20")}>
               <span className="grid size-full place-items-center rounded-full bg-gradient-to-br from-cyan-200 via-sky-400 to-indigo-500 shadow-[inset_0_1px_4px_rgba(255,255,255,0.6)]"><Bot className="size-5 text-white" /></span>
+              {props.agentRunning ? <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-card text-brand ring-2 ring-card"><LoaderCircle className="size-3 motion-safe:animate-spin" /></span> : null}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Agent</TooltipContent>
+          <TooltipContent>{props.agentRunning ? "Agent 正在执行 · 点击查看进度或停止" : "Agent"}</TooltipContent>
         </Tooltip> : null}
       </div>
     </div>

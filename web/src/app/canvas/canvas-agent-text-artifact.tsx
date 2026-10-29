@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, MessageSquareText, Pencil, Save } from "lucide-react";
+import { MessageSquareText, Pencil, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -38,17 +38,10 @@ export function CanvasAgentTextArtifact({ node, onFocusNode, onSave, onAddToConv
   }
 
   return <>
-    <article data-agent-text-artifact={node.id} className="min-w-0 rounded-xl border border-border/70 bg-muted/15 p-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <FileText className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{node.title || "文字"}</span>
-        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" disabled={disabled} onClick={() => { setTitle(node.title || "文字"); setContent(node.prompt || ""); setOpen(true); }}><Pencil className="size-3.5" />编辑</Button>
-      </div>
-      <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{node.prompt || "暂无正文"}</p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <CanvasAgentNodeChip node={node} onFocus={onFocusNode} />
-        <Button type="button" variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" disabled={disabled} onClick={() => onAddToConversation(node.id)}><MessageSquareText className="size-3.5" />加入对话</Button>
-      </div>
+    <article data-agent-text-artifact={node.id} className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <CanvasAgentNodeChip node={node} onFocus={onFocusNode} />
+      <Button type="button" variant="ghost" size="icon" className="size-7" title="编辑文本节点" aria-label="编辑文本节点" disabled={disabled} onClick={() => { setTitle(node.title || "文字"); setContent(node.prompt || ""); setOpen(true); }}><Pencil className="size-3.5" /></Button>
+      <Button type="button" variant="ghost" size="icon" className="size-7" title="加入对话" aria-label="加入对话" disabled={disabled} onClick={() => onAddToConversation(node.id)}><MessageSquareText className="size-3.5" /></Button>
     </article>
     <Dialog open={open} onOpenChange={(next) => { if (!saving) setOpen(next); }}>
       <DialogContent className="w-[min(94vw,720px)] gap-0 p-0">

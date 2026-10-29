@@ -164,6 +164,8 @@ docker compose up -d
 - Docker 网络：`${DOCKER_NETWORK:-newapi_default}`
 - 重启策略：`restart: unless-stopped`
 
+Agent SDK 运行环境和依赖已包含在应用镜像内，由后端按需启动本地 worker；无需额外容器、端口或宿主机 Node.js 配置。
+
 反向代理目标：
 
 ```text

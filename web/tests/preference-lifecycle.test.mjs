@@ -135,7 +135,7 @@ describe("preference lifecycle", () => {
   });
 
   test("workbench autosave verifies its session before and after the request", () => {
-    expect(imagePageSource.match(/currentSessionKeyRef\.current !== persistenceSessionKey/g)).toHaveLength(2);
+    expect(imagePageSource.match(/getCachedAuthSession\(\)\?\.key !== persistenceSessionKey/g)).toHaveLength(3);
   });
 
   test("workbench actions cannot overwrite profile-level creation preferences", () => {

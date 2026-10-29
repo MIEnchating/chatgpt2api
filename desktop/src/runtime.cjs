@@ -71,6 +71,8 @@ class LocalRuntime {
       const token = randomBytes(24).toString("hex");
       const origin = `http://127.0.0.1:${port}`;
       const env = backendEnvironment(process.env, this.rootDir, port, adminPassword, token);
+      env.AGENT_NODE_BINARY = process.execPath;
+      env.AGENT_RUNTIME_PATH = path.join(path.dirname(this.executable), "agent-runtime", "worker.mjs");
       const child = this.spawnImpl(this.executable, [], { cwd: this.rootDir, env, windowsHide: true, shell: false, stdio: ["pipe", "pipe", "pipe"] });
       env.ADMIN_PASSWORD = "";
       adminPassword = "";

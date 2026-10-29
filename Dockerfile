@@ -2,7 +2,13 @@
 
 ARG BUN_IMAGE=oven/bun:1.3.13-alpine
 ARG GO_IMAGE=golang:1.26.10-bookworm
-ARG RUNTIME_IMAGE=debian:bookworm-slim
+ARG RUNTIME_IMAGE=node:22-bookworm-slim
+
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS agent-deps
+WORKDIR /app/agent-runtime
+COPY agent-runtime/package.json agent-runtime/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY agent-runtime/worker.mjs ./
 
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-deps
 
@@ -17,6 +23,7 @@ RUN --mount=type=cache,id=bun-install-cache-v2,target=/root/.bun/install/cache,s
 FROM web-deps AS web-build
 
 COPY web ./
+COPY internal/service/canvas_agent_assets /app/internal/service/canvas_agent_assets
 ARG BUILD_NODE_OPTIONS=--max-old-space-size=1024
 ENV NODE_OPTIONS=${BUILD_NODE_OPTIONS}
 RUN bun run build
@@ -56,6 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=go-build /out/chatgpt2api ./chatgpt2api
+COPY --from=agent-deps /app/agent-runtime ./agent-runtime
 
 RUN mkdir -p /app/data && chmod +x /app/chatgpt2api
 

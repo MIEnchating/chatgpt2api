@@ -109,7 +109,7 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+      <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background">
           {!value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用画布图片或文本</div> : null}
           <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
           <div

@@ -3,6 +3,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Style browser-owned scrollbars without replacing native scrolling or hit targets. */
+[data-canvas-agent-panel] :where([data-agent-message-scroll], [data-slot="scroll-area-viewport"], textarea, pre) {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+}
+
+[data-canvas-agent-panel] :where([data-agent-message-scroll], [data-slot="scroll-area-viewport"], textarea, pre):is(:hover, :focus-visible) {
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent) transparent;
+}
+
+[data-canvas-agent-panel] [data-agent-message-scroll] {
+  scrollbar-gutter: stable;
+}
+
 /* Keep number inputs consistent across browsers; controls are provided by the app where needed. */
 input[type="number"] {
   -moz-appearance: textfield;

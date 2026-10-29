@@ -1,3 +1,4 @@
+import { setCanvasAgentProcessing } from "./canvas-agent-timing";
 import type { CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentState, CanvasAssistantReference, CanvasAssistantSession } from "./canvas-agent-types";
 
@@ -12,14 +13,15 @@ export function isCanvasAgentSession(value: unknown): value is CanvasAssistantSe
   if (!Array.isArray(value.messages) || !value.messages.every((message) => record(message)
     && strings(message, ["id", "text"]) && ["user", "assistant"].includes(String(message.role))
     && optionalStrings(message, ["activity", "questionAnswerFor", "replyToMessageID", "contextCheckpointBefore"])
+    && ["elapsedMs", "processingStartedAt"].every((key) => message[key] === undefined || typeof message[key] === "number" && Number.isFinite(message[key]) && message[key] >= 0)
     && (message.agentStateBefore === undefined || isCanvasAgentState(message.agentStateBefore))
     && (message.status === undefined || ["thinking", "running", "waiting", "success", "error"].includes(String(message.status)))
     && (message.trace === undefined || Array.isArray(message.trace) && message.trace.every((entry) => record(entry) && typeof entry.id === "string" && (
       entry.type === "text" && typeof entry.text === "string"
       || entry.type === "question" && typeof entry.question === "string" && optionalStrings(entry, ["answer"]) && (entry.cancelled === undefined || typeof entry.cancelled === "boolean")
       || entry.type === "operation" && strings(entry, ["label", "detail"]) && optionalStrings(entry, ["nodeId"])
-        && ["read", "image", "create", "edit", "generate", "command", "file", "tool"].includes(String(entry.kind))
-        && ["running", "success", "error", "waiting"].includes(String(entry.status))
+        && ["plan", "workflow", "read", "image", "create", "edit", "generate", "command", "file", "tool"].includes(String(entry.kind))
+        && ["running", "success", "error", "waiting", "changed"].includes(String(entry.status))
     )))
     && (message.references === undefined || (Array.isArray(message.references) && message.references.every((reference) => record(reference)
       && strings(reference, ["id", "type", "title"]) && ["image", "panorama", "text", "video", "audio", "config", "director", "group"].includes(String(reference.type))
@@ -50,7 +52,7 @@ function isCanvasAgentState(value: unknown): value is CanvasAgentState {
   if (value.plan !== undefined && (!record(value.plan) || typeof value.plan.explanation !== "string" || !Array.isArray(value.plan.steps)
     || !value.plan.steps.every((step) => record(step) && strings(step, ["id", "title"]) && ["pending", "in_progress", "completed", "deferred"].includes(String(step.status))))) return false;
   if (value.pendingQuestion !== undefined && (!record(value.pendingQuestion) || !strings(value.pendingQuestion, ["id", "question", "reason", "request"]) || !optionalStrings(value.pendingQuestion, ["purpose"])
-    || value.pendingQuestion.purpose !== undefined && value.pendingQuestion.purpose !== "media_generation"
+    || value.pendingQuestion.purpose !== undefined && !["media_generation", "workflow_review", "delete_node"].includes(String(value.pendingQuestion.purpose))
     || !["clarification", "confirmation"].includes(String(value.pendingQuestion.kind)) || !stringArray(value.pendingQuestion.options))) return false;
   return true;
 }
@@ -69,12 +71,12 @@ export function syncCanvasAgentSessions(
   return sessions.map((session): CanvasAssistantSession => ({
     ...session,
     resumeAssistantMessageId: restoreInterrupted
-      ? session.messages.findLast((message) => message.role === "assistant" && (message.status === "thinking" || message.status === "running"))?.id || session.resumeAssistantMessageId
+      ? session.messages.findLast((message) => message.role === "assistant" && (message.status === "thinking" || message.status === "running" || message.processingStartedAt !== undefined))?.id || session.resumeAssistantMessageId
       : session.resumeAssistantMessageId,
     messages: session.messages.map((message) => {
-      const interrupted = restoreInterrupted && (message.status === "thinking" || message.status === "running");
+      const interrupted = restoreInterrupted && (message.status === "thinking" || message.status === "running" || message.processingStartedAt !== undefined);
       return {
-        ...message,
+        ...setCanvasAgentProcessing(message, !interrupted && message.processingStartedAt !== undefined, Date.parse(session.updatedAt)),
         text: interrupted && !message.text
           ? session.engine === "codex"
             ? "重新连接本地 Codex 后将从原对话继续；已提交的任务会接回原结果。"

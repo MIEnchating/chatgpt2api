@@ -29,6 +29,14 @@ archives:
       - RELEASE_NOTES.md
       - .env.example
       - docker-compose.yml
+      - src: agent-runtime/worker.mjs
+        dst: agent-runtime/worker.mjs
+      - src: agent-runtime/package.json
+        dst: agent-runtime/package.json
+      - src: agent-runtime/package-lock.json
+        dst: agent-runtime/package-lock.json
+      - src: agent-runtime/README.md
+        dst: agent-runtime/README.md
 
 checksum:
   name_template: checksums.txt
@@ -40,6 +48,10 @@ changelog:
 dockers_v2:
   - id: dockerhub
     dockerfile: Dockerfile.release
+    extra_files:
+      - agent-runtime/worker.mjs
+      - agent-runtime/package.json
+      - agent-runtime/package-lock.json
     images:
       - "mienvirtuoso/chatgpt2api"
     tags:

@@ -1,5 +1,5 @@
 import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Type, Video } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { CanvasConnectionFlow } from "./canvas-connection-flow";
 import { CanvasNodeToolbar } from "./canvas-node-toolbar";
@@ -140,6 +140,7 @@ export function CanvasEngine({
   renderNodeQuickActions,
   onDrop,
 }: CanvasEngineProps) {
+  const connectionArrowID = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef(nodes);
   const viewportRef = useRef(viewport);
@@ -681,7 +682,12 @@ export function CanvasEngine({
       <div className="absolute origin-top-left" style={{
         transform: exporting && exportBounds ? canvasExportTransform(exportBounds) : `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
       }}>
-        <svg className="pointer-events-none absolute top-0 left-0 overflow-visible" style={{ width: exporting && exportBounds ? exportBounds.width : 10000, height: exporting && exportBounds ? exportBounds.height : 10000 }}>
+        <svg data-canvas-connections className="pointer-events-none absolute top-0 left-0 z-[6] overflow-visible" style={{ width: exporting && exportBounds ? exportBounds.width : 10000, height: exporting && exportBounds ? exportBounds.height : 10000 }}>
+          <defs>
+            <marker id={connectionArrowID} viewBox="0 0 10 10" refX="11" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+            </marker>
+          </defs>
           {showConnections && connections.map((connection) => {
             const from = nodeByID.get(connection.from_node_id);
             const to = nodeByID.get(connection.to_node_id);
@@ -709,6 +715,7 @@ export function CanvasEngine({
                   strokeWidth={active ? 2 : 1.5}
                   opacity={active ? 0.7 : 0.6}
                   fill="none"
+                  markerEnd={`url(#${connectionArrowID})`}
                   className="pointer-events-none"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -922,7 +929,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             value={titleDraft}
             maxLength={64}
             aria-label="节点名称"
-            className="h-7 min-w-0 flex-1 rounded-md border border-brand bg-card/95 px-2 text-xs font-medium text-foreground shadow-sm outline-none ring-2 ring-brand/20 backdrop-blur"
+            className="h-7 min-w-0 flex-1 rounded-md border border-border bg-card/95 px-2 text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur"
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={finishTitleEditing}
             onKeyDown={(event) => {
@@ -968,7 +975,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
           "relative size-full transition-[border-color,box-shadow,transform] hover:shadow-[var(--shadow-card)]",
           isGroup ? "rounded-xl border bg-card/35" : "rounded-2xl border-2",
           isBatchRoot ? "overflow-visible" : "overflow-hidden",
-          mediaNode && node.url ? "bg-transparent" : "bg-card",
+          !isGroup && (mediaNode && node.url ? "bg-transparent" : "bg-card"),
           groupDropTarget
             ? "border-brand ring-2 ring-brand/40"
             : active

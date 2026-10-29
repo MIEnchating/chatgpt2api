@@ -1,7 +1,6 @@
 "use client";
 import {
   ArrowUp,
-  AudioLines,
   BookOpenText,
   ImagePlus,
   Link2,
@@ -37,7 +36,8 @@ import {
   ImageParameterLabel,
 } from "@/components/generation/image-parameter-ui";
 import { Button } from "@/components/ui/button";
-import { FileUploadButton } from "@/components/ui/file-upload-button";
+import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
+import { ReferenceMediaCard } from "@/components/generation/reference-media-card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -149,37 +149,26 @@ const PROMPT_AREA_DEFAULT_HEIGHT = 58;
 const PROMPT_AREA_MAX_HEIGHT = 320;
 const PROMPT_AREA_KEYBOARD_STEP = 12;
 
-function VideoReferencePicker({ values, max, disabled, uploading, onChange, onRemove }: { values: string[]; max: number; disabled: boolean; uploading: boolean; onChange: (file: File) => void | Promise<void>; onRemove: (index: number) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  return (
-    <section className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <ImageParameterLabel help="用于参考动作、运镜，或编辑、延长已有片段，具体取决于模型。支持 MP4 / MOV，单个文件最大 50 MiB。">参考视频</ImageParameterLabel>
-        <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{values.length}/{max}，MP4 / MOV，最大 50 MiB</span>
-      </div>
-      <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; files.slice(0, max - values.length).forEach((file) => void onChange(file)); }} />
-      <FileUploadButton icon={Video} loading={uploading} disabled={disabled} onClick={() => inputRef.current?.click()}>
-        {uploading ? "正在上传参考视频" : "上传参考视频"}
-      </FileUploadButton>
-      {values.length ? <div className="space-y-1.5">{values.map((value, index) => <div key={`${value}-${index}`} className="flex h-8 items-center gap-2 rounded-lg bg-muted px-2 dark:bg-muted/70"><Video className="size-3.5 shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground dark:text-muted-foreground">参考视频 {index + 1}</span><button type="button" onClick={() => onRemove(index)} className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`移除参考视频 ${index + 1}`}><X className="size-3.5" /></button></div>)}</div> : null}
-      {disabled && max === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考视频</p> : null}
-    </section>
-  );
-}
-
-function AudioReferencePicker({ values, max, disabled, uploading, onChange, onRemove }: { values: string[]; max: number; disabled: boolean; uploading: boolean; onChange: (file: File) => void | Promise<void>; onRemove: (index: number) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  return (
-    <section className="space-y-1.5">
-      <div className="flex items-center justify-between"><ImageParameterLabel help="用于声音参考；台词写在提示词中，是否支持录音驱动口型取决于模型。支持 MP3 / WAV，单个文件最大 15 MiB。">参考音频</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{values.length}/{max}，MP3 / WAV</span></div>
-      <input ref={inputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; files.slice(0, max - values.length).forEach((file) => void onChange(file)); }} />
-      <FileUploadButton icon={AudioLines} loading={uploading} disabled={disabled} onClick={() => inputRef.current?.click()}>
-        {uploading ? "正在上传参考音频" : "上传参考音频"}
-      </FileUploadButton>
-      {values.length ? <div className="space-y-1.5">{values.map((value, index) => <div key={`${value}-${index}`} className="grid grid-cols-[minmax(0,1fr)_1.75rem] items-center gap-1.5"><audio src={value} controls className="h-8 w-full min-w-0" /><button type="button" onClick={() => onRemove(index)} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`移除参考音频 ${index + 1}`}><X className="size-3.5" /></button></div>)}</div> : null}
-      {disabled && max === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考音频</p> : null}
-    </section>
-  );
+function MediaReferencePicker({ kind, values, max, disabled, uploading, onChange, onRemove, children }: { kind: "video" | "audio"; values: string[]; max: number; disabled: boolean; uploading: boolean; onChange: (file: File) => void | Promise<void>; onRemove: (index: number) => void; children: ReactNode }) {
+  const label = kind === "video" ? "参考视频" : "参考音频";
+  return <section>
+    <div className="flex items-center justify-between gap-3">
+      <ImageParameterLabel help={kind === "video" ? "参考动作、运镜，或编辑、延长已有片段，具体取决于模型。" : "用于声音参考；台词写在提示词中，是否支持录音驱动口型取决于模型。"}>{label}</ImageParameterLabel>
+      <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">{values.length} / {max}</span>
+    </div>
+    <div className="grid grid-cols-3 gap-2">
+      {values.map((value, index) => <ReferenceMediaCard key={`${value}-${index}`} kind={kind} src={value} label={`${label} ${index + 1}`} onRemove={() => onRemove(index)} />)}
+      <ReferenceFileUpload
+        label={`上传${label}`}
+        accept={kind === "video" ? "video/mp4,video/quicktime,.mp4,.mov" : "audio/mpeg,audio/wav,.mp3,.wav"}
+        hint={kind === "video" ? "MP4 / MOV · 最大 50 MiB" : "MP3 / WAV · 最大 15 MiB"}
+        loading={uploading} disabled={disabled} remaining={max - values.length}
+        onFiles={async files => { await Promise.all(files.map(file => onChange(file))); }}
+      />
+    </div>
+    <p className="text-[11px] leading-4 text-muted-foreground">{kind === "video" ? "MP4 / MOV · 单个最大 50 MiB" : "MP3 / WAV · 单个最大 15 MiB"}</p>
+    {children}
+  </section>;
 }
 
 function PublicReferenceURLList({ label, values, max, disabled = false, showValues = true, onChange }: { label: string; values: string[]; max: number; disabled?: boolean; showValues?: boolean; onChange: (values: string[]) => void }) {
@@ -212,23 +201,11 @@ function VideoFramePicker({ slot, label, value, disabled, uploading, onFileChang
   onFileChange: (slot: "first" | "last", file: File) => void | Promise<void>;
   onURLChange: (value: string) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-2">
       <ImageParameterLabel help={slot === "first" ? "指定视频的起始画面，在提示词中描述后续动作；不保证人物全程不变。" : "指定视频的结束画面，在提示词中描述衔接动作；动作跨度需符合时长。"}>{label}</ImageParameterLabel>
-      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onFileChange(slot, file); }} />
-      {value ? (
-        <div className="grid grid-cols-[3rem_minmax(0,1fr)_1.75rem] items-center gap-2 rounded-lg border border-border p-1.5 dark:border-border">
-          <AuthenticatedImage src={value} alt={label} className="size-12 rounded-md object-cover" />
-          <TooltipHint content={value}><span className="truncate text-[11px] text-muted-foreground">{value}</span></TooltipHint>
-          <button type="button" disabled={disabled} onClick={() => onURLChange("")} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`移除${label}`}><X className="size-3.5" /></button>
-        </div>
-      ) : (
-        <FileUploadButton icon={ImagePlus} loading={uploading} disabled={disabled} onClick={() => inputRef.current?.click()} className="h-10">
-          {uploading ? `正在上传${label}` : `上传${label}`}
-        </FileUploadButton>
-      )}
-      <PublicReferenceURLList label={label} values={value ? [value] : []} max={1} disabled={disabled} showValues={false} onChange={(values) => onURLChange(values[0] || "")} />
+      {value ? <ReferenceMediaCard kind="image" src={value} label={label} removeDisabled={disabled} onRemove={() => onURLChange("")} /> : <ReferenceFileUpload label={`上传${label}`} hint="PNG / JPG / WebP" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" loading={uploading} disabled={disabled} onFiles={async files => { await onFileChange(slot, files[0]); }} />}
+      <PublicReferenceURLList label={label} values={value ? [value] : []} max={1} disabled={disabled || uploading} showValues={false} onChange={(values) => onURLChange(values[0] || "")} />
     </div>
   );
 }
@@ -410,6 +387,14 @@ export function ImageComposer({
   const activeVideoContractUI = videoContractUIState(videoModelContract(videoModel), videoRuleValues);
   const videoFieldVisible = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => !activeVideoContractUI.hidden.has(field);
   const videoFieldDisabled = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => activeVideoContractUI.disabled.has(field);
+  const videoMaterials = [
+    ...displayReferenceImages.map((image, index) => ({ id: image.id, kind: "image" as const, src: image.dataUrl, label: `参考图 ${index + 1}`, uploading: image.uploading, onRemove: () => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); } })),
+    ...(activeVideoSupportsFrames && videoFieldVisible("first_frame") && videoFirstFrameURL ? [{ id: "first-frame", kind: "image" as const, src: videoFirstFrameURL, label: "首帧", onRemove: () => onVideoFirstFrameURLChange("") }] : []),
+    ...(activeVideoSupportsFrames && videoFieldVisible("last_frame") && videoLastFrameURL ? [{ id: "last-frame", kind: "image" as const, src: videoLastFrameURL, label: "尾帧", onRemove: () => onVideoLastFrameURLChange("") }] : []),
+    ...(activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? videoReferenceImageURLs.map((src, index) => ({ id: `image-url-${index}`, kind: "image" as const, src, label: `参考图 ${referenceImages.length + index + 1}`, onRemove: () => onVideoReferenceImageURLsChange(videoReferenceImageURLs.filter((_, i) => i !== index)) })) : []),
+    ...(activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? videoReferenceVideoURLs.map((src, index) => ({ id: `video-${index}`, kind: "video" as const, src, label: `参考视频 ${index + 1}`, onRemove: () => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, i) => i !== index)) })) : []),
+    ...(activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? videoReferenceAudioURLs.map((src, index) => ({ id: `audio-${index}`, kind: "audio" as const, src, label: `参考音频 ${index + 1}`, onRemove: () => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, i) => i !== index)) })) : []),
+  ];
   const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || "暂无可用模型";
   const referenceEditingSupported = composerMode === "video"
     ? true
@@ -695,7 +680,7 @@ export function ImageComposer({
         }}
       />
 
-      {displayReferenceImages.length > 0 ? (
+      {composerMode !== "video" && displayReferenceImages.length > 0 ? (
         <ScrollArea className="mb-2 max-h-20 sm:mb-3" viewClass="flex w-max min-w-full gap-2 px-1 py-1" >
           {displayReferenceImages.map((image, index) => (
             <div key={image.id} className="relative size-14 shrink-0 sm:size-16">
@@ -741,6 +726,13 @@ export function ImageComposer({
           ))}
         </ScrollArea>
       ) : null}
+
+      {composerMode === "video" && (videoMaterials.length > 0 || videoReferenceUploading || audioReferenceUploading || videoFrameUploading) ? <div className="mb-3">
+        <div className="mb-1 flex items-center gap-2 px-1 text-[11px] text-muted-foreground [@media(max-height:600px)]:hidden"><span>参考素材</span><span className="tabular-nums">{videoMaterials.length}</span>{videoReferenceUploading || audioReferenceUploading || videoFrameUploading ? <span role="status" className="ml-auto flex items-center gap-1"><LoaderCircle className="size-3 animate-spin" />素材上传中</span> : null}</div>
+        <ScrollArea viewClass="flex w-max min-w-full gap-2 p-1">
+          {videoMaterials.map(material => <ReferenceMediaCard key={material.id} {...material} compact />)}
+        </ScrollArea>
+      </div> : null}
 
       <div
         ref={composerPanelRef}
@@ -959,41 +951,46 @@ export function ImageComposer({
                         align="start"
                         side="top"
                         sideOffset={8}
-                        className="z-[70] w-[min(calc(100vw-1rem),26rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
+                        className="z-[70] w-[min(calc(100vw-1rem),30rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
                       >
                         <div className="shrink-0 border-b border-border/70 px-4 pt-4 pb-3">
-                          <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">视频设置</p><Video className="size-4 text-brand" /></div>
+                          <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand-soft text-brand"><Video className="size-4" /></span><p className="text-sm font-semibold">视频设置</p></div><button type="button" onClick={() => setIsImageSettingsOpen(false)} aria-label="关闭视频设置" className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><X className="size-4" /></button></div>
                           <p className="mt-1 truncate text-xs text-muted-foreground">{imageModelLabel}</p>
                           <div role="group" aria-label="视频设置分区" className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-muted/70 p-1">
                             {(["parameters", "materials"] as const).map((section) => <button key={section} type="button" aria-pressed={videoSettingsSection === section} onClick={() => setVideoSettingsSection(section)} className={cn("h-9 rounded-lg text-xs font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", videoSettingsSection === section && "bg-card text-foreground shadow-sm")}>
-                              {section === "parameters" ? "生成参数" : "参考素材"}
+                              {section === "parameters" ? "生成参数" : `参考素材${videoMaterials.length ? ` · ${videoMaterials.length}` : ""}`}
                             </button>)}
                           </div>
                         </div>
-                        <ScrollArea className="min-h-0 max-h-[min(55dvh,30rem)] flex-1" viewportClassName="max-h-[min(55dvh,30rem)]">
+                        <ScrollArea key={videoSettingsSection} className="min-h-0 max-h-[min(58dvh,34rem)] flex-1" viewportClassName="max-h-[min(58dvh,34rem)]">
                           <div className="p-4">
                             <div hidden={videoSettingsSection !== "materials"}>
-                              <div className="flex flex-col gap-4 [&>section]:space-y-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3">
-                                <p className="text-xs leading-5 text-muted-foreground">按需添加素材，控制画面、动作与声音。支持的素材类型随模型变化。</p>
-                                {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section className="space-y-2">
+                              <div className="flex flex-col gap-3 [&>section]:space-y-3 [&>section]:rounded-2xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-background/40 [&>section]:p-3.5">
+                                <p className="text-xs leading-5 text-muted-foreground">拖入文件或粘贴链接，添加画面、动作与声音参考。</p>
+                                {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section>
                                   <div className="flex items-center justify-between"><ImageParameterLabel help="首帧控制开场，尾帧控制收尾，中间动作由提示词引导。能否搭配参考图以当前模型配置为准。">首尾帧</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
                                   <div className={cn("grid gap-2", videoFieldVisible("first_frame") && videoFieldVisible("last_frame") ? "grid-cols-2" : "grid-cols-1")}>
                                     {videoFieldVisible("first_frame") ? <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} disabled={videoFieldDisabled("first_frame")} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} /> : null}
                                     {videoFieldVisible("last_frame") ? <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} disabled={videoFieldDisabled("last_frame")} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} /> : null}
                                   </div>
                                 </section> : null}
-                                {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section className="space-y-1.5">
+                                {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section>
                                   <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片按顺序指定开场和收尾画面，中间动作由提示词引导。" : "提供人物、场景或物品的外观依据，不限定开场构图，也不保证跨镜头完全一致。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
-                                  <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
-                                  <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
-                                  {displayReferenceImages.length > 0 ? <ScrollArea className="" viewClass="flex w-max min-w-full gap-1.5" >{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex group-focus-within:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</ScrollArea> : null}
-                                  <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} onChange={onVideoReferenceImageURLsChange} />
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {displayReferenceImages.map((image, index) => <ReferenceMediaCard key={image.id} kind="image" src={image.dataUrl} label={`参考图 ${index + 1}`} uploading={image.uploading} onRemove={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} />)}
+                                    {videoReferenceImageURLs.map((src, index) => <ReferenceMediaCard key={`${src}-${index}`} kind="image" src={src} label={`参考图 ${referenceImages.length + index + 1}`} onRemove={() => onVideoReferenceImageURLsChange(videoReferenceImageURLs.filter((_, i) => i !== index))} />)}
+                                    <ReferenceFileUpload label="上传参考图" hint="PNG / JPG / WebP" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image")} remaining={activeVideoImageLimit - activeVideoReferenceImageCount} onFiles={addReferenceImages} />
+                                  </div>
+                                  <p className="text-[11px] leading-4 text-muted-foreground">PNG / JPG / WebP</p>
+                                  <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} showValues={false} onChange={onVideoReferenceImageURLsChange} />
                                   {activeVideoImageLimit === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考图片</p> : null}
                                 </section> : null}
-                                <div className="space-y-3 empty:hidden">
-                                  {activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? <><VideoReferencePicker values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video") || activeVideoReferenceLimits.video === 0 || videoReferenceVideoURLs.length >= activeVideoReferenceLimits.video} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video")} showValues={false} onChange={onVideoReferenceVideoURLsChange} /></> : null}
-                                  {activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? <><AudioReferencePicker values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio") || activeVideoReferenceLimits.audio === 0 || videoReferenceAudioURLs.length >= activeVideoReferenceLimits.audio} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio")} showValues={false} onChange={onVideoReferenceAudioURLsChange} /></> : null}
-                                </div>
+                                {activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? <MediaReferencePicker kind="video" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video")} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, i) => i !== index))}>
+                                  <PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video") || videoReferenceUploading} showValues={false} onChange={onVideoReferenceVideoURLsChange} />
+                                </MediaReferencePicker> : null}
+                                {activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? <MediaReferencePicker kind="audio" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio")} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, i) => i !== index))}>
+                                  <PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio") || audioReferenceUploading} showValues={false} onChange={onVideoReferenceAudioURLsChange} />
+                                </MediaReferencePicker> : null}
                               </div>
                             </div>
                             <div hidden={videoSettingsSection !== "parameters"}>

@@ -1,6 +1,6 @@
 import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_QUALITY_OPTIONS, parseImageSizeDimensions } from "@/lib/image-options";
 import { configuredImageModel } from "@/lib/image-model-definitions";
-import { imageOutputCountLimit, supportsImageAspectRatio, supportsImageQualityValue, supportsImageExactDimensions, supportsImageResolution } from "@/lib/image-model-capabilities";
+import { imageOutputCountLimit, imageReferenceImageLimit, supportsImageAspectRatio, supportsImageQualityValue, supportsImageExactDimensions, supportsImageResolution } from "@/lib/image-model-capabilities";
 import { videoAudioControl, videoDefaultResolution, videoDefaultSize, videoResolutionOptions, videoSizeOptions } from "@/lib/video-model-capabilities";
 import type { CanvasNode } from "@/services/api/canvas";
 import { canvasAgentVideoDurationHint } from "./canvas-agent-generation";
@@ -15,6 +15,7 @@ export function canvasAgentMediaCapabilities(imageModel: string, videoModel: str
       resolutions: image?.resolutions || ["512", "1k", "1080p", "2k", "4k"].filter((value) => supportsImageResolution(imageModel, value)),
       exactDimensions: supportsImageExactDimensions(imageModel),
       maxCount: imageOutputCountLimit(imageModel),
+      maxReferenceImages: imageReferenceImageLimit(imageModel),
     },
     video: {
       sizes: videoSizeOptions(videoModel),

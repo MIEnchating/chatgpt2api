@@ -14,13 +14,12 @@ function compile(code, dependencies) {
 
 const imageSource = source("../src/app/image/page.tsx");
 const imageStorageFunctions = imageSource.statements.filter((node) => ts.isFunctionDeclaration(node)
-  && ["getStoredComposerMode", "readImageWorkbenchStorage", "writeImageWorkbenchStorage"].includes(node.name?.text));
-assert.equal(imageStorageFunctions.length, 3);
+  && ["readImageWorkbenchStorage", "writeImageWorkbenchStorage"].includes(node.name?.text));
+assert.equal(imageStorageFunctions.length, 2);
 
 function imageStorage(browser) {
-  return compile(`${imageStorageFunctions.map((node) => node.getText(imageSource)).join("\n")}\nreturn { getStoredComposerMode, readImageWorkbenchStorage, writeImageWorkbenchStorage };`, {
+  return compile(`${imageStorageFunctions.map((node) => node.getText(imageSource)).join("\n")}\nreturn { readImageWorkbenchStorage, writeImageWorkbenchStorage };`, {
     window: browser,
-    COMPOSER_MODE_STORAGE_KEY: "mode",
   });
 }
 
@@ -36,16 +35,15 @@ function visit(node) {
 visit(canvasSource);
 assert.ok(canvasStorageEffect);
 
-test("blocked browser storage does not prevent workbench mode initialization or preference updates", () => {
+test("blocked browser storage does not prevent conversation selection", () => {
   const browser = { get localStorage() { throw new DOMException("Storage access denied", "SecurityError"); } };
   const storage = imageStorage(browser);
-  assert.equal(storage.getStoredComposerMode(), "image");
   assert.equal(storage.readImageWorkbenchStorage("conversation"), null);
   assert.doesNotThrow(() => storage.writeImageWorkbenchStorage("mode", "video"));
   assert.doesNotThrow(() => storage.writeImageWorkbenchStorage("conversation", null));
 });
 
-test("workbench preferences retain their values when browser storage is available", () => {
+test("conversation selection remains browser-local", () => {
   const values = new Map();
   const storage = imageStorage({ localStorage: {
     getItem: (key) => values.get(key) ?? null,
@@ -54,7 +52,6 @@ test("workbench preferences retain their values when browser storage is availabl
   } });
   storage.writeImageWorkbenchStorage("mode", "video");
   storage.writeImageWorkbenchStorage("conversation", "conversation-a");
-  assert.equal(storage.getStoredComposerMode(), "video");
   assert.equal(storage.readImageWorkbenchStorage("conversation"), "conversation-a");
   storage.writeImageWorkbenchStorage("conversation", null);
   assert.equal(storage.readImageWorkbenchStorage("conversation"), null);

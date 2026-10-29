@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { uploadImage, imageToDataURL } from "@/services/image-storage";
 import { uploadMediaBlob } from "@/services/file-storage";
+import { isPublicReferenceURL } from "@/lib/public-reference-url";
 import type { CanvasAssistantMessage, CanvasAssistantReference, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "./canvas-agent-types";
 
 export function canvasAgentStarterAttachment(asset: CanvasPendingAgentAsset): CanvasAssistantReference {
@@ -44,5 +45,14 @@ export async function uploadCanvasAgentAttachment(file: File, signal: AbortSigna
 
 export async function hydrateCanvasAgentAttachment(reference: CanvasAssistantReference, signal: AbortSignal): Promise<CanvasAssistantReference> {
   if (reference.source !== "attachment" || reference.type !== "image") return reference;
-  return { ...reference, dataUrl: await imageToDataURL({ url: reference.url, storageKey: reference.storageKey }, signal) };
+  return { ...reference, dataUrl: await canvasAgentImageURL(reference, signal) };
+}
+
+export async function canvasAgentImageURL(reference: CanvasAssistantReference, signal: AbortSignal) {
+  signal.throwIfAborted();
+  if (reference.url && isPublicReferenceURL(reference.url)) {
+    const parsed = new URL(reference.url);
+    if (!/^\/(api\/files|images)\//.test(parsed.pathname) && (typeof location === "undefined" || parsed.origin !== location.origin)) return reference.url;
+  }
+  return imageToDataURL({ url: reference.url, storageKey: reference.storageKey }, signal);
 }

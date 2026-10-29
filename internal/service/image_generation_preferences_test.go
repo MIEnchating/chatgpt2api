@@ -79,9 +79,11 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 			VideoWatermark:         true,
 		},
 	}
-	if _, err := replaceImageGenerationPreferences(preferences, "user-a", want); err != nil {
+	saved, err := replaceImageGenerationPreferences(preferences, "user-a", want)
+	if err != nil {
 		t.Fatalf("UpdateProfile() error = %v", err)
 	}
+	want = saved
 	got, err := NewImageGenerationPreferenceService(backend).Preferences("user-a")
 	if err != nil {
 		t.Fatalf("Preferences(reload) error = %v", err)

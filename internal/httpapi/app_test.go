@@ -508,8 +508,16 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 	setRequestAuthCookie(req, "Bearer "+firstToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"partial_images":3`) || !strings.Contains(res.Body.String(), `"image_model":"image-allowed"`) || !strings.Contains(res.Body.String(), `"image_size":"2048x1152"`) || !strings.Contains(res.Body.String(), `"image_count":3`) || !strings.Contains(res.Body.String(), `"video_model":"video-allowed"`) || !strings.Contains(res.Body.String(), `"video_generate_audio":true`) || !strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key","text-backup"]`) {
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"partial_images":3`) || !strings.Contains(res.Body.String(), `"image_model":"image-allowed"`) || !strings.Contains(res.Body.String(), `"image_size":"2048x1152"`) || !strings.Contains(res.Body.String(), `"image_count":3`) || !strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key","text-backup"]`) {
 		t.Fatalf("update creation workbench preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"workbench":{"composer_mode":"video","image_count":1,"video_model":"video-allowed","video_size":"1920x1080","video_seconds":"10","video_resolution":"1080p","video_generate_audio":true,"video_task_count":3,"video_parameters":{"seed":42,"sound":false},"reference_video_urls":["must-not-persist"]}}`))
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"video_task_count":3`) || !strings.Contains(res.Body.String(), `"video_model_settings":{"video-allowed":`) || !strings.Contains(res.Body.String(), `"seed":42`) || !strings.Contains(res.Body.String(), `"image_count":3`) || strings.Contains(res.Body.String(), "must-not-persist") {
+		t.Fatalf("video preferences lost fields or changed image settings: %d %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"workbench":{"image_model":"image-disabled","image_size":"1024x1024","image_size_mode":"ratio","image_aspect_ratio":"1:1","image_resolution":"auto","image_custom_ratio":"16:9","image_custom_width":"1024","image_custom_height":"1024","image_snap_to_multiple_16":true,"image_quality":"","image_count":1,"image_output_format":"png","image_output_compression":"","video_model":"video-allowed","video_size":"1280x720","video_seconds":"6","video_resolution":"720p","video_generate_audio":false,"video_watermark":false}}`))

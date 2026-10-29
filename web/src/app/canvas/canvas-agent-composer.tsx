@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 
 export function CanvasAgentComposer({ className, ...props }: ComponentProps<"div">) {
-  return <div data-agent-composer className={cn("flex min-h-0 flex-col rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20", className)} {...props} />;
+  return <div data-agent-composer className={cn("flex min-h-0 flex-col rounded-xl border border-border bg-card p-2.5", className)} {...props} />;
 }
 
 export function CanvasAgentComposerToolbar({ className, ...props }: ComponentProps<"div">) {

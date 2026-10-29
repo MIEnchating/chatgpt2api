@@ -3,7 +3,7 @@
 # Release-only runtime image. GoReleaser builds the chatgpt2api binary first,
 # then uses this Dockerfile to package the Docker Hub image.
 
-FROM debian:bookworm-slim
+FROM node:22-bookworm-slim
 
 ARG TARGETPLATFORM
 WORKDIR /app
@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY $TARGETPLATFORM/chatgpt2api /app/chatgpt2api
+COPY agent-runtime /app/agent-runtime
+RUN cd /app/agent-runtime && npm ci --omit=dev --ignore-scripts
 
 RUN mkdir -p /app/data && chmod +x /app/chatgpt2api
 

@@ -104,6 +104,8 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 
 func writeCanvasMutationError(w http.ResponseWriter, err error, internalMessage string) {
 	switch {
+	case errors.Is(err, service.ErrCanvasAgentBusy):
+		util.WriteError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrCanvasRevisionConflict):
 		util.WriteError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrInvalidCanvasDocument):

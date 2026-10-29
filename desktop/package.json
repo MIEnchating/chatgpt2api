@@ -33,6 +33,15 @@
       {
         "from": "bin/chatgpt2api.exe",
         "to": "backend/chatgpt2api.exe"
+      },
+      {
+        "from": "../agent-runtime",
+        "to": "backend/agent-runtime",
+        "filter": [
+          "worker.mjs",
+          "package.json",
+          "node_modules/**/*"
+        ]
       }
     ],
     "win": {

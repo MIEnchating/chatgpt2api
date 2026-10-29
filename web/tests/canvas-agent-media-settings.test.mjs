@@ -101,6 +101,11 @@ test("models with mandatory audio reject an explicit silent request", () => {
 });
 
 
+test("image reference limits match the configured image model", () => {
+  assert.equal(canvasAgentMediaCapabilities("test-image", "").image.maxReferenceImages, 4);
+  assert.equal(canvasAgentMediaCapabilities("test-gemini", "").image.maxReferenceImages, 14);
+});
+
 test("image counts above the model limit are rejected instead of silently clamped", () => {
   const model = "test-gemini";
   const max = canvasAgentMediaCapabilities(model, "").image.maxCount;

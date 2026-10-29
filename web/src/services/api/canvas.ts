@@ -148,6 +148,7 @@ type CanvasAgentMessage = {
 };
 
 export type CanvasDocument = {
+  agent_run?: { id: string; sessionId: string; assistantId: string; engine?: string; toolResult?: { ok: boolean; [key: string]: unknown }; status: "running" | "waiting" | "success" | "error" | "cancelled" | "interrupted"; error?: string; updatedAt: string };
   retained_storage_object_ids?: string[];
   retained_storage_object_urls?: string[];
   retained_storage_objects_until?: string;

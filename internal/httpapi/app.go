@@ -59,6 +59,7 @@ type App struct {
 	prompts                 *service.PromptFavoriteService
 	myAssets                *service.MyAssetService
 	history                 *service.ImageConversationHistoryService
+	canvasAgent             *service.CanvasAgentService
 	canvas                  *service.CanvasDocumentService
 	agentSkills             *service.AgentSkillService
 	autoDL                  *service.AutoDLService
@@ -353,6 +354,8 @@ func NewApp() (*App, error) {
 		cfg.UserDefaultConcurrentLimit,
 		cfg.UserDefaultRPMLimit,
 	)
+	app.canvasAgent = service.NewCanvasAgentService(ctx, canvas, app.agentSkills, app.runCanvasAgentModel, app.runCanvasAgentMedia)
+	app.canvasAgent.SetWorkflowService(workflows)
 	app.tasks.SetFileReferenceProtector(fileLifecycle)
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedVideoTask(ctx, identity, payload)
@@ -707,6 +710,9 @@ func cloneRelayImageData(items []map[string]any) []map[string]any {
 func (a *App) Close() {
 	if a.cancel != nil {
 		a.cancel()
+	}
+	if a.canvasAgent != nil {
+		a.canvasAgent.Close()
 	}
 	imageCleanupDrained := a.closeImageStorageCleaner()
 	conversationCleanupDrained := a.closeImageConversationAssetCleaner()

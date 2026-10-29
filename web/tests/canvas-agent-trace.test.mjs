@@ -51,6 +51,14 @@ test("trace marks deferred and never-started work as waiting, not successful", (
   assert.equal(canvasAgentActionTrace({ id: "resume", name: "generate_node", arguments: { nodeId: "n" } }, { ok: false, code: "execution_not_started" }).label, "等待继续生成");
 });
 
+test("canvas changes remain recoverable after trace persistence", () => {
+  const trace = canvasAgentActionTrace({ id: "read", name: "get_node", arguments: { nodeId: "removed" } }, { ok: false, code: "canvas_changed", recoverable: true, message: "节点已移除，正在重新核对素材" });
+  assert.equal(trace.status, "changed");
+  assert.doesNotMatch(trace.label, /失败|正在/);
+  const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "", status: "running", trace: [trace] }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
+  assert.equal(isCanvasAgentSession(JSON.parse(JSON.stringify(session))), true);
+});
+
 test("Codex traces ignore reasoning and unsupported items and preserve actual failures", () => {
   assert.equal(canvasCodexItemTrace({ id: "reason", type: "reasoning", text: "hidden reasoning" }, true), undefined);
   assert.equal(canvasCodexItemTrace({ id: "unknown", type: "unknown" }, true), undefined);
@@ -104,4 +112,23 @@ test("direct user generation requests grant permission without approving questio
 
 test("execution summaries show the latest action without an execution prefix", () => {
   assert.equal(canvasAgentTraceProgress([{ type: "operation", kind: "edit", status: "success", label: "更新了执行计划" }]), "更新了执行计划");
+});
+
+test("operation details omit status echoes and internal IDs without losing useful results", () => {
+  const entry = { label: "正在读取生成配置", kind: "read" };
+  for (const detail of ["操作已完成", "已完成。", "已保存到画布", "准备执行：正在读取生成配置", "已读取生成配置", "任务：canvas-agent-media-2fe403485177ae76201c206b", "任务ID: task-123", " \n\n"]) {
+    assert.deepEqual(canvasAgentTraceDetailLines(detail, undefined, entry), []);
+  }
+  assert.deepEqual(canvasAgentTraceDetailLines("操作已完成\n任务：task-123\n画幅：3:4\n数量：1 张\n", undefined, entry), ["画幅：3:4", "数量：1 张"]);
+  assert.deepEqual(canvasAgentTraceDetailLines("生成失败：余额不足，请更换密钥后重试。", undefined, entry), ["生成失败：余额不足，请更换密钥后重试。"]);
+  for (const kind of ["command", "file"]) assert.deepEqual(canvasAgentTraceDetailLines("操作已完成\n任务：task-123", undefined, { label: "运行工具", kind }), ["操作已完成", "任务：task-123"]);
+});
+
+test("display filtering preserves raw task IDs used to merge repeated generation events", () => {
+  const first = { id: "first", type: "operation", kind: "generate", label: "生成图片", status: "running", detail: "任务：task-123" };
+  assert.deepEqual(canvasAgentTraceDetailLines(first.detail, undefined, first), []);
+  const merged = upsertCanvasAgentOperationTrace([first], { ...first, id: "next", status: "success" });
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, "first");
+  assert.equal(merged[0].detail, "任务：task-123");
 });

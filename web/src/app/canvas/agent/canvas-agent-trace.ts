@@ -32,7 +32,7 @@ export function canvasAgentTraceProgress(entries: readonly CanvasAgentTraceEntry
   }
   if (latest.type === "operation" && latest.status === "error") return "执行失败 · " + latest.label;
   if (latest.type === "operation" && latest.status === "running" && running) return latest.label;
-  if (latest.type === "operation") return latest.label;
+  if (latest.type === "operation") return latest.status === "success" ? latest.label.replace(/^正在/, "已") : latest.label;
   return running ? "正在整理思路" : "查看思考过程";
 }
 
@@ -56,10 +56,10 @@ export function canvasAgentActionTrace(action: CanvasAgentAction, result: Canvas
   const media = isCanvasAgentMediaAction(action);
   const pending = result.code === "execution_unknown" || result.code === "execution_not_started";
   const waiting = result.submitted === false && result.status === "idle" || result.code === "execution_not_started" || result.code === "awaiting_user" || result.code === "media_generation_deferred" || result.code === "user_cancelled" || result.code === "delete_cancelled";
-  const status = waiting ? "waiting" : pending || media && ["loading", "running", "queued"].includes(String(result.status)) ? "running" : !result.ok || ["error", "failed"].includes(String(result.status)) ? "error" : "success";
+  const status = result.code === "canvas_changed" ? "changed" : waiting ? "waiting" : pending || media && ["loading", "running", "queued"].includes(String(result.status)) ? "running" : !result.ok || ["error", "failed"].includes(String(result.status)) ? "error" : "success";
   const title = (canvasAgentActionLabel(action) || "执行画布操作").replace(/^正在/, "");
   const createdNodeLabels: Record<string, string> = { generate_image: "图片节点已创建", edit_image: "图片编辑节点已创建", generate_video: "视频节点已创建", generate_audio: "音频节点已创建" };
-  const label = media && action.name === "generate_node" ? status === "success" ? "生成任务已完成" : status === "waiting" ? "等待继续生成" : status === "error" ? "继续生成失败" : "正在继续生成任务"
+  const label = status === "changed" ? title : media && action.name === "generate_node" ? status === "success" ? "生成任务已完成" : status === "waiting" ? "等待继续生成" : status === "error" ? "继续生成失败" : "正在继续生成任务"
     : media && result.nodeId && createdNodeLabels[action.name] ? createdNodeLabels[action.name]
       : media && result.taskId ? status === "success" ? "完成了生成任务" : "提交了生成任务"
         : media && result.nodeId ? "已创建生成节点"
@@ -82,14 +82,21 @@ export function canvasAgentActionTrace(action: CanvasAgentAction, result: Canvas
   if (!pending && typeof result.message === "string") details.push(result.message.slice(0, 2000));
   return {
     id: `tool:${action.id}`, type: "operation", label, status,
-    kind: media ? "generate" : action.name === "read_skill_file" ? "file" : /^(get_|query_)/.test(action.name) ? "read" : action.name.startsWith("create_") ? "create" : /^(update_|delete_|arrange_)/.test(action.name) ? "edit" : "tool",
+    kind: canvasAgentToolKind(action.name),
     detail: clipTraceDetail(uniqueTraceDetails(details).join("\n")),
     ...(typeof result.nodeId === "string" ? { nodeId: result.nodeId } : typeof action.arguments.nodeId === "string" ? { nodeId: action.arguments.nodeId } : {}),
   };
 }
 
-export function canvasAgentTraceDetailLines(detail: string, node?: { id: string; title?: string }) {
+export function canvasAgentTraceDetailLines(detail: string, node?: { id: string; title?: string }, operation?: { label: string; kind: string }) {
+  // Command output and file content are evidence, even when they resemble status text.
+  if (operation?.kind === "command" || operation?.kind === "file") return detail.trim() ? detail.split("\n") : [];
+  const normalize = (value: string) => value.trim().replace(/[。.!！]+$/, "").replace(/^(准备执行[:：]\s*)/, "").replace(/^(正在|已)/, "");
   return detail.split("\n").filter((line) => {
+    const text = line.trim();
+    if (!text || /^(操作)?(已完成|未完成|执行中|已成功|成功|已失败|失败)[。.!！]?$/.test(text) || /^已保存到画布[。.!！]?$/.test(text)) return false;
+    if (/^(任务|任务\s*ID|task\s*id)[:：]\s*[a-z0-9_.:/-]+\s*$/i.test(text)) return false;
+    if (operation && normalize(text) === normalize(operation.label)) return false;
     if (!node || !/^(节点|名称)[:：]/.test(line)) return true;
     const value = line.replace(/^[^:：]+[:：]\s*/, "").replace(/（[^（）]*）$/, "").trim();
     return value !== node.id && value !== node.title;
@@ -114,7 +121,7 @@ export function canvasCodexItemTrace(item: Record<string, unknown>, completed: b
   if (item.type === "commandExecution") return { ...base, kind: "command", label: completed ? "运行了命令" : "正在运行命令", detail: detail(item.command, item.cwd, typeof item.exitCode === "number" ? `退出码：${item.exitCode}` : undefined, item.aggregatedOutput) };
   if (item.type === "fileChange") {
     const changes = Array.isArray(item.changes) ? item.changes as Array<{ path?: string; diff?: string }> : [];
-    return { ...base, kind: "edit", label: completed ? "编辑了文件" : "正在编辑文件", detail: detail(...changes.map((change) => detail(change.path, change.diff))) };
+    return { ...base, kind: "file", label: completed ? "编辑了文件" : "正在编辑文件", detail: detail(...changes.map((change) => detail(change.path, change.diff))) };
   }
   if (item.type === "imageView") return { ...base, kind: "image", label: completed ? "查看了图片" : "正在查看图片", detail: detail(item.path) };
   if (item.type === "webSearch") return { ...base, kind: "read", label: completed ? "搜索了资料" : "正在搜索资料", detail: detail(item.query) };
@@ -123,4 +130,15 @@ export function canvasCodexItemTrace(item: Record<string, unknown>, completed: b
 
 function clipTraceDetail(text: string) {
   return text.length > 1200 ? `${text.slice(0, 1180)}\n…（详情已截断）` : text;
+}
+
+export function canvasAgentToolKind(name: string): Extract<CanvasAgentTraceEntry, { type: "operation" }>["kind"] {
+  if (name === "update_plan" || name === "set_agent_state") return "plan";
+  if (name.includes("workflow")) return "workflow";
+  if (name === "read_skill_file") return "file";
+  if (/^(get_|list_|query_)/.test(name)) return "read";
+  if (/^(generate_|run_)/.test(name) || name === "edit_image") return "generate";
+  if (name.startsWith("create_")) return "create";
+  if (/^(update_|delete_)/.test(name) || name === "arrange_nodes") return "edit";
+  return "tool";
 }

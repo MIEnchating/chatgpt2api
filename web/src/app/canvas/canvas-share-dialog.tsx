@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { copyClipboardText } from "@/lib/clipboard-text";
 import { createCanvasShare, fetchCanvasShare, revokeCanvasShare } from "@/services/api/canvas";
 
-export function CanvasShareDialog({ projectID, beforeShare, onClose }: {
+export function CanvasShareDialog({ projectID, beforeShare, onClose, onShareChange }: {
   projectID: string;
   beforeShare: () => Promise<boolean>;
   onClose: () => void;
+  onShareChange: (shared: boolean) => void;
 }) {
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
@@ -21,11 +22,11 @@ export function CanvasShareDialog({ projectID, beforeShare, onClose }: {
 
   useEffect(() => {
     let active = true;
-    fetchCanvasShare(projectID).then((share) => { if (active) setToken(share.token); })
+    fetchCanvasShare(projectID).then((share) => { if (active) { setToken(share.token); onShareChange(Boolean(share.token)); } })
       .catch((error: unknown) => { if (active) setError(error instanceof Error ? error.message : "无法读取分享状态"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [projectID]);
+  }, [projectID, onShareChange]);
 
   async function updateShare() {
     setBusy(true);
@@ -33,11 +34,13 @@ export function CanvasShareDialog({ projectID, beforeShare, onClose }: {
       if (token) {
         await revokeCanvasShare(projectID);
         setToken("");
+        onShareChange(false);
         toast.success("已取消分享，旧链接已失效");
       } else {
         if (!await beforeShare()) throw new Error("画布保存失败，请保存成功后再分享");
         const share = await createCanvasShare(projectID);
         setToken(share.token);
+        onShareChange(Boolean(share.token));
         toast.success("只读分享链接已生成");
       }
     } catch (error) {

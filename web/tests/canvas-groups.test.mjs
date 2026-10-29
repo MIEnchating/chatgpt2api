@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   CANVAS_GROUP_PADDING,
   canvasNodeBounds,
-  detachCanvasNodesFromRemovedGroups,
+  expandCanvasRemovalNodeIDs,
   expandCanvasGroupNodeIDs,
   findCanvasGroupDropTarget,
   findContainingCanvasGroupID,
@@ -47,8 +47,10 @@ test("dropping nodes clamps their bounds inside the group and records membership
   assert.deepEqual(next[1], { ...moving, x: 124, y: 124, group_id: "group" });
 });
 
-test("deleting a group keeps its children and removes only membership", () => {
+test("deleting a group includes its contents and batch descendants without deleting sources", () => {
   const group = node("group", { type: "group" });
-  const child = node("child", { group_id: "group" });
-  assert.deepEqual(detachCanvasNodesFromRemovedGroups([group, child], new Set(["group"])), [{ ...child, group_id: undefined }]);
+  const child = node("child", { group_id: "group", batch_child_ids: ["output"] });
+  const nodes = [node("output", { batch_root_id: "child" }), group, child, node("source")];
+  assert.deepEqual([...expandCanvasRemovalNodeIDs(new Set(["group"]), nodes)].sort(), ["child", "group", "output"]);
+  assert.deepEqual([...expandCanvasRemovalNodeIDs(new Set(["output"]), nodes)], ["output"]);
 });

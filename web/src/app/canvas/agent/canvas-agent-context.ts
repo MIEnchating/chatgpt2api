@@ -97,17 +97,22 @@ export function summarizeCanvasAgentNode(node: CanvasNode, fullContent = false):
   const isText = node.type === "text";
   const model = node.type === "video" ? node.generation_video_model : node.type === "audio" ? node.generation_audio_model : node.type === "config" && node.generation_mode === "text" ? node.generation_text_model : node.generation_model;
   const size = node.type === "video" ? node.generation_video_size : node.generation_size;
+  if (!fullContent) return {
+    id: node.id, type: node.type, title: (node.title || node.type).slice(0, 200),
+    status: node.generation_status || "idle", hasMedia: Boolean(node.url),
+    taskId: node.task_id || node.audio_task_id || undefined,
+    groupId: node.group_id || undefined, detailsOmitted: true,
+  };
   return {
     id: node.id,
     type: node.type,
     title: node.title || node.type,
-    text: isText && node.prompt ? (fullContent ? node.prompt : node.prompt.slice(0, 4000)) : undefined,
+    text: isText ? node.prompt : undefined,
     mediaUrl: !isText && node.url && !node.url.startsWith("data:") ? node.url : undefined,
     hasMedia: !isText ? Boolean(node.url) : undefined,
     status: node.generation_status || "idle",
     progress: node.generation_progress,
-    prompt: fullContent ? node.prompt : node.prompt?.slice(0, 4000),
-    detailsOmitted: !fullContent && (node.prompt?.length || 0) > 4000 || undefined,
+    prompt: !isText ? node.prompt : undefined,
     model,
     size,
     seconds: node.generation_video_seconds,
@@ -131,7 +136,15 @@ export function summarizeCanvasAgentTask(node: CanvasNode) {
 }
 
 export function serializeCanvasAgentContext(context: CanvasAgentContext) {
-  return JSON.stringify(context);
+  const { phase, brief, targetDurationSeconds, approvedPlan, approvedNodeIds, referenceNodeIds, plan, mediaGenerationDeferred } = context.agentState;
+  const { textModel, imageModel, videoModel, audioModel, autoGenerateMedia } = context.generation;
+  const nodes = context.nodes.slice(0, 40).map(({ id, type, title, status, hasMedia, taskId, groupId }) => ({ id, type, title, status, hasMedia, taskId, groupId, detailsOmitted: true }));
+  return JSON.stringify({
+    project: context.project, selectedNodeIds: context.selectedNodeIds, nodes,
+    omittedNodeCount: context.project.nodeCount - nodes.length,
+    agentState: { phase, brief, targetDurationSeconds, approvedPlan, approvedNodeIds, referenceNodeIds, plan, mediaGenerationDeferred },
+    generation: { textModel, imageModel, videoModel, audioModel, autoGenerateMedia },
+  });
 }
 
 export function limitCanvasAgentContext(context: CanvasAgentContext, tokenBudget: number): CanvasAgentContext {

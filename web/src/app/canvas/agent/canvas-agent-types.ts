@@ -30,7 +30,8 @@ export type CanvasAgentQuestion = {
   reason: string;
   options: string[];
   kind: "clarification" | "confirmation";
-  purpose?: "media_generation";
+  purpose?: "media_generation" | "workflow_review" | "delete_node";
+  nodeId?: string;
   request: string;
 };
 
@@ -74,9 +75,9 @@ export type CanvasAgentTraceEntry =
   | {
     id: string;
     type: "operation";
-    kind: "read" | "image" | "create" | "edit" | "generate" | "command" | "file" | "tool";
+    kind: "plan" | "workflow" | "read" | "image" | "create" | "edit" | "generate" | "command" | "file" | "tool";
     label: string;
-    status: "running" | "success" | "error" | "waiting";
+    status: "running" | "success" | "error" | "waiting" | "changed";
     detail: string;
     nodeId?: string;
   };
@@ -91,6 +92,9 @@ export type CanvasAssistantMessage = {
   contextCheckpointBefore?: string;
   status?: CanvasAssistantMessageStatus;
   activity?: string;
+  interactionMode?: "conversation";
+  elapsedMs?: number;
+  processingStartedAt?: number;
   trace?: CanvasAgentTraceEntry[];
   references?: CanvasAssistantReference[];
 };

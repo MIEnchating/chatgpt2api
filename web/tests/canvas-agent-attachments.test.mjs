@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
-import { canvasAgentAttachment, canvasAgentSessionAttachments, hydrateCanvasAgentAttachment, uploadCanvasAgentAttachment } from "../src/app/canvas/agent/canvas-agent-attachments.ts";
+import { canvasAgentAttachment, canvasAgentSessionAttachments, hydrateCanvasAgentAttachment, uploadCanvasAgentAttachment, canvasAgentImageURL } from "../src/app/canvas/agent/canvas-agent-attachments.ts";
 import { canvasAgentAttachmentURLs } from "../src/app/canvas/agent/canvas-agent-reference.ts";
 import { normalizeCanvasAgentAction } from "../src/app/canvas/agent/canvas-agent-tools.ts";
 import { canvasGenerationReferenceImageURLs } from "../src/app/canvas/canvas-generation-context.ts";
@@ -13,6 +13,11 @@ test("asset selection produces a message attachment with durable storage, not a 
   assert.equal(attachment.dataUrl, undefined);
   assert.equal(attachment.x, undefined);
   assert.notEqual(canvasAgentAttachment({ kind: "text", title: "brief", content: "hello" }).id, attachment.id);
+});
+
+test("public reference images keep their URLs without downloading and re-encoding", async () => {
+  const url = "https://cdn.example.test/product.png";
+  assert.equal(await canvasAgentImageURL({ id: "photo", type: "image", title: "Product", url }, new AbortController().signal), url);
 });
 
 test("unsupported and cancelled uploads do not reach storage", async () => {

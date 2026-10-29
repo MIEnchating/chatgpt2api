@@ -413,6 +413,8 @@ function AccountResourcesCard({
 }
 
 const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
+  image_model_settings: {},
+  video_model_settings: {},
   api_mode: "images",
   stream: false,
   partial_images: 1,
@@ -500,6 +502,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const savedWorkbenchAudioRef = useRef(false);
   const saveVersionRef = useRef(0);
   const currentSessionKeyRef = useRef(sessionKey);
   currentSessionKeyRef.current = sessionKey;
@@ -550,6 +553,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
           });
         }
         if (preferencesResult.status === "fulfilled") {
+          savedWorkbenchAudioRef.current = preferencesResult.value.preferences.workbench.video_generate_audio;
           setPreferences(reconcileDefaults({ ...DEFAULT_IMAGE_GENERATION_PREFERENCES, ...preferencesResult.value.preferences }));
         } else if (config) {
           setPreferences((current) => reconcileDefaults(current));
@@ -678,8 +682,9 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
         default_audio_format: selectedAudioFormat,
         default_audio_speed: selectedAudioSpeed,
       };
-      const { preferences: saved } = await updateImageGenerationPreferences(normalizedPreferences);
+      const { preferences: saved } = await updateImageGenerationPreferences(normalizedPreferences, preferences.workbench.video_generate_audio === savedWorkbenchAudioRef.current ? undefined : preferences.workbench.video_generate_audio);
       if (saveVersionRef.current !== saveVersion || currentSessionKeyRef.current !== saveSessionKey) return;
+      savedWorkbenchAudioRef.current = saved.workbench.video_generate_audio;
       setPreferences((current) => current === preferences ? saved : current);
       setMessage("设置已保存");
       dispatchImageGenerationPreferencesChanged(saveSessionKey, saved);

@@ -182,6 +182,7 @@ type CanvasAgentPanel struct {
 }
 
 type CanvasDocument struct {
+	AgentRun                    *CanvasAgentRun      `json:"agent_run,omitempty"`
 	RetainedStorageObjectIDs    []string             `json:"retained_storage_object_ids,omitempty"`
 	RetainedStorageObjectURLs   []string             `json:"retained_storage_object_urls,omitempty"`
 	RetainedStorageObjectsUntil string               `json:"retained_storage_objects_until,omitempty"`
@@ -536,6 +537,9 @@ func (s *CanvasDocumentService) SaveAtRevision(ownerID string, input CanvasDocum
 }
 
 func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expectedRevision *int64) (CanvasDocument, error) {
+	return s.saveWithAgent(ownerID, input, expectedRevision, false)
+}
+func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocument, expectedRevision *int64, agentWrite bool) (CanvasDocument, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
@@ -583,6 +587,13 @@ func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expec
 			return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
 		}
 		current := workspace.Projects[projectIndex]
+		if !agentWrite && current.AgentRun != nil && current.AgentRun.Status == "running" {
+			normalized.AgentSessions = current.AgentSessions
+			normalized.ActiveAgentSessionID = current.ActiveAgentSessionID
+		}
+		if !agentWrite {
+			normalized.AgentRun = current.AgentRun
+		}
 		if expectedRevision != nil && *expectedRevision != current.Revision {
 			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
 		}
@@ -613,7 +624,9 @@ func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expec
 			return CanvasDocument{}, err
 		}
 		workspace.Projects[projectIndex] = candidate
-		workspace.ActiveProjectID = candidate.ID
+		if !agentWrite {
+			workspace.ActiveProjectID = candidate.ID
+		}
 		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 				continue
@@ -652,6 +665,7 @@ func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (Ca
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := util.NowISO()
+	normalized.AgentRun = nil
 	normalized.ID = newCanvasProjectID()
 	normalized.Revision = 0
 	normalized.CreatedAt = now
@@ -712,6 +726,9 @@ func (s *CanvasDocumentService) clear(ownerID, projectID string, expectedRevisio
 			return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
 		}
 		current := workspace.Projects[projectIndex]
+		if current.AgentRun != nil && current.AgentRun.Status == "running" {
+			return CanvasDocument{}, ErrCanvasAgentBusy
+		}
 		if expectedRevision != nil && *expectedRevision != current.Revision {
 			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
 		}
@@ -801,6 +818,9 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 			if index < 0 {
 				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
 			}
+			if workspace.Projects[index].AgentRun != nil && workspace.Projects[index].AgentRun.Status == "running" {
+				return CanvasWorkspaceResult{}, ErrCanvasAgentBusy
+			}
 			if expectedRevision != nil && workspace.Projects[index].Revision != *expectedRevision {
 				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: workspace.Projects[index].Revision}
 			}
@@ -815,6 +835,9 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 			index := canvasProjectIndex(workspace, projectID)
 			if index < 0 {
 				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
+			}
+			if workspace.Projects[index].AgentRun != nil && workspace.Projects[index].AgentRun.Status == "running" {
+				return CanvasWorkspaceResult{}, ErrCanvasAgentBusy
 			}
 			if expectedRevision != nil && workspace.Projects[index].Revision != *expectedRevision {
 				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: workspace.Projects[index].Revision}

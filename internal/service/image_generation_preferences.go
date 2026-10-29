@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -30,50 +31,56 @@ func (e *ImageGenerationPreferenceStorageError) Unwrap() error {
 }
 
 type ImageGenerationPreferences struct {
-	NodeRegenerateBehavior  string                       `json:"node_regenerate_behavior"`
-	APIMode                 string                       `json:"api_mode"`
-	Stream                  bool                         `json:"stream"`
-	PartialImages           int                          `json:"partial_images"`
-	ResponseFormatB64JSON   bool                         `json:"response_format_b64_json"`
-	CodexCLICompatibility   bool                         `json:"codex_cli_compatibility"`
-	SystemPrompt            string                       `json:"system_prompt"`
-	VideoSystemPrompt       string                       `json:"video_system_prompt"`
-	AudioInstructions       string                       `json:"audio_instructions"`
-	DefaultTextModel        string                       `json:"default_text_model"`
-	DefaultImageModel       string                       `json:"default_image_model"`
-	DefaultVideoModel       string                       `json:"default_video_model"`
-	DefaultAudioModel       string                       `json:"default_audio_model"`
-	CanvasDefaultImageCount int                          `json:"canvas_default_image_count"`
-	DefaultAudioVoice       string                       `json:"default_audio_voice"`
-	DefaultAudioFormat      string                       `json:"default_audio_format"`
-	DefaultAudioSpeed       float64                      `json:"default_audio_speed"`
-	DefaultTextRelayTokens  []string                     `json:"default_text_relay_token_names"`
-	DefaultImageRelayTokens []string                     `json:"default_image_relay_token_names"`
-	DefaultVideoRelayTokens []string                     `json:"default_video_relay_token_names"`
-	DefaultAudioRelayTokens []string                     `json:"default_audio_relay_token_names"`
-	Workbench               CreationWorkbenchPreferences `json:"workbench"`
+	WorkbenchGenerateAudio  *bool                             `json:"-"`
+	NodeRegenerateBehavior  string                            `json:"node_regenerate_behavior"`
+	APIMode                 string                            `json:"api_mode"`
+	Stream                  bool                              `json:"stream"`
+	PartialImages           int                               `json:"partial_images"`
+	ResponseFormatB64JSON   bool                              `json:"response_format_b64_json"`
+	CodexCLICompatibility   bool                              `json:"codex_cli_compatibility"`
+	SystemPrompt            string                            `json:"system_prompt"`
+	VideoSystemPrompt       string                            `json:"video_system_prompt"`
+	AudioInstructions       string                            `json:"audio_instructions"`
+	DefaultTextModel        string                            `json:"default_text_model"`
+	DefaultImageModel       string                            `json:"default_image_model"`
+	DefaultVideoModel       string                            `json:"default_video_model"`
+	DefaultAudioModel       string                            `json:"default_audio_model"`
+	CanvasDefaultImageCount int                               `json:"canvas_default_image_count"`
+	DefaultAudioVoice       string                            `json:"default_audio_voice"`
+	DefaultAudioFormat      string                            `json:"default_audio_format"`
+	DefaultAudioSpeed       float64                           `json:"default_audio_speed"`
+	DefaultTextRelayTokens  []string                          `json:"default_text_relay_token_names"`
+	DefaultImageRelayTokens []string                          `json:"default_image_relay_token_names"`
+	DefaultVideoRelayTokens []string                          `json:"default_video_relay_token_names"`
+	DefaultAudioRelayTokens []string                          `json:"default_audio_relay_token_names"`
+	Workbench               CreationWorkbenchPreferences      `json:"workbench"`
+	ImageModelSettings      map[string]ImageWorkbenchSettings `json:"image_model_settings"`
+	VideoModelSettings      map[string]VideoWorkbenchSettings `json:"video_model_settings"`
 }
 
 type CreationWorkbenchPreferences struct {
-	ImageModel             string `json:"image_model"`
-	ImageSize              string `json:"image_size"`
-	ImageSizeMode          string `json:"image_size_mode"`
-	ImageAspectRatio       string `json:"image_aspect_ratio"`
-	ImageResolution        string `json:"image_resolution"`
-	ImageCustomRatio       string `json:"image_custom_ratio"`
-	ImageCustomWidth       string `json:"image_custom_width"`
-	ImageCustomHeight      string `json:"image_custom_height"`
-	ImageSnapToMultiple16  bool   `json:"image_snap_to_multiple_16"`
-	ImageQuality           string `json:"image_quality"`
-	ImageCount             int    `json:"image_count"`
-	ImageOutputFormat      string `json:"image_output_format"`
-	ImageOutputCompression string `json:"image_output_compression"`
-	VideoModel             string `json:"video_model"`
-	VideoSize              string `json:"video_size"`
-	VideoSeconds           string `json:"video_seconds"`
-	VideoResolution        string `json:"video_resolution"`
-	VideoGenerateAudio     bool   `json:"video_generate_audio"`
-	VideoWatermark         bool   `json:"video_watermark"`
+	ComposerMode           string         `json:"composer_mode"`
+	VideoTaskCount         int            `json:"video_task_count"`
+	VideoParameters        map[string]any `json:"video_parameters"`
+	ImageModel             string         `json:"image_model"`
+	ImageSize              string         `json:"image_size"`
+	ImageSizeMode          string         `json:"image_size_mode"`
+	ImageAspectRatio       string         `json:"image_aspect_ratio"`
+	ImageResolution        string         `json:"image_resolution"`
+	ImageCustomRatio       string         `json:"image_custom_ratio"`
+	ImageCustomWidth       string         `json:"image_custom_width"`
+	ImageCustomHeight      string         `json:"image_custom_height"`
+	ImageSnapToMultiple16  bool           `json:"image_snap_to_multiple_16"`
+	ImageQuality           string         `json:"image_quality"`
+	ImageCount             int            `json:"image_count"`
+	ImageOutputFormat      string         `json:"image_output_format"`
+	ImageOutputCompression string         `json:"image_output_compression"`
+	VideoModel             string         `json:"video_model"`
+	VideoSize              string         `json:"video_size"`
+	VideoSeconds           string         `json:"video_seconds"`
+	VideoResolution        string         `json:"video_resolution"`
+	VideoGenerateAudio     bool           `json:"video_generate_audio"`
+	VideoWatermark         bool           `json:"video_watermark"`
 }
 
 type ImageGenerationPreferenceService struct {
@@ -161,6 +168,7 @@ func defaultImageGenerationPreferences() ImageGenerationPreferences {
 
 func defaultCreationWorkbenchPreferences() CreationWorkbenchPreferences {
 	return CreationWorkbenchPreferences{
+		ComposerMode: "image", VideoTaskCount: 1, VideoParameters: map[string]any{},
 		ImageSize:             "1024x1024",
 		ImageSizeMode:         "ratio",
 		ImageAspectRatio:      "1:1",
@@ -224,9 +232,23 @@ func (s *ImageGenerationPreferenceService) UpdateProfile(ownerID string, input I
 			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
 		}
 		candidate := normalized
+		candidate.ImageModelSettings = current.ImageModelSettings
+		candidate.VideoModelSettings = current.VideoModelSettings
 		if workbench == nil {
 			candidate.Workbench = current.Workbench
+		} else {
+			applyWorkbenchSettings(&candidate, current.Workbench, normalized.Workbench)
 		}
+		if input.WorkbenchGenerateAudio != nil {
+			candidate.Workbench.VideoGenerateAudio = *input.WorkbenchGenerateAudio
+			if model := candidate.Workbench.VideoModel; model != "" {
+				if settings, ok := candidate.VideoModelSettings[model]; ok {
+					settings.VideoGenerateAudio = *input.WorkbenchGenerateAudio
+					candidate.VideoModelSettings[model] = settings
+				}
+			}
+		}
+		candidate.WorkbenchGenerateAudio = nil
 		preserveUnspecifiedRelayTokens(&candidate, current, normalizedTokens)
 		if saveErr := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), candidate); saveErr != nil {
 			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
@@ -331,7 +353,7 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 			preferences.CodexCLICompatibility = *patch.CodexCLICompatibility
 		}
 		if workbench != nil {
-			preferences.Workbench = *workbench
+			applyWorkbenchSettings(&preferences, preferences.Workbench, *workbench)
 		}
 		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
@@ -414,35 +436,35 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 	preferences.DefaultImageRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_image_relay_token_names"]))
 	preferences.DefaultVideoRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_video_relay_token_names"]))
 	preferences.DefaultAudioRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_audio_relay_token_names"]))
-	if workbenchValue := util.StringMap(value["workbench"]); len(workbenchValue) > 0 {
+	if rawWorkbench, ok := value["workbench"]; ok {
 		workbench := defaultCreationWorkbenchPreferences()
-		workbench.ImageModel = util.Clean(workbenchValue["image_model"])
-		workbench.ImageSize = util.Clean(workbenchValue["image_size"])
-		workbench.ImageSizeMode = util.Clean(workbenchValue["image_size_mode"])
-		workbench.ImageAspectRatio = util.Clean(workbenchValue["image_aspect_ratio"])
-		workbench.ImageResolution = util.Clean(workbenchValue["image_resolution"])
-		workbench.ImageCustomRatio = util.Clean(workbenchValue["image_custom_ratio"])
-		workbench.ImageCustomWidth = util.Clean(workbenchValue["image_custom_width"])
-		workbench.ImageCustomHeight = util.Clean(workbenchValue["image_custom_height"])
-		workbench.ImageQuality = util.Clean(workbenchValue["image_quality"])
-		workbench.ImageOutputFormat = util.Clean(workbenchValue["image_output_format"])
-		workbench.ImageOutputCompression = util.Clean(workbenchValue["image_output_compression"])
-		workbench.VideoModel = util.Clean(workbenchValue["video_model"])
-		workbench.VideoSize = util.Clean(workbenchValue["video_size"])
-		workbench.VideoSeconds = util.Clean(workbenchValue["video_seconds"])
-		workbench.VideoResolution = util.Clean(workbenchValue["video_resolution"])
-		if _, present := workbenchValue["image_snap_to_multiple_16"]; present {
-			workbench.ImageSnapToMultiple16 = util.ToBool(workbenchValue["image_snap_to_multiple_16"])
-		}
-		workbench.VideoGenerateAudio = util.ToBool(workbenchValue["video_generate_audio"])
-		workbench.VideoWatermark = util.ToBool(workbenchValue["video_watermark"])
-		if count, ok := util.StrictInt(workbenchValue["image_count"]); ok {
-			workbench.ImageCount = count
-		}
-		if normalized, normalizeErr := normalizeCreationWorkbenchPreferences(workbench); normalizeErr == nil {
-			preferences.Workbench = normalized
+		if data, err := json.Marshal(rawWorkbench); err == nil {
+			if err := json.Unmarshal(data, &workbench); err == nil {
+				if normalized, err := normalizeCreationWorkbenchPreferences(workbench); err == nil {
+					preferences.Workbench = normalized
+				}
+			}
 		}
 	}
+	preferences.ImageModelSettings = map[string]ImageWorkbenchSettings{}
+	preferences.VideoModelSettings = map[string]VideoWorkbenchSettings{}
+	for _, entry := range []struct {
+		field  string
+		target any
+	}{
+		{"image_model_settings", &preferences.ImageModelSettings}, {"video_model_settings", &preferences.VideoModelSettings},
+	} {
+		if raw := value[entry.field]; raw != nil {
+			data, err := json.Marshal(raw)
+			if err != nil {
+				return preferences, err
+			}
+			if err := json.Unmarshal(data, entry.target); err != nil {
+				return preferences, err
+			}
+		}
+	}
+
 	if behavior := util.Clean(value["node_regenerate_behavior"]); behavior == "overwrite" || behavior == "new-node" {
 		preferences.NodeRegenerateBehavior = behavior
 	}
@@ -516,6 +538,47 @@ func normalizeRelayTokenNames(values []string) []string {
 
 func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (CreationWorkbenchPreferences, error) {
 	defaults := defaultCreationWorkbenchPreferences()
+	if value.ComposerMode == "" {
+		value.ComposerMode = "image"
+	}
+	if value.ComposerMode != "image" && value.ComposerMode != "video" {
+		return CreationWorkbenchPreferences{}, fmt.Errorf("workbench.composer_mode must be image or video")
+	}
+	if value.VideoTaskCount == 0 {
+		value.VideoTaskCount = 1
+	}
+	if value.VideoTaskCount < 1 || value.VideoTaskCount > 6 {
+		return CreationWorkbenchPreferences{}, fmt.Errorf("workbench.video_task_count must be between 1 and 6")
+	}
+	if value.VideoParameters == nil {
+		value.VideoParameters = map[string]any{}
+	}
+	if len(value.VideoParameters) > 64 {
+		return CreationWorkbenchPreferences{}, fmt.Errorf("too many video parameters")
+	}
+	for key, parameter := range value.VideoParameters {
+		if len(key) == 0 || len(key) > 128 {
+			return CreationWorkbenchPreferences{}, fmt.Errorf("invalid video parameter name")
+		}
+		switch v := parameter.(type) {
+		case string:
+			if len(v) > 8192 {
+				return CreationWorkbenchPreferences{}, fmt.Errorf("video parameter %s is too long", key)
+			}
+		case bool:
+		case float64:
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return CreationWorkbenchPreferences{}, fmt.Errorf("video parameter %s must be finite", key)
+			}
+		case int, int64, json.Number:
+		default:
+			return CreationWorkbenchPreferences{}, fmt.Errorf("video parameter %s must be a string, number or boolean", key)
+		}
+	}
+	if encoded, err := json.Marshal(value.VideoParameters); err != nil || len(encoded) > 32*1024 {
+		return CreationWorkbenchPreferences{}, fmt.Errorf("video parameters must fit within 32 KiB")
+	}
+
 	value.ImageModel = normalizeOptionalShortPreference(value.ImageModel)
 	value.ImageSize = normalizeShortPreference(value.ImageSize, defaults.ImageSize)
 	value.ImageSizeMode = strings.ToLower(normalizeShortPreference(value.ImageSizeMode, defaults.ImageSizeMode))

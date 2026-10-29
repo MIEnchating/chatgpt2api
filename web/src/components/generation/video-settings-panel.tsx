@@ -104,10 +104,10 @@ export function VideoSettingsPanel({
   const disabled = (field: "size" | "resolution" | "duration" | "generate_audio" | "watermark") => contractUI.disabled.has(field);
 
   return (
-    <div className="flex flex-col gap-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3.5">
-      {!hidden("resolution") && resolutionOptions.length > 0 ? <section className="order-10 space-y-2.5">
+    <div className="@container flex flex-col gap-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3.5">
+      {!hidden("resolution") && resolutionOptions.length > 0 ? <section className={cn("order-10", resolutionOptions.length === 1 && resolutionValid ? "flex items-center justify-between gap-3" : "space-y-2.5")}>
         <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
-        <div className={cn("grid gap-1 rounded-xl bg-muted/70 p-1", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cn("grid gap-1 rounded-xl bg-muted/70 p-1", resolutionOptions.length === 1 ? "w-24 grid-cols-1" : resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {resolutionOptions.map((resolution) => <button key={resolution} type="button" disabled={disabled("resolution")} aria-pressed={displayResolution === resolution} className={imageParameterChoiceClass(displayResolution === resolution, "h-8 uppercase")} onClick={() => onChange({ resolution })}>{resolution}</button>)}
         </div>
         {!resolutionValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">当前模型不支持该清晰度</p> : null}
@@ -120,7 +120,7 @@ export function VideoSettingsPanel({
         </div>
         {usesDimensionInputs ? <div className="space-y-2">
           <VideoDimensionInputs value={displaySize} options={dimensionOptions} disabled={displaySize === "auto" || disabled("size")} onChange={(size) => onChange({ size })} />
-        </div> : <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="视频画幅比例">{sizeOptions.map((size) => { const ratio = videoWorkbenchRatioForSize(size); return <AspectRatioOptionButton key={size} active={displaySize === size} disabled={disabled("size")} label={videoComposerSizeLabel(size)} description={ratio === "adaptive" ? "自动匹配" : ratio} ratio={videoComposerAspectRatio(size)} onClick={() => onChange({ size })} />; })}</div>}
+        </div> : <div className="grid grid-cols-3 gap-1.5 @min-[24rem]:grid-cols-4" role="group" aria-label="视频画幅比例">{sizeOptions.map((size) => { const ratio = videoWorkbenchRatioForSize(size); return <AspectRatioOptionButton key={size} active={displaySize === size} disabled={disabled("size")} label={videoComposerSizeLabel(size)} description={ratio === "adaptive" ? "自动匹配" : ratio} ratio={videoComposerAspectRatio(size)} onClick={() => onChange({ size })} />; })}</div>}
       </section> : null}
 
       {!coreOnly && !hidden("duration") ? <section className="order-30 space-y-2.5">

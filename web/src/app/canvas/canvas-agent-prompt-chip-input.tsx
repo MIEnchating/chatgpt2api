@@ -1,5 +1,5 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
@@ -60,6 +60,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   const [activeIndex, setActiveIndex] = useState(0);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const activeReferences = useMemo(() => references.filter((reference) => reference.active), [references]);
+  const activeNodeIDs = useMemo(() => new Set(activeReferences.map((reference) => reference.nodeID)), [activeReferences]);
   const referenceByLabel = useMemo(() => new Map(activeReferences.map((reference) => [reference.label, reference])), [activeReferences]);
   const activeLabels = useMemo(() => Array.from(new Set(activeReferences.map((reference) => reference.label))).sort((left, right) => right.length - left.length), [activeReferences]);
   const tokens = useMemo(() => parsePromptTokens(value, activeLabels), [activeLabels, value]);
@@ -80,6 +81,27 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     editor.append(createPromptFragment(tokens, referenceByLabel, setImagePreview));
     lastEmittedRef.current = value;
   }, [referenceByLabel, tokens, value]);
+
+  const removeUnavailableReferences = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || readOnly) return;
+    let removedCommittedReference = false;
+    editor.querySelectorAll<HTMLElement>("[data-ref-node-id]").forEach((chip) => {
+      if (activeNodeIDs.has(chip.dataset.refNodeId!)) return;
+      if (chip.dataset.pendingReference !== "true") removedCommittedReference = true;
+      removeReferenceChip(chip);
+    });
+    if (!removedCommittedReference) return;
+    // Update the draft without rebuilding the DOM or committing pending selections.
+    const committed = editor.cloneNode(true) as HTMLElement;
+    committed.querySelectorAll<HTMLElement>("[data-pending-reference='true']").forEach(removeReferenceChip);
+    const nextValue = serializePromptEditor(committed);
+    lastEmittedRef.current = nextValue;
+    onChange(nextValue);
+    onReferenceIDsChange?.(referenceIDsFromEditor(committed));
+  }, [activeNodeIDs, onChange, onReferenceIDsChange, readOnly]);
+
+  useLayoutEffect(removeUnavailableReferences, [removeUnavailableReferences]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -157,6 +179,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   }
 
   function commitPendingReferences() {
+    removeUnavailableReferences();
     const editor = editorRef.current;
     const pendingChips = editor?.querySelectorAll<HTMLElement>("[data-pending-reference='true']");
     pendingChips?.forEach((chip) => delete chip.dataset.pendingReference);
