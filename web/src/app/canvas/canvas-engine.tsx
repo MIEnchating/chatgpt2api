@@ -1,6 +1,7 @@
 import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Type, Video } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNow } from "@/lib/use-now";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 import { CanvasConnectionFlow } from "./canvas-connection-flow";
 import { CanvasNodeToolbar } from "./canvas-node-toolbar";
@@ -35,6 +36,9 @@ import type { CanvasConnection, CanvasDocument, CanvasNode } from "@/services/ap
 import { cn } from "@/lib/utils";
 
 type SelectionBox = { start: Point; current: Point; initialIDs: string[]; additive: boolean };
+
+// Shared fallback so nodes without config inputs keep a stable prop reference.
+const EMPTY_CONFIG_INPUT_SUMMARY = { text: 0, image: 0, video: 0, audio: 0 };
 
 function formatImageBytes(bytes?: number) {
   if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return "";
@@ -115,25 +119,25 @@ export function CanvasEngine({
   pendingConnectionActive,
   collapsingBatchRootIDs,
   openingBatchRootIDs,
-  onNodesChange,
-  onNodesCommit,
-  onViewportChange,
-  onSelectionChange,
-  onConnect,
-  canConnect,
-  onConnectionDropEmpty,
-  onTitleChange,
+  onNodesChange: onNodesChangeProp,
+  onNodesCommit: onNodesCommitProp,
+  onViewportChange: onViewportChangeProp,
+  onSelectionChange: onSelectionChangeProp,
+  onConnect: onConnectProp,
+  canConnect: canConnectProp,
+  onConnectionDropEmpty: onConnectionDropEmptyProp,
+  onTitleChange: onTitleChangeProp,
   onNodePanelToggle,
   onNodeInputFocus,
-  onNodeMediaLoad,
-  onViewImage,
-  onFocusNode,
-  onDirectorOpen,
-  onNodeRetry,
-  onNodeActivate,
-  onToggleBatch,
-  onSetBatchPrimary,
-  onNodeContextMenu,
+  onNodeMediaLoad: onNodeMediaLoadProp,
+  onViewImage: onViewImageProp,
+  onFocusNode: onFocusNodeProp,
+  onDirectorOpen: onDirectorOpenProp,
+  onNodeRetry: onNodeRetryProp,
+  onNodeActivate: onNodeActivateProp,
+  onToggleBatch: onToggleBatchProp,
+  onSetBatchPrimary: onSetBatchPrimaryProp,
+  onNodeContextMenu: onNodeContextMenuProp,
   onConnectionContextMenu,
   onCanvasContextMenu,
   onCanvasDoubleClick,
@@ -141,6 +145,24 @@ export function CanvasEngine({
   renderNodeQuickActions,
   onDrop,
 }: CanvasEngineProps) {
+  // The page passes inline closures; stabilize them so memoized nodes and window listeners are not rebuilt every frame.
+  const onNodesChange = useStableCallback(onNodesChangeProp);
+  const onNodesCommit = useStableCallback(onNodesCommitProp);
+  const onViewportChange = useStableCallback(onViewportChangeProp);
+  const onSelectionChange = useStableCallback(onSelectionChangeProp);
+  const onConnect = useStableCallback(onConnectProp);
+  const canConnect = useStableCallback(canConnectProp);
+  const onConnectionDropEmpty = useStableCallback(onConnectionDropEmptyProp);
+  const onTitleChange = useStableCallback(onTitleChangeProp);
+  const onNodeMediaLoad = useStableCallback(onNodeMediaLoadProp);
+  const onViewImage = useStableCallback(onViewImageProp);
+  const onFocusNode = useStableCallback(onFocusNodeProp);
+  const onDirectorOpen = useStableCallback(onDirectorOpenProp);
+  const onNodeRetry = useStableCallback(onNodeRetryProp);
+  const onNodeActivate = useStableCallback(onNodeActivateProp);
+  const onToggleBatch = useStableCallback(onToggleBatchProp);
+  const onSetBatchPrimary = useStableCallback(onSetBatchPrimaryProp);
+  const onNodeContextMenu = useStableCallback(onNodeContextMenuProp);
   const connectionArrowID = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef(nodes);
@@ -186,6 +208,7 @@ export function CanvasEngine({
     frameRef.current = null;
   }, []);
 
+  const configSummaryCacheRef = useRef(new Map<string, { text: number; image: number; video: number; audio: number }>());
   const canvasInputIndex = useMemo(() => buildCanvasInputIndex(nodes, connections), [connections, nodes]);
   const nodeByID = canvasInputIndex.nodeByID;
   const batchVisibleNodes = useMemo(() => visibleCanvasNodes(nodes, collapsingBatchRootIDs), [collapsingBatchRootIDs, nodes]);
@@ -204,6 +227,13 @@ export function CanvasEngine({
         audio: inputs.filter((input) => input.type === "audio").length,
       });
     });
+    // Reuse unchanged summary objects so memoized config nodes skip re-rendering while other nodes move.
+    const previous = configSummaryCacheRef.current;
+    summaries.forEach((summary, id) => {
+      const earlier = previous.get(id);
+      if (earlier && earlier.text === summary.text && earlier.image === summary.image && earlier.video === summary.video && earlier.audio === summary.audio) summaries.set(id, earlier);
+    });
+    configSummaryCacheRef.current = summaries;
     return summaries;
   }, [canvasInputIndex, nodes]);
   const groupChildCounts = useMemo(() => {
@@ -336,6 +366,7 @@ export function CanvasEngine({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let wheelFrame: number | null = null;
     const handleWheel = (event: WheelEvent) => {
       const target = event.target instanceof Element ? event.target : null;
       // Capture pinch/modified-wheel before nested editors can stop propagation.
@@ -349,11 +380,19 @@ export function CanvasEngine({
       const rect = container.getBoundingClientRect();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
       const next = zoomCanvasViewport(viewportRef.current, { x: event.clientX - rect.left, y: event.clientY - rect.top }, delta);
+      // Compose zoom steps in the ref immediately, but publish at most one viewport update per frame.
       viewportRef.current = next;
-      onViewportChange(next, true);
+      if (wheelFrame !== null) return;
+      wheelFrame = requestAnimationFrame(() => {
+        wheelFrame = null;
+        onViewportChange(viewportRef.current, true);
+      });
     };
     container.addEventListener("wheel", handleWheel, { passive: false, capture: true });
-    return () => container.removeEventListener("wheel", handleWheel, { capture: true });
+    return () => {
+      container.removeEventListener("wheel", handleWheel, { capture: true });
+      if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
+    };
   }, [onViewportChange]);
 
   useEffect(() => {
@@ -369,16 +408,22 @@ export function CanvasEngine({
   }, [pendingConnectionActive]);
 
   useEffect(() => {
+    // Space is handled in the capture phase so controls inside parameter panels (select triggers, switches) cannot consume it first.
+    let spaceConsumed = false;
+    const handleSpaceDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+      const target = event.target instanceof Element ? event.target : null;
+      const inParameterPanel = Boolean(target?.closest("[data-canvas-parameter-panel]"));
+      const textEntry = target?.closest("input,textarea,select,[contenteditable='true'],[role='listbox'],[role='option']");
+      const otherOverlay = !inParameterPanel && target?.closest("[data-canvas-no-pan],[role='dialog']");
+      if (textEntry || otherOverlay) return;
+      event.preventDefault();
+      event.stopPropagation();
+      spaceConsumed = true;
+      spacePressedRef.current = true;
+      syncToolCursor();
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code === "Space") {
-        const target = event.target instanceof Element ? event.target : null;
-        if (!target?.closest("input,textarea,select,[contenteditable='true'],[data-canvas-no-pan],[role='dialog'],[role='listbox']")) {
-          event.preventDefault();
-          spacePressedRef.current = true;
-          syncToolCursor();
-        }
-        return;
-      }
       if (event.key !== "Escape") return;
       connectionRef.current = null;
       selectionRef.current = null;
@@ -389,14 +434,22 @@ export function CanvasEngine({
     };
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.code !== "Space") return;
+      if (spaceConsumed) {
+        // Buttons activate on keyup; swallow it so releasing the pan key never clicks the focused control.
+        event.preventDefault();
+        event.stopPropagation();
+        spaceConsumed = false;
+      }
       spacePressedRef.current = false;
       syncToolCursor();
     };
+    window.addEventListener("keydown", handleSpaceDown, true);
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("keyup", handleKeyUp, true);
     return () => {
+      window.removeEventListener("keydown", handleSpaceDown, true);
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keyup", handleKeyUp, true);
       spacePressedRef.current = false;
       syncToolCursor();
     };
@@ -621,6 +674,24 @@ export function CanvasEngine({
     };
   }, [connectionFor, connectionTargetAt, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange, snapToGrid, syncToolCursor]);
 
+  const nodeHandlers = {
+    onMouseDown: useStableCallback(startNodeDrag),
+    onSelectCapture: useStableCallback(captureNodeSelection),
+    onResize: useStableCallback(startResize),
+    onConnect: useStableCallback(startConnection),
+    onTitleChange,
+    onActivate: onNodeActivate,
+    onViewImage,
+    onFocusNode,
+    onDirectorOpen,
+    onRetry: onNodeRetry,
+    onToggleBatch,
+    onSetBatchPrimary,
+    onContextMenu: onNodeContextMenu,
+    onMediaLoad: onNodeMediaLoad,
+    onHoverStart: setHoveredNodeID,
+    onHoverEnd: useStableCallback((nodeID: string) => setHoveredNodeID((current) => (current === nodeID ? "" : current))),
+  };
   const preview = connectionPreview(connecting, connectionTargetID, mouseWorld, nodeByID);
   const activeNodeID = exporting ? "" : selectedNodeIDs.size > 1
     ? ""
@@ -731,32 +802,17 @@ export function CanvasEngine({
             focusRelated={!exporting && activeNodeID === node.id}
             showPanel={!exporting && panelNodeID === node.id}
             loading={!exporting && (loadingNodeID === node.id || node.generation_status === "loading")}
-            now={generationNow}
+            now={node.generation_status === "loading" || loadingNodeID === node.id ? generationNow : 0}
             connecting={!exporting && Boolean(connecting)}
             connectionTarget={!exporting && connectionTargetID === node.id}
-            configInputSummary={configInputSummaries.get(node.id) || { text: 0, image: 0, video: 0, audio: 0 }}
+            configInputSummary={configInputSummaries.get(node.id) || EMPTY_CONFIG_INPUT_SUMMARY}
             groupChildCount={groupChildCounts.get(node.id) || 0}
             groupDropTarget={dropTargetGroupID === node.id}
             batchClosing={Boolean(node.batch_root_id && collapsingBatchRootIDs.has(node.batch_root_id))}
             batchOpening={openingBatchRootIDs.has(node.id)}
             batchRecovering={collapsingBatchRootIDs.has(node.id)}
             batchMotion={canvasBatchMotion(node, nodeByID)}
-            onMouseDown={startNodeDrag}
-            onSelectCapture={captureNodeSelection}
-            onResize={startResize}
-            onConnect={startConnection}
-            onTitleChange={onTitleChange}
-            onActivate={onNodeActivate}
-            onViewImage={onViewImage}
-            onFocusNode={onFocusNode}
-            onDirectorOpen={onDirectorOpen}
-            onRetry={onNodeRetry}
-            onToggleBatch={onToggleBatch}
-            onSetBatchPrimary={onSetBatchPrimary}
-            onContextMenu={onNodeContextMenu}
-            onMediaLoad={onNodeMediaLoad}
-            onHoverStart={setHoveredNodeID}
-            onHoverEnd={(nodeID) => setHoveredNodeID((current) => current === nodeID ? "" : current)}
+            {...nodeHandlers}
           />
         ))}
 
@@ -802,7 +858,7 @@ const NODE_TONE_CLASS: Record<CanvasNode["type"], string> = {
   group: "hover:border-slate-400/70",
 };
 
-function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onMouseDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
+const CanvasDOMNode = memo(function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onMouseDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
   node: CanvasNode;
   showImageInfo: boolean;
   selected: boolean;
@@ -1054,7 +1110,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
       {(["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeCorner[]).map((corner) => <ResizeHandle key={corner} corner={corner} visible={selected || hovered} onPointerDown={(event) => onResize(event, node, corner)} />)}
     </div>
   );
-}
+});
 
 function CanvasGenerationLoading({ node, now }: { node: CanvasNode; now: number }) {
   const fallbackStartedAt = useRef(Date.now());
