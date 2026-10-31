@@ -68,7 +68,7 @@ Recent history uses Conventional Commit-style subjects such as `feat: ...`, `cho
 ## Release Notes Guidelines
 
 - 按语义化版本选择版本号：不兼容的 API、数据或配置变更升主版本；兼容的新功能或显著功能升级升次版本并重置补丁号；仅修复问题、无新增功能时升补丁版本。不得将功能版本一律作为补丁版本发布。
-- CI runs only for pull request `opened`, `synchronize`, and `closed` events; both jobs skip closed PRs that were not merged. Ordinary branch pushes, including direct pushes to `main` and `dev`, do not trigger CI. Pushing updates to an existing PR still triggers CI.
+- CI runs only for pull request `opened`, `synchronize`, and `reopened` events; closing or merging a PR does not rerun CI, because the tag and manual release workflow runs the full checks. Ordinary branch pushes, including direct pushes to `main` and `dev`, do not trigger CI. Pushing updates to an existing PR still triggers CI.
 - All CI jobs check out the event commit (`github.sha`) so queued checks do not follow later branch changes. Validate workflow changes with `node --test scripts/__tests__/ci-trigger.test.mjs`.
 - Version tag and manual release workflows retain frontend lint, tests and build, backend tests and vet, race tests, and database integration checks before publishing. Changing CI triggers does not waive release checks.
 

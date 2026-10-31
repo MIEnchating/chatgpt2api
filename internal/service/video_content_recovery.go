@@ -35,7 +35,46 @@ func videoContentRecovery(task map[string]any) *VideoContentRecovery {
 }
 
 // RecoverVideoContent retries only artifact storage for an owned completed video.
+type videoRecoveryCall struct {
+	done   chan struct{}
+	result map[string]any
+	err    error
+}
+
+// RecoverVideoContent coalesces concurrent recoveries of one task so the artifact is stored once.
 func (s *ImageTaskService) RecoverVideoContent(ctx context.Context, identity Identity, taskID string, download func(context.Context, VideoContentRecovery) (string, error)) (map[string]any, error) {
+	key := taskKey(ownerID(identity), strings.TrimSpace(taskID))
+	s.recoveryMu.Lock()
+	if call := s.recoveryCalls[key]; call != nil {
+		s.recoveryMu.Unlock()
+		select {
+		case <-call.done:
+			if call.result != nil {
+				return util.CopyMap(call.result), call.err
+			}
+			return nil, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &videoRecoveryCall{done: make(chan struct{}), err: fmt.Errorf("视频恢复被中断")}
+	if s.recoveryCalls == nil {
+		s.recoveryCalls = map[string]*videoRecoveryCall{}
+	}
+	s.recoveryCalls[key] = call
+	s.recoveryMu.Unlock()
+	// Cleanup is deferred so a panicking download cannot leave waiters blocked.
+	defer func() {
+		s.recoveryMu.Lock()
+		delete(s.recoveryCalls, key)
+		s.recoveryMu.Unlock()
+		close(call.done)
+	}()
+	call.result, call.err = s.recoverVideoContentOnce(ctx, identity, taskID, download)
+	return call.result, call.err
+}
+
+func (s *ImageTaskService) recoverVideoContentOnce(ctx context.Context, identity Identity, taskID string, download func(context.Context, VideoContentRecovery) (string, error)) (map[string]any, error) {
 	key := taskKey(ownerID(identity), strings.TrimSpace(taskID))
 	s.mu.Lock()
 	if s.stopping || s.closed {

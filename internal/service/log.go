@@ -161,6 +161,11 @@ func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter f
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer func() {
+			if recovered := recover(); recovered != nil && logger != nil {
+				logger.Error("log retention cleaner panicked", "panic", recovered)
+			}
+		}()
 		timer := time.NewTimer(0)
 		defer timer.Stop()
 		lastRunDate := ""
@@ -218,25 +223,7 @@ func (s *LogService) governanceSummaryLocked() (LogGovernanceSummary, error) {
 		}
 		return LogGovernanceSummary{Total: total, OldestTime: oldest, LatestTime: latest}, nil
 	}
-	items, err := s.loadLogItems("", "")
-	summary := LogGovernanceSummary{}
-	if err != nil {
-		return summary, err
-	}
-	summary.Total = len(items)
-	for _, item := range items {
-		logTime := util.Clean(item["time"])
-		if logTime == "" {
-			continue
-		}
-		if summary.LatestTime == "" || logTime > summary.LatestTime {
-			summary.LatestTime = logTime
-		}
-		if summary.OldestTime == "" || logTime < summary.OldestTime {
-			summary.OldestTime = logTime
-		}
-	}
-	return summary, nil
+	return LogGovernanceSummary{}, fmt.Errorf("log summary storage backend is required")
 }
 
 func (s *LogService) deleteLogsBeforeLocked(day string) (int, error) {
@@ -246,17 +233,6 @@ func (s *LogService) deleteLogsBeforeLocked(day string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("log maintenance backend is required")
-}
-
-func (s *LogService) loadLogItems(startDate, endDate string) ([]map[string]any, error) {
-	if s.store == nil {
-		return nil, fmt.Errorf("log storage backend is required")
-	}
-	items, err := s.store.QueryLogs(startDate, endDate, 0)
-	if err != nil {
-		return nil, fmt.Errorf("query logs: %w", err)
-	}
-	return items, nil
 }
 
 func normalizedLogLimit(limit int) int {
@@ -981,12 +957,17 @@ func sanitizeLogURLs(value any) any {
 func sensitiveLogKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	switch lower {
-	case "authorization", "password", "secret", "token", "access_token", "accesstoken", "refresh_token", "refreshtoken", "session_token", "sessiontoken", "session_json", "sessionjson", "api_key", "key", "dx":
+	case "authorization", "password", "secret", "token", "access_token", "accesstoken", "refresh_token", "refreshtoken", "session_token", "sessiontoken", "session_json", "sessionjson", "api_key", "api-key", "apikey", "x-api-key", "x_api_key", "cookie", "set-cookie", "credential", "credentials", "key", "dx":
 		return true
 	default:
 		return strings.Contains(lower, "password") ||
 			strings.Contains(lower, "secret") ||
 			strings.Contains(lower, "authorization") ||
+			strings.Contains(lower, "cookie") ||
+			strings.Contains(lower, "credential") ||
+			strings.Contains(lower, "api-key") ||
+			strings.Contains(lower, "api_key") ||
+			strings.Contains(lower, "apikey") ||
 			strings.HasSuffix(lower, "_token") ||
 			strings.HasPrefix(lower, "token_")
 	}

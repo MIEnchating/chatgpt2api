@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -160,7 +159,7 @@ func writeAnnouncementStorageError(w http.ResponseWriter, err error) bool {
 	if !errors.As(err, &storageErr) {
 		return false
 	}
-	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+	if service.IsConcurrentRowUpdate(err) {
 		util.WriteError(w, http.StatusConflict, "announcement was modified by another request; please retry")
 		return true
 	}

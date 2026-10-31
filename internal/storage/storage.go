@@ -39,6 +39,12 @@ type JSONDocumentBackend interface {
 	DeleteJSONDocument(name string) error
 }
 
+// ContextJSONDocumentBackend is implemented by backends whose document I/O can be cancelled or bounded by a deadline.
+type ContextJSONDocumentBackend interface {
+	LoadJSONDocumentContext(ctx context.Context, name string) (any, error)
+	SaveJSONDocumentContext(ctx context.Context, name string, value any) error
+}
+
 type AuthStateBackend interface {
 	SaveAuthState(keys []map[string]any, documents map[string]any) error
 }
@@ -263,7 +269,7 @@ func (b *DatabaseBackend) init() error {
 	for _, stmt := range schema {
 		if _, err := b.db.Exec(stmt); err != nil {
 			var mysqlError *mysqlDriver.MySQLError
-			if b.driver == "mysql" && errors.As(err, &mysqlError) && mysqlError.Number == 1061 {
+			if b.driver == "mysql" && errors.As(err, &mysqlError) && (mysqlError.Number == 1060 || mysqlError.Number == 1061) {
 				continue
 			}
 			return err
@@ -285,7 +291,8 @@ func (b *DatabaseBackend) ensureMySQLAccountAccessTokenHash() error {
 		return fmt.Errorf("inspect MySQL account token hash column: %w", err)
 	}
 	if columnCount == 0 {
-		if _, err := b.db.Exec(`ALTER TABLE accounts ADD COLUMN access_token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (SHA2(access_token, 256)) STORED`); err != nil {
+		// A concurrent starter may add the column between the check and the ALTER.
+		if _, err := b.db.Exec(`ALTER TABLE accounts ADD COLUMN access_token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (SHA2(access_token, 256)) STORED`); err != nil && !isMySQLDuplicateSchemaError(err) {
 			return fmt.Errorf("add MySQL account token hash column: %w", err)
 		}
 	}
@@ -295,11 +302,18 @@ func (b *DatabaseBackend) ensureMySQLAccountAccessTokenHash() error {
 		return fmt.Errorf("inspect MySQL account token hash index: %w", err)
 	}
 	if indexCount == 0 {
-		if _, err := b.db.Exec(`CREATE UNIQUE INDEX uq_accounts_access_token_hash ON accounts (access_token_hash)`); err != nil {
+		if _, err := b.db.Exec(`CREATE UNIQUE INDEX uq_accounts_access_token_hash ON accounts (access_token_hash)`); err != nil && !isMySQLDuplicateSchemaError(err) {
 			return fmt.Errorf("create MySQL account token hash index: %w", err)
 		}
 	}
 	return nil
+}
+
+// isMySQLDuplicateSchemaError reports duplicate column (1060) or duplicate key
+// name (1061) errors, which mean another starter already applied the change.
+func isMySQLDuplicateSchemaError(err error) bool {
+	var mysqlError *mysqlDriver.MySQLError
+	return errors.As(err, &mysqlError) && (mysqlError.Number == 1060 || mysqlError.Number == 1061)
 }
 
 func (b *DatabaseBackend) LoadAccounts() ([]map[string]any, error) {
@@ -657,13 +671,18 @@ func (b *DatabaseBackend) count(ctx context.Context, table string) (int, error) 
 }
 
 func (b *DatabaseBackend) LoadJSONDocument(name string) (any, error) {
+	return b.LoadJSONDocumentContext(context.Background(), name)
+}
+
+// LoadJSONDocumentContext reads a document and aborts the query when ctx is done.
+func (b *DatabaseBackend) LoadJSONDocumentContext(ctx context.Context, name string) (any, error) {
 	rel, err := cleanDocumentName(name)
 	if err != nil {
 		return nil, err
 	}
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
-	snapshot, err := b.readJSONDocumentSnapshot(rel)
+	snapshot, err := b.readJSONDocumentSnapshot(ctx, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -680,6 +699,11 @@ func (b *DatabaseBackend) LoadJSONDocument(name string) (any, error) {
 }
 
 func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
+	return b.SaveJSONDocumentContext(context.Background(), name, value)
+}
+
+// SaveJSONDocumentContext writes a document and aborts the transaction when ctx is done.
+func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name string, value any) error {
 	rel, err := cleanDocumentName(name)
 	if err != nil {
 		return err
@@ -690,11 +714,11 @@ func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
 	}
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
-	known, err := b.jsonDocumentSnapshotLocked(rel)
+	known, err := b.jsonDocumentSnapshotLockedContext(ctx, rel)
 	if err != nil {
 		return err
 	}
-	tx, err := b.db.Begin()
+	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -756,10 +780,14 @@ func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
 }
 
 func (b *DatabaseBackend) jsonDocumentSnapshotLocked(name string) (jsonDocumentSnapshot, error) {
+	return b.jsonDocumentSnapshotLockedContext(context.Background(), name)
+}
+
+func (b *DatabaseBackend) jsonDocumentSnapshotLockedContext(ctx context.Context, name string) (jsonDocumentSnapshot, error) {
 	if snapshot, ok := b.documentSnapshots[name]; ok {
 		return snapshot, nil
 	}
-	snapshot, err := b.readJSONDocumentSnapshot(name)
+	snapshot, err := b.readJSONDocumentSnapshot(ctx, name)
 	if err != nil {
 		return jsonDocumentSnapshot{}, err
 	}
@@ -767,10 +795,10 @@ func (b *DatabaseBackend) jsonDocumentSnapshotLocked(name string) (jsonDocumentS
 	return snapshot, nil
 }
 
-func (b *DatabaseBackend) readJSONDocumentSnapshot(name string) (jsonDocumentSnapshot, error) {
+func (b *DatabaseBackend) readJSONDocumentSnapshot(ctx context.Context, name string) (jsonDocumentSnapshot, error) {
 	var text string
 	var updatedAt string
-	err := b.db.QueryRow("SELECT data, updated_at FROM json_documents WHERE name = "+b.placeholder(1), name).Scan(&text, &updatedAt)
+	err := b.db.QueryRowContext(ctx, "SELECT data, updated_at FROM json_documents WHERE name = "+b.placeholder(1), name).Scan(&text, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return jsonDocumentSnapshot{}, nil
 	}
@@ -1178,16 +1206,16 @@ func ParseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
 		if user == "" || u.Host == "" || db == "" {
 			return "", "", fmt.Errorf("mysql database URL requires user, host, and database name")
 		}
-		params := u.Query()
-		params.Set("parseTime", "true")
-		return "mysql", fmt.Sprintf(
-			"%s:%s@tcp(%s)/%s?%s",
-			user,
-			pass,
-			u.Host,
-			url.PathEscape(db),
-			params.Encode(),
-		), nil
+		// Credentials are assigned after parsing so that special characters in the
+		// password never pass through the DSN parser.
+		cfg, cfgErr := mysqlDriver.ParseDSN("tcp(" + u.Host + ")/" + url.PathEscape(db) + "?" + u.Query().Encode())
+		if cfgErr != nil {
+			return "", "", fmt.Errorf("invalid mysql database URL options: %w", cfgErr)
+		}
+		cfg.User = user
+		cfg.Passwd = pass
+		cfg.ParseTime = true
+		return "mysql", cfg.FormatDSN(), nil
 	default:
 		return "", "", fmt.Errorf("unsupported database URL scheme")
 	}

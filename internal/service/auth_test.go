@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -140,6 +141,11 @@ func (b *coordinatedBootstrapAuthBackend) SaveJSONDocument(name string, value an
 		b.waitForSaveRelease()
 	}
 	return b.DatabaseBackend.SaveJSONDocument(name, value)
+}
+
+// The context-aware save must go through the same coordination as the plain save.
+func (b *coordinatedBootstrapAuthBackend) SaveJSONDocumentContext(_ context.Context, name string, value any) error {
+	return b.SaveJSONDocument(name, value)
 }
 
 func (b *coordinatedBootstrapAuthBackend) SaveAuthState(items []map[string]any, documents map[string]any) error {

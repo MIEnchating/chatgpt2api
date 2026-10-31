@@ -17,7 +17,7 @@ export async function imageSourceToFile(
     throw new Error("参考图数据无效");
   }
   const matchedMimeType = header.match(/data:(.*?);base64/)?.[1];
-  const binary = atob(content);
+  let binary = ""; try { binary = atob(content); } catch { throw new Error("参考图数据无效"); }
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);

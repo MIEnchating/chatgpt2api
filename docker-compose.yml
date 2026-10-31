@@ -6,6 +6,12 @@ services:
     image: ${DOCKER_IMAGE:-chatgpt2api:local}
     container_name: chatgpt2api
     restart: unless-stopped
+    # Must match the owner of ./data and ./.env on the host, which the service writes to.
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     env_file:
       - ./.env
     volumes:

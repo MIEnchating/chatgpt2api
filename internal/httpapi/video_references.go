@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -13,12 +14,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
 
@@ -179,18 +180,13 @@ func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, 
 	if filepath.Dir(filePath) != root {
 		return videoMultipartFile{}, false, nil
 	}
-	info, err := os.Stat(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return videoMultipartFile{}, true, errors.New("平台暂存的视频素材已不存在，请重新上传")
-		}
-		return videoMultipartFile{}, true, fmt.Errorf("读取平台暂存的视频素材失败: %w", err)
-	}
-	if info.Size() <= 0 || info.Size() > maxBytes {
+	data, err := service.ReadMediaFile(root, name, maxBytes)
+	switch {
+	case errors.Is(err, service.ErrMediaFileNotFound):
+		return videoMultipartFile{}, true, errors.New("平台暂存的视频素材已不存在，请重新上传")
+	case errors.Is(err, service.ErrMediaFileSizeInvalid):
 		return videoMultipartFile{}, true, errors.New("平台暂存的视频素材大小无效，请重新上传")
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
+	case err != nil:
 		return videoMultipartFile{}, true, fmt.Errorf("读取平台暂存的视频素材失败: %w", err)
 	}
 	return videoMultipartFile{Data: data, Filename: name, ContentType: contentType}, true, nil
@@ -321,7 +317,14 @@ func (a *App) storeReferenceUpload(ctx context.Context, upload referenceUpload, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
+	if _, err := service.StoreMediaFile(bytes.NewReader(upload.data), service.MediaFileWrite{
+		Directory:   a.videoReferenceDir,
+		Name:        name,
+		TempPattern: ".reference-*",
+		MaxBytes:    int64(len(upload.data)) + 1,
+		Perm:        0o644,
+		AllowEmpty:  true,
+	}); err != nil {
 		return nil, fmt.Errorf("failed to store %s reference: %w", kind, err)
 	}
 	referenceURL := a.signedReferenceURL(strings.TrimRight(a.resolveImageBaseURL(), "/")+pathPrefix+name, time.Now().Add(referenceURLTTL))

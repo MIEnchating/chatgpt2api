@@ -4,7 +4,12 @@ function serverOrigin(value) {
   let url;
   try { url = new URL(value.trim()); } catch { throw new Error("服务器地址须为完整的 HTTP 或 HTTPS 地址"); }
   if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("服务器地址只需包含 HTTP/HTTPS 域名和端口，不能包含密码、路径或参数");
+  // Plain HTTP would expose the admin session and credentials on the network, so only this machine may use it.
+  if (url.protocol === "http:" && !isLoopbackHost(url.hostname)) throw new Error("远程服务器必须使用 HTTPS；只有本机地址（localhost、127.0.0.1）可以使用 HTTP");
   return url.origin;
+}
+function isLoopbackHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 function safeWebURL(value) {
   try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password; } catch { return false; }

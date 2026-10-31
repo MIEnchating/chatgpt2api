@@ -207,7 +207,7 @@ func (b *DatabaseBackend) initImageConversationSchema() error {
 	for _, statement := range schema {
 		if _, err := b.db.Exec(statement); err != nil {
 			var mysqlError *mysqlDriver.MySQLError
-			if b.driver == "mysql" && errors.As(err, &mysqlError) && mysqlError.Number == 1061 {
+			if b.driver == "mysql" && errors.As(err, &mysqlError) && (mysqlError.Number == 1060 || mysqlError.Number == 1061) {
 				continue
 			}
 			return fmt.Errorf("initialize image conversation schema: %w", err)

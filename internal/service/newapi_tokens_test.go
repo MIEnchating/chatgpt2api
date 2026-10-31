@@ -561,7 +561,7 @@ func insertTestSub2APIGroup(t *testing.T, dbURL string, id int, name, status str
 	defer db.Close()
 	var deletedAt any
 	if deleted {
-		deletedAt = time.Now()
+		deletedAt = time.Now().UTC()
 	}
 	if _, err := db.Exec("INSERT INTO groups (id, name, status, deleted_at) VALUES (?, ?, ?, ?)", id, name, status, deletedAt); err != nil {
 		t.Fatalf("insert Sub2API group: %v", err)
@@ -578,11 +578,11 @@ func insertTestSub2APIKey(t *testing.T, dbURL string, id, userID int, key, name 
 	}
 	var expiresValue any
 	if !expiresAt.IsZero() {
-		expiresValue = expiresAt
+		expiresValue = expiresAt.UTC()
 	}
 	var deletedAt any
 	if deleted {
-		deletedAt = time.Now()
+		deletedAt = time.Now().UTC()
 	}
 	if _, err := db.Exec("INSERT INTO api_keys (id, user_id, key, name, group_id, status, quota, quota_used, expires_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, userID, key, name, groupValue, status, quota, quotaUsed, expiresValue, deletedAt); err != nil {
 		t.Fatalf("insert Sub2API key: %v", err)

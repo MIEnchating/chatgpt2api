@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"reflect"
 	"regexp"
@@ -814,18 +815,19 @@ func (s *WorkflowService) loadLocked() (workflowDocument, error) {
 	if document.PendingObjectDeletions == nil {
 		document.PendingObjectDeletions = make(map[string][]string)
 	}
+	valid := make([]CreativeWorkflow, 0, len(document.Items))
 	for i := range document.Items {
 		if document.Items[i].Revision <= 0 {
 			document.Items[i].Revision = 1
 		}
+		// A single invalid stored item must not make every workflow unavailable.
 		if err := normalizeWorkflow(&document.Items[i]); err != nil {
-			identifier := strings.TrimSpace(document.Items[i].ID)
-			if identifier == "" {
-				identifier = fmt.Sprintf("第 %d 条", i+1)
-			}
-			return workflowDocument{}, workflowStorageError(fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err))
+			slog.Error("skipping invalid stored workflow", "index", i, "id", document.Items[i].ID, "error", err)
+			continue
 		}
+		valid = append(valid, document.Items[i])
 	}
+	document.Items = valid
 	return document, nil
 }
 

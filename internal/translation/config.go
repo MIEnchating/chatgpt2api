@@ -15,6 +15,11 @@ import (
 
 const MaxSourceBytes = 128 << 10
 
+// MaxValueBytes bounds any value serialized out of the rule VM. goja has no memory limit API, so the
+// VM itself is only bounded by the call stack limit, the one second execution limit and MaxSourceBytes;
+// this check stops an oversized result from being copied into Go memory and used.
+const MaxValueBytes = 32 << 20
+
 var methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 
 // Programs compiles models separately so only the selected rule needs inputs.
@@ -93,6 +98,11 @@ func Programs(source string) (map[string]*goja.Program, error) {
 				}
 				if request["url"] == nil {
 					return nil, fmt.Errorf("模型 %s 的请求缺少 url", name)
+				}
+				if flag := request["crossOrigin"]; flag != nil {
+					if _, ok := flag.(*ast.BooleanLiteral); !ok {
+						return nil, fmt.Errorf("模型 %s 的 crossOrigin 必须是布尔字面量", name)
+					}
 				}
 			}
 		}
@@ -187,5 +197,9 @@ func plain(vm *goja.Runtime, value goja.Value, target any) error {
 	if goja.IsUndefined(encoded) {
 		return fmt.Errorf("配置值必须可序列化")
 	}
-	return json.Unmarshal([]byte(encoded.String()), target)
+	text := encoded.String()
+	if len(text) > MaxValueBytes {
+		return fmt.Errorf("转换结果超过 %d MiB", MaxValueBytes>>20)
+	}
+	return json.Unmarshal([]byte(text), target)
 }

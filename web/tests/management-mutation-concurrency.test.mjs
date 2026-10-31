@@ -45,6 +45,24 @@ function dialogChange(domain, openExpression, context) {
   return compile(expression, context);
 }
 
+function confirmDialogProp(domain, openExpression, propName) {
+  const source = sources[domain];
+  let expression;
+  function visit(node) {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "ConfirmDialog") {
+      const attributes = node.attributes.properties;
+      const open = attributes.find(item => item.name?.getText(source) === "open");
+      if (open?.initializer?.expression?.getText(source) === openExpression) {
+        expression = attributes.find(item => item.name?.getText(source) === propName).initializer.expression.getText(source);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.ok(expression, `Missing ${domain} confirm dialog ${openExpression}`);
+  return expression;
+}
+
 function deferred() {
   let resolve;
   return { promise: new Promise(done => { resolve = done; }), resolve: value => resolve(value) };
@@ -206,15 +224,26 @@ test("pending user and role dialogs reject outside-close events", () => {
     setRoleUser: () => closed++, setDeletingUser: () => closed++, setIsCreateDialogOpen: () => closed++, setDeletingRole: () => closed++,
   };
   const handlers = [
-    dialogChange("users", "Boolean(roleUser)", context), dialogChange("users", "Boolean(deletingUser)", context),
-    dialogChange("rbac", "isCreateDialogOpen", context), dialogChange("rbac", "Boolean(deletingRole)", context),
+    dialogChange("users", "Boolean(roleUser)", context),
+    dialogChange("rbac", "isCreateDialogOpen", context),
   ];
   handlers.forEach(handler => handler(false));
   assert.equal(closed, 0);
   pending.current = false;
   users.current.clear();
   handlers.forEach(handler => handler(false));
-  assert.equal(closed, 4);
+  assert.equal(closed, 2);
+});
+
+test("delete confirmations stay busy while their mutation is pending", () => {
+  // ConfirmDialog blocks dismissal while busy, so the busy binding is what guards outside-close.
+  const userBusy = confirmDialogProp("users", "Boolean(deletingUser)", "busy");
+  const roleBusy = confirmDialogProp("rbac", "Boolean(deletingRole)", "busy");
+  const deletingUser = { id: "user-a" };
+  assert.equal(compile(userBusy, { deletingUser, pendingIds: new Set(["user-a"]) }), true);
+  assert.equal(compile(userBusy, { deletingUser, pendingIds: new Set() }), false);
+  assert.equal(compile(roleBusy, { isMutating: true }), true);
+  assert.equal(compile(roleBusy, { isMutating: false }), false);
 });
 
 test("user creation keeps its form open and unchanged while submitting", () => {

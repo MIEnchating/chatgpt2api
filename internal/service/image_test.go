@@ -1443,7 +1443,7 @@ func TestImageServiceCleanupScanFailureDoesNotDeleteImages(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("blocker"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	config := fixedImageConfig{imagesDir: imagesDir, thumbnailsDir: thumbnailsDir, metadataDir: filepath.Join(blocker, "metadata")}
+	config := fixedImageConfig{imagesDir: imagesDir, thumbnailsDir: thumbnailsDir, metadataDir: filepath.Join(root, "invalid\x00metadata")}
 	imagePath := filepath.Join(imagesDir, "old.png")
 	if err := writeTestPNG(imagePath); err != nil {
 		t.Fatal(err)

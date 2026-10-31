@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const assetsSource = readFileSync(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8");
-const assetDisplaySource = readFileSync(new URL("../src/app/assets/asset-display.tsx", import.meta.url), "utf8");
-const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
-const promptsSource = readFileSync(new URL("../src/app/image/components/image-prompt-market.tsx", import.meta.url), "utf8");
-const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
-const workflowsSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
+const assetsSource = readFileSync(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const assetDisplaySource = readFileSync(new URL("../src/app/assets/asset-display.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const promptsSource = readFileSync(new URL("../src/app/image/components/image-prompt-market.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const workflowsSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 
 test("asset filters and cards use the full content width", () => {
   assert.match(assetsSource, /data-asset-filter-bar/);

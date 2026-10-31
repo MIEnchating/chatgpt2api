@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"slices"
 	"strings"
 
 	"chatgpt2api/internal/service"
@@ -175,42 +177,77 @@ func isAPISpace(path string) bool {
 		path == "/v1" || strings.HasPrefix(path, "/v1/")
 }
 
+const (
+	corsAllowedOriginsEnv = "CORS_ALLOWED_ORIGINS"
+	devModeEnv            = "DEV_MODE"
+	corsAllowedMethods    = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS"
+	corsAllowedHeaders    = "Content-Type, Accept"
+)
+
 func applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" || !isAllowedCredentialedOrigin(origin, r.Host) {
+	if origin == "" || !isAllowedCredentialedOrigin(origin, r) {
+		return
+	}
+	if !corsPreflightAllowed(r) {
 		return
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Add("Vary", "Origin")
-	if requestedMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method")); requestedMethod != "" {
-		w.Header().Set("Access-Control-Allow-Methods", requestedMethod)
-		w.Header().Add("Vary", "Access-Control-Request-Method")
-	} else {
-		w.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS")
-	}
-	if requestedHeaders := strings.TrimSpace(r.Header.Get("Access-Control-Request-Headers")); requestedHeaders != "" {
-		w.Header().Set("Access-Control-Allow-Headers", requestedHeaders)
-		w.Header().Add("Vary", "Access-Control-Request-Headers")
-	} else {
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-	}
+	w.Header().Set("Access-Control-Allow-Methods", corsAllowedMethods)
+	w.Header().Set("Access-Control-Allow-Headers", corsAllowedHeaders)
 }
 
-func isAllowedCredentialedOrigin(origin, requestHost string) bool {
+// corsPreflightAllowed rejects preflights that ask for a method or header
+// outside the fixed allowlists instead of echoing them back.
+func corsPreflightAllowed(r *http.Request) bool {
+	if method := strings.ToUpper(strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))); method != "" {
+		if !slices.Contains(strings.Split(corsAllowedMethods, ","), method) {
+			return false
+		}
+	}
+	allowed := strings.Split(strings.ToLower(strings.ReplaceAll(corsAllowedHeaders, " ", "")), ",")
+	for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
+		header = strings.ToLower(strings.TrimSpace(header))
+		if header != "" && !slices.Contains(allowed, header) {
+			return false
+		}
+	}
+	return true
+}
+
+// isAllowedCredentialedOrigin accepts an origin only when its scheme, host and
+// port equal the request's, or it is configured in CORS_ALLOWED_ORIGINS.
+// Loopback cross-port interop is limited to DEV_MODE.
+func isAllowedCredentialedOrigin(origin string, r *http.Request) bool {
 	originURL, err := url.Parse(origin)
-	if err != nil || originURL.Hostname() == "" ||
+	if err != nil || originURL.Hostname() == "" || originURL.User != nil || originURL.Path != "" ||
 		originURL.Scheme != "http" && originURL.Scheme != "https" {
 		return false
 	}
-	requestHostname := requestHost
-	if host, _, err := net.SplitHostPort(requestHost); err == nil {
+	normalized := originURL.Scheme + "://" + strings.ToLower(originURL.Host)
+	requestScheme := "http"
+	if isHTTPSRequest(r) {
+		requestScheme = "https"
+	}
+	if normalized == requestScheme+"://"+strings.ToLower(r.Host) {
+		return true
+	}
+	for _, configured := range strings.Split(os.Getenv(corsAllowedOriginsEnv), ",") {
+		if configured = strings.TrimSpace(configured); configured != "" && strings.EqualFold(configured, normalized) {
+			return true
+		}
+	}
+	if os.Getenv(devModeEnv) != "1" {
+		return false
+	}
+	requestHostname := r.Host
+	if host, _, splitErr := net.SplitHostPort(r.Host); splitErr == nil {
 		requestHostname = host
 	}
 	requestHostname = strings.Trim(requestHostname, "[]")
-	originHostname := originURL.Hostname()
-	return strings.EqualFold(originHostname, requestHostname) ||
-		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname)
+	return isLoopbackHostname(originURL.Hostname()) && isLoopbackHostname(requestHostname)
 }
 
 func isLoopbackHostname(hostname string) bool {

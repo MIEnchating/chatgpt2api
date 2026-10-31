@@ -48,6 +48,11 @@ func (b *failingLogQueryBackend) QueryLogPage(string, string, *storage.LogCursor
 	return storage.LogPage{}, b.err
 }
 
+func (b *failingLogQueryBackend) LogSummary() (int, string, string, error) {
+	b.queryCalls++
+	return 0, "", "", b.err
+}
+
 func (b *failingLogCleanupSummaryBackend) AppendLog(map[string]any) error { return nil }
 
 func (b *failingLogCleanupSummaryBackend) QueryLogs(string, string, int) ([]map[string]any, error) {

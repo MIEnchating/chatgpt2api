@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -126,6 +127,16 @@ func (b *announcementPostWriteReloadBackend) SaveJSONDocument(name string, value
 	}
 	b.mu.Unlock()
 	return nil
+}
+
+// The embedded DatabaseBackend also provides the context-aware methods, which bounded callers prefer,
+// so they must route through the same failure injection as the plain methods.
+func (b *announcementPostWriteReloadBackend) LoadJSONDocumentContext(_ context.Context, name string) (any, error) {
+	return b.LoadJSONDocument(name)
+}
+
+func (b *announcementPostWriteReloadBackend) SaveJSONDocumentContext(_ context.Context, name string, value any) error {
+	return b.SaveJSONDocument(name, value)
 }
 
 func (b *announcementPostWriteReloadBackend) arm() {

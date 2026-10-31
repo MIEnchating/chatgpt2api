@@ -14,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"chatgpt2api/internal/util"
-
 	"github.com/enetx/g"
 	"github.com/enetx/surf"
 )
@@ -121,11 +119,7 @@ func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]
 	resp, err := client.Do(req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
-		message := err.Error()
-		if detail, ok := util.SummarizeUpstreamConnectionError(message); ok {
-			message = detail
-		}
-		return map[string]any{"ok": false, "status": 0, "latency_ms": latency, "error": message}
+		return map[string]any{"ok": false, "status": 0, "latency_ms": latency, "error": "proxy connection failed"}
 	}
 	defer resp.Body.Close()
 	ok := resp.StatusCode < 500

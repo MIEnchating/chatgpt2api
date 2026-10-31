@@ -46,7 +46,7 @@ func (c RunningHubClient) InspectWorkflow(ctx context.Context, input RunningHubI
 		endpoint, body = "/api/webapp/apiCallDemo", map[string]any{"apiKey": input.APIKey, "webappId": input.WorkflowID}
 	}
 	var response map[string]any
-	if err := c.requestJSON(ctx, root+endpoint, body, &response, nil); err != nil {
+	if err := c.requestJSON(ctx, root+endpoint, body, &response); err != nil {
 		return model.WorkflowEntry{}, fmt.Errorf("拉取 RunningHub 参数失败：%w", err)
 	}
 	if code, ok := runningHubResponseCode(response); ok && code != 0 {
@@ -98,39 +98,27 @@ func runningHubBaseURL(value string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-func (c RunningHubClient) requestJSON(ctx context.Context, endpoint string, payload any, target *map[string]any, capture *AICallLogInput) error {
+func (c RunningHubClient) requestJSON(ctx context.Context, endpoint string, payload any, target *map[string]any) error {
+	if c.HTTP == nil {
+		return errors.New("RunningHub HTTP 客户端未配置")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	if capture != nil {
-		capture.Endpoint, capture.Method = endpoint, http.MethodPost
-		capture.Status, capture.RequestBody, capture.ResponseBody = 0, "", ""
-	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return err
-	}
-	secret := ""
-	if capture != nil {
-		if body, ok := payload.(map[string]any); ok {
-			secret, _ = body["apiKey"].(string)
-		}
-		capture.RequestBody = string(workflowLogJSON(string(encoded), secret))
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.httpClient().Do(request)
+	response, err := c.HTTP.Do(request)
 	if err != nil {
 		return errors.New("上游接口无响应或不可达")
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
-	if capture != nil {
-		capture.Status = response.StatusCode
-		capture.ResponseBody = string(workflowLogJSON(string(data), secret))
-	}
 	if err != nil || len(data) > 8<<20 {
 		return errors.New("上游参数响应过大或读取失败")
 	}
@@ -275,74 +263,7 @@ func discoverWorkflowFields(workflow map[string]any, capability string) []model.
 }
 
 type RunningHubClient struct {
-	HTTP      *http.Client
-	MediaHTTP *http.Client
+	HTTP *http.Client
 }
 
-func (c RunningHubClient) httpClient() *http.Client {
-	if c.HTTP != nil {
-		return c.HTTP
-	}
-	return http.DefaultClient
-}
-func (c RunningHubClient) mediaClient() *http.Client {
-	if c.MediaHTTP != nil {
-		return c.MediaHTTP
-	}
-	return c.httpClient()
-}
 func RunningHubBaseURL(value string) (string, error) { return runningHubBaseURL(value) }
-
-type AICallLogInput struct {
-	Endpoint, Method, RequestBody, ResponseBody string
-	Status                                      int
-}
-
-func workflowLogJSON(raw, secret string) json.RawMessage {
-	var payload any
-	decoder := json.NewDecoder(strings.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
-		if secret != "" {
-			raw = strings.ReplaceAll(raw, secret, "[redacted]")
-		}
-		lower := strings.ToLower(strings.TrimSpace(raw))
-		if strings.HasPrefix(lower, "data:") || strings.Contains(lower, "data:") && strings.Contains(lower, ";base64,") {
-			raw = "[redacted media data]"
-		} else {
-			if len(raw) > 4096 {
-				raw = "[redacted large response]"
-			}
-		}
-		encoded, _ := json.Marshal(raw)
-		return encoded
-	}
-	var redact func(any) any
-	redact = func(value any) any {
-		switch item := value.(type) {
-		case string:
-			if secret != "" {
-				item = strings.ReplaceAll(item, secret, "[redacted]")
-			}
-			lower := strings.ToLower(strings.TrimSpace(item))
-			if strings.HasPrefix(lower, "data:") || strings.Contains(lower, "data:") && strings.Contains(lower, ";base64,") {
-				return "[redacted media data]"
-			}
-			if len(item) > 4096 {
-				return fmt.Sprintf("[redacted large string len=%d]", len(item))
-			}
-			return item
-		case map[string]any:
-			for key, child := range item {
-				item[key] = redact(child)
-			}
-		case []any:
-			for index, child := range item {
-				item[index] = redact(child)
-			}
-		}
-		return value
-	}
-	encoded, _ := json.Marshal(redact(payload))
-	return encoded
-}

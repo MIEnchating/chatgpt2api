@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { validateParameterTranslation } from "@/lib/api";
+import { copyWithToast } from "@/lib/clipboard-text";
 
 const variables = ["model", "prompt", "size", "aspectRatio", "quality", "count", "images", "resolution", "seconds", "mode", "negativePrompt", "generateAudio", "watermark", "videos", "audios", "firstFrame", "lastFrame", "voice", "audioFormat", "speed", "instructions"];
 export const parameterTranslationHelp = `配置为 JavaScript 对象字面量，外层为 { headers, models, poll }。models 的键必须为实际模型名称，每项包含一种 HTTP 请求方法（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS），以及 result、error 和可选 poll。空配置或空模型对象使用原有接口；命中规则后失败不会改走其他协议。\n请求对象支持 url、headers、params、body、format 和 responseType。format：json、formData、urlencoded、raw；responseType：json、text、blob、arraybuffer。表单素材 URL 不会自动转换为文件。相对 url 追加到 Base URL 路径，不自动补 /v1。默认 Bearer 鉴权；自定义鉴权可使用 {channelKey} 占位符。\nresult/error 可使用点分字段路径（数组例如 data.0.url）或同步函数。poll 包含查询请求、taskId、status、success、failure、progress；查询地址支持 {taskId}。success/failure 为状态值数组。任务提交后修改规则不影响正在执行的请求；临时查询错误不会重复提交。\n可用变量：${variables.join(", ")}。images/videos/audios 为 URL 或 Data URL 数组。视频面板能力仍由视频模型契约配置。规则在服务端执行，不提供网络、文件、进程或模块 API。`;
@@ -39,7 +40,7 @@ export function ChannelParameterEditor({ value, onChange, baseURL, models = [], 
       <span className="text-sm font-medium">自定义参数转换</span>
       <div className="flex flex-wrap gap-1">
         <Button type="button" size="sm" variant="ghost" disabled={disabled || Boolean(value.trim())} onClick={() => onChange(example(kind, models[0] || "填写实际模型名称"))}><FileCode2 />插入示例</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(`Base URL：${baseURL}\n模型列表：${models.join(", ") || "请填写实际模型名称"}\n\n${parameterTranslationHelp}\n\n结构示例：\n${example(kind, models[0] || "model-name")}`).then(() => toast.success("已复制说明"), () => toast.error("复制失败")); }}><Copy />复制说明</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => copyWithToast(`Base URL：${baseURL}\n模型列表：${models.join(", ") || "请填写实际模型名称"}\n\n${parameterTranslationHelp}\n\n结构示例：\n${example(kind, models[0] || "model-name")}`, "已复制说明")}><Copy />复制说明</Button>
       </div>
     </div>
     <p className="text-xs leading-5 text-muted-foreground">按实际模型名称转换图片、视频或音频请求。留空使用原有接口，保存时校验语法。</p>

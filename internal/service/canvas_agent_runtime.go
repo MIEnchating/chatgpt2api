@@ -180,10 +180,18 @@ func (w *canvasAgentWorker) finish(status, reply string) error {
 func (w *canvasAgentWorker) run() {
 	// Isolate mutable worker state from the HTTP response snapshot.
 	var doc CanvasDocument
-	_ = json.Unmarshal([]byte(agentJSON(w.doc)), &doc)
+	if err := json.Unmarshal([]byte(agentJSON(w.doc)), &doc); err != nil {
+		w.failTool(err)
+		return
+	}
 	w.doc = doc
 	w.persisted = cloneCanvasAgentDocument(doc)
-	_, w.session, _ = agentSession(w.doc, w.req.SessionID)
+	var sessionErr error
+	_, w.session, sessionErr = agentSession(w.doc, w.req.SessionID)
+	if sessionErr != nil {
+		w.failTool(sessionErr)
+		return
+	}
 	w.state = agentMap(w.session["agentState"])
 	w.messages = util.AsMapSlice(w.session["protocolMessages"])
 	w.checkpoint = util.Clean(w.session["contextCheckpoint"])
@@ -404,7 +412,7 @@ func validateAgentValue(v any, s map[string]any, path string) error {
 		}
 	case "string":
 		text, ok := v.(string)
-		if utf8.RuneCountInString(text) > 12000 || (strings.HasSuffix(path, ".title") || strings.HasSuffix(path, ".projectTitle")) && len(text) > 200 {
+		if utf8.RuneCountInString(text) > 12000 || (strings.HasSuffix(path, ".title") || strings.HasSuffix(path, ".projectTitle")) && utf8.RuneCountInString(text) > 200 {
 			return invalid()
 		}
 		if !ok {

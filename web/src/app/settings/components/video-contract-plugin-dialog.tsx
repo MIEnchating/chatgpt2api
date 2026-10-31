@@ -2,6 +2,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect, useRef, useState } from "react";
 import { Code2, Copy, Download, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
+import { copyClipboardText } from "@/lib/clipboard-text";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -126,7 +127,7 @@ function VideoContractPluginView({ targets, selectedIndex, draft, onChange, onSe
 
   async function copy() {
     if (!result) return;
-    try { await navigator.clipboard.writeText(result.source); toast.success("已复制插件源码"); }
+    try { await copyClipboardText(result.source); toast.success("已复制插件源码"); }
     catch { toast.error("复制失败，请下载插件文件"); }
   }
 

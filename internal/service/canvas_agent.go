@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -221,14 +222,23 @@ func (s *CanvasAgentService) start(identity Identity, project string, req Canvas
 		defer s.wg.Done()
 		defer cancel()
 		worker := &canvasAgentWorker{service: s, ctx: ctx, identity: identity, doc: doc, req: req, skills: selected, session: session}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("Canvas agent worker panicked", "run_id", req.ID, "panic", recovered)
+				func() {
+					defer func() { _ = recover() }()
+					_ = worker.finish("error", "Agent 执行异常中断，已保留已保存的进度")
+				}()
+			}
+			s.mu.Lock()
+			delete(s.active, key)
+			s.mu.Unlock()
+		}()
 		if call != nil {
 			worker.runTool(call)
 		} else {
 			worker.run()
 		}
-		s.mu.Lock()
-		delete(s.active, key)
-		s.mu.Unlock()
 	}()
 	return doc, nil
 }
@@ -369,14 +379,21 @@ func (s *CanvasDocumentService) saveAgent(owner string, doc CanvasDocument) (Can
 }
 
 // WaitCanvasAgentTask waits independently of the requesting browser connection.
+// It is driven by task change notifications instead of polling.
 func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity Identity, id string, onText func(string) error) (map[string]any, error) {
+	subscription, err := tasks.SubscribeTasks(identity)
+	if err != nil {
+		return nil, err
+	}
+	defer subscription.Close()
 	lastText := ""
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
 	for {
 		result, err := tasks.ListTasksWithError(identity, []string{id})
 		if err != nil {
 			return nil, err
+		}
+		if slices.Contains(agentStrings(result["missing_ids"]), id) {
+			return nil, fmt.Errorf("任务不存在: %s", id)
 		}
 		items := util.AsMapSlice(result["items"])
 		if len(items) > 0 {
@@ -403,7 +420,7 @@ func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity 
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-ticker.C:
+		case <-subscription.Changed():
 		}
 	}
 }

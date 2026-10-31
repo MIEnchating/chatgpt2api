@@ -153,7 +153,7 @@ export function CanvasMaskDialog({ sourceURL, open, busy, model, models, onModel
                 <SelectContent>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
               </Select>
             </label>
-            {error ? <p className="text-xs font-medium text-destructive dark:text-rose-300">{error}</p> : null}
+            {error ? <p className="text-xs font-medium text-destructive">{error}</p> : null}
             <Button type="button" variant="ghost" size="sm" className="self-start text-xs" disabled={disabled || !imageReady} onClick={() => { clearCanvas(maskRef.current); clearCanvas(previewRef.current); setError(""); }}><RotateCcw className="size-3.5" />重置蒙版</Button>
           </div>
         </div>

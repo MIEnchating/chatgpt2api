@@ -112,6 +112,7 @@ import {
 import { applyVideoFrameDefaults } from "@/lib/video-contract-editor";
 import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import { cn } from "@/lib/utils";
+import { copyWithToast } from "@/lib/clipboard-text";
 
 import {
   ALL_MUTATIONS_SCOPE,
@@ -1677,14 +1678,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     }
   };
 
-  const copyContractJSON = async () => {
-    try {
-      await navigator.clipboard.writeText(contractJSON);
-      toast.success("契约 JSON 已复制");
-    } catch {
-      toast.error("复制契约 JSON 失败");
-    }
-  };
+  const copyContractJSON = () => copyWithToast(contractJSON, "契约 JSON 已复制");
 
   const runPreview = async () => {
     setIsPreviewing(true);
@@ -1712,16 +1706,21 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
           scrollable={false}
           className="h-[min(94dvh,940px)] w-[min(96vw,1360px)] max-w-none"
         >
-          <DialogHeader>
-            <DialogTitle>
-              {generatedEditingIndex !== null
-                ? `审核视频模型契约（${generatedEditingIndex + 1}/${generatedContracts.length}）`
-                : readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
-            </DialogTitle>
-            <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}{editor ? "。修改的是全局契约，发布后对新任务生效；已有任务保留原版本记录。" : ""}</DialogDescription>
+          <DialogHeader className="pr-9">
+            <div className="flex items-start gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/5 text-primary"><Film className="size-5" /></span>
+              <div className="min-w-0 space-y-1.5">
+                <DialogTitle>
+                  {generatedEditingIndex !== null
+                    ? `审核视频模型契约（${generatedEditingIndex + 1}/${generatedContracts.length}）`
+                    : readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
+                </DialogTitle>
+                <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}{editor ? "。修改的是全局契约，发布后对新任务生效；已有任务保留原版本记录。" : ""}</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="flex shrink-0 flex-wrap gap-1 rounded-lg bg-muted/40 p-1" aria-label="视频配置分区">
-            {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <button key={key} type="button" aria-pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:text-sm", key === "preview" && "lg:hidden", editorSection === key ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
+          <div role="group" className="flex shrink-0 gap-1 overflow-x-auto rounded-lg bg-muted/40 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="视频配置分区">
+            {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <button key={key} type="button" aria-pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors sm:flex-1 sm:text-sm", key === "preview" && "lg:hidden", editorSection === key ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
           </div>
           <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
             <ScrollArea
@@ -1919,12 +1918,16 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </details>
             </ScrollArea>
           </fieldset>
-          <DialogFooter className="grid grid-cols-2 [&>button]:min-w-0 [&>button]:px-2 [&>button]:text-xs [&>button>svg]:hidden sm:flex sm:flex-row sm:[&>button]:flex-none sm:[&>button]:px-4 sm:[&>button]:text-sm sm:[&>button>svg]:block">
-            <Button type="button" variant="outline" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
+          <DialogFooter className="sm:justify-between">
+            <div className="flex flex-wrap gap-2 [&>button]:flex-1 sm:[&>button]:flex-none">
             <Button type="button" variant="outline" disabled={isSaving || editorLoading} onClick={() => setPluginTargets([{ id: editingItem?.id || "draft", contract: cloneVideoModelContract(normalizedContract), label: readOnly ? "当前查看版本" : "当前编辑快照", reviewPending: !readOnly, warnings: generatedEditingIndex !== null ? [...(generatedDryRun[generatedEditingIndex]?.review_issues || []), ...(generatedDryRun[generatedEditingIndex]?.missing_evidence || [])] : [] }])}><Code2 className="size-4" />生成 New API 插件</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving || editorLoading}><ShieldCheck className="size-4" />校验配置</Button> : null}
+            </div>
+            <div className="flex flex-wrap gap-2 sm:justify-end [&>button]:flex-1 sm:[&>button]:flex-none">
+            <Button type="button" variant="ghost" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
             {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving || editorLoading}><FileText className="size-4" />保存草稿</Button> : null}
             {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving || editorLoading}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2001,7 +2004,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={exportSelectedContracts}>
                 <Download className="size-4" />导出选中
               </Button>
-              <Button type="button" size="sm" variant="outline" className="text-rose-600 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
+              <Button type="button" size="sm" variant="outline" className="text-destructive hover:text-destructive" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
                 <Trash2 className="size-4" />删除选中
               </Button>
               <TooltipHint content="清除选择">
@@ -2118,7 +2121,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => setPluginTargets([{ id: item.id, contract: cloneVideoModelContract(item.contract), label: `已发布版本 v${item.revision}` }])} aria-label="生成 New API 插件" title="生成 New API 插件"><Code2 className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openCopy(item)} aria-label="复制契约" title="复制契约"><Copy className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30 dark:text-rose-300 dark:hover:text-rose-300" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
                   </div>
                   </div>
                 );

@@ -1,18 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(
-  new URL("../src/lib/use-auth-guard.ts", import.meta.url),
-  "utf8",
-);
-const sessionSource = await readFile(
-  new URL("../src/lib/session.ts", import.meta.url),
-  "utf8",
-);
-const topNavSource = await readFile(
-  new URL("../src/components/top-nav.tsx", import.meta.url),
-  "utf8",
-);
+// Windows checkouts use CRLF; normalize before matching multi-line source snippets.
+const readSource = async (relative) =>
+  (await readFile(new URL(relative, import.meta.url), "utf8")).replaceAll("\r\n", "\n");
+const source = await readSource("../src/lib/use-auth-guard.ts");
+const sessionSource = await readSource("../src/lib/session.ts");
+const topNavSource = await readSource("../src/components/top-nav.tsx");
 const guardSource = source.slice(
   source.indexOf("export function useAuthGuard"),
   source.indexOf("export function useRedirectIfAuthenticated"),

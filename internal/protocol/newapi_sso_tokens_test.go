@@ -91,3 +91,9 @@ func TestNewAPISSOTokenClientRejectsRedirectsAndPrivateErrors(t *testing.T) {
 		t.Fatal("SSO credential was sent to redirect target")
 	}
 }
+
+func TestNewAPISSOTokenClientRequiresInjectedClient(t *testing.T) {
+	if _, err := NewNewAPISSOTokenClient("https://issuer.example", strings.Repeat("s", 32), "test-reference", 7, nil); err == nil {
+		t.Fatal("accepted nil HTTP client")
+	}
+}

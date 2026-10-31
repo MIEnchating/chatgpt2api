@@ -11,6 +11,7 @@ import { isVideoSaveFailure, videoTaskErrorMessage } from "@/lib/video-task-erro
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { statusToneClasses } from "@/components/ui/status-tone";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 import type { ImagePromptPreset } from "@/app/image/image-presets";
 import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/lib/image-options";
@@ -153,9 +154,9 @@ function imageQualityCheckLabel(image: StoredImage) {
 function imageQualityCheckClass(image: StoredImage) {
   const check = image.qualityCheck;
   if (check?.size_matched === false || check?.output_format_matched === false) {
-    return "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300 dark:ring-amber-800/70";
+    return cn("ring-1", statusToneClasses.warning.chip);
   }
-  return "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-300 dark:bg-emerald-950/35 dark:text-emerald-300 dark:ring-emerald-800/70";
+  return cn("ring-1", statusToneClasses.success.chip);
 }
 
 function imageQualityCheckTitle(image: StoredImage) {
@@ -1195,9 +1196,9 @@ export function ImageResults({
                       return (
                         <div
                           key={image.id}
-                          className="mb-3 inline-flex min-h-[160px] w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 align-top sm:mb-4 dark:border-rose-800/70 dark:bg-rose-950/35"
+                          className="mb-3 inline-flex min-h-[160px] w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 align-top sm:mb-4"
                         >
-                          <div className="flex min-h-[112px] min-w-0 flex-1 flex-col items-start gap-2.5 px-5 py-5 text-left text-sm leading-6 text-destructive sm:px-6 dark:text-rose-300">
+                          <div className="flex min-h-[112px] min-w-0 flex-1 flex-col items-start gap-2.5 px-5 py-5 text-left text-sm leading-6 text-destructive sm:px-6">
                             <span className="inline-flex items-center gap-2 font-semibold">
                               <AlertCircle className="size-4 shrink-0" />
                               {video ? "视频生成失败" : "生成失败"}
@@ -1206,12 +1207,12 @@ export function ImageResults({
                               {video ? videoTaskErrorMessage(image.error) : image.error || "请稍后重试"}
                             </p>
                           </div>
-                          <div className="flex shrink-0 justify-end border-t border-destructive/20 bg-card/70 px-5 py-3 sm:px-6 dark:border-rose-800/70">
+                          <div className="flex shrink-0 justify-end border-t border-destructive/20 bg-card/70 px-5 py-3 sm:px-6">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 rounded-full border-destructive/20 bg-card px-3 text-xs text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive dark:border-rose-800/70 dark:text-rose-300 dark:hover:bg-rose-950/35 dark:hover:text-rose-300"
+                              className="h-8 rounded-full border-destructive/20 bg-card px-3 text-xs text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
                               disabled={turnBusy || !turn.prompt.trim()}
                               onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                             >
@@ -1300,21 +1301,21 @@ function turnProgressKey(conversationId: string, turnId: string) {
 
 function getStatusChipClass(status: ImageTurnStatus) {
   if (status === "queued") {
-    return "bg-amber-500/10 text-amber-700 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300";
+    return statusToneClasses.warning.soft;
   }
   if (status === "generating") {
-    return "bg-brand-soft text-brand dark:bg-blue-950/35";
+    return statusToneClasses.info.soft;
   }
   if (status === "success") {
-    return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 dark:bg-emerald-950/35 dark:text-emerald-300";
+    return statusToneClasses.success.soft;
   }
   if (status === "message") {
     return "bg-muted text-muted-foreground";
   }
   if (status === "cancelled") {
-    return "bg-amber-500/10 text-amber-700 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300";
+    return statusToneClasses.warning.soft;
   }
-  return "bg-destructive/10 text-destructive dark:bg-rose-950/35 dark:text-rose-300";
+  return statusToneClasses.danger.soft;
 }
 
 function getTurnModeLabel(turn: ImageTurn) {

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"chatgpt2api/internal/util"
@@ -31,10 +32,18 @@ func (s *CanvasAgentService) StartTool(identity Identity, project string, input 
 
 func (w *canvasAgentWorker) runTool(call map[string]any) {
 	var doc CanvasDocument
-	_ = json.Unmarshal([]byte(agentJSON(w.doc)), &doc)
+	if err := json.Unmarshal([]byte(agentJSON(w.doc)), &doc); err != nil {
+		w.failTool(err)
+		return
+	}
 	w.doc = doc
 	w.persisted = cloneCanvasAgentDocument(doc)
-	_, w.session, _ = agentSession(w.doc, w.req.SessionID)
+	var sessionErr error
+	_, w.session, sessionErr = agentSession(w.doc, w.req.SessionID)
+	if sessionErr != nil {
+		w.failTool(sessionErr)
+		return
+	}
 	w.state = agentMap(w.session["agentState"])
 	w.messages = util.AsMapSlice(w.session["protocolMessages"])
 	w.checkpoint = util.Clean(w.session["contextCheckpoint"])
@@ -75,7 +84,22 @@ func (w *canvasAgentWorker) runTool(call map[string]any) {
 	if status != "success" {
 		reply = util.Clean(agentMap(result)["message"])
 	}
-	_ = w.finish(status, reply)
+	if err := w.finish(status, reply); err != nil {
+		slog.Error("Failed to persist canvas tool result", "run_id", w.req.ID, "error", err)
+	}
+}
+
+// failTool records an unrecoverable setup failure on the run instead of dropping it.
+func (w *canvasAgentWorker) failTool(cause error) {
+	slog.Error("Canvas tool run could not start", "run_id", w.req.ID, "error", cause)
+	if w.doc.AgentRun == nil {
+		return
+	}
+	w.doc.AgentRun.Status = "error"
+	w.doc.AgentRun.Error = cause.Error()
+	if _, err := w.service.canvas.saveAgent(canvasAgentOwner(w.identity), w.doc); err != nil {
+		slog.Error("Failed to persist canvas tool failure", "run_id", w.req.ID, "error", err)
+	}
 }
 
 type CanvasAgentWorkflowReviewAnswer struct {

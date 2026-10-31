@@ -2,9 +2,9 @@ package protocol
 
 import (
 	"errors"
-	"net"
-	"net/url"
 	"strings"
+
+	"chatgpt2api/internal/util"
 )
 
 type ArkVideoReferences struct {
@@ -55,16 +55,8 @@ func ArkVideoContent(prompt string, refs ArkVideoReferences) ([]map[string]any, 
 }
 
 func publicMediaURL(value string) error {
-	u, err := url.Parse(value)
-	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+	if strings.TrimSpace(value) != value || !util.IsPublicHTTPURL(value) {
 		return errors.New("参考素材需要可公开访问的 HTTP(S) 地址")
-	}
-	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return errors.New("参考素材不能使用本地地址")
-	}
-	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()) {
-		return errors.New("参考素材不能使用本地地址")
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -68,19 +69,31 @@ func (e *RelayManagementError) Error() string {
 
 func NewRelayManagementClient(baseURL, provider string, client *http.Client) (*RelayManagementClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("上游 API 地址无效")
+	}
+	// Passwords and the login public key must not travel over plain HTTP; only loopback test servers may use it.
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
 		return nil, errors.New("上游 API 地址无效")
 	}
 	if provider != "newapi" && provider != "sub2api" {
 		return nil, errors.New("上游类型无效")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		return nil, errors.New("上游 HTTP 客户端未注入")
 	}
 	cloned := *client
 	// Even same-origin redirects may replay a password to an unintended endpoint.
 	cloned.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &RelayManagementClient{baseURL: strings.TrimRight(parsed.String(), "/"), provider: provider, client: &cloned}, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c *RelayManagementClient) request(ctx context.Context, method, path, operation string, body any, idempotencyKey string, out any) error {

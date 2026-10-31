@@ -1,3 +1,21 @@
+* text=auto eol=lf
+
+# Binary files must never be normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.glb binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# Shell scripts and container files always keep LF.
 *.sh text eol=lf
 Dockerfile text eol=lf
 Dockerfile* text eol=lf

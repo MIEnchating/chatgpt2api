@@ -530,11 +530,6 @@ func remoteRequestIP(remoteAddr string) string {
 	return util.Clean(value)
 }
 
-func trustedProxyIP(value string) bool {
-	ip := net.ParseIP(strings.TrimSpace(value))
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
-}
-
 func parseLogQuery(r *http.Request) (service.LogQuery, error) {
 	values := r.URL.Query()
 	limit, err := parseLogPageSize(values.Get("page_size"))

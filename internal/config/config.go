@@ -211,7 +211,7 @@ func NewStore() (*Store, error) {
 		EnvFile: envFile,
 		data:    map[string]any{},
 	}
-	if err := os.MkdirAll(s.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(s.DataDir, 0o750); err != nil {
 		return nil, err
 	}
 	if err := initializeDataDirectories(s.DataDir); err != nil {
@@ -1116,7 +1116,7 @@ func (s *Store) saveLocked() error {
 func initializeDataDirectories(dataDir string) error {
 	for _, name := range requiredDataSubdirectories {
 		path := filepath.Join(dataDir, name)
-		if err := os.MkdirAll(path, 0o755); err != nil {
+		if err := os.MkdirAll(path, 0o750); err != nil {
 			return fmt.Errorf("initialize data directory %q: %w", path, err)
 		}
 	}

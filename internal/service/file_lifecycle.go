@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/rand"
 	"net/url"
 	"regexp"
 	"sort"
@@ -78,7 +80,7 @@ func NewFileLifecycleService(backend storage.Backend) (*FileLifecycleService, er
 }
 
 func (s *FileLifecycleService) loadLocked() (fileLifecycleState, error) {
-	raw, err := s.store.LoadJSONDocument(fileLifecycleDocument)
+	raw, err := loadStoredJSONBounded(s.store, fileLifecycleDocument)
 	if err != nil {
 		return fileLifecycleState{}, err
 	}
@@ -120,8 +122,11 @@ func (s *FileLifecycleService) mutate(update func(*fileLifecycleState) error) er
 		if err := update(&state); err != nil {
 			return err
 		}
-		if err := s.store.SaveJSONDocument(fileLifecycleDocument, state); err != nil {
+		if err := saveStoredJSONBounded(s.store, fileLifecycleDocument, state); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				// Randomized backoff keeps contending instances from retrying in lockstep.
+				step := time.Duration(attempt+1) * 5 * time.Millisecond
+				time.Sleep(step + time.Duration(rand.Int63n(int64(step))))
 				continue
 			}
 			return err
@@ -174,7 +179,16 @@ func (s *FileLifecycleService) ProtectStorageReferences(value any) (func(), erro
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			_ = s.mutate(func(state *fileLifecycleState) error { delete(state.Leases, leaseID); return nil })
+			var releaseErr error
+			for attempt := 0; attempt < 3; attempt++ {
+				releaseErr = s.mutate(func(state *fileLifecycleState) error { delete(state.Leases, leaseID); return nil })
+				if releaseErr == nil {
+					break
+				}
+			}
+			if releaseErr != nil {
+				slog.Error("release storage reference lease failed; it expires on its own", "lease_id", leaseID, "error", releaseErr)
+			}
 		})
 	}, nil
 }

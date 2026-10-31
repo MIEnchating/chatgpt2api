@@ -14,7 +14,7 @@ import (
 	"chatgpt2api/internal/service"
 )
 
-func ssoRelayGroupCreator(identity service.Identity) func(context.Context, string) error {
+func ssoRelayGroupCreator(identity service.Identity, httpClient *http.Client) func(context.Context, string) error {
 	return func(ctx context.Context, group string) error {
 		cfg, err := loadSSOConfig()
 		if err != nil || !slices.Contains(cfg.issuers, identity.SSOIssuer) {
@@ -25,7 +25,7 @@ func ssoRelayGroupCreator(identity service.Identity) func(context.Context, strin
 		if !ok || err != nil || userID <= 0 {
 			return errors.New("单点登录用户身份无效，无法自动创建密钥")
 		}
-		client, err := protocol.NewNewAPISSOTokenClient(identity.SSOIssuer, cfg.secret, identity.SSOReference, userID, nil)
+		client, err := protocol.NewNewAPISSOTokenClient(identity.SSOIssuer, cfg.secret, identity.SSOReference, userID, httpClient)
 		if err != nil {
 			return err
 		}

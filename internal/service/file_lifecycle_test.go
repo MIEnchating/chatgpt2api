@@ -333,6 +333,13 @@ func (b *fileLifecycleFailingBackend) SaveJSONDocument(name string, value any) e
 	}
 	return b.DatabaseBackend.SaveJSONDocument(name, value)
 }
+
+// The embedded DatabaseBackend also provides the context-aware save that bounded callers prefer,
+// so it must route through the same failure injection as the plain save.
+func (b *fileLifecycleFailingBackend) SaveJSONDocumentContext(_ context.Context, name string, value any) error {
+	return b.SaveJSONDocument(name, value)
+}
+
 func TestFileLifecycleReadAndOutboxFailuresNeverDelete(t *testing.T) {
 	for _, failure := range []string{"scan", "outbox"} {
 		t.Run(failure, func(t *testing.T) {

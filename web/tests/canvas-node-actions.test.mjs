@@ -2,24 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const actionsSource = readFileSync(new URL("../src/app/canvas/canvas-node-actions-panel.tsx", import.meta.url), "utf8");
-const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx", import.meta.url), "utf8");
-const controlsSource = readFileSync(new URL("../src/app/canvas/canvas-workspace-controls.tsx", import.meta.url), "utf8");
-const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
-const specialNodesSource = readFileSync(new URL("../src/app/canvas/canvas-special-nodes.tsx", import.meta.url), "utf8");
-const generationFooterSource = readFileSync(new URL("../src/app/canvas/canvas-generation-footer.tsx", import.meta.url), "utf8");
-const imageComposerSource = readFileSync(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8");
-const agentPanelSource = readFileSync(new URL("../src/app/canvas/canvas-agent-panel.tsx", import.meta.url), "utf8");
-const canvasLibrarySource = readFileSync(new URL("../src/app/canvas/library-page.tsx", import.meta.url), "utf8");
-const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
-const configComposerSource = readFileSync(new URL("../src/app/canvas/canvas-config-composer.tsx", import.meta.url), "utf8");
-const promptScrollFrameSource = readFileSync(new URL("../src/components/generation/prompt-textarea-frame.tsx", import.meta.url), "utf8");
-const workflowSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
-const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8");
-const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
-const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
-const canvasTaskQueueStoreSource = readFileSync(new URL("../src/store/canvas-task-queue.ts", import.meta.url), "utf8");
-const imageToolsSource = readFileSync(new URL("../src/app/canvas/canvas-image-tools.tsx", import.meta.url), "utf8");
+const actionsSource = readFileSync(new URL("../src/app/canvas/canvas-node-actions-panel.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const controlsSource = readFileSync(new URL("../src/app/canvas/canvas-workspace-controls.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const specialNodesSource = readFileSync(new URL("../src/app/canvas/canvas-special-nodes.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const generationFooterSource = readFileSync(new URL("../src/app/canvas/canvas-generation-footer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const imageComposerSource = readFileSync(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const agentPanelSource = readFileSync(new URL("../src/app/canvas/canvas-agent-panel.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const canvasLibrarySource = readFileSync(new URL("../src/app/canvas/library-page.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const configComposerSource = readFileSync(new URL("../src/app/canvas/canvas-config-composer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const promptScrollFrameSource = readFileSync(new URL("../src/components/generation/prompt-textarea-frame.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const workflowSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const canvasTaskQueueStoreSource = readFileSync(new URL("../src/store/canvas-task-queue.ts", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const imageToolsSource = readFileSync(new URL("../src/app/canvas/canvas-image-tools.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 
 test("node tools retain media operations and leave generic commands in the context menu", () => {
   for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "下载", "存入我的素材"]) {

@@ -19,6 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { LoadingState } from "@/components/ui/loading-state";
+import { statusToneClasses } from "@/components/ui/status-tone";
+import { copyWithToast } from "@/lib/clipboard-text";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 import { logCursorForPage, recordLogPageCursor, resetLogCursorStack } from "./log-pagination";
@@ -230,9 +232,9 @@ function levelLabel(level: string) {
 }
 
 function levelDotClass(level: string) {
-  if (level === "error") return "bg-rose-500";
-  if (level === "warning") return "bg-amber-500";
-  return "bg-sky-500";
+  if (level === "error") return statusToneClasses.danger.dot;
+  if (level === "warning") return statusToneClasses.warning.dot;
+  return statusToneClasses.info.dot;
 }
 
 function methodBadgeVariant(method: string) {
@@ -455,14 +457,7 @@ function LogsContent() {
     setDetailOpen(true);
   };
 
-  const handleCopyDetailJSON = async () => {
-    try {
-      await navigator.clipboard.writeText(detailJSON(detailLog));
-      toast.success("日志详情已复制");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
+  const handleCopyDetailJSON = () => copyWithToast(detailJSON(detailLog), "日志详情已复制");
 
   useEffect(() => {
     let ignore = false;
@@ -607,12 +602,12 @@ function LogsContent() {
           </div>
           <div className="hidden h-4 w-px bg-border sm:block" />
           <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-rose-500" />
+            <span className={`size-1.5 rounded-full ${statusToneClasses.danger.dot}`} />
             <span>本页错误</span>
             <span className="font-medium tabular-nums text-foreground">{errorCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-amber-500" />
+            <span className={`size-1.5 rounded-full ${statusToneClasses.warning.dot}`} />
             <span>本页警告</span>
             <span className="font-medium tabular-nums text-foreground">{warningCount}</span>
           </div>
@@ -722,7 +717,7 @@ function LogsContent() {
       </ManagementPanel>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-xl p-0">
+        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border py-4 pl-4 pr-14 sm:py-5 sm:pl-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
@@ -794,7 +789,7 @@ function LogsContent() {
               {typeof detailLog?.detail?.error === "string" && detailLog.detail.error ? (
                 <section className="space-y-3">
                   <div className="text-sm font-semibold text-foreground">错误信息</div>
-                  <ScrollArea className="max-h-48 whitespace-pre-wrap break-words rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs leading-6 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+                  <ScrollArea className={`max-h-48 whitespace-pre-wrap break-words rounded-xl border p-4 text-xs leading-6 ${statusToneClasses.danger.panel}`}>
                     {detailLog.detail.error}
                   </ScrollArea>
                 </section>

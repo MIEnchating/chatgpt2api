@@ -64,7 +64,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 				util.WriteError(w, http.StatusBadRequest, "canvas revision is required")
 				return
 			}
-			workspace, err = a.canvas.UpdateProjectAtRevision(ownerID, action, input.ProjectID, input.Title, *input.Revision)
+			workspace, err = a.canvas.UpdateProjectAtRevision(ownerID, action, input.ProjectID, input.Title, a.settleCanvasAgentRevision(identity, input.ProjectID, *input.Revision))
 		} else {
 			workspace, err = a.canvas.UpdateProject(ownerID, action, input.ProjectID, input.Title)
 		}
@@ -91,7 +91,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "canvas revision is required")
 			return
 		}
-		document, err := a.canvas.ClearAtRevision(ownerID, r.URL.Query().Get("project_id"), revision)
+		document, err := a.canvas.ClearAtRevision(ownerID, r.URL.Query().Get("project_id"), a.settleCanvasAgentRevision(identity, r.URL.Query().Get("project_id"), revision))
 		if err != nil {
 			writeCanvasMutationError(w, err, "failed to clear canvas")
 			return

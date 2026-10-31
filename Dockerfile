@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BUN_IMAGE=oven/bun:1.3.13-alpine
-ARG GO_IMAGE=golang:1.26.10-bookworm
-ARG RUNTIME_IMAGE=node:22-bookworm-slim
+# Base images are pinned by digest; update tag and digest together.
+ARG BUN_IMAGE=oven/bun:1.3.13-alpine@sha256:4de475389889577f346c636f956b42a5c31501b654664e9ae5726f94d7bb5349
+ARG GO_IMAGE=golang:1.26.10-bookworm@sha256:23ce71337b726608afb1bc00986e630a05034a87a87ea1fc2cd1ae5cf33387eb
+ARG RUNTIME_IMAGE=node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
 
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS agent-deps
+FROM --platform=$BUILDPLATFORM ${RUNTIME_IMAGE} AS agent-deps
 WORKDIR /app/agent-runtime
 COPY agent-runtime/package.json agent-runtime/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
@@ -54,7 +55,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM --platform=$TARGETPLATFORM ${RUNTIME_IMAGE} AS app
 
 WORKDIR /app
-ENV PORT=80
+ENV PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -65,11 +66,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=go-build /out/chatgpt2api ./chatgpt2api
 COPY --from=agent-deps /app/agent-runtime ./agent-runtime
 
-RUN mkdir -p /app/data && chmod +x /app/chatgpt2api
+# /app must be writable: the service persists admin settings to /app/.env.
+RUN mkdir -p /app/data && chown node:node /app /app/data && chmod +x /app/chatgpt2api
 
-EXPOSE 80
+USER node
+
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:${PORT:-80}/health || exit 1
+    CMD curl -fsS http://127.0.0.1:${PORT:-8080}/health || exit 1
 
 CMD ["/app/chatgpt2api"]

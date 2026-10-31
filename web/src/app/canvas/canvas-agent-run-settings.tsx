@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { Brain, ImagePlus, Settings2, Waves } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,7 +12,7 @@ export function CanvasAgentRunSettings({ config, mode, busy, onChange }: {
   busy: boolean;
   onChange: (patch: Partial<CanvasAgentConfig>) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false); /* Close for good when a run starts so the dialog cannot reopen after it ends. */ useEffect(() => { if (busy) setOpen(false); }, [busy]);
   const protocol = config.textApiMode || "responses";
   const supportsReasoning = protocol === "responses";
 

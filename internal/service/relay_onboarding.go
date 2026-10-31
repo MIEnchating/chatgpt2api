@@ -6,11 +6,59 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
 // Serialize initialization for the same upstream user within this process.
-var relayOnboardingLocks [64]sync.Mutex
+const relayOnboardingCreateTimeout = 30 * time.Second
+
+type relayOnboardingLockEntry struct {
+	token chan struct{}
+	refs  int
+}
+
+type relayOnboardingLockSet struct {
+	mu      sync.Mutex
+	entries map[int64]*relayOnboardingLockEntry
+}
+
+var relayOnboardingLocks = &relayOnboardingLockSet{entries: map[int64]*relayOnboardingLockEntry{}}
+
+// acquire takes a per-user lock that a canceled context can abandon. Entries are
+// reference counted so the map does not grow with the number of users seen.
+func (s *relayOnboardingLockSet) acquire(ctx context.Context, id int64) (func(), error) {
+	s.mu.Lock()
+	entry := s.entries[id]
+	if entry == nil {
+		entry = &relayOnboardingLockEntry{token: make(chan struct{}, 1)}
+		s.entries[id] = entry
+	}
+	entry.refs++
+	s.mu.Unlock()
+	release := func() {
+		s.mu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(s.entries, id)
+		}
+		s.mu.Unlock()
+	}
+	select {
+	case entry.token <- struct{}{}:
+		return func() { <-entry.token; release() }, nil
+	case <-ctx.Done():
+		release()
+		return nil, ctx.Err()
+	}
+}
+
+// createWithTimeout bounds one upstream key creation so it cannot hold the user lock indefinitely.
+func createWithTimeout(ctx context.Context, create func(context.Context, string) error, group string) error {
+	createCtx, cancel := context.WithTimeout(ctx, relayOnboardingCreateTimeout)
+	defer cancel()
+	return create(createCtx, group)
+}
 
 // EnsureCreationGroupTokens matches groups against token membership, never names.
 // create is called only after a successful database read found no usable token.
@@ -26,9 +74,11 @@ func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, ident
 	if !ok {
 		return result, []string{"平台用户身份无效，请重新登录"}
 	}
-	lock := &relayOnboardingLocks[uint64(userID)%uint64(len(relayOnboardingLocks))]
-	lock.Lock()
-	defer lock.Unlock()
+	unlock, lockErr := relayOnboardingLocks.acquire(contextOrBackground(ctx), userID)
+	if lockErr != nil {
+		return result, []string{lockErr.Error()}
+	}
+	defer unlock()
 	// Keep the identity read inside the lock so it cannot race another login's write.
 	if _, err := r.relayOnboardingUserID(ctx, identity); err != nil {
 		return result, []string{err.Error()}
@@ -56,7 +106,7 @@ func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, ident
 		if err == nil && len(names) == 0 {
 			if create == nil {
 				err = fmt.Errorf("分组“%s”没有可用 Key，请在平台创建后重试", group)
-			} else if err = create(ctx, group); err == nil {
+			} else if err = createWithTimeout(ctx, create, group); err == nil {
 				names, err = r.relayGroupTokenNames(ctx, userID, group)
 				if err == nil && len(names) == 0 {
 					err = fmt.Errorf("分组“%s”的 Key 创建后尚未在数据库中可用，请稍后重新登录", group)

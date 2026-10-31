@@ -123,7 +123,8 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
       onKeyDown?.(event);
-      if (event.defaultPrevented || composingRef.current) return;
+      // Safari fires compositionend before the confirming keydown, so also check the native flags.
+      if (event.defaultPrevented || composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
 
       if (event.key === "Enter" || event.key === "," || event.key === "，" || event.key === ";" || event.key === "；") {
         event.preventDefault();

@@ -930,16 +930,17 @@ func (s *ImageService) withThumbnailJob(rel string, run func() map[string]any) m
 		<-done
 		return job.result
 	}
-	job := &thumbnailJob{done: make(chan struct{})}
+	job := &thumbnailJob{done: make(chan struct{}), result: map[string]any{}}
 	s.thumbnailJobs[rel] = job
 	s.thumbnailMu.Unlock()
-
+	// Cleanup is deferred so a panicking run cannot leave waiters blocked forever.
+	defer func() {
+		s.thumbnailMu.Lock()
+		delete(s.thumbnailJobs, rel)
+		close(job.done)
+		s.thumbnailMu.Unlock()
+	}()
 	job.result = run()
-
-	s.thumbnailMu.Lock()
-	delete(s.thumbnailJobs, rel)
-	close(job.done)
-	s.thumbnailMu.Unlock()
 	return job.result
 }
 
@@ -1147,7 +1148,7 @@ func (s *ImageService) loadImageMetadata(rel string) (imageMetadata, error) {
 	}
 	var raw map[string]any
 	if s.store != nil {
-		value, err := s.store.LoadJSONDocument(imageOwnerDocumentName(rel))
+		value, err := loadStoredJSONBounded(s.store, imageOwnerDocumentName(rel))
 		if err != nil {
 			return imageMetadata{Visibility: ImageVisibilityPrivate}, err
 		}
@@ -1417,7 +1418,7 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 		value["height"] = meta.Height
 	}
 	if s.store != nil {
-		return s.store.SaveJSONDocument(imageOwnerDocumentName(rel), value)
+		return saveStoredJSONBounded(s.store, imageOwnerDocumentName(rel), value)
 	}
 	if err := os.MkdirAll(filepath.Dir(metaPath), 0o755); err != nil {
 		return err
@@ -1766,7 +1767,7 @@ func (s *ImageService) removeImageOwnerWithStats(rel string) (int, int64, error)
 			if !errors.Is(lastErr, storage.ErrConcurrentRowUpdate) {
 				return 0, 0, lastErr
 			}
-			value, loadErr := s.store.LoadJSONDocument(imageOwnerDocumentName(rel))
+			value, loadErr := loadStoredJSONBounded(s.store, imageOwnerDocumentName(rel))
 			if loadErr != nil {
 				return 0, 0, loadErr
 			}
@@ -1913,7 +1914,7 @@ func (s *ImageService) imageOwnerMetadataPath(rel string) (string, error) {
 
 func (s *ImageService) readThumbnailMetadata(rel, metaPath string, sourceMtime time.Time) (map[string]any, error) {
 	if s.store != nil {
-		raw, err := s.store.LoadJSONDocument(thumbnailMetadataDocumentName(rel))
+		raw, err := loadStoredJSONBounded(s.store, thumbnailMetadataDocumentName(rel))
 		if err != nil {
 			return nil, err
 		}
@@ -1939,7 +1940,7 @@ func (s *ImageService) writeThumbnailMetadata(rel, metaPath string, value map[st
 		return errors.New("image is being deleted")
 	}
 	if s.store != nil {
-		return s.store.SaveJSONDocument(thumbnailMetadataDocumentName(rel), value)
+		return saveStoredJSONBounded(s.store, thumbnailMetadataDocumentName(rel), value)
 	}
 	return writeJSONFile(metaPath, value)
 }

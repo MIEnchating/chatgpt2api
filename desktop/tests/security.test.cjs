@@ -64,3 +64,10 @@ test("local network and clipboard reading need native confirmation scoped to the
   configureSession(session, "https://app.test");
   assert.equal(session.check(contents, "loopback-network", "https://app.test", details), false);
 });
+
+test("plain HTTP is accepted only for loopback hosts", () => {
+  for (const value of ["http://localhost:8090", "http://127.0.0.1:8090", "http://[::1]:8090"]) assert.equal(serverOrigin(value), new URL(value).origin);
+  for (const value of ["http://192.168.1.10:8090", "http://example.test", "http://localhost.example.test", "http://127.0.0.1.example.test"]) assert.throws(() => serverOrigin(value), /HTTPS/);
+  assert.equal(serverOrigin("https://192.168.1.10:8443"), "https://192.168.1.10:8443");
+  assert.throws(() => connectionInput({ mode: "remote", remoteURL: "http://10.0.0.5:8090" }, false), /HTTPS/);
+});

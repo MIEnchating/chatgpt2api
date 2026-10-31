@@ -76,12 +76,12 @@ func (l *loginRateLimiter) recordFailure(ip, account string) {
 	l.trimLocked(now)
 }
 
-func (l *loginRateLimiter) recordSuccess(account string) {
+func (l *loginRateLimiter) recordSuccess(ip, account string) {
 	if l == nil {
 		return
 	}
 	l.mu.Lock()
-	delete(l.entries, "account:"+normalizeLoginRateValue(account))
+	delete(l.entries, loginAccountKey(ip, account))
 	l.mu.Unlock()
 }
 
@@ -102,6 +102,11 @@ func (l *loginRateLimiter) trimLocked(now time.Time) {
 		oldestKey := ""
 		var oldest time.Time
 		for key, entry := range l.entries {
+			// Never evict an entry that is still blocking: flooding the table
+			// with new keys must not lift an existing lockout.
+			if entry.blockedUntil.After(now) {
+				continue
+			}
 			if oldestKey == "" || entry.lastSeen.Before(oldest) {
 				oldestKey = key
 				oldest = entry.lastSeen
@@ -119,10 +124,16 @@ func loginRateKeys(ip, account string) []string {
 	if value := normalizeLoginRateValue(ip); value != "" {
 		keys = append(keys, "ip:"+value)
 	}
-	if value := normalizeLoginRateValue(account); value != "" {
-		keys = append(keys, "account:"+value)
+	if normalizeLoginRateValue(account) != "" {
+		keys = append(keys, loginAccountKey(ip, account))
 	}
 	return keys
+}
+
+// loginAccountKey scopes the per-account counter to the client address, so a
+// third party cannot lock a victim's account out from another network.
+func loginAccountKey(ip, account string) string {
+	return "account:" + normalizeLoginRateValue(ip) + "|" + normalizeLoginRateValue(account)
 }
 
 func loginRatePolicy(key string) (int, time.Duration) {

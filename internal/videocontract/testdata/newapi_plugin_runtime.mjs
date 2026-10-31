@@ -121,12 +121,7 @@ for (const status of [302, 401, 503]) check(`lookup error ${status} never reuses
   response = { status, body: {} };
   assert.throws(() => plugin.buildContentRequest(content));
 });
-check('HTTP result URLs use the host credentialless transport', () => {
-  const video_url='http://cdn.example/video';
-  response={status:200,body:{id:'vendor-id',status:'completed',video_url}};
-  assert.deepEqual(plugin.buildContentRequest(content),{url:video_url,method:'GET',credentialless:true});
-});
-for (const video_url of ['https://secret@cdn.example/video', 'ftp://cdn.example/video', 'https://cdn.example/video#fragment', '']) check(`unsafe media ${video_url}`, () => {
+for (const video_url of ['http://cdn.example/video', 'https://secret@cdn.example/video', 'ftp://cdn.example/video', 'https://cdn.example/video#fragment', '']) check(`unsafe media ${video_url}`, () => {
   response = { status: 200, body: { id: 'vendor-id', status: 'completed', video_url } };
   assert.throws(() => plugin.buildContentRequest(content));
 });

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import type { ComponentProps, MouseEvent as ReactMouseEvent } from "react";
 import { AudioLines, Image as ImageIcon, LoaderCircle, Upload } from "lucide-react";
 
 import { AutoDLWorkflowFields } from "@/components/autodl-workflow-fields";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +16,7 @@ import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
+import { CanvasParameterHeader } from "@/app/canvas/canvas-parameter-header";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
   AUDIO_FORMAT_OPTIONS,
@@ -29,9 +31,16 @@ import {
   canvasAudioProvider,
   type CanvasAudioReference,
 } from "@/app/canvas/canvas-audio";
-import { CanvasPanoramaViewer } from "@/app/canvas/canvas-panorama-viewer";
+// Load the panorama viewer lazily so @photo-sphere-viewer/core ships in its own chunk.
+const LazyCanvasPanoramaViewer = lazy(() => import("@/app/canvas/canvas-panorama-viewer").then((module) => ({ default: module.CanvasPanoramaViewer })));
 
-export { CanvasPanoramaViewer } from "@/app/canvas/canvas-panorama-viewer";
+export function CanvasPanoramaViewer(props: ComponentProps<typeof LazyCanvasPanoramaViewer>) {
+  return (
+    <Suspense fallback={<LoadingState label="正在加载全景图" className="min-h-0" />}>
+      <LazyCanvasPanoramaViewer {...props} />
+    </Suspense>
+  );
+}
 
 export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveStart }: { node: CanvasNode; onPanoramaOpen?: () => void; onPanoramaMoveStart?: (event: ReactMouseEvent<HTMLButtonElement>) => void }) {
   if (node.type === "audio") {
@@ -59,7 +68,7 @@ export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSel
             <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
           </div>
         </div>
-        <div className="space-y-3"><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div>
+        <div className="space-y-3"><CanvasParameterHeader summary={model || undefined} /><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div>
       </AppScrollArea>
       <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} secondaryAction={{ label: node.url ? "替换音频" : "上传音频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
     </div>

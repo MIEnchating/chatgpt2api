@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -87,7 +88,18 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 				workers.Add(1)
 				go func(job *canvasAgentGeneration) {
 					defer workers.Done()
-					task, err := w.service.media(ctx, w.identity, job.node, job.metadata)
+					var task map[string]any
+					var err error
+					// A panic in media generation must still reach the main loop, or it would wait until ctx is cancelled.
+					func() {
+						defer func() {
+							if recovered := recover(); recovered != nil {
+								slog.Error("Canvas agent media generation panicked", "node_id", job.node.ID, "panic", recovered)
+								err = fmt.Errorf("media generation panicked: %v", recovered)
+							}
+						}()
+						task, err = w.service.media(ctx, w.identity, job.node, job.metadata)
+					}()
 					completed <- completion{job: job, task: task, err: err}
 				}(job)
 			}

@@ -53,7 +53,7 @@ func (s *CanvasDocumentService) CanvasShare(ownerID, projectID, action string) (
 				return CanvasShare{}, err
 			}
 			token = hex.EncodeToString(entropy[:])
-			if err := s.store.SaveJSONDocument(canvasShareIndexName(token), canvasShareIndex{OwnerID: ownerID, ProjectID: projectID}); err != nil {
+			if err := saveStoredJSONBounded(s.store, canvasShareIndexName(token), canvasShareIndex{OwnerID: ownerID, ProjectID: projectID}); err != nil {
 				return CanvasShare{}, err
 			}
 			if workspace.Shares == nil {
@@ -101,7 +101,7 @@ func (s *CanvasDocumentService) SharedCanvas(token string) (CanvasDocument, stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := s.store.LoadJSONDocument(canvasShareIndexName(token))
+	raw, err := loadStoredJSONBounded(s.store, canvasShareIndexName(token))
 	if err != nil {
 		return CanvasDocument{}, "", err
 	}

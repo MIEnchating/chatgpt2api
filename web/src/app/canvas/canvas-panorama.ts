@@ -2,7 +2,7 @@ export const PANORAMA_IMAGE_SIZE = "2:1";
 export const PANORAMA_NODE_SIZE = { width: 340, height: 170 } as const;
 
 function isLocalPanoramaHost(hostname: string) {
-  const normalized = hostname.trim().toLowerCase();
+  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
   if (normalized === "localhost" || normalized === "::1" || normalized.endsWith(".localhost")) return true;
   const parts = normalized.split(".").map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;

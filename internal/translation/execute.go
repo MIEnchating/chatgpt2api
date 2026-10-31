@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -17,6 +18,19 @@ import (
 
 	"github.com/dop251/goja"
 )
+
+const (
+	// maxResponseBytes bounds submit and poll responses. They are held in memory whole and may be
+	// re-encoded as base64 data URLs (about 4/3 of the size), so peak memory is several times this value.
+	maxResponseBytes = 32 << 20
+	// maxVideoBytes bounds one downloaded video. The video is returned as a base64 data URL, so 64 MiB
+	// keeps a single download near 200 MiB of peak memory while still fitting short generated clips.
+	maxVideoBytes = 64 << 20
+	// maxConcurrentDownloads bounds simultaneous video downloads across all engines in the process.
+	maxConcurrentDownloads = 4
+)
+
+var downloadSlots = make(chan struct{}, maxConcurrentDownloads)
 
 type Channel struct {
 	Source  string `json:"source"`
@@ -43,6 +57,8 @@ type requestPlan struct {
 	Body         any            `json:"body"`
 	Format       string         `json:"format"`
 	ResponseType string         `json:"responseType"`
+	// CrossOrigin must be set explicitly by the rule to allow an absolute url outside the channel origin.
+	CrossOrigin bool `json:"crossOrigin"`
 }
 
 func New(channel Channel, model, key string, variables map[string]any, client *http.Client) (*Engine, error) {
@@ -174,11 +190,21 @@ func (e *Engine) request(ctx context.Context, query bool, id string) (*http.Requ
 	if err != nil {
 		return nil, "", err
 	}
-	if !target.IsAbs() {
+	absolute := target.IsAbs()
+	if !absolute {
 		target, err = url.Parse(strings.TrimRight(e.channel.BaseURL, "/") + "/" + strings.TrimLeft(escaped, "/"))
 	}
 	if err != nil || target == nil || target.Host == "" || target.User != nil || (target.Scheme != "http" && target.Scheme != "https") {
 		return nil, "", fmt.Errorf("无效请求地址")
+	}
+	// Absolute urls default to the channel origin so a rule cannot send the channel key to another host.
+	crossOrigin := false
+	if absolute {
+		base, baseErr := url.Parse(e.channel.BaseURL)
+		crossOrigin = baseErr != nil || !strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host)
+		if crossOrigin && !plan.CrossOrigin {
+			return nil, "", fmt.Errorf("请求地址与渠道地址不同源，需要在规则中显式声明 crossOrigin:true")
+		}
 	}
 	text := func(v any) string {
 		if s, ok := v.(string); ok {
@@ -264,7 +290,7 @@ func (e *Engine) request(ctx context.Context, query bool, id string) (*http.Requ
 			req.Header.Set(k, text(v))
 		}
 	}
-	if !customAuth && req.Header.Get("Authorization") == "" && req.Header.Get("X-Api-Key") == "" && req.Header.Get("X-Goog-Api-Key") == "" {
+	if !crossOrigin && !customAuth && req.Header.Get("Authorization") == "" && req.Header.Get("X-Api-Key") == "" && req.Header.Get("X-Goog-Api-Key") == "" {
 		req.Header.Set("Authorization", "Bearer "+e.key)
 	}
 	if contentType != "" && (req.Header.Get("Content-Type") == "" || plan.Format == "formData") {
@@ -345,6 +371,17 @@ type responseError struct {
 }
 
 func (e responseError) Error() string { return e.message }
+
+// requestError strips the request URL carried by *url.Error. The URL may embed the channel key
+// through {channelKey} in the path or query, so only the operation and the cause are kept.
+func requestError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
+	}
+	return err
+}
+
 func (e *Engine) send(ctx context.Context, kind string, query bool, id string) (Result, bool, error) {
 	var result Result
 	req, format, err := e.request(ctx, query, id)
@@ -353,15 +390,15 @@ func (e *Engine) send(ctx context.Context, kind string, query bool, id string) (
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return result, true, err
+		return result, true, requestError(err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (128<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return result, true, err
 	}
-	if len(data) > 128<<20 {
-		return result, false, fmt.Errorf("响应超过 128 MiB")
+	if len(data) > maxResponseBytes {
+		return result, false, fmt.Errorf("响应超过 %d MiB", maxResponseBytes>>20)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return result, resp.StatusCode == 429 || resp.StatusCode >= 500, responseError{resp.StatusCode, fmt.Sprintf("自定义接口返回 HTTP %d", resp.StatusCode)}
@@ -503,6 +540,12 @@ func (e *Engine) send(ctx context.Context, kind string, query bool, id string) (
 }
 
 func (e *Engine) download(ctx context.Context, original *http.Request, target *url.URL) (Result, bool, error) {
+	select {
+	case downloadSlots <- struct{}{}:
+		defer func() { <-downloadSlots }()
+	case <-ctx.Done():
+		return Result{}, false, ctx.Err()
+	}
 	params := original.URL.Query()
 	for k, v := range target.Query() {
 		params[k] = v
@@ -518,10 +561,10 @@ func (e *Engine) download(ctx context.Context, original *http.Request, target *u
 	req.Header.Del("Content-Length")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return Result{}, true, err
+		return Result{}, true, requestError(err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (128<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxVideoBytes+1))
 	if err != nil {
 		return Result{}, true, err
 	}
@@ -529,7 +572,10 @@ func (e *Engine) download(ctx context.Context, original *http.Request, target *u
 		return Result{}, resp.StatusCode == 429 || resp.StatusCode >= 500, fmt.Errorf("下载媒体失败：HTTP %d", resp.StatusCode)
 	}
 	mime := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
-	if len(data) == 0 || len(data) > 128<<20 || json.Valid(data) || strings.HasPrefix(mime, "text/") {
+	if len(data) > maxVideoBytes {
+		return Result{}, false, fmt.Errorf("下载结果超过 %d MiB", maxVideoBytes>>20)
+	}
+	if len(data) == 0 || json.Valid(data) || strings.HasPrefix(mime, "text/") {
 		return Result{}, false, fmt.Errorf("下载结果不是有效媒体文件")
 	}
 	if !strings.HasPrefix(mime, "video/") {

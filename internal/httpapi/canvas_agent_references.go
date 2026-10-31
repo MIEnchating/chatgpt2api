@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -91,7 +90,7 @@ func (a *App) canvasAgentImage(ctx context.Context, identity service.Identity, r
 		if e != nil {
 			return protocol.UploadedImage{}, e
 		}
-		reader, err = os.Open(ref.Path)
+		reader, err = service.OpenMediaFile(ref.Path)
 	default:
 		if !isPublicReferenceURL(raw) {
 			return protocol.UploadedImage{}, fmt.Errorf("图片引用必须是当前用户素材或公开 HTTP(S) 地址")
@@ -171,7 +170,7 @@ func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Id
 			if !allowed {
 				return "", fmt.Errorf("无权读取媒体引用")
 			}
-			reader, err = os.Open(filepath.Join(dir, name))
+			reader, err = service.OpenMediaFile(filepath.Join(dir, name))
 			if err != nil {
 				return "", err
 			}

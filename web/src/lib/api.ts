@@ -1252,7 +1252,7 @@ export async function createImageEditTask(
   const uploadFiles = Array.isArray(files) ? files : [files];
   let maskFile: File | undefined;
   if (toolOptions?.inputImageMask) {
-    const response = await fetch(toolOptions.inputImageMask);
+    const response = await fetch(toolOptions.inputImageMask, { signal: requestOptions?.signal });
     if (!response.ok) {
       throw new Error("无法读取局部编辑遮罩");
     }

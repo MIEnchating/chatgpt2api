@@ -66,7 +66,7 @@ if bash "$hook" > "$test_root/hook-error.log" 2>&1; then
   fail 'unformatted partial staging was accepted'
 fi
 assert_unchanged main.go "$staged_hash" "$working_hash"
-rg -q 'partially staged Go file needs gofmt: main.go' "$test_root/hook-error.log" || fail 'missing actionable formatting error'
+grep -Fq 'partially staged Go file needs gofmt: main.go' "$test_root/hook-error.log" || fail 'missing actionable formatting error'
 printf 'PASS: unformatted partial staging fails without changing content\n'
 
 setup_repo invalid-partial

@@ -137,7 +137,7 @@ func (s *AgentSkillService) Save(ownerID, id string, system bool, input AgentSki
 			item.ID, item.Revision = id, input.Revision+1
 			items[index] = item
 		}
-		if err := s.store.SaveJSONDocument(agentSkillDocumentName(ownerID, system), map[string]any{"items": items}); err != nil {
+		if err := saveStoredJSONBounded(s.store, agentSkillDocumentName(ownerID, system), map[string]any{"items": items}); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
 				continue
 			}
@@ -167,7 +167,7 @@ func (s *AgentSkillService) Delete(ownerID, id string, system bool, revision int
 			return ErrAgentSkillConflict
 		}
 		items = append(items[:index], items[index+1:]...)
-		if err := s.store.SaveJSONDocument(agentSkillDocumentName(ownerID, system), map[string]any{"items": items}); err != nil {
+		if err := saveStoredJSONBounded(s.store, agentSkillDocumentName(ownerID, system), map[string]any{"items": items}); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
 				continue
 			}
@@ -185,7 +185,7 @@ func (s *AgentSkillService) load(ownerID string, system bool) ([]AgentSkill, err
 	if s.store == nil {
 		return nil, errors.New("agent skill storage is unavailable")
 	}
-	raw, err := s.store.LoadJSONDocument(agentSkillDocumentName(ownerID, system))
+	raw, err := loadStoredJSONBounded(s.store, agentSkillDocumentName(ownerID, system))
 	if err != nil {
 		return nil, err
 	}

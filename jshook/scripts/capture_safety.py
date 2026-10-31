@@ -29,6 +29,13 @@ def write_private_capture(path: Path, data: bytes) -> None:
         stream.write(data)
 
 
+def attachment_download_path(conversation_id, attachment_id):
+    # A missing conversation id would otherwise produce a /conversation/None/ request.
+    if not conversation_id:
+        raise RuntimeError("Attachment download requires a conversation id")
+    return f"/backend-api/conversation/{conversation_id}/attachment/{attachment_id}/download"
+
+
 def download_image(session, public_get, url: str, user_agent: str):
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:

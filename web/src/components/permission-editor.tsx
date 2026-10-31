@@ -6,6 +6,7 @@ import { KeyRound, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { statusToneClasses } from "@/components/ui/status-tone";
 import type { ApiPermission, PermissionMenu } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -50,14 +51,14 @@ function toggleListValues(values: string[], targets: string[], checked: boolean)
 function apiMethodClass(method: string) {
   switch (method.toUpperCase()) {
     case "GET":
-      return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300";
+      return statusToneClasses.info.panel;
     case "POST":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300";
+      return statusToneClasses.success.panel;
     case "PUT":
     case "PATCH":
-      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300";
+      return statusToneClasses.warning.panel;
     case "DELETE":
-      return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300";
+      return statusToneClasses.danger.panel;
     default:
       return "border-border bg-muted text-muted-foreground";
   }

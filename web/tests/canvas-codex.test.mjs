@@ -44,3 +44,25 @@ test("canvas Codex reports a broken event stream and deletes its session", async
     assert.equal(events[0].type, "disconnected"); assert.equal(requests.at(-1).options.method, "DELETE");
   } finally { abort.abort(); globalThis.fetch = originalFetch; }
 });
+
+test("canvas Codex reports a non-JSON error response with its status instead of a parse failure", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<html>bad gateway</html>", { status: 502, headers: { "content-type": "text/html" } });
+  try {
+    await assert.rejects(
+      connectCanvasCodex({ endpoint: "http://127.0.0.1:3210", token: "x".repeat(32), canvasId: "canvas", tools: [], signal: new AbortController().signal, onEvent() {} }),
+      /本地 Codex 连接失败（502）/,
+    );
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("canvas Codex rejects a successful response that is not JSON", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("not json", { status: 200 });
+  try {
+    await assert.rejects(
+      connectCanvasCodex({ endpoint: "http://127.0.0.1:3210", token: "x".repeat(32), canvasId: "canvas", tools: [], signal: new AbortController().signal, onEvent() {} }),
+      /本地 Codex 返回了无效响应/,
+    );
+  } finally { globalThis.fetch = originalFetch; }
+});

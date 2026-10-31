@@ -10,6 +10,8 @@ const MAX_BODY = 4 * 1024 * 1024;
 const METHODS = new Set(["account/read", "model/list", "thread/start", "thread/resume", "thread/archive", "turn/start", "turn/interrupt"]);
 const INTERNAL_TOOLS = new Set(["read_skill_file", "set_agent_state"]);
 const BROWSER_REQUESTS = new Set(["item/tool/call", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/tool/requestUserInput"]);
+// Owners must outlive a closed page so a reload can resume its thread; cap them so the map cannot grow without bound.
+const MAX_THREAD_OWNERS = 256;
 
 export function createCanvasAgentServer({ token, origins, codexCommand = "codex", createClient = (input) => new CodexClient({ ...input, command: codexCommand }) }) {
   if (typeof token !== "string" || token.length < 32) throw new Error("连接密钥至少 32 字符");
@@ -60,6 +62,15 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
     if (session.closed) throw new Error("画布连接已关闭");
     return session.client;
   }
+  function rememberThread(session, threadId) {
+    threadOwners.delete(threadId);
+    threadOwners.set(threadId, { canvasId: session.canvasId, sessionId: session.id });
+    session.threads.add(threadId);
+    for (const staleId of threadOwners.keys()) {
+      if (threadOwners.size <= MAX_THREAD_OWNERS) break;
+      threadOwners.delete(staleId);
+    }
+  }
   async function rpc(session, method, params = {}) {
     if (!METHODS.has(method)) throw new Error("不允许的 Codex 方法");
     if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Codex 参数必须为对象");
@@ -90,7 +101,9 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
     }
     try {
       const result = await client.request(method, safe);
-      if (result?.thread?.id) { threadOwners.set(result.thread.id, { canvasId: session.canvasId, sessionId: session.id }); session.threads.add(result.thread.id); }
+      if (result?.thread?.id) rememberThread(session, result.thread.id);
+      if (method === "thread/archive") { threadOwners.delete(params.threadId); session.threads.delete(params.threadId); }
+      if (method === "turn/start") rememberThread(session, params.threadId);
       if (method === "turn/start" && session.activeTurn) session.activeTurn = result?.turn?.id || null;
       return result;
     } catch (error) { if (method === "turn/start") session.activeTurn = null; throw error; }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -20,6 +21,12 @@ func (b *passwordSnapshotMutationBackend) LoadJSONDocument(name string) (any, er
 		hook()
 	}
 	return value, err
+}
+
+// The embedded DatabaseBackend also provides the context-aware methods that bounded callers prefer,
+// so they must route through the same interception as the plain methods.
+func (b *passwordSnapshotMutationBackend) LoadJSONDocumentContext(_ context.Context, name string) (any, error) {
+	return b.LoadJSONDocument(name)
 }
 
 func TestPasswordLoginRechecksAccountAfterPasswordSnapshot(t *testing.T) {

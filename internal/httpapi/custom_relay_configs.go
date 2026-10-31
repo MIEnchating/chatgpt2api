@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -42,7 +41,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 			}
 			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 			if err != nil {
-				writeCustomRelayConfigError(w, err)
+				a.writeCustomRelayConfigError(w, err)
 				return
 			}
 			util.WriteJSON(w, http.StatusCreated, map[string]any{"item": status})
@@ -65,13 +64,13 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 		}
 		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 		if err != nil {
-			writeCustomRelayConfigError(w, err)
+			a.writeCustomRelayConfigError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": status})
 	case http.MethodDelete:
 		if err := a.customRelayConfigs.Delete(identityScope(identity), path); err != nil {
-			writeCustomRelayConfigError(w, err)
+			a.writeCustomRelayConfigError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -80,19 +79,27 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func writeCustomRelayConfigError(w http.ResponseWriter, err error) {
+func (a *App) writeCustomRelayConfigError(w http.ResponseWriter, err error) {
 	if errors.Is(err, service.ErrCustomRelayConfigNotFound) {
 		util.WriteError(w, http.StatusNotFound, "自定义 API 配置不存在")
 		return
 	}
 	var storageErr *service.CustomRelayConfigStorageError
 	if errors.As(err, &storageErr) {
-		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		if storageErr.ConcurrentUpdate() {
 			util.WriteError(w, http.StatusConflict, "自定义 API 配置已被其他请求修改，请重试")
 			return
 		}
 		util.WriteError(w, http.StatusServiceUnavailable, "自定义 API 配置存储暂时不可用")
 		return
 	}
-	util.WriteError(w, http.StatusBadRequest, err.Error())
+	var validationErr *service.CustomRelayConfigValidationError
+	if errors.As(err, &validationErr) {
+		util.WriteError(w, http.StatusBadRequest, validationErr.Error())
+		return
+	}
+	if a != nil && a.logger != nil {
+		a.logger.Error("custom relay config operation failed", "error", err)
+	}
+	util.WriteError(w, http.StatusInternalServerError, "自定义 API 配置操作失败")
 }

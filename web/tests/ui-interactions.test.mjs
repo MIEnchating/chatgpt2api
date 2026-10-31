@@ -245,7 +245,7 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.doesNotMatch(videoContractsSource, /label="保存后启用"/);
   assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
   assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
-  assert.match(videoContractsSource, /navigator\.clipboard\.writeText\(contractJSON\)/);
+  assert.match(videoContractsSource, /copyWithToast\(contractJSON,/);
   assert.doesNotMatch(videoContractsSource, /contractDialogTitleRef|onOpenAutoFocus/);
 });
 
@@ -499,7 +499,7 @@ test("workflow tasks expose a complete details dialog", () => {
   assert.match(workflowSource, /function WorkflowTaskDialog/);
   assert.match(workflowTaskDialogSource, /const activeImagePrompt = activeImage\?\.prompt \|\| task\.prompt/);
   assert.match(workflowTaskDialogSource, />当前图片提示词</);
-  assert.match(workflowTaskDialogSource, /navigator\.clipboard\.writeText\(activeImagePrompt\)/);
+  assert.match(workflowTaskDialogSource, /copyWithToast\(activeImagePrompt,/);
   assert.match(workflowTaskDialogSource, /<AuthenticatedImage src=\{activeImage\.url\}/);
   assert.match(workflowSource, />输入变量</);
   assert.match(workflowSource, />创作参数快照</);

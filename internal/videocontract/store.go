@@ -482,7 +482,7 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 	var value any
 	var err error
 	if s.store != nil {
-		value, err = s.store.LoadJSONDocument(videoModelContractDocumentName)
+		value, err = storage.LoadJSONDocumentBounded(s.store, videoModelContractDocumentName)
 	}
 	if err != nil {
 		return nil, err
@@ -808,7 +808,7 @@ func (s *VideoModelContractService) saveLocked(items []ManagedVideoModelContract
 	if s.store == nil {
 		return fmt.Errorf("storage document backend is required")
 	}
-	return s.store.SaveJSONDocument(videoModelContractDocumentName, videoModelContractStoreDocument{Version: videoModelContractStoreVersion, Items: items})
+	return storage.SaveJSONDocumentBounded(s.store, videoModelContractDocumentName, videoModelContractStoreDocument{Version: videoModelContractStoreVersion, Items: items})
 }
 
 func validateVideoModelContractCandidate(items []ManagedVideoModelContract, existingID string, contract protocol.VideoModelContract) (protocol.VideoModelContract, error) {

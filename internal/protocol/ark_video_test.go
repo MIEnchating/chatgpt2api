@@ -30,3 +30,14 @@ func TestArkVideoContentRejectsInvalidReferenceCombinations(t *testing.T) {
 		}
 	}
 }
+
+func TestArkVideoContentRejectsNonPublicHosts(t *testing.T) {
+	for _, value := range []string{
+		"http://127.1/a.png", "http://2130706433/a.png", "http://0x7f.1/a.png", "http://192.0.0.8/a.png",
+		"http://198.18.0.1/a.png", "http://[64:ff9b::7f00:1]/a.png", "http://intranet/a.png", " https://cdn.example/a.png",
+	} {
+		if _, err := ArkVideoContent("scene", ArkVideoReferences{Images: []string{value}}); err == nil {
+			t.Fatalf("accepted %q", value)
+		}
+	}
+}

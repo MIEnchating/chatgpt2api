@@ -464,7 +464,7 @@ export function buildContentRequest(ctx) {
   let url = "";
   for (const path of options.result_fields) { url = resultURL(read(response.body, path)); if (url) break; }
   if (url.startsWith("/") && !url.startsWith("//")) url = endpoint(ctx, url);
-  if (!/^https?:\/\/[^/?#@\s]+(?:[/?][^#\s]*)?$/.test(url)) throw new Error("查询结果中没有有效的 HTTP(S) 视频地址");
+  if (!/^https:\/\/[^/?#@\s]+(?:[/?][^#\s]*)?$/.test(url)) throw new Error("查询结果中没有有效的 HTTPS 视频地址");
   if (options.download_mode === "signed_url" || options.auth_mode === "none") return { url, method, credentialless: true };
   return { url, method, headers: authHeaders(ctx) };
 }

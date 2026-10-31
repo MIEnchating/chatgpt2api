@@ -11,7 +11,6 @@ import { canvasAgentAttachmentURLs } from "./agent/canvas-agent-reference";
 import { waitForCreationTask, CreationTaskTimeoutError } from "@/lib/creation-task-events";
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
-import { toPng } from "html-to-image";
 import { Bot, Camera, Check, ChevronDown, CircleDot, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, LoaderCircle, Menu, Music, Pencil, Plus, Redo2, Settings2, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -63,6 +62,7 @@ import { resolveCanvasImageModel } from "@/app/canvas/canvas-image-model";
 import { canvasImageTitle } from "@/app/canvas/canvas-image-title";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
 import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameters";
+import { CanvasParameterTitle } from "@/app/canvas/canvas-parameter-header";
 import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select";
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasVideoNodeBindings } from "@/app/canvas/canvas-video-node-bindings";
@@ -137,6 +137,7 @@ import { CanvasCropDialog, CanvasSplitDialog, CanvasUpscaleDialog, CanvasAngleDi
 import { CanvasMaskDialog } from "@/app/canvas/canvas-mask-dialog";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { LoadingState } from "@/components/ui/loading-state";
+import { statusToneClasses } from "@/components/ui/status-tone";
 
 type CanvasSwitchPhase = "switching" | "revealing" | null;
 type ConnectionOrigin = { nodeID: string; handleType: "source" | "target" };
@@ -532,7 +533,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
 
 	   <div className="space-y-4">
 		    <div className="flex items-center justify-between gap-3">
-		      <h3 className="text-xs font-semibold text-foreground">生成参数</h3>
+		      <CanvasParameterTitle />
 		      <div className="flex items-center gap-2"><span className="text-[11px] text-muted-foreground">{params.generation_video_seconds < 0 ? "智能时长" : `${params.generation_video_seconds} 秒`}{params.generation_video_size ? ` · ${videoSizeLabel(params.generation_video_size)}` : ""}</span><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 px-2.5 text-xs" /></div>
 	    </div>
 	  <div className="grid grid-cols-1 gap-4 text-xs">
@@ -4490,6 +4491,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
     try {
       const backgroundColor = getComputedStyle(element).backgroundColor || "#eef2f7";
+      const { toPng } = await import("html-to-image");
       const url = await toPng(element, { backgroundColor, pixelRatio: 2, cacheBust: true });
       const link = document.createElement("a");
       link.href = url;
@@ -5126,7 +5128,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onConfirm={confirmCanvasProjectDialog}
       />
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
-        <DialogContent scrollable={false} className="w-[min(92vw,560px)] gap-0 rounded-lg p-0">
+        <DialogContent scrollable={false} className="w-[min(92vw,560px)] gap-0 p-0">
           <DialogHeader className="border-b px-6 py-5">
             <DialogTitle>画布快捷键</DialogTitle>
             <DialogDescription>使用键盘和鼠标快速操作画布。</DialogDescription>
@@ -5462,7 +5464,7 @@ function CanvasRightClickMenu({ mediaNode, onInfo, onCopyContent, menu, onClose,
 }
 
 function ContextMenuButton({ icon, danger = false, onClick, children }: { icon: ReactNode; danger?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-muted focus-visible:outline-none focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", danger && "text-destructive dark:text-rose-300")} onClick={onClick}><span className="[&>svg]:size-4">{icon}</span>{children}</button>;
+  return <button type="button" className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-muted focus-visible:outline-none focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", danger && "text-destructive")} onClick={onClick}><span className="[&>svg]:size-4">{icon}</span>{children}</button>;
 }
 
 function ContextMenuDivider() {
@@ -5493,7 +5495,7 @@ function CanvasNodeInfoContent({ node, configInputs }: { node: CanvasNode; confi
                 <p className="truncate font-semibold text-foreground">{node.title || canvasNodeFallbackTitle(node.type)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{typeLabel} · {statusLabel}</p>
               </div>
-              {node.generation_status ? <span className={cn("shrink-0 rounded-full px-2 py-1 text-[11px] font-medium", node.generation_status === "success" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : node.generation_status === "error" ? "bg-rose-500/10 text-destructive dark:text-rose-300" : node.generation_status === "loading" ? "bg-blue-500/10 text-blue-600 dark:text-blue-300" : "bg-muted text-muted-foreground")}>{statusLabel}</span> : null}
+              {node.generation_status ? <span className={cn("shrink-0 rounded-full px-2 py-1 text-[11px] font-medium", node.generation_status === "success" ? statusToneClasses.success.soft : node.generation_status === "error" ? statusToneClasses.danger.soft : node.generation_status === "loading" ? statusToneClasses.info.soft : "bg-muted text-muted-foreground")}>{statusLabel}</span> : null}
             </div>
             <InfoSection title="基础信息">
               <InfoRow label="节点 ID" value={node.id} mono copyable />

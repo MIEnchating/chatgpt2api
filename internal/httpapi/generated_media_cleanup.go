@@ -3,11 +3,9 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
+
+	"chatgpt2api/internal/service"
 )
 
 func (a *App) startGeneratedMediaCleaner(ctx context.Context, interval time.Duration) {
@@ -62,39 +60,11 @@ func (a *App) cleanupGeneratedMedia(now time.Time) (int, error) {
 		{root: a.audioDir, cutoff: mediaCutoff},
 		{root: a.videoReferenceDir, cutoff: referenceCutoff},
 	} {
-		count, err := cleanupMediaDirectory(target.root, target.cutoff)
+		count, err := service.CleanupMediaDirectory(target.root, target.cutoff)
 		deleted += count
 		if err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 		}
-	}
-	return deleted, errors.Join(cleanupErrors...)
-}
-
-func cleanupMediaDirectory(root string, cutoff time.Time) (int, error) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return 0, fmt.Errorf("read generated media directory %q: %w", root, err)
-	}
-	deleted := 0
-	var cleanupErrors []error
-	for _, entry := range entries {
-		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect generated media %q: %w", entry.Name(), err))
-			continue
-		}
-		if !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
-			continue
-		}
-		if err := os.Remove(filepath.Join(root, entry.Name())); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove generated media %q: %w", entry.Name(), err))
-			continue
-		}
-		deleted++
 	}
 	return deleted, errors.Join(cleanupErrors...)
 }

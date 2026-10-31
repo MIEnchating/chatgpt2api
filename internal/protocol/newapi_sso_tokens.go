@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // NewAPISSOTokenClient provisions keys using a platform-bound SSO session.
@@ -29,7 +27,7 @@ func NewNewAPISSOTokenClient(issuer, secret, reference string, userID int64, cli
 		return nil, errors.New("单点登录密钥创建配置无效")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		return nil, errors.New("单点登录 HTTP 客户端未注入")
 	}
 	cloned := *client
 	cloned.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -49,13 +47,10 @@ func (c *NewAPISSOTokenClient) EnsureGroupToken(ctx context.Context, group, name
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.issuer+"/api/sso/chatgpt2api/tokens", bytes.NewReader(body))
+	req, err := NewRelayJSONRequest(ctx, c.issuer, http.MethodPost, "/api/sso/chatgpt2api/tokens", c.secret, "application/json", body)
 	if err != nil {
 		return errors.New("单点登录密钥创建请求失败")
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.secret)
 	res, err := c.client.Do(req)
 	if err != nil {
 		return errors.New("平台密钥初始化请求失败，请稍后重试")

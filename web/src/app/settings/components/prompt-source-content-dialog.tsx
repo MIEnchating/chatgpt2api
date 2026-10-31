@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ClipboardCopy, ImageIcon, LoaderCircle, RefreshCcw } from "lucide-react";
-import { toast } from "sonner";
 
 import type { BananaPrompt, PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { copyWithToast } from "@/lib/clipboard-text";
 
 import type { PromptSourcePullResult } from "./use-prompt-source-pulls";
 
@@ -100,14 +100,7 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
   const totalPages = Math.max(1, Math.ceil(prompts.length / PAGE_SIZE));
   const visiblePrompts = useMemo(() => prompts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [page, prompts]);
 
-  const copyPrompt = async (prompt: BananaPrompt) => {
-    try {
-      await navigator.clipboard.writeText(prompt.prompt);
-      toast.success("提示词已复制");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
+  const copyPrompt = (prompt: BananaPrompt) => copyWithToast(prompt.prompt, "提示词已复制");
 
   return (
     <>

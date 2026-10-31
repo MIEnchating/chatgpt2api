@@ -3,10 +3,13 @@ package translation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -198,4 +201,211 @@ func TestTransformInvalidRuntimeConfigurationDoesNotSubmit(t *testing.T) {
 	if requests.Load() != 0 {
 		t.Fatal("invalid rules submitted a billable request")
 	}
+}
+
+func TestTransformErrorsDoNotLeakChannelKey(t *testing.T) {
+	const key = "s3cret/key"
+	closed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closedURL := closed.URL
+	closed.Close()
+	for name, source := range map[string]string{
+		"query": `{models:{custom:{POST:{url:"/x",params:{api_key:"{channelKey}"}}}}}`,
+		"path":  `{models:{custom:{POST:{url:"/x/{channelKey}/y"}}}}`,
+	} {
+		t.Run("transport "+name, func(t *testing.T) {
+			engine, err := New(Channel{Source: source, BaseURL: closedURL}, "custom", key, nil, &http.Client{})
+			if err != nil || engine == nil {
+				t.Fatalf("engine=%v err=%v", engine, err)
+			}
+			_, _, err = engine.send(context.Background(), "image", false, "")
+			var urlErr *url.Error
+			if err == nil || errors.As(err, &urlErr) {
+				t.Fatalf("transport error kept the request URL: %v", err)
+			}
+			for _, leak := range []string{"s3cret", url.QueryEscape(key), closedURL, "/x"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Fatalf("error leaks %q: %v", leak, err)
+				}
+			}
+		})
+	}
+	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"error":"invalid key `+key+` and `+url.QueryEscape(key)+`"}`)
+	}))
+	defer echo.Close()
+	engine, err := New(Channel{Source: `{models:{custom:{POST:{url:"/x"}}}}`, BaseURL: echo.URL}, "custom", key, nil, echo.Client())
+	if err != nil || engine == nil {
+		t.Fatalf("engine=%v err=%v", engine, err)
+	}
+	_, err = engine.Execute(context.Background(), "image", nil)
+	if err == nil || strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("upstream error text leaks the key: %v", err)
+	}
+}
+
+func TestTransformAbsoluteURLRequiresExplicitCrossOrigin(t *testing.T) {
+	var otherHits, homeHits atomic.Int32
+	var otherAuth, homeAuth atomic.Value
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits.Add(1)
+		otherAuth.Store(r.Header.Get("Authorization"))
+		io.WriteString(w, `{"result":["https://cdn.example/a.png"]}`)
+	}))
+	defer other.Close()
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		homeHits.Add(1)
+		homeAuth.Store(r.Header.Get("Authorization"))
+		io.WriteString(w, `{"result":["https://cdn.example/a.png"]}`)
+	}))
+	defer home.Close()
+
+	t.Run("cross origin is rejected by default", func(t *testing.T) {
+		e := newEngine(t, home, `{models:{custom:{POST:{url:"`+other.URL+`/x"},result:"result"}}}`, nil)
+		if _, err := e.Execute(context.Background(), "image", nil); err == nil || otherHits.Load() != 0 {
+			t.Fatalf("cross origin request was sent: hits=%d err=%v", otherHits.Load(), err)
+		}
+	})
+	t.Run("explicit cross origin carries no bearer", func(t *testing.T) {
+		e := newEngine(t, home, `{models:{custom:{POST:{url:"`+other.URL+`/x",crossOrigin:true},result:"result"}}}`, nil)
+		if _, err := e.Execute(context.Background(), "image", nil); err != nil || otherHits.Load() != 1 {
+			t.Fatalf("hits=%d err=%v", otherHits.Load(), err)
+		}
+		if auth, _ := otherAuth.Load().(string); auth != "" {
+			t.Fatalf("bearer sent to another origin: %q", auth)
+		}
+	})
+	t.Run("same origin absolute url keeps bearer", func(t *testing.T) {
+		e := newEngine(t, home, `{models:{custom:{POST:{url:"`+home.URL+`/gateway/v1/x"},result:"result"}}}`, nil)
+		if _, err := e.Execute(context.Background(), "image", nil); err != nil || homeHits.Load() != 1 {
+			t.Fatalf("hits=%d err=%v", homeHits.Load(), err)
+		}
+		if auth, _ := homeAuth.Load().(string); auth != "Bearer secret" {
+			t.Fatalf("missing bearer on same origin: %q", auth)
+		}
+	})
+	t.Run("config validation", func(t *testing.T) {
+		if _, err := Models(`{models:{x:{POST:{url:"/x",crossOrigin:flag}}}}`); err == nil {
+			t.Fatal("non-literal crossOrigin accepted")
+		}
+		if _, err := Models(`{models:{x:{POST:{url:"/x",crossOrigin:"yes"}}}}`); err == nil {
+			t.Fatal("non-boolean crossOrigin accepted")
+		}
+		if models, err := Models(`{models:{x:{POST:{url:"/x",crossOrigin:true}}}}`); err != nil || len(models) != 1 {
+			t.Fatalf("models=%v err=%v", models, err)
+		}
+	})
+}
+
+func TestTransformBoundsResponsesDownloadsAndRuleOutput(t *testing.T) {
+	chunk := make([]byte, 1<<20)
+	const videoRule = `{models:{custom:{POST:{url:"/videos"},poll:{GET:{url:"/videos/{taskId}"},taskId:"id",status:"status",success:["done"]}}}}`
+	videoServer := func(content func(w http.ResponseWriter)) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == "POST":
+				io.WriteString(w, `{"id":"task"}`)
+			case strings.HasSuffix(r.URL.Path, "/content"):
+				w.Header().Set("Content-Type", "video/mp4")
+				content(w)
+			default:
+				io.WriteString(w, `{"status":"done"}`)
+			}
+		}))
+	}
+	t.Run("submit response cap", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for written := 0; written <= maxResponseBytes; written += len(chunk) {
+				w.Write(chunk)
+			}
+		}))
+		defer server.Close()
+		e := newEngine(t, server, `{models:{custom:{POST:{url:"/x"}}}}`, nil)
+		if _, err := e.Execute(context.Background(), "image", nil); err == nil || !strings.Contains(err.Error(), "响应超过") {
+			t.Fatalf("oversized response accepted: %v", err)
+		}
+	})
+	t.Run("video download cap", func(t *testing.T) {
+		server := videoServer(func(w http.ResponseWriter) {
+			for written := 0; written <= maxVideoBytes; written += len(chunk) {
+				w.Write(chunk)
+			}
+		})
+		defer server.Close()
+		e := newEngine(t, server, videoRule, nil)
+		if _, err := e.Execute(context.Background(), "video", nil); err == nil || !strings.Contains(err.Error(), "下载结果超过") {
+			t.Fatalf("oversized video accepted: %v", err)
+		}
+	})
+	t.Run("download waits for a free slot", func(t *testing.T) {
+		var hits atomic.Int32
+		server := videoServer(func(w http.ResponseWriter) {
+			hits.Add(1)
+			w.Write([]byte("video-bytes"))
+		})
+		defer server.Close()
+		e := newEngine(t, server, videoRule, nil)
+		for i := 0; i < maxConcurrentDownloads; i++ {
+			downloadSlots <- struct{}{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, err := e.Execute(ctx, "video", nil)
+		for i := 0; i < maxConcurrentDownloads; i++ {
+			<-downloadSlots
+		}
+		if err == nil || hits.Load() != 0 {
+			t.Fatalf("download ignored the slot limit: hits=%d err=%v", hits.Load(), err)
+		}
+	})
+	t.Run("concurrent downloads stay bounded", func(t *testing.T) {
+		var inflight, peak atomic.Int32
+		server := videoServer(func(w http.ResponseWriter) {
+			n := inflight.Add(1)
+			for {
+				p := peak.Load()
+				if n <= p || peak.CompareAndSwap(p, n) {
+					break
+				}
+			}
+			time.Sleep(30 * time.Millisecond)
+			inflight.Add(-1)
+			w.Write([]byte("video-bytes"))
+		})
+		defer server.Close()
+		engines := make([]*Engine, 3*maxConcurrentDownloads)
+		for i := range engines {
+			engines[i] = newEngine(t, server, videoRule, nil)
+		}
+		var wg sync.WaitGroup
+		errs := make(chan error, len(engines))
+		for _, e := range engines {
+			wg.Add(1)
+			go func(e *Engine) {
+				defer wg.Done()
+				_, err := e.Execute(context.Background(), "video", nil)
+				errs <- err
+			}(e)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if peak.Load() == 0 || peak.Load() > maxConcurrentDownloads {
+			t.Fatalf("peak concurrent downloads=%d", peak.Load())
+		}
+	})
+	t.Run("rule output and source size", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"a":1}`) }))
+		defer server.Close()
+		e := newEngine(t, server, `{models:{custom:{POST:{url:"/x"},result:()=>"x".repeat(33<<20)}}}`, nil)
+		if _, err := e.Execute(context.Background(), "image", nil); err == nil || !strings.Contains(err.Error(), "转换结果超过") {
+			t.Fatalf("oversized rule output accepted: %v", err)
+		}
+		if _, err := Models(strings.Repeat(" ", MaxSourceBytes+1) + `{models:{x:{POST:{url:"/x"}}}}`); err == nil {
+			t.Fatal("oversized rule source accepted")
+		}
+	})
 }

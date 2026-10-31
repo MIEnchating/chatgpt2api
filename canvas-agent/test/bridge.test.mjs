@@ -124,3 +124,42 @@ test("permits turn interruption while a turn-start response is pending", async (
   assert.equal((await f.request(`/sessions/${sessionId}/rpc`, { method: "turn/interrupt", params: { threadId, turnId: "turn" } })).status, 200);
   acknowledge({ turn: { id: "turn" } }); await pending;
 });
+
+test("archiving a thread releases its owner so it can no longer be resumed", async (t) => {
+  const f = await fixture(t);
+  const a = await f.session();
+  const threadId = (await (await f.request(`/sessions/${a.sessionId}/rpc`, { method: "thread/start" })).json()).thread.id;
+  assert.equal((await f.request(`/sessions/${a.sessionId}/rpc`, { method: "thread/archive", params: { threadId } })).status, 200);
+  await f.request(`/sessions/${a.sessionId}`, undefined, { method: "DELETE" });
+  const b = await f.session();
+  assert.equal((await f.request(`/sessions/${b.sessionId}/rpc`, { method: "thread/resume", params: { threadId } })).status, 400);
+});
+
+test("thread owners are capped and evict the oldest thread first", async (t) => {
+  const f = await fixture(t);
+  const a = await f.session();
+  await f.request(`/sessions/${a.sessionId}/rpc`, { method: "thread/start" });
+  let serial = 0;
+  f.clients[0].request = async () => ({ thread: { id: `capped-${++serial}` } });
+  for (let index = 0; index < 300; index += 1) await f.request(`/sessions/${a.sessionId}/rpc`, { method: "thread/start" });
+  await f.request(`/sessions/${a.sessionId}`, undefined, { method: "DELETE" });
+  const b = await f.session();
+  assert.equal((await f.request(`/sessions/${b.sessionId}/rpc`, { method: "thread/resume", params: { threadId: "capped-1" } })).status, 400);
+  assert.equal((await f.request(`/sessions/${b.sessionId}/rpc`, { method: "thread/resume", params: { threadId: "capped-300" } })).status, 200);
+});
+
+test("a thread in active use is not evicted before idle threads", async (t) => {
+  const f = await fixture(t);
+  const a = await f.session();
+  const rpc = (body) => f.request(`/sessions/${a.sessionId}/rpc`, body);
+  const active = (await (await rpc({ method: "thread/start" })).json()).thread.id;
+  let serial = 0;
+  f.clients[0].request = async (method) => method === "turn/start" ? { turn: { id: "turn" } } : { thread: { id: `idle-${++serial}` } };
+  for (let index = 0; index < 200; index += 1) await rpc({ method: "thread/start" });
+  assert.equal((await rpc({ method: "turn/start", params: { threadId: active, input: [{ type: "text", text: "hi" }] } })).status, 200);
+  for (let index = 0; index < 100; index += 1) await rpc({ method: "thread/start" });
+  await f.request(`/sessions/${a.sessionId}`, undefined, { method: "DELETE" });
+  const b = await f.session();
+  assert.equal((await f.request(`/sessions/${b.sessionId}/rpc`, { method: "thread/resume", params: { threadId: active } })).status, 200);
+  assert.equal((await f.request(`/sessions/${b.sessionId}/rpc`, { method: "thread/resume", params: { threadId: "idle-1" } })).status, 400);
+});

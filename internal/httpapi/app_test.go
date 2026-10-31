@@ -1976,6 +1976,7 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
+	app.newImageDownloadClient = func(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
 
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -2143,6 +2144,7 @@ func TestRunLoggedImageTaskHoldsSlotThroughLocalization(t *testing.T) {
 	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
+	app.newImageDownloadClient = func(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
 
 	localizationStarted := make(chan struct{}, 1)
 	allowLocalization := make(chan struct{})
@@ -3441,6 +3443,7 @@ func TestAuthSessionCookieIsHostOnly(t *testing.T) {
 	for _, host := range []string{"relayai.tech", "image.relayai.tech"} {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
 		req.Host = host
+		req.RemoteAddr = "172.18.0.4:12345"
 		req.Header.Set("X-Forwarded-Proto", "https")
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
@@ -3457,7 +3460,8 @@ func TestAuthSessionCookieIsHostOnly(t *testing.T) {
 	}
 }
 
-func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
+func TestLoginAllowsCredentialedLoopbackFrontendInDevMode(t *testing.T) {
+	t.Setenv("DEV_MODE", "1")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -3480,16 +3484,73 @@ func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
 	}
 }
 
-func TestCredentialedCORSAllowsSameHostnameAcrossPorts(t *testing.T) {
+func TestCredentialedCORSRejectsSameHostnameAcrossPorts(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
 	res := requestCORSPreflight(t, app, "/auth/session", "studio.example.test:8001", "", "https://studio.example.test:8002")
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://studio.example.test:8002" {
+	assertNoCredentialedCORSHeaders(t, res)
+}
+
+func TestCredentialedCORSRejectsLoopbackCrossPortOutsideDevMode(t *testing.T) {
+	t.Setenv("DEV_MODE", "")
+	app := newTestApp(t)
+	defer app.Close()
+
+	res := requestCORSPreflight(t, app, "/auth/session", "127.0.0.1:8000", "", "http://localhost:5173")
+	assertNoCredentialedCORSHeaders(t, res)
+}
+
+func TestCredentialedCORSAllowsExactSameOrigin(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	res := requestCORSPreflight(t, app, "/auth/session", "studio.example.test:8001", "", "http://studio.example.test:8001")
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "http://studio.example.test:8001" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want request origin", got)
 	}
 	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Methods"); got != corsAllowedMethods {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want fixed allowlist", got)
+	}
+}
+
+func TestCredentialedCORSAllowsConfiguredOrigin(t *testing.T) {
+	t.Setenv(corsAllowedOriginsEnv, "https://admin.example.test:8002")
+	app := newTestApp(t)
+	defer app.Close()
+
+	res := requestCORSPreflight(t, app, "/auth/session", "studio.example.test:8001", "", "https://admin.example.test:8002")
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://admin.example.test:8002" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want configured origin", got)
+	}
+	res = requestCORSPreflight(t, app, "/auth/session", "studio.example.test:8001", "", "https://other.example.test:8002")
+	assertNoCredentialedCORSHeaders(t, res)
+}
+
+func TestCredentialedCORSDoesNotEchoUnlistedPreflightRequests(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	for name, set := range map[string]func(*http.Request){
+		"header": func(req *http.Request) { req.Header.Set("Access-Control-Request-Headers", "x-evil") },
+		"method": func(req *http.Request) { req.Header.Set("Access-Control-Request-Method", "TRACE") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
+			req.Host = "studio.example.test:8001"
+			req.Header.Set("Origin", "http://studio.example.test:8001")
+			req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+			set(req)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			assertNoCredentialedCORSHeaders(t, res)
+			if got := res.Header().Get("Access-Control-Allow-Headers"); got != "" {
+				t.Fatalf("Access-Control-Allow-Headers = %q, want empty", got)
+			}
+		})
 	}
 }
 
@@ -3564,7 +3625,8 @@ func assertNoCredentialedCORSHeaders(t *testing.T, res *httptest.ResponseRecorde
 	}
 }
 
-func TestCredentialedLoginPreflightAllowsContentType(t *testing.T) {
+func TestCredentialedLoginPreflightAllowsContentTypeInDevMode(t *testing.T) {
+	t.Setenv("DEV_MODE", "1")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -3584,12 +3646,13 @@ func TestCredentialedLoginPreflightAllowsContentType(t *testing.T) {
 	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Headers"); got != "content-type" {
-		t.Fatalf("Access-Control-Allow-Headers = %q, want content-type", got)
+	if got := res.Header().Get("Access-Control-Allow-Headers"); got != corsAllowedHeaders {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want %q", got, corsAllowedHeaders)
 	}
 }
 
-func TestCredentialedImageVisibilityPreflightAllowsPatchContentType(t *testing.T) {
+func TestCredentialedImageVisibilityPreflightAllowsPatchContentTypeInDevMode(t *testing.T) {
+	t.Setenv("DEV_MODE", "1")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -3609,11 +3672,11 @@ func TestCredentialedImageVisibilityPreflightAllowsPatchContentType(t *testing.T
 	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Methods"); got != http.MethodPatch {
-		t.Fatalf("Access-Control-Allow-Methods = %q, want PATCH", got)
+	if got := res.Header().Get("Access-Control-Allow-Methods"); got != corsAllowedMethods {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want %q", got, corsAllowedMethods)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Headers"); got != "content-type" {
-		t.Fatalf("Access-Control-Allow-Headers = %q, want content-type", got)
+	if got := res.Header().Get("Access-Control-Allow-Headers"); got != corsAllowedHeaders {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want %q", got, corsAllowedHeaders)
 	}
 }
 

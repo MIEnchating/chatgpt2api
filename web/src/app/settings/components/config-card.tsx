@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { statusToneClasses } from "@/components/ui/status-tone";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -364,7 +365,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               className={settingsInputClassName}
             />
             {proxyTestResult ? (
-              <div className={cn("rounded-lg border px-3 py-2 text-xs leading-5", proxyTestResult.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-300" : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300")}>
+              <div className={cn("rounded-lg border px-3 py-2 text-xs leading-5", proxyTestResult.ok ? statusToneClasses.success.panel : statusToneClasses.danger.panel)}>
                 {proxyTestResult.ok
                   ? `代理可用：HTTP ${proxyTestResult.status}，用时 ${proxyTestResult.latency_ms} ms`
                   : `代理不可用：${proxyTestResult.error ?? "未知错误"}（用时 ${proxyTestResult.latency_ms} ms）`}

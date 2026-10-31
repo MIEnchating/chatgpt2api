@@ -36,7 +36,6 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={props.disabled}
         aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
-        aria-pressed={passwordVisible}
         tooltip={passwordVisible ? "隐藏密码" : "显示密码"}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setPasswordVisible((visible) => !visible)}

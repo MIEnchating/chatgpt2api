@@ -291,6 +291,10 @@ test("opening queued work still navigates when browser storage is unavailable", 
       return state.react.useState(initial);
     } },
     "react-router-dom": { useNavigate: () => (path) => navigations.push(path) },
+    "@/lib/use-now": { useNow: () => 0 },
+    "@/components/ui/status-tone": {
+      statusToneClasses: Object.fromEntries(["info", "success", "warning", "danger"].map((tone) => [tone, Object.fromEntries(["chip", "soft", "panel", "text", "dot", "bar", "trigger"].map((key) => [key, `${tone}-${key}`]))])),
+    },
     "@/store/image-conversations": {
       getEffectiveImageTurnStatus: () => "queued",
       getImageTurnLoadingCounts: () => ({ queued: 1, running: 0 }),

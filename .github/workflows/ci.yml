@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, closed]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -17,7 +17,6 @@ env:
 
 jobs:
   test:
-    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -35,7 +34,7 @@ jobs:
       - name: Validate CI trigger rules
         run: node --test scripts/__tests__/ci-trigger.test.mjs
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
@@ -115,7 +114,6 @@ jobs:
           rm .env
 
   storage-integration:
-    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:

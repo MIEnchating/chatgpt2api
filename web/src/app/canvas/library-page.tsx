@@ -275,18 +275,30 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   async function importProjects(file?: File) {
     if (!file || busy) return;
     setBusy(true);
+    let imported = 0;
     try {
       const projectsToImport = await readCanvasProjectArchive(file);
       if (!projectsToImport.length) throw new Error("文件中没有有效的画布项目");
-      for (const project of projectsToImport) await importCanvasProject(project);
-      const workspace = await fetchCanvasDocument();
-      setProjects(workspace.projects || []);
-      setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
-      setSelectedProjectIDs(new Set());
+      for (const project of projectsToImport) {
+        await importCanvasProject(project);
+        imported += 1;
+      }
       toast.success(`已导入 ${projectsToImport.length} 个画布`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "导入画布失败");
+      const reason = error instanceof Error ? error.message : "导入画布失败";
+      toast.error(imported ? `已导入 ${imported} 个画布，其余导入失败：${reason}` : reason);
     } finally {
+      // Already imported projects must show up even when a later one failed.
+      if (imported) {
+        try {
+          const workspace = await fetchCanvasDocument();
+          setProjects(workspace.projects || []);
+          setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
+          setSelectedProjectIDs(new Set());
+        } catch {
+          toast.error("画布列表刷新失败，请重新加载页面");
+        }
+      }
       setBusy(false);
       if (importInputRef.current) importInputRef.current.value = "";
     }
@@ -351,7 +363,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             <Button type="button" variant="outline" disabled={busy} onClick={() => importInputRef.current?.click()}><FileUp />导入画布</Button>
             {selectedProjectIDs.size ? <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => void exportSelectedProjects()}><Download />导出选中 ({selectedProjectIDs.size})</Button>
-              <Button type="button" variant="outline" className="text-destructive hover:text-destructive dark:text-rose-300 dark:hover:text-rose-300" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
+              <Button type="button" variant="outline" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
               <Button type="button" variant="ghost" size="icon" className="size-9" title="取消选择" aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button>
             </> : null}
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAgentStarterOpen(true)}><Bot />Agent</Button>
@@ -392,7 +404,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
                 <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/70 pt-3">
                   <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="导出画布" aria-label="导出画布" disabled={busy} onClick={() => void exportProject(project)}><Download className="size-4" /></Button>
                   <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="重命名画布" aria-label="重命名画布" disabled={busy} onClick={() => void renameProject(project)}><Pencil className="size-4" /></Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-destructive hover:text-destructive dark:text-rose-300 dark:hover:text-rose-300" title="删除画布" aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2 className="size-4" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-destructive hover:text-destructive" title="删除画布" aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2 className="size-4" /></Button>
                 </div>
               </div>
             ))}

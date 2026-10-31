@@ -744,28 +744,15 @@ func assertOneWorkflowMutationConflict(t *testing.T, errorsCh <-chan error) {
 	}
 }
 
-func TestWorkflowServiceRejectsInvalidPersistedWorkflow(t *testing.T) {
+func TestWorkflowServiceSkipsInvalidPersistedWorkflow(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	store := jsonDocumentStoreFromBackend(backend)
-	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{
-		"version": 2,
-		"items": []map[string]any{{
-			"id":       "broken-workflow",
-			"owner_id": "alice",
-			"name":     "   ",
-		}},
-	}); err != nil {
+	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{"version": 2, "items": []map[string]any{{"id": "broken-workflow", "owner_id": "alice", "name": "   "}}}); err != nil {
 		t.Fatalf("SaveJSONDocument() error = %v", err)
 	}
-
-	_, err := NewWorkflowService(backend).List("alice")
-	if err == nil || !strings.Contains(err.Error(), "broken-workflow") || !strings.Contains(err.Error(), "请输入工作流名称") {
-		t.Fatalf("List() error = %v, want persisted workflow validation error", err)
-	}
-	var storageErr *WorkflowStorageError
-	var validationErr WorkflowValidationError
-	if !errors.As(err, &storageErr) || !errors.As(err, &validationErr) {
-		t.Fatalf("List() error = %T %v, want storage boundary preserving validation cause", err, err)
+	items, err := NewWorkflowService(backend).List("alice")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("List() = (%#v, %v), want invalid item skipped without error", items, err)
 	}
 }
 

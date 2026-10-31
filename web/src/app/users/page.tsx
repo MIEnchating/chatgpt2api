@@ -23,6 +23,7 @@ import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolba
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -902,7 +903,7 @@ function UsersContent() {
       </ManagementPanel>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={closeCreateDialog}>
-        <DialogContent className="rounded-xl p-4 sm:p-6 sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader className="gap-2">
             <DialogTitle>创建用户</DialogTitle>
             <DialogDescription className="text-sm leading-6">创建本地登录用户并绑定角色。</DialogDescription>
@@ -1007,10 +1008,10 @@ function UsersContent() {
             </div>
           </form>
           <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
+            <Button type="button" variant="secondary" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
               取消
             </Button>
-            <Button type="submit" form="create-managed-user-form" className="h-10 rounded-lg px-5" disabled={isCreating}>
+            <Button type="submit" form="create-managed-user-form" disabled={isCreating}>
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               创建
             </Button>
@@ -1019,7 +1020,7 @@ function UsersContent() {
       </Dialog>
 
       <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(roleUser?.id || "") ? setRoleUser(null) : null)}>
-        <DialogContent className="rounded-xl p-4 sm:p-6">
+        <DialogContent>
           <DialogHeader className="gap-2">
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="size-5 text-primary" />
@@ -1048,7 +1049,7 @@ function UsersContent() {
             <Button
               type="button"
               variant="secondary"
-              className="h-10 rounded-lg px-5"
+             
               onClick={() => setRoleUser(null)}
               disabled={isSavingRole}
             >
@@ -1056,7 +1057,7 @@ function UsersContent() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-lg px-5"
+             
               onClick={() => void handleSaveRole()}
               disabled={isSavingRole || !roleUser || !selectedRoleId}
             >
@@ -1067,35 +1068,18 @@ function UsersContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletingUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(deletingUser?.id || "") ? setDeletingUser(null) : null)}>
-        <DialogContent className="rounded-xl p-4 sm:p-6">
-          <DialogHeader className="gap-2">
-            <DialogTitle>删除用户</DialogTitle>
-            <DialogDescription className="text-sm leading-6">确认删除「{deletingUser?.name}」吗？</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-10 rounded-lg px-5"
-              onClick={() => setDeletingUser(null)}
-              disabled={deletingUser ? pendingIds.has(deletingUser.id) : false}
-            >
-              取消
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              className="h-10 rounded-lg px-5"
-              onClick={() => void handleDelete()}
-              disabled={deletingUser ? pendingIds.has(deletingUser.id) : false}
-            >
-              {deletingUser && pendingIds.has(deletingUser.id) ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deletingUser)}
+        title="删除用户"
+        description={`确认删除「${deletingUser?.name ?? ""}」吗？`}
+        confirmLabel="删除"
+        destructive
+        busy={deletingUser ? pendingIds.has(deletingUser.id) : false}
+        onOpenChange={(open) => {
+          if (!open) setDeletingUser(null);
+        }}
+        onConfirm={() => void handleDelete()}
+      />
     </ManagementPage>
   );
 }

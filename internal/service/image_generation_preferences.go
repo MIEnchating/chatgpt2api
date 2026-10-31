@@ -105,7 +105,7 @@ func (s *ImageGenerationPreferenceService) UnconfiguredRelayGroups(ownerID strin
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := s.store.LoadJSONDocument(imageGenerationPreferenceDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID))
 	if err != nil {
 		return nil, imageGenerationPreferenceStorageError(err)
 	}
@@ -131,7 +131,7 @@ func (s *ImageGenerationPreferenceService) InitializeRelayTokens(ownerID string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
-		raw, err := s.store.LoadJSONDocument(imageGenerationPreferenceDocumentName(ownerID))
+		raw, err := loadStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID))
 		if err != nil {
 			return imageGenerationPreferenceStorageError(err)
 		}
@@ -147,7 +147,7 @@ func (s *ImageGenerationPreferenceService) InitializeRelayTokens(ownerID string,
 		if !changed {
 			return nil
 		}
-		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), document); err != nil {
+		if err := saveStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID), document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
 				continue
 			}
@@ -250,7 +250,7 @@ func (s *ImageGenerationPreferenceService) UpdateProfile(ownerID string, input I
 		}
 		candidate.WorkbenchGenerateAudio = nil
 		preserveUnspecifiedRelayTokens(&candidate, current, normalizedTokens)
-		if saveErr := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), candidate); saveErr != nil {
+		if saveErr := saveStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID), candidate); saveErr != nil {
 			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
 				continue
 			}
@@ -355,7 +355,7 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 		if workbench != nil {
 			applyWorkbenchSettings(&preferences, preferences.Workbench, *workbench)
 		}
-		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
+		if err := saveStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
 				continue
 			}
@@ -414,7 +414,7 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 	if s.store == nil {
 		return preferences, fmt.Errorf("storage document backend is required")
 	}
-	raw, err := s.store.LoadJSONDocument(imageGenerationPreferenceDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, imageGenerationPreferenceDocumentName(ownerID))
 	if err != nil {
 		return preferences, err
 	}

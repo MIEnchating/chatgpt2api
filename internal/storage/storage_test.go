@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	mysqlDriver "github.com/go-sql-driver/mysql"
 )
 
 type logDeleteResult struct {
@@ -870,6 +872,32 @@ func TestParseMySQLDatabaseURLPreservesConnectionOptions(t *testing.T) {
 	want := "app:p@ss@tcp(db.internal:3307)/chatgpt2api?parseTime=true&timeout=5s&tls=true"
 	if dsn != want {
 		t.Fatalf("dsn = %q, want %q", dsn, want)
+	}
+}
+
+func TestParseMySQLDatabaseURLKeepsSpecialPasswordCharacters(t *testing.T) {
+	_, dsn, err := ParseDatabaseURL("mysql://app:p%40s%3As%2Fw%3Fd%23@db.internal:3306/chatgpt2api")
+	if err != nil {
+		t.Fatalf("ParseDatabaseURL() error = %v", err)
+	}
+	cfg, err := mysqlDriver.ParseDSN(dsn)
+	if err != nil {
+		t.Fatalf("ParseDSN(%q) error = %v", dsn, err)
+	}
+	if cfg.User != "app" || cfg.Passwd != "p@s:s/w?d#" || cfg.Addr != "db.internal:3306" || cfg.DBName != "chatgpt2api" || !cfg.ParseTime {
+		t.Fatalf("parsed config = user %q passwd %q addr %q db %q parseTime %v", cfg.User, cfg.Passwd, cfg.Addr, cfg.DBName, cfg.ParseTime)
+	}
+}
+
+func TestIsMySQLDuplicateSchemaError(t *testing.T) {
+	for number, want := range map[uint16]bool{1060: true, 1061: true, 1062: false, 1050: false} {
+		err := fmt.Errorf("wrapped: %w", &mysqlDriver.MySQLError{Number: number})
+		if got := isMySQLDuplicateSchemaError(err); got != want {
+			t.Errorf("isMySQLDuplicateSchemaError(%d) = %v, want %v", number, got, want)
+		}
+	}
+	if isMySQLDuplicateSchemaError(errors.New("plain")) {
+		t.Fatal("plain error must not be treated as duplicate schema error")
 	}
 }
 

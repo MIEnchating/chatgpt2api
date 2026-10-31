@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from capture_safety import download_image, require_access_token, write_private_capture
+from capture_safety import attachment_download_path, download_image, require_access_token, write_private_capture
 
 
 class CaptureSafetyTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class CaptureSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "capture.json"
             write_private_capture(destination, b'{"token":"local-only"}')
-            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt": self.assertEqual(destination.stat().st_mode & 0o777, 0o600)  # Windows ignores POSIX permission bits
             with self.assertRaises(FileExistsError):
                 write_private_capture(destination, b"replacement")
             self.assertIn(b"local-only", destination.read_bytes())
@@ -59,6 +59,14 @@ class CaptureSafetyTests(unittest.TestCase):
         for url in ("http://chatgpt.com/image", "https://user:pass@cdn.example/image"):
             with self.subTest(url=url), self.assertRaises(RuntimeError):
                 download_image(Mock(), Mock(), url, "test-agent")
+
+
+    def test_attachment_download_requires_conversation_id(self):
+        with self.assertRaises(RuntimeError):
+            attachment_download_path(None, "sid")
+        with self.assertRaises(RuntimeError):
+            attachment_download_path("", "sid")
+        self.assertEqual(attachment_download_path("c1", "s1"), "/backend-api/conversation/c1/attachment/s1/download")
 
 
 if __name__ == "__main__":

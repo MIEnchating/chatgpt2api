@@ -12,7 +12,6 @@ import (
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -293,7 +292,7 @@ func storageContentMayRenderInline(value string) bool {
 func (a *App) writeStorageServiceError(w http.ResponseWriter, err error) {
 	var validationErr service.StorageValidationError
 	switch {
-	case errors.Is(err, storage.ErrStorageObjectNotFound):
+	case service.IsStorageObjectNotFound(err):
 		util.WriteError(w, http.StatusNotFound, "素材文件不存在")
 	case errors.Is(err, service.ErrStorageObjectInUse):
 		util.WriteError(w, http.StatusConflict, "素材文件仍被使用，无法删除")

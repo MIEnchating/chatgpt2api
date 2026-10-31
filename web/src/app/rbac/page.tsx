@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { ManagementPage, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { PermissionEditor } from "@/components/permission-editor";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -484,7 +485,7 @@ function RBACContent() {
       </ScrollArea>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={(open) => { if (!mutationPendingRef.current) setIsCreateDialogOpen(open); }}>
-        <DialogContent className="rounded-xl p-4 sm:p-6">
+        <DialogContent>
           <DialogHeader className="gap-2">
             <DialogTitle>创建角色</DialogTitle>
             <DialogDescription className="text-sm leading-6">新角色会复制默认用户权限，创建后可继续调整。</DialogDescription>
@@ -510,10 +511,10 @@ function RBACContent() {
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setIsCreateDialogOpen(false)} disabled={isCreating}>
+            <Button type="button" variant="secondary" onClick={() => setIsCreateDialogOpen(false)} disabled={isCreating}>
               取消
             </Button>
-            <Button type="button" className="h-10 rounded-lg px-5" onClick={() => void handleCreate()} disabled={isMutating}>
+            <Button type="button" onClick={() => void handleCreate()} disabled={isMutating}>
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               创建
             </Button>
@@ -521,34 +522,21 @@ function RBACContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletingRole)} onOpenChange={(open) => (!open && !mutationPendingRef.current ? setDeletingRole(null) : null)}>
-        <DialogContent className="rounded-xl p-4 sm:p-6">
-          <DialogHeader className="gap-2">
-            <DialogTitle>删除角色</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              确认删除「{deletingRole?.name}」吗？只有未绑定用户的自定义角色可以删除。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setDeletingRole(null)} disabled={isDeleting}>
-              取消
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              className="h-10 rounded-lg px-5"
-              onClick={() => void handleDelete()}
-              disabled={isMutating}
-            >
-              {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deletingRole)}
+        title="删除角色"
+        description={`确认删除「${deletingRole?.name ?? ""}」吗？只有未绑定用户的自定义角色可以删除。`}
+        confirmLabel="删除"
+        destructive
+        busy={isMutating}
+        onOpenChange={(open) => {
+          if (!open) setDeletingRole(null);
+        }}
+        onConfirm={() => void handleDelete()}
+      />
 
       <Dialog open={Boolean(pendingRole)} onOpenChange={(open) => (!open ? setPendingRole(null) : null)}>
-        <DialogContent className="rounded-xl p-4 sm:p-6">
+        <DialogContent>
           <DialogHeader className="gap-2">
             <DialogTitle>放弃未保存的修改？</DialogTitle>
             <DialogDescription className="text-sm leading-6">
@@ -556,13 +544,13 @@ function RBACContent() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setPendingRole(null)}>
+            <Button type="button" variant="secondary" onClick={() => setPendingRole(null)}>
               继续编辑
             </Button>
             <Button
               type="button"
               variant="destructive"
-              className="h-10 rounded-lg px-5"
+             
               onClick={() => {
                 applySelectedRole(pendingRole);
                 setPendingRole(null);

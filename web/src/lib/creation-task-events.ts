@@ -61,7 +61,7 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
     for (const task of event.items) {
       if (!task || typeof task.id !== "string") throw new Error("任务事件缺少 ID");
       const current = tasks.get(task.id);
-      if (current && (current.revision ?? 0) > (task.revision ?? 0)) continue;
+      if (current && (Number(current.revision) || 0) > (Number(task.revision) || 0)) continue;
       tasks.set(task.id, task);
     }
     for (const id of previousIDs) if (!tasks.has(id)) deletedIDs.add(id);

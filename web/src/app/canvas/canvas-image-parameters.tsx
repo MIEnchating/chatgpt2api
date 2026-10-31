@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { imageOutputCountLimit } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
 import { cn } from "@/lib/utils";
+import { CanvasParameterHeader } from "@/app/canvas/canvas-parameter-header";
 
 type CanvasImageParameterPatch = Partial<Pick<CanvasNode,
   | "generation_size"
@@ -121,9 +122,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
     return (
       <section className="space-y-3 border-t border-border/80 pt-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xs font-semibold text-foreground">生成参数</h3>
-          <span className="text-[11px] text-muted-foreground">{showSize ? `${sizeLabel} · ` : ""}{count} 张</span>
-        </div>
+          <CanvasParameterHeader summary={`${showSize ? `${sizeLabel} · ` : ""}${count} 张`} />
+                  </div>
         {parameterFields}
       </section>
     );

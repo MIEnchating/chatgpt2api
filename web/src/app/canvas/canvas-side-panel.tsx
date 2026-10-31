@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { statusToneClasses } from "@/components/ui/status-tone";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { fetchPromptSourcesConfig, type ManagedImage } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -81,9 +82,9 @@ const NODE_FILTERS: Array<{ value: "all" | CanvasNode["type"]; label: string }> 
 
 const STATUS_CLASS: Record<NonNullable<CanvasNode["generation_status"]>, string> = {
   idle: "bg-muted-foreground/35",
-  loading: "bg-amber-500",
-  success: "bg-emerald-500",
-  error: "bg-rose-500",
+  loading: statusToneClasses.warning.dot,
+  success: statusToneClasses.success.dot,
+  error: statusToneClasses.danger.dot,
 };
 
 const STATUS_LABEL: Record<NonNullable<CanvasNode["generation_status"]>, string> = {

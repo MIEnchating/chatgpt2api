@@ -231,7 +231,7 @@ export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm 
             <div className="space-y-2 text-sm">
               <span className="font-medium">目标像素</span>
               <div className="grid grid-cols-3 gap-1.5">{[1024, 2048, 4096].map((value) => <Button key={value} type="button" aria-pressed={target === value} variant={target === value ? "default" : "outline"} size="sm" disabled={Boolean(sourceLong && sourceLong >= value)} onClick={() => setTarget(value)}>{value / 1024}K · {value}px</Button>)}</div>
-              {sourceLong >= CANVAS_MAX_UPSCALE_LONG_EDGE ? <p className="text-xs font-medium text-destructive dark:text-rose-300">图片已达到 4K，无需放大</p> : null}
+              {sourceLong >= CANVAS_MAX_UPSCALE_LONG_EDGE ? <p className="text-xs font-medium text-destructive">图片已达到 4K，无需放大</p> : null}
             </div>
             <div className="space-y-2 text-sm">
               <span className="font-medium">放大算法</span>

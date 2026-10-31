@@ -621,10 +621,28 @@ func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task ma
 		return nil, err
 	}
 	data := util.AsMapSlice(task["data"])
-	if len(data) == 0 {
+	mediaURL := func(item map[string]any) string {
+		for _, key := range []string{"url", "video_url", "audio_url"} {
+			if url := util.Clean(item[key]); url != "" {
+				return url
+			}
+		}
+		return ""
+	}
+	// Validate the whole result before touching node state, and always release the pending task.
+	failEmpty := func(message string) (map[string]any, error) {
 		n.GenerationStatus = "error"
-		n.GenerationError = "任务没有返回媒体结果"
-		return agentError("empty_media", n.GenerationError), nil
+		n.GenerationError = message
+		w.state["pendingTaskIds"] = slices.DeleteFunc(agentStrings(w.state["pendingTaskIds"]), func(id string) bool { return id == taskID })
+		return agentError("empty_media", message), nil
+	}
+	if len(data) == 0 {
+		return failEmpty("任务没有返回媒体结果")
+	}
+	for _, item := range data {
+		if mediaURL(item) == "" {
+			return failEmpty("任务没有返回可用媒体地址")
+		}
 	}
 	n.GenerationStatus = "success"
 	n.GenerationProgress = 100
@@ -635,16 +653,7 @@ func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task ma
 		}
 	}
 	for i, item := range data {
-		url := util.Clean(item["url"])
-		if url == "" {
-			url = util.Clean(item["video_url"])
-		}
-		if url == "" {
-			url = util.Clean(item["audio_url"])
-		}
-		if url == "" {
-			return agentError("empty_media", "任务没有返回可用媒体地址"), nil
-		}
+		url := mediaURL(item)
 		if i == 0 {
 			n.URL = url
 			n.StorageKey = util.Clean(item["storageKey"])

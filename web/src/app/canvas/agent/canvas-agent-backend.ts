@@ -49,6 +49,7 @@ async function observeCanvasAgentRun(projectID: string, runID: string, initial: 
   // A detached browser only stops observing; explicit Stop cancels the server run.
   let response = initial;
   let stopped = false;
+  let failures = 0;
   const stop = () => {
     if (signal.reason === "canvas-detached" || stopped) return;
     stopped = true;
@@ -62,7 +63,7 @@ async function observeCanvasAgentRun(projectID: string, runID: string, initial: 
       onDocument(response.document);
       if (response.document.agent_run?.id !== runID || response.document.agent_run.status !== "running") return response.document;
       await new Promise((resolve) => setTimeout(resolve, 500));
-      response = await fetchCanvasAgentRun(projectID);
+      try { response = await fetchCanvasAgentRun(projectID); failures = 0; } catch (error) { if (signal.aborted || ++failures > 5) throw error; }
     }
   } finally { signal.removeEventListener("abort", stop); }
 }

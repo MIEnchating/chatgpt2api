@@ -715,12 +715,12 @@ func TestImageConversationAssetFilesystemScansPropagateErrors(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("blocker"), 0o600); err != nil {
 		t.Fatalf("WriteFile(blocker) error = %v", err)
 	}
-	assets := NewImageConversationAssetService(filepath.Join(blocker, "assets"))
+	assets := NewImageConversationAssetService(filepath.Join(parent, "invalid\x00root"))
 
 	if _, err := assets.Governance(); err == nil {
 		t.Fatal("Governance() error = nil, want filesystem traversal error")
 	}
-	if _, err := imageConversationAssetOwnerDirectoryEmptyContext(context.Background(), filepath.Join(blocker, "owner")); err == nil {
+	if _, err := imageConversationAssetOwnerDirectoryEmptyContext(context.Background(), filepath.Join(parent, "invalid\x00owner")); err == nil {
 		t.Fatal("imageConversationAssetOwnerDirectoryEmptyContext() error = nil, want filesystem read error")
 	}
 }

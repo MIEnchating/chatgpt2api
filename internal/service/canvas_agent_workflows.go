@@ -258,7 +258,7 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 		case "image":
 			n.GenerationModel = util.Clean(w.req.Generation["imageModel"])
 			n.GenerationSize = util.Clean(step["size"])
-			n.GenerationCount = util.ToInt(step["count"], 0)
+			n.GenerationCount = util.ToInt(step["count"], 1)
 			n.GenerationResolution = util.Clean(step["resolution"])
 			n.GenerationReferenceURLs = append(agentStrings(step["templateReferenceURLs"]), references.Images...)
 			if n.GenerationModel == "" {
@@ -484,7 +484,9 @@ func (w *canvasAgentWorker) clearWorkflowReview(nodeIDs []string) {
 func canvasAgentWorkflowReviewApproved(answer string) bool {
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	answer = strings.NewReplacer(" ", "", "\t", "", "\n", "", "。", "", "！", "", "？", "", ",", "", "，", "", ".", "", "!", "", "?", "").Replace(answer)
-	if answer == "" || containsAny(answer, "暂不", "稍后", "等等", "暂缓", "取消", "拒绝", "不生成", "不确认", "不通过", "先别", "先不", "修改", "不满意", "不同意", "还要改") {
+	// Fail closed: a negation outside the fixed "no problem" phrases means the answer is not an approval.
+	negated := containsAny(strings.NewReplacer("没问题", "", "没有问题", "").Replace(answer), "不", "没", "别", "未", "无", "非", "勿", "否", "no", "not", "n't")
+	if answer == "" || negated || containsAny(answer, "暂不", "稍后", "等等", "暂缓", "取消", "拒绝", "不生成", "不确认", "不通过", "先别", "先不", "修改", "不满意", "不同意", "还要改") {
 		return false
 	}
 	if slices.Contains([]string{"确认", "通过", "同意", "批准", "开始", "可以", "好的", "好", "是", "是的", "yes", "ok", "okay"}, answer) {

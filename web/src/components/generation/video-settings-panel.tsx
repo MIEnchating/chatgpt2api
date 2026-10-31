@@ -110,7 +110,7 @@ export function VideoSettingsPanel({
         <div className={cn("grid gap-1 rounded-xl bg-muted/70 p-1", resolutionOptions.length === 1 ? "w-24 grid-cols-1" : resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {resolutionOptions.map((resolution) => <button key={resolution} type="button" disabled={disabled("resolution")} aria-pressed={displayResolution === resolution} className={imageParameterChoiceClass(displayResolution === resolution, "h-8 uppercase")} onClick={() => onChange({ resolution })}>{resolution}</button>)}
         </div>
-        {!resolutionValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">当前模型不支持该清晰度</p> : null}
+        {!resolutionValid ? <p className="text-[11px] text-destructive">当前模型不支持该清晰度</p> : null}
       </section> : null}
 
       {!hidden("size") && (sizeOptions.length > 0 || usesDimensionInputs) ? <section className="order-20 space-y-2.5">
@@ -129,7 +129,7 @@ export function VideoSettingsPanel({
           <Select value={secondsPresets.includes(Number(displaySeconds)) ? displaySeconds : undefined} disabled={disabled("duration")} onValueChange={(seconds) => onChange({ seconds })}><SelectTrigger className="h-8 min-w-0 rounded-lg border-border bg-card px-2 text-xs font-medium text-foreground shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频秒数"><SelectValue placeholder="选择秒数" /></SelectTrigger><SelectContent>{(secondsPresets.length > 0 ? secondsPresets : secondsOptions).map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select>
           {allowsCustomDuration ? <VideoDurationInput value={displaySeconds === "-1" ? "" : displaySeconds} min={minimumSeconds} max={maximumSeconds} disabled={disabled("duration")} placeholder={displaySeconds === "-1" ? "智能" : maximumSeconds == null ? `${minimumSeconds} 秒起` : `${minimumSeconds}-${maximumSeconds}`} onChange={(seconds) => onChange({ seconds })} /> : null}
         </div>
-        {!secondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
+        {!secondsValid ? <p className="text-[11px] text-destructive">请输入当前模型支持的时长</p> : null}
       </section> : null}
 
       {!coreOnly && activeContract?.capability.parameters?.length ? <section className="order-55 space-y-3"><ImageParameterLabel>模型附加参数</ImageParameterLabel><VideoParameterInputs parameters={activeContract.capability.parameters.filter(parameter => !parameter.modes?.length || parameter.modes.includes(Number(ruleValues?.reference_image || 0) + Number(ruleValues?.reference_video || 0) + Number(ruleValues?.reference_audio || 0) > 0 ? "reference" : Number(ruleValues?.first_frame || 0) + Number(ruleValues?.last_frame || 0) > 0 ? "image" : "text"))} value={value.parameters || {}} onChange={parameters => onChange({parameters})} /></section> : null}

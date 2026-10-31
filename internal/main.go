@@ -58,6 +58,11 @@ func run() error {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("server shutdown failed", "error", err)
+		// Shutdown timed out or failed: force-close remaining connections so
+		// the deferred app.Close does not race with in-flight handlers.
+		if closeErr := server.Close(); closeErr != nil {
+			logger.Error("server close failed", "error", closeErr)
+		}
 	}
 	return nil
 }

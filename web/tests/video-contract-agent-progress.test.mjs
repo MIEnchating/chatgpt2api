@@ -19,7 +19,7 @@ test("execution details follow the run state and render plain text", async () =>
   const source = await readFile(new URL("../src/app/settings/components/video-contract-agent-details.tsx", import.meta.url), "utf8");
   assert.match(source, /useState\(running\)/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
-  assert.match(source, /已中断/);
+  assert.match(source, /AGENT_STEP_STATUS\.interrupted\.label/); assert.match(await readFile(new URL("../src/components/agent/agent-step-status.ts", import.meta.url), "utf8"), /interrupted: \{ label: "已中断"/);
   assert.match(source, /entry\.output \|\|/);
   assert.match(source, /selected\?\.\[rawTab\]/);
   assert.doesNotMatch(source, /overflow-auto|overflow-y-auto|max-h-/);

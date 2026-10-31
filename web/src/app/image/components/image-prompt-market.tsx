@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { copyWithToast } from "@/lib/clipboard-text";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 
@@ -378,14 +379,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     }
   };
 
-  const copyPrompt = async (prompt: BananaPrompt) => {
-    try {
-      await navigator.clipboard.writeText(prompt.prompt);
-      toast.success("提示词已复制");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
+  const copyPrompt = (prompt: BananaPrompt) => copyWithToast(prompt.prompt, "提示词已复制");
 
   const savePrompt = async (prompt: BananaPrompt) => {
     if (!onSavePrompt || saveBusyIds.has(prompt.id)) {

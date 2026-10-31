@@ -26,9 +26,12 @@ export async function connectCanvasCodex(input: {
   let sessionId = "";
   async function request<T>(path: string, body?: unknown, method = "POST", requestSignal: AbortSignal = signal): Promise<T> {
     const response = await fetch(endpoint + path, { method, headers: { authorization: `Bearer ${input.token.trim()}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: requestSignal, credentials: "omit" });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "本地 Codex 连接失败");
-    return result as T;
+    if (!response.ok) {
+      const failure = await response.json().catch(() => undefined) as { error?: string } | undefined;
+      throw new Error(failure?.error || `本地 Codex 连接失败（${response.status}）`);
+    }
+    try { return await response.json() as T; }
+    catch { throw new Error("本地 Codex 返回了无效响应"); }
   }
   const opened = await request<{ sessionId: string; serviceId: string }>("/sessions", { canvasId: input.canvasId, tools: input.tools });
   sessionId = opened.sessionId;

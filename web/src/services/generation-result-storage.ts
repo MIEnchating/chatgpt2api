@@ -189,7 +189,16 @@ async function ensureGeneratedMediaAssetWithGuard(
     }).finally(() => generatedAssetRequests.delete(registrationKey));
     generatedAssetRequests.set(registrationKey, request);
   }
-  await request;
+  try {
+    await request;
+  } catch (error) {
+    // The shared request is bound to the first caller's signal; if only that caller was cancelled, retry with this caller's own signal.
+    const name = (error as { name?: string } | null)?.name;
+    if (sessionGuard.isCurrent() && !sessionGuard.signal.aborted && (name === "AbortError" || name === "CanceledError")) {
+      return ensureGeneratedMediaAssetWithGuard(task, item, index, context, sessionGuard);
+    }
+    throw error;
+  }
   sessionGuard.assertCurrent();
 }
 

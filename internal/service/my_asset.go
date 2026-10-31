@@ -913,7 +913,7 @@ func (s *MyAssetService) loadDocumentLocked(ownerID string) (myAssetDocument, er
 }
 
 func (s *MyAssetService) readDocumentLocked(ownerID string) (myAssetDocument, error) {
-	raw, err := loadStoredJSON(s.store, myAssetDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, myAssetDocumentName(ownerID))
 	if err != nil {
 		return myAssetDocument{}, err
 	}

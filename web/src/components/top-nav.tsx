@@ -186,13 +186,13 @@ function AccountMenu({
 
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
+            className="flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium text-destructive transition hover:bg-destructive/10 hover:text-destructive"
             onClick={() => {
               setOpen(false);
               void onLogout();
             }}
           >
-            <span className="flex size-7 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
               <LogOut className="size-4" />
             </span>
             <span className="flex-1 text-left">退出登录</span>

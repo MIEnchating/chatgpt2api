@@ -142,6 +142,9 @@ type GenericStorageService struct {
 	capacityErrorHandler func(error)
 	mu                   sync.Mutex
 	localCapacityMu      sync.Mutex
+	localUsedBytes       int64
+	localReservedBytes   int64
+	localMeasuredAt      time.Time
 	cronMu               sync.Mutex
 	cron                 *cron.Cron
 	cronClosed           bool
@@ -154,7 +157,7 @@ func (s *GenericStorageService) RefreshCapacityScheduler(ctx context.Context) er
 		return errStorageCapacitySchedulerClosed
 	}
 	if s.cron == nil {
-		s.cron = cron.New()
+		s.cron = cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 		s.cron.Start()
 	}
 	previousEntries := s.cron.Entries()
@@ -211,6 +214,9 @@ func NewGenericStorageService(backend storage.Backend, settings StorageSettingsP
 		return nil, errors.New("local media storage directory is required")
 	}
 	if err := ensureLocalStorageDirectory(localDir); err != nil {
+		return nil, err
+	}
+	if err := migrateLocalStorageNames(localDir); err != nil {
 		return nil, err
 	}
 	return &GenericStorageService{
@@ -296,7 +302,7 @@ func (s *GenericStorageService) SaveUserProviders(ownerID string, incoming UserS
 	if err := validateUserStorageProviderTypes(incoming); err != nil {
 		return UserStorageProviders{}, err
 	}
-	if err := s.documents.SaveJSONDocument(userStorageDocumentName(ownerID), incoming); err != nil {
+	if err := saveStoredJSONBounded(s.documents, userStorageDocumentName(ownerID), incoming); err != nil {
 		return UserStorageProviders{}, err
 	}
 	return incoming, nil
@@ -333,6 +339,7 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 	if source == nil || size < 1 {
 		return UploadedStorageObject{}, storageValidationError("file is empty")
 	}
+	uploaded := false
 	source = storageUploadReader{ctx: ctx, source: source}
 	setting := s.settings.StorageSettings()
 	var provider model.StorageProvider
@@ -355,19 +362,11 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 		}
 	}
 	if provider.Type == model.StorageProviderTypeLocal {
-		s.localCapacityMu.Lock()
-		defer s.localCapacityMu.Unlock()
-		limit := setting.LocalCapacityLimitBytes
-		if limit > 0 {
-			used, measureErr := measureLocalStorageProvider(provider)
-			if measureErr != nil {
-				return UploadedStorageObject{}, measureErr
-			}
-			incomingBytes := size
-			if used >= limit || incomingBytes > limit-used {
-				return UploadedStorageObject{}, ErrLocalStorageCapacityExceeded
-			}
+		settle, reserveErr := s.reserveLocalCapacity(provider, setting.LocalCapacityLimitBytes, size)
+		if reserveErr != nil {
+			return UploadedStorageObject{}, reserveErr
 		}
+		defer func() { settle(uploaded) }()
 	}
 	objectID := uuid.NewString()
 	extension := path.Ext(filename)
@@ -419,6 +418,7 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 		}
 		return UploadedStorageObject{}, err
 	}
+	uploaded = true
 	objectURL := "/api/files/" + objectID + "/content"
 	if object.PublicURL != "" {
 		objectURL = object.PublicURL
@@ -709,7 +709,7 @@ func (s *GenericStorageService) selectStorageProvider(ownerID string, admin bool
 }
 
 func (s *GenericStorageService) loadUserProvidersLocked(ownerID string) (UserStorageProviders, error) {
-	raw, err := s.documents.LoadJSONDocument(userStorageDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.documents, userStorageDocumentName(ownerID))
 	if err != nil || raw == nil {
 		return UserStorageProviders{}, err
 	}
@@ -1102,4 +1102,41 @@ func parseStorageByteRange(value string, size int64) (storageByteRange, bool) {
 		}
 	}
 	return storageByteRange{offset: start, length: end - start + 1}, true
+}
+
+const localCapacityMeasureTTL = time.Minute
+
+// reserveLocalCapacity checks the limit against a cached usage figure plus bytes
+// reserved by in-flight uploads. The directory is only walked when the cache has
+// expired, and the lock is not held while the upload itself runs. The returned
+// settle function releases the reservation and counts the bytes as used only
+// when the upload was committed, so failed uploads do not inflate usage.
+func (s *GenericStorageService) reserveLocalCapacity(provider model.StorageProvider, limit, size int64) (func(committed bool), error) {
+	if limit <= 0 {
+		return func(bool) {}, nil
+	}
+	s.localCapacityMu.Lock()
+	defer s.localCapacityMu.Unlock()
+	if s.localMeasuredAt.IsZero() || time.Since(s.localMeasuredAt) > localCapacityMeasureTTL {
+		used, err := measureLocalStorageProvider(provider)
+		if err != nil {
+			return nil, err
+		}
+		s.localUsedBytes = used
+		s.localReservedBytes = 0
+		s.localMeasuredAt = time.Now()
+	}
+	used := s.localUsedBytes + s.localReservedBytes
+	if used >= limit || size > limit-used {
+		return nil, ErrLocalStorageCapacityExceeded
+	}
+	s.localReservedBytes += size
+	return func(committed bool) {
+		s.localCapacityMu.Lock()
+		defer s.localCapacityMu.Unlock()
+		s.localReservedBytes -= size
+		if committed {
+			s.localUsedBytes += size
+		}
+	}, nil
 }

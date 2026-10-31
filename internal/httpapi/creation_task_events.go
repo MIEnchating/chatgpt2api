@@ -60,7 +60,11 @@ func (a *App) handleCreationTaskEvents(w http.ResponseWriter, r *http.Request, i
 			}
 		case <-heartbeat.C:
 			// Revalidate long-lived sessions without querying auth storage for every token.
-			current := a.authenticateSession(r, requestAuthCookieToken(r))
+			current, authErr := a.authenticateSession(r, requestAuthCookieToken(r))
+			if authErr != nil {
+				// Storage is unreadable: keep the stream open and retry on the next heartbeat instead of reporting an expired session.
+				continue
+			}
 			if current == nil {
 				_ = write(map[string]any{"type": "error", "status": http.StatusUnauthorized, "message": "登录会话已失效，请重新登录"})
 				return

@@ -322,6 +322,12 @@ go build -tags=embed -o chatgpt2api ./internal
 | `LOGIN_PAGE_IMAGE_ZOOM` | `1` | 登录页背景缩放，范围 `1-3` |
 | `LOGIN_PAGE_IMAGE_POSITION_X` | `50` | 登录页背景水平位置，范围 `0-100` |
 | `LOGIN_PAGE_IMAGE_POSITION_Y` | `50` | 登录页背景垂直位置，范围 `0-100` |
+| `LISTEN_HOST` | 空 | HTTP 监听地址；留空监听所有网卡（Docker 部署需要），只在本机使用时可设为 `127.0.0.1` |
+| `CORS_ALLOWED_ORIGINS` | 空 | 允许带凭证跨域访问的来源白名单，逗号分隔，格式为 `scheme://host[:port]`，不含路径；默认只放行与请求完全同源（协议、主机、端口都相同）的来源 |
+| `DEV_MODE` | 空 | 设为 `1` 时允许本机回环地址之间跨端口访问，仅用于前端开发（Vite 8002 访问后端 8090）；生产环境不要设置 |
+| `TRUSTED_PROXIES` | 空 | 可信反向代理的 IP 或 CIDR，逗号分隔；只有来自这些地址的请求才会采信 `X-Forwarded-For`、`X-Real-IP` 和 `X-Forwarded-Proto`。留空时回环、私网和链路本地地址视为可信；一旦设置，只信任列表内的地址 |
+
+首次启动且未设置 `ADMIN_PASSWORD` 时，自动生成的一次性管理员密码会输出到标准错误和启动日志。Docker 部署请在 `docker compose logs` 中查看，登录后立即修改，并注意容器日志的留存和访问范围。
 
 模型变量都是可选覆盖项。不写入 `.env` 时使用程序内置模型目录；这样升级后可以自动获得新增的内置模型。只有需要限制可选模型时才显式填写。
 

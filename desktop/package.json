@@ -54,8 +54,7 @@
         }
       ],
       "icon": "../web/public/favicon.ico",
-      "artifactName": "chatgpt2api-${version}-windows-${arch}-setup.${ext}",
-      "signExecutable": false
+      "artifactName": "chatgpt2api-${version}-windows-${arch}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,

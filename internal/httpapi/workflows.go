@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -109,7 +108,7 @@ func (a *App) writeWorkflowServiceError(w http.ResponseWriter, operation string,
 		util.WriteError(w, http.StatusNotFound, "工作流不存在")
 	case errors.Is(err, service.ErrWorkflowAccessDenied):
 		util.WriteError(w, http.StatusForbidden, "只能操作自己的工作流")
-	case errors.Is(err, storage.ErrConcurrentRowUpdate):
+	case service.IsConcurrentRowUpdate(err):
 		util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
 	case errors.As(err, &storageErr):
 		if a != nil && a.logger != nil {

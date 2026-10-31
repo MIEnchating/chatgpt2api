@@ -27,7 +27,11 @@ func localStorageObjectPath(provider model.StorageProvider, objectKey string) (s
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(root, filepath.FromSlash(cleaned))
+	segments := strings.Split(cleaned, "/")
+	for index, segment := range segments {
+		segments[index] = encodeLocalStorageSegment(segment)
+	}
+	target := filepath.Join(append([]string{root}, segments...)...)
 	relative, err := filepath.Rel(root, target)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", errors.New("local storage object path is invalid")
@@ -160,4 +164,60 @@ func measureLocalStorageProvider(provider model.StorageProvider) (int64, error) 
 		return 0, nil
 	}
 	return total, err
+}
+
+// encodeLocalStorageSegment percent-encodes ASCII characters that are invalid or
+// ambiguous in file names on common platforms (for example the colon in
+// owner IDs such as newapi:1001). The encoding is injective because the percent
+// sign itself is escaped.
+func encodeLocalStorageSegment(segment string) string {
+	var builder strings.Builder
+	for index := 0; index < len(segment); index++ {
+		char := segment[index]
+		safe := char >= 0x80 || char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-' || char == '_' || char == '~' || char == '.'
+		// Windows strips trailing dots, so the final one must be escaped.
+		if char == '.' && index == len(segment)-1 {
+			safe = false
+		}
+		if safe {
+			builder.WriteByte(char)
+			continue
+		}
+		fmt.Fprintf(&builder, "%%%02X", char)
+	}
+	return builder.String()
+}
+
+// migrateLocalStorageNames renames existing entries to their encoded names once.
+// Names that already contain a percent sign are treated as encoded, which keeps
+// the migration idempotent.
+func migrateLocalStorageNames(directory string) error {
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		path := filepath.Join(directory, entry.Name())
+		if entry.IsDir() {
+			if err := migrateLocalStorageNames(path); err != nil {
+				return err
+			}
+		}
+		name := entry.Name()
+		encoded := encodeLocalStorageSegment(name)
+		if encoded == name || strings.Contains(name, "%") {
+			continue
+		}
+		target := filepath.Join(directory, encoded)
+		if _, statErr := os.Lstat(target); statErr == nil {
+			return fmt.Errorf("migrate local media name %q: target %q already exists", name, encoded)
+		}
+		if err := os.Rename(path, target); err != nil {
+			return fmt.Errorf("migrate local media name %q: %w", name, err)
+		}
+	}
+	return nil
 }

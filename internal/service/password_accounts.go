@@ -20,6 +20,10 @@ const (
 
 var ErrInvalidPasswordCredentials = authError("用户名或密码错误")
 
+// ErrLocalAccountLoginDenied is returned for a disabled local account whose password did not match.
+// It is distinct from ErrInvalidPasswordCredentials so callers never fall through to external login.
+var ErrLocalAccountLoginDenied = authError("local account cannot sign in")
+
 var accountUsernameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{2,31}$`)
 
 type PasswordAccount struct {
@@ -221,14 +225,25 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 		return nil, "", AuthPersistenceError{Err: err}
 	}
 	_, verifiedAccount, ok := passwordAccountIndexByUsernameLocked(accounts, username)
+	// Always run one bcrypt comparison so unknown users are not distinguishable by timing.
+	storedHash := dummyPasswordHash
+	if ok {
+		storedHash = verifiedAccount.PasswordHash
+	}
+	passwordMatches := verifyAccountPassword(password, storedHash)
 	if !ok {
 		return nil, "", ErrInvalidPasswordCredentials
 	}
+	if !passwordMatches {
+		// A disabled local account must not fall back to external login or reveal its state.
+		if !verifiedAccount.Enabled {
+			return nil, "", ErrLocalAccountLoginDenied
+		}
+		return nil, "", ErrInvalidPasswordCredentials
+	}
+	// The disabled state is only revealed after the password has been proven.
 	if !verifiedAccount.Enabled {
 		return nil, "", ErrAuthUserDisabled
-	}
-	if !verifyAccountPassword(password, verifiedAccount.PasswordHash) {
-		return nil, "", ErrInvalidPasswordCredentials
 	}
 
 	s.mu.Lock()
@@ -485,3 +500,12 @@ func verifyAccountPassword(password, hash string) bool {
 	}
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
+
+// dummyPasswordHash is compared against when the username does not exist.
+var dummyPasswordHash = func() string {
+	hash, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return string(hash)
+}()

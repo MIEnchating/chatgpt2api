@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { statusToneClasses } from "@/components/ui/status-tone";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/lib/image-options";
 import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import { cn, formatElapsedClock } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import { canvasProjectPath } from "@/lib/canvas-project-route";
 import {
   getCanvasTaskQueueSnapshot,
@@ -118,10 +120,10 @@ function getStatusLabel(status: ImageTurnStatus) {
 
 function getStatusClass(status: ImageTurnStatus) {
   if (status === "queued") {
-    return "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800";
+    return statusToneClasses.warning.chip;
   }
   if (status === "generating") {
-    return "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800";
+    return statusToneClasses.info.chip;
   }
   return "bg-muted text-muted-foreground ring-border";
 }
@@ -161,24 +163,24 @@ function getQueueLoadingDetail(item: TaskQueueItem, loadingPhase: ImageTurnLoadi
 function getCompletionTone(status: ImageTurnStatus) {
   if (status === "success" || status === "message") {
     return {
-      iconClass: "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800",
-      badgeClass: "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800",
-      barClass: "bg-emerald-500",
+      iconClass: statusToneClasses.success.chip,
+      badgeClass: statusToneClasses.success.chip,
+      barClass: statusToneClasses.success.bar,
       message: "任务已完成",
     };
   }
   if (status === "cancelled") {
     return {
-      iconClass: "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800",
-      badgeClass: "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800",
-      barClass: "bg-amber-500",
+      iconClass: statusToneClasses.warning.chip,
+      badgeClass: statusToneClasses.warning.chip,
+      barClass: statusToneClasses.warning.bar,
       message: "任务已终止",
     };
   }
   return {
-    iconClass: "bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800",
-    badgeClass: "bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800",
-    barClass: "bg-rose-500",
+    iconClass: statusToneClasses.danger.chip,
+    badgeClass: statusToneClasses.danger.chip,
+    barClass: statusToneClasses.danger.bar,
     message: "任务失败",
   };
 }
@@ -317,9 +319,7 @@ function QueueItem({
         <span
           className={cn(
             "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1",
-            isQueued
-              ? "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/35 dark:text-amber-300 dark:ring-amber-800/70"
-              : "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/35 dark:ring-sky-800/70",
+            isQueued ? statusToneClasses.warning.chip : statusToneClasses.info.chip,
           )}
         >
           {isQueued ? <Clock3 className="size-4" /> : <LoaderCircle className="size-4 animate-spin" />}
@@ -340,12 +340,12 @@ function QueueItem({
           <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
             <span className="min-w-0 truncate">{[...detailParts, `${item.completedCount + item.failedCount + item.cancelledCount}/${item.totalCount}`].join(" · ")}</span>
             {item.queuedCount > 0 ? (
-              <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 font-mono tabular-nums text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-mono tabular-nums", statusToneClasses.warning.chip)}>
                 排队 {item.queuedCount}
               </span>
             ) : null}
             {item.runningCount > 0 ? (
-              <span className="shrink-0 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono tabular-nums text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+              <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-mono tabular-nums", statusToneClasses.info.chip)}>
                 处理中 {item.runningCount}
               </span>
             ) : null}
@@ -356,8 +356,8 @@ function QueueItem({
               <span className="truncate font-medium text-foreground">{progressMessage}</span>
               <span className="shrink-0 font-mono tabular-nums">{progressPercent}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
-              <div className="h-full rounded-full bg-[#1456f0] transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-brand transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
             </div>
             <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="truncate">{longTaskHint || progressDetail || formatQueueTime(item.turn.createdAt)}</span>
@@ -387,7 +387,7 @@ function CompletionItem({
   return (
     <button
       type="button"
-      className="animate-in fade-in slide-in-from-top-1 w-full border-b border-border/70 px-4 py-3 text-left duration-300 last:border-b-0 hover:bg-emerald-50/45 dark:hover:bg-emerald-950/20"
+      className="animate-in fade-in slide-in-from-top-1 w-full border-b border-border/70 px-4 py-3 text-left duration-300 last:border-b-0 hover:bg-muted/40"
       onClick={() => onOpenConversation(item.conversationId)}
     >
       <div className="flex items-start gap-3">
@@ -411,7 +411,7 @@ function CompletionItem({
               <span className="truncate font-medium text-foreground">{tone.message}</span>
               <span className="shrink-0 font-mono tabular-nums">{resultText}</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div className={cn("h-full animate-pulse rounded-full", tone.barClass)} style={{ width: "100%" }} />
             </div>
           </div>
@@ -436,13 +436,8 @@ function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueIte
   const Icon = meta.icon;
   const elapsed = formatElapsedClock(Math.max(0, Math.floor(((item.completedAt || now) - item.startedAt) / 1000)));
   const statusLabel = item.status === "generating" ? "处理中" : successful ? "已完成" : item.status === "cancelled" ? "已终止" : "失败";
-  const tone = item.status === "generating"
-    ? "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800"
-    : successful
-      ? "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800"
-      : item.status === "cancelled"
-        ? "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800"
-        : "bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800";
+  const toneKey = item.status === "generating" ? "info" : successful ? "success" : item.status === "cancelled" ? "warning" : "danger";
+  const tone = statusToneClasses[toneKey].chip;
 
   return (
     <button
@@ -469,8 +464,8 @@ function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueIte
               <span className="truncate font-medium text-foreground">{item.error || `${item.canvasTitle} · ${statusLabel}`}</span>
               <span className="shrink-0 font-mono tabular-nums">{item.progress}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
-              <div className={cn("h-full rounded-full transition-[width] duration-300", successful ? "bg-emerald-500" : item.status === "error" ? "bg-rose-500" : item.status === "cancelled" ? "bg-amber-500" : "bg-[#1456f0]")} style={{ width: `${item.progress}%` }} />
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className={cn("h-full rounded-full transition-[width] duration-300", statusToneClasses[toneKey].bar)} style={{ width: `${item.progress}%` }} />
             </div>
             <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="truncate">{item.canvasTitle}</span>
@@ -498,7 +493,6 @@ export function ImageTaskQueue({ className }: { className?: string }) {
   const activeCount = queueItems.length + activeCanvasTasks.length;
   const [recentCompletions, setRecentCompletions] = useState<RecentQueueCompletion[]>([]);
   const [open, setOpen] = useState(false);
-  const [now, setNow] = useState(Date.now());
   const previousQueueItemsRef = useRef<Map<string, TaskQueueItem>>(new Map());
   const hasRecentCompletion = recentCompletions.length > 0 || completedCanvasTasks.length > 0;
 
@@ -551,19 +545,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
     };
   }, [recentCompletions]);
 
-  useEffect(() => {
-    if (!open && activeCount === 0 && Object.keys(progressByTurnKey).length === 0 && !hasRecentCompletion) {
-      return;
-    }
-
-    setNow(Date.now());
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [activeCount, hasRecentCompletion, open, progressByTurnKey]);
+  const now = useNow(open || activeCount > 0 || Object.keys(progressByTurnKey).length > 0 || hasRecentCompletion);
 
   const handleOpenConversation = (conversationId: string) => {
     try {
@@ -594,9 +576,9 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           className={cn(
             "h-9 rounded-lg px-2.5 shadow-none",
             activeCount > 0
-              ? "border-sky-200 bg-sky-50 text-brand hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300 dark:hover:bg-sky-950/35"
+              ? statusToneClasses.info.trigger
               : hasRecentCompletion
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/35"
+                ? statusToneClasses.success.trigger
               : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             className,
           )}

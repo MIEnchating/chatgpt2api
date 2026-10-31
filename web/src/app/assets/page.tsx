@@ -9,7 +9,7 @@ import { AssetForm } from "@/app/assets/asset-form";
 import { AssetGroupToolbar } from "@/app/assets/asset-groups";
 import { assetLabels } from "@/app/assets/asset-filters";
 import { useAssetGroups } from "@/lib/use-asset-groups";
-import { assetListKey, assetModel, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary, settleAssetOperations } from "@/app/assets/asset-library";
+import { assetListKey, assetModel, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary, selectPersistedAssets, settleAssetOperations } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/lib/use-my-assets";
 import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
@@ -25,6 +25,7 @@ import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisib
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
+import { copyWithToast } from "@/lib/clipboard-text";
 import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
 import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
@@ -172,14 +173,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     });
   }, [allAssets]);
 
-  const copyText = async (asset: MyAsset) => {
-    try {
-      await navigator.clipboard.writeText(asset.content || "");
-      toast.success("文本已复制");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
+  const copyText = (asset: MyAsset) => copyWithToast(asset.content || "", "文本已复制");
 
   const download = async (asset: MyAsset) => {
     try {
@@ -269,7 +263,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     const targets = visibilityManageableAssets.filter((asset) => asset.visibility !== nextVisibility);
     if (!targets.length) return;
     setBulkActionBusy(true);
-    const customTargets = targets.filter((asset) => !asset.managedPath);
+    const customTargets = selectPersistedAssets(assets, targets.filter((asset) => !asset.managedPath));
     const managedTargets = targets.filter((asset): asset is MyAsset & { managedPath: string } => Boolean(asset.managedPath));
     try {
       const managedResults = await settleAssetOperations(

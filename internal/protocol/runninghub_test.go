@@ -82,3 +82,10 @@ func TestRunningHubBaseURLValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestRunningHubInspectRequiresHTTPClient(t *testing.T) {
+	_, err := RunningHubClient{}.InspectWorkflow(context.Background(), RunningHubInspectInput{BaseURL: "https://example.test", APIKey: "secret-key", Kind: "workflow", WorkflowID: "wf-1", Capability: "image"})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 客户端未配置") {
+		t.Fatalf("error = %v, want missing HTTP client error", err)
+	}
+}

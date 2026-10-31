@@ -26,7 +26,7 @@ export function canvasAgentMediaGenerationQuestion(id: string, nodeCount: number
 export function canvasAgentQuestionMediaChoice(question: CanvasAgentQuestion, answer: string): "generate" | "defer" | undefined {
   const isMediaConfirmation = question.purpose === "media_generation" || isMediaGenerationConfirmation(question.kind, `${question.question} ${question.reason} ${question.request}`);
   if (!isMediaConfirmation) return undefined;
-  if (/(?:暂不|不生成|先不|稍后|暂缓|不需要|取消)/.test(answer)) return "defer";
+  if (/(?:暂不|不生成|先不|稍后|暂缓|不需要|取消|别生成|别提交|拒绝|不(?:要|用|必|想|需)(?:再|立即|马上)?(?:生成|提交)|不(?:可以|同意|行|能)|(?:还?没有?|尚未|未)(?:确认|同意|批准|可以))/.test(answer)) return "defer";
   if (/(?:生成|开始|启动|提交|立即|可以|同意|确认|是的|好的)/.test(answer)) return "generate";
   return undefined;
 }

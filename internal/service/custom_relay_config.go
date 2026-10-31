@@ -38,6 +38,26 @@ func (e *CustomRelayConfigStorageError) Unwrap() error {
 	return e.Err
 }
 
+// ConcurrentUpdate reports whether the failure was a lost optimistic-lock race,
+// so transport code does not need to import the storage package.
+func (e *CustomRelayConfigStorageError) ConcurrentUpdate() bool {
+	return errors.Is(e.Err, storage.ErrConcurrentRowUpdate)
+}
+
+// CustomRelayConfigValidationError carries a message that is safe to show to
+// the caller because it only describes the rejected input.
+type CustomRelayConfigValidationError struct {
+	Message string
+}
+
+func (e *CustomRelayConfigValidationError) Error() string {
+	return e.Message
+}
+
+func customRelayInvalid(format string, args ...any) error {
+	return &CustomRelayConfigValidationError{Message: fmt.Sprintf(format, args...)}
+}
+
 type CustomRelayConfig struct {
 	ID       string `json:"id"`
 	Kind     string `json:"kind"`
@@ -159,7 +179,7 @@ func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey, 
 			return CustomRelayConfigStatus{}, customRelayConfigStorageError(loadErr)
 		}
 		if len(configs) >= maxCustomRelayConfigs {
-			return CustomRelayConfigStatus{}, fmt.Errorf("自定义 API 配置最多支持 %d 条", maxCustomRelayConfigs)
+			return CustomRelayConfigStatus{}, customRelayInvalid("自定义 API 配置最多支持 %d 条", maxCustomRelayConfigs)
 		}
 		configs[config.ID] = config
 		if saveErr := s.saveLocked(ownerID, configs); saveErr != nil {
@@ -202,7 +222,7 @@ func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey, pr
 			currentURL, _ := url.Parse(current.BaseURL)
 			nextURL, _ := url.Parse(normalizedBaseURL)
 			if !strings.EqualFold(currentURL.Scheme, nextURL.Scheme) || !strings.EqualFold(currentURL.Host, nextURL.Host) {
-				return CustomRelayConfigStatus{}, fmt.Errorf("修改 Base URL 来源时必须重新填写 API Key")
+				return CustomRelayConfigStatus{}, customRelayInvalid("修改 Base URL 来源时必须重新填写 API Key")
 			}
 			nextAPIKey = current.APIKey
 		}
@@ -257,7 +277,7 @@ func (s *CustomRelayConfigService) loadLocked(ownerID string) (map[string]Custom
 	if s.store == nil {
 		return nil, fmt.Errorf("storage document backend is required")
 	}
-	raw, err := s.store.LoadJSONDocument(customRelayConfigDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, customRelayConfigDocumentName(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -307,31 +327,31 @@ func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, er
 	case "openai":
 	case "autodl":
 		if config.Kind != "video" && config.Kind != "audio" {
-			return CustomRelayConfig{}, fmt.Errorf("AutoDL 仅支持视频和音频线路")
+			return CustomRelayConfig{}, customRelayInvalid("AutoDL 仅支持视频和音频线路")
 		}
 	case "ark":
 		if config.Kind != "video" {
-			return CustomRelayConfig{}, fmt.Errorf("方舟原生协议仅支持视频线路")
+			return CustomRelayConfig{}, customRelayInvalid("方舟原生协议仅支持视频线路")
 		}
 	case "runninghub":
 		if config.Kind != "image" && config.Kind != "video" && config.Kind != "audio" {
-			return CustomRelayConfig{}, fmt.Errorf("RunningHub 仅支持图片、视频和音频线路")
+			return CustomRelayConfig{}, customRelayInvalid("RunningHub 仅支持图片、视频和音频线路")
 		}
 	default:
-		return CustomRelayConfig{}, fmt.Errorf("不支持的自定义 API 协议")
+		return CustomRelayConfig{}, customRelayInvalid("不支持的自定义 API 协议")
 	}
 	config.ID = strings.TrimSpace(config.ID)
 	config.Kind = NormalizeCustomRelayKind(config.Kind)
 	config.Name = strings.TrimSpace(config.Name)
 	config.APIKey = strings.TrimSpace(config.APIKey)
 	if config.ID == "" || config.Kind == "" {
-		return CustomRelayConfig{}, fmt.Errorf("custom relay config is invalid")
+		return CustomRelayConfig{}, customRelayInvalid("custom relay config is invalid")
 	}
 	if config.Name == "" {
-		return CustomRelayConfig{}, fmt.Errorf("配置名称不能为空")
+		return CustomRelayConfig{}, customRelayInvalid("配置名称不能为空")
 	}
 	if len([]rune(config.Name)) > 100 {
-		return CustomRelayConfig{}, fmt.Errorf("配置名称不能超过 100 个字符")
+		return CustomRelayConfig{}, customRelayInvalid("配置名称不能超过 100 个字符")
 	}
 	baseURL, err := normalizeCustomRelayBaseURL(config.BaseURL)
 	if err != nil {
@@ -339,10 +359,10 @@ func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, er
 	}
 	config.BaseURL = baseURL
 	if config.APIKey == "" {
-		return CustomRelayConfig{}, fmt.Errorf("API Key is required")
+		return CustomRelayConfig{}, customRelayInvalid("API Key is required")
 	}
 	if len(config.APIKey) > maxCustomRelayAPIKeyLength {
-		return CustomRelayConfig{}, fmt.Errorf("API Key is too long")
+		return CustomRelayConfig{}, customRelayInvalid("API Key is too long")
 	}
 	return config, nil
 }
@@ -350,20 +370,20 @@ func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, er
 func normalizeCustomRelayBaseURL(value string) (string, error) {
 	value = strings.TrimRight(strings.TrimSpace(value), "/")
 	if value == "" {
-		return "", fmt.Errorf("Base URL is required")
+		return "", customRelayInvalid("Base URL is required")
 	}
 	if len(value) > maxCustomRelayBaseURLLength {
-		return "", fmt.Errorf("Base URL is too long")
+		return "", customRelayInvalid("Base URL is too long")
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("Base URL must be an absolute http(s) URL")
+		return "", customRelayInvalid("Base URL must be an absolute http(s) URL")
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("Base URL must not contain credentials, query parameters, or fragments")
+		return "", customRelayInvalid("Base URL must not contain credentials, query parameters, or fragments")
 	}
 	if ip := net.ParseIP(parsed.Hostname()); ip != nil && isBlockedMediaProxyIP(ip) {
-		return "", fmt.Errorf("Base URL must not use a local or private IP address")
+		return "", customRelayInvalid("Base URL must not use a local or private IP address")
 	}
 	return value, nil
 }

@@ -274,7 +274,7 @@ func TestSSOCallbackRefreshesTrustedIdentityAndRole(t *testing.T) {
 				}
 				if scenario == "switch-sso-user" {
 					req := httptest.NewRequest(http.MethodGet, "/auth/session", nil)
-					identity := app.authenticateSession(req, oldToken)
+					identity, _ := app.authenticateSession(req, oldToken)
 					if identity == nil || identity.OwnerID != "newapi:2" || identity.Role != service.AuthRoleUser {
 						t.Fatalf("the previous platform account must still have a valid session: %#v", identity)
 					}
@@ -452,6 +452,7 @@ func TestSSOPreferencesInitializeRelayKeys(t *testing.T) {
 			t.Setenv("CHATGPT2API_SSO_SECRET", secret)
 			t.Setenv("CHATGPT2API_SSO_ORIGIN", "https://studio.example.test")
 			t.Setenv("NEWAPI_SSO_ORIGINS", upstream.URL)
+			app.newSafeRelayHTTPClient = func(time.Duration) *http.Client { return upstream.Client() }
 			_, token, err := app.auth.UpsertNewAPISession(service.NewAPIUser{
 				ID: 1, Username: "alice", Email: "alice@example.test", Provider: service.AuthProviderNewAPI,
 				SubjectPrefix: service.AuthProviderNewAPI, SSOReference: reference, SSOIssuer: upstream.URL,

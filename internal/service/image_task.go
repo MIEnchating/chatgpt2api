@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -103,6 +104,8 @@ type ImageTaskService struct {
 	ownerRunningUnits    map[string]int
 	globalRunningUnits   int
 	creationUnitCond     *sync.Cond
+	creationUnitWaiters  []*creationUnitWaiter
+	lastTaskRefreshAt    time.Time
 	persistenceDirty     bool
 	persistenceRetrying  bool
 	remoteMonitorRunning bool
@@ -110,6 +113,8 @@ type ImageTaskService struct {
 	stopping             bool
 	closed               bool
 	taskSubscribers      map[chan struct{}]struct{}
+	recoveryMu           sync.Mutex
+	recoveryCalls        map[string]*videoRecoveryCall
 }
 
 type ImageTaskLimitError struct {
@@ -379,7 +384,7 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 		s.mu.Unlock()
 		return nil, ImageTaskLoadError{Err: err}
 	}
-	if err := s.refreshTasksLocked(); err != nil {
+	if err := s.refreshTasksForReadLocked(); err != nil {
 		s.mu.Unlock()
 		return nil, ImageTaskLoadError{Err: err}
 	}
@@ -424,6 +429,7 @@ func (s *ImageTaskService) CanAccessMediaResult(identity Identity, resultURL str
 	if err := s.ensureLoadedLocked(); err != nil {
 		return false, ImageTaskLoadError{Err: err}
 	}
+	// Authorization must observe deletions made by other instances immediately, so it never uses the throttled refresh.
 	if err := s.refreshTasksLocked(); err != nil {
 		return false, ImageTaskLoadError{Err: err}
 	}
@@ -631,7 +637,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	// Persisted asynchronous tasks outlive the request and are canceled through CancelTask or Close.
 	taskCtx, cancel := context.WithCancel(context.Background())
 	outputFormat := normalizeOptionalImageOutputFormat(util.Clean(payload["output_format"]))
-	task := map[string]any{"id": taskID, "owner_id": owner, "status": TaskStatusQueued, "mode": mode, "model": firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto), "size": util.Clean(payload["size"]), "quality": util.Clean(payload["quality"]), "visibility": util.Clean(payload["visibility"]), "count": count, "revision": 1, "created_at": now, "updated_at": now}
+	task := map[string]any{"id": taskID, "owner_id": owner, "status": TaskStatusQueued, "mode": mode, "model": firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto), "size": util.Clean(payload["size"]), "quality": util.Clean(payload["quality"]), "visibility": util.Clean(payload["visibility"]), "count": count, "revision": 1, "timeout_seconds": int(s.taskTimeout(mode, payload) / time.Second), "created_at": now, "updated_at": now}
 	if len(referenceIDs) > 0 {
 		references := make([]string, len(referenceIDs))
 		for index, id := range referenceIDs {
@@ -701,9 +707,21 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	go func() {
 		defer s.taskWorkers.Done()
 		defer releaseReferences()
+		defer s.recoverTaskPanic(key)
 		s.runTask(taskCtx, key, mode, identity, payload)
 	}()
 	return result, nil
+}
+
+// recoverTaskPanic must be deferred directly. It converts a panicking task
+// handler into a persisted error state instead of crashing the process.
+func (s *ImageTaskService) recoverTaskPanic(key string) {
+	recovered := recover()
+	if recovered == nil {
+		return
+	}
+	slog.Error("image task worker panicked", "panic", recovered)
+	_ = s.updateActiveTask(key, map[string]any{"status": TaskStatusError, "error": "任务执行异常中断，请重试", "data": []any{}})
 }
 
 func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identity Identity, payload map[string]any) {
@@ -938,6 +956,15 @@ func (s *ImageTaskService) taskTimeout(mode string, payload map[string]any) time
 	return videoTaskTimeoutOverride(mode, payload, timeout)
 }
 
+// recordedTaskTimeout returns the timeout the task was started with, so lowering the configured timeout
+// later does not mark a still-running task as lost. Tasks stored before the field existed use the current setting.
+func (s *ImageTaskService) recordedTaskTimeout(task map[string]any) time.Duration {
+	if seconds := util.ToInt(task["timeout_seconds"], 0); seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	return s.taskTimeout(util.Clean(task["mode"]), task)
+}
+
 func videoTaskTimeoutOverride(mode string, payload map[string]any, fallback time.Duration) time.Duration {
 	if mode != "video" {
 		return fallback
@@ -1003,6 +1030,36 @@ func (s *ImageTaskService) AcquireCreationUnit(ctx context.Context, identity Ide
 	return s.AcquireCreationUnits(ctx, identity, 1)
 }
 
+// creationUnitWaiter is one queued AcquireCreationUnits call. It lets an earlier large request block later
+// small ones, so a large request is not starved while small requests keep the global budget busy.
+type creationUnitWaiter struct {
+	units int
+	// globalBlocked is true when the waiter could not run only because the global budget was full.
+	globalBlocked bool
+}
+
+func (s *ImageTaskService) removeCreationUnitWaiterLocked(waiter *creationUnitWaiter) {
+	for index, candidate := range s.creationUnitWaiters {
+		if candidate == waiter {
+			s.creationUnitWaiters = append(s.creationUnitWaiters[:index], s.creationUnitWaiters[index+1:]...)
+			return
+		}
+	}
+}
+
+// creationUnitWaiterBlockedLocked reports whether an earlier waiter is stuck on the global budget.
+func (s *ImageTaskService) creationUnitWaiterBlockedLocked(waiter *creationUnitWaiter) bool {
+	for _, candidate := range s.creationUnitWaiters {
+		if candidate == waiter {
+			return false
+		}
+		if candidate.globalBlocked {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ImageTaskService) AcquireCreationUnits(ctx context.Context, identity Identity, units int) (func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1023,6 +1080,12 @@ func (s *ImageTaskService) AcquireCreationUnits(ctx context.Context, identity Id
 	defer stopContextWake()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	waiter := &creationUnitWaiter{units: units}
+	s.creationUnitWaiters = append(s.creationUnitWaiters, waiter)
+	defer func() {
+		s.removeCreationUnitWaiterLocked(waiter)
+		s.creationUnitCond.Broadcast()
+	}()
 	for {
 		if s.stopping || s.closed {
 			return nil, ErrImageTaskServiceClosed
@@ -1039,7 +1102,8 @@ func (s *ImageTaskService) AcquireCreationUnits(ctx context.Context, identity Id
 		}
 		ownerAvailable := !limitOwner || limit <= 0 || s.ownerRunningUnits[owner]+units <= limit
 		globalAvailable := s.globalRunningUnits+units <= defaultGlobalImageTaskConcurrentUnits
-		if ownerAvailable && globalAvailable {
+		waiter.globalBlocked = ownerAvailable && !globalAvailable
+		if ownerAvailable && globalAvailable && !s.creationUnitWaiterBlockedLocked(waiter) {
 			s.globalRunningUnits += units
 			if limitOwner {
 				s.ownerRunningUnits[owner] += units
@@ -1282,10 +1346,16 @@ func (s *ImageTaskService) removeTaskCancel(key string) {
 }
 
 func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
-	raw, err := loadStoredJSON(s.store, s.docName)
+	raw, err := loadStoredJSONBounded(s.store, s.docName)
 	if err != nil {
 		return map[string]map[string]any{}, err
 	}
+	return s.decodeTasksLocked(raw)
+}
+
+// decodeTasksLocked normalizes a stored task document. It does no storage I/O,
+// so callers can read the document outside s.mu and decode it under the lock.
+func (s *ImageTaskService) decodeTasksLocked(raw any) (map[string]map[string]any, error) {
 	if obj, ok := raw.(map[string]any); ok {
 		for _, item := range util.AsMapSlice(obj["deleted_tasks"]) {
 			id := util.Clean(item["id"])
@@ -1334,7 +1404,7 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 			revision = 1
 		}
 		now := util.NowISO()
-		normalized := map[string]any{"id": id, "owner_id": owner, "status": status, "mode": mode, "model": firstNonEmpty(util.Clean(task["model"]), util.ImageModelAuto), "size": util.Clean(task["size"]), "quality": util.Clean(task["quality"]), "visibility": visibility, "count": count, "revision": revision, "created_at": firstNonEmpty(util.Clean(task["created_at"]), now), "updated_at": firstNonEmpty(util.Clean(task["updated_at"]), util.Clean(task["created_at"]), now)}
+		normalized := map[string]any{"id": id, "owner_id": owner, "status": status, "mode": mode, "model": firstNonEmpty(util.Clean(task["model"]), util.ImageModelAuto), "size": util.Clean(task["size"]), "quality": util.Clean(task["quality"]), "visibility": visibility, "count": count, "revision": revision, "timeout_seconds": util.ToInt(task["timeout_seconds"], 0), "created_at": firstNonEmpty(util.Clean(task["created_at"]), now), "updated_at": firstNonEmpty(util.Clean(task["updated_at"]), util.Clean(task["created_at"]), now)}
 		if references := util.AsStringSlice(task["storage_references"]); len(references) > 0 {
 			normalized["storage_references"] = references
 		}
@@ -1403,13 +1473,26 @@ func (s *ImageTaskService) ensureLoadedLocked() error {
 	return nil
 }
 
+// imageTaskReadRefreshInterval is the minimum gap between full task-document reloads triggered by read paths.
+// Writers always reload, and the remote monitor keeps cancellations in sync in between.
+var imageTaskReadRefreshInterval = time.Second
+
 func (s *ImageTaskService) refreshTasksLocked() error {
 	remoteTasks, err := s.loadLocked()
 	if err != nil {
 		return err
 	}
 	s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
+	s.lastTaskRefreshAt = time.Now()
 	return nil
+}
+
+// refreshTasksForReadLocked skips the storage round trip when the in-memory tasks were refreshed very recently.
+func (s *ImageTaskService) refreshTasksForReadLocked() error {
+	if !s.lastTaskRefreshAt.IsZero() && time.Since(s.lastTaskRefreshAt) < imageTaskReadRefreshInterval {
+		return nil
+	}
+	return s.refreshTasksLocked()
 }
 
 func (s *ImageTaskService) startRemoteMonitorLocked() {
@@ -1420,6 +1503,14 @@ func (s *ImageTaskService) startRemoteMonitorLocked() {
 	s.remoteMonitorWorkers.Add(1)
 	go func() {
 		defer s.remoteMonitorWorkers.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("image task remote monitor panicked", "panic", recovered)
+				s.mu.Lock()
+				s.remoteMonitorRunning = false
+				s.mu.Unlock()
+			}
+		}()
 		s.monitorRemoteCancellations()
 	}()
 }
@@ -1436,13 +1527,18 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 			return
 		case <-ticker.C:
 		}
+		// The storage read happens outside the service lock.
+		rawRemote, rawErr := loadStoredJSONBounded(s.store, s.docName)
+		if rawErr != nil {
+			continue
+		}
 		s.mu.Lock()
 		if s.stopping || s.closed || len(s.cancels) == 0 && len(s.taskSubscribers) == 0 {
 			s.remoteMonitorRunning = false
 			s.mu.Unlock()
 			return
 		}
-		remoteTasks, err := s.loadLocked()
+		remoteTasks, err := s.decodeTasksLocked(rawRemote)
 		if err != nil {
 			s.mu.Unlock()
 			continue
@@ -1560,7 +1656,7 @@ func (s *ImageTaskService) persistLocked() error {
 	})
 	value := map[string]any{"tasks": items, "deleted_tasks": deletedItems}
 	if s.store != nil {
-		return s.store.SaveJSONDocument(s.docName, value)
+		return saveStoredJSONBounded(s.store, s.docName, value)
 	}
 	return fmt.Errorf("storage document backend is required")
 }
@@ -1597,7 +1693,12 @@ func imageTaskSnapshotNewer(candidate, current map[string]any) bool {
 	candidateStatus := util.Clean(candidate["status"])
 	currentStatus := util.Clean(current["status"])
 	if candidateStatus != currentStatus && (candidateStatus == TaskStatusCancelled || currentStatus == TaskStatusCancelled) {
-		return candidateStatus == TaskStatusCancelled
+		// An existing cancellation is final. A cancelled candidate only supersedes
+		// an active task, never a result or error that was already recorded.
+		if currentStatus == TaskStatusCancelled {
+			return false
+		}
+		return isActiveTaskStatus(currentStatus)
 	}
 	candidateTerminal := !isActiveTaskStatus(candidateStatus)
 	currentTerminal := !isActiveTaskStatus(currentStatus)
@@ -1642,6 +1743,14 @@ func (s *ImageTaskService) markPersistenceDirtyLocked() {
 		s.persistenceWorkers.Add(1)
 		go func() {
 			defer s.persistenceWorkers.Done()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					slog.Error("image task persistence retry panicked", "panic", recovered)
+					s.mu.Lock()
+					s.persistenceRetrying = false
+					s.mu.Unlock()
+				}
+			}()
 			s.retryPersistence()
 		}()
 	}
@@ -1734,7 +1843,7 @@ func (s *ImageTaskService) recoverUnfinishedLocked() bool {
 	changed := false
 	now := time.Now()
 	for _, task := range s.tasks {
-		cutoff := now.Add(-s.taskTimeout(util.Clean(task["mode"]), task) - imageTaskRecoveryGrace)
+		cutoff := now.Add(-s.recordedTaskTimeout(task) - imageTaskRecoveryGrace)
 		if (task["status"] == TaskStatusQueued || task["status"] == TaskStatusRunning) && parseTaskTime(task["updated_at"]).Before(cutoff) {
 			task["status"] = TaskStatusError
 			task["error"] = "服务已重启或任务执行实例已失联，未完成的任务已中断"

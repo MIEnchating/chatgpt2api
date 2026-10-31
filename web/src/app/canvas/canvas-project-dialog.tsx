@@ -40,7 +40,7 @@ export function CanvasProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(92vw,440px)] rounded-2xl">
+      <DialogContent className="w-[min(92vw,440px)]">
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "新建画布" : mode === "rename" ? "重命名画布" : "删除画布？"}</DialogTitle>
           <DialogDescription>{description || (editable ? "输入画布名称。" : `确定删除“${title}”吗？此操作不可恢复。`)}</DialogDescription>

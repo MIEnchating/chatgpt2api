@@ -71,9 +71,15 @@ import {
   workflowReferenceCleanupKeys,
 } from "@/app/workflows/workflow-reference-lifecycle";
 import { runCurrentWorkflowAgentDraft } from "@/app/workflows/workflow-agent-draft-lifecycle";
+import { AgentActivityLine } from "@/components/agent/agent-activity-line";
+import { AgentNotice } from "@/components/agent/agent-notice";
 import { assetListKey, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { statusToneClasses } from "@/components/ui/status-tone";
+import { useNow } from "@/lib/use-now";
+import { copyWithToast } from "@/lib/clipboard-text";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
@@ -281,6 +287,8 @@ function CreativeWorkflowWorkspaceContent({
     Boolean(session),
   );
   const [items, setItems] = useState<CreativeWorkflow[]>([]);
+  const [deletingWorkflow, setDeletingWorkflow] = useState<CreativeWorkflow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [models, setModels] = useState<ModelConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -307,7 +315,6 @@ function CreativeWorkflowWorkspaceContent({
   const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
   const [selectedTaskID, setSelectedTaskID] = useState("");
   const [clearingTaskHistory, setClearingTaskHistory] = useState(false);
-  const [now, setNow] = useState(Date.now());
   const selectedTask = tasks.find((task) => task.id === selectedTaskID) || null;
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentPrompt, setAgentPrompt] = useState("");
@@ -538,11 +545,7 @@ function CreativeWorkflowWorkspaceContent({
     .join(",");
   const runningTaskCount = tasks.filter((task) => task.status === "running").length;
 
-  useEffect(() => {
-    if (!runningTaskCount) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [runningTaskCount]);
+  const now = useNow(runningTaskCount > 0);
 
   useEffect(() => {
     if (!runningWorkflowTaskIDs) return;
@@ -1614,15 +1617,7 @@ function CreativeWorkflowWorkspaceContent({
                     onRun={() => openRunner(workflow)}
                     onEdit={() => replaceEditor(structuredClone(workflow))}
                     onCopy={() => void duplicateWorkflow(workflow)}
-                    onDelete={async () => {
-                      if (!window.confirm(`确定删除「${workflow.name}」吗？已生成的图片不受影响。`)) return;
-                      try {
-                        await deleteWorkflow(workflow.id);
-                        setItems((current) => current.filter((item) => item.id !== workflow.id));
-                      } catch (error) {
-                        toast.error(error instanceof Error ? error.message : "删除失败");
-                      }
-                    }}
+                    onDelete={() => setDeletingWorkflow(workflow)}
                   />
                 ))}
                 </div>
@@ -1643,6 +1638,31 @@ function CreativeWorkflowWorkspaceContent({
           onPageSizeChange={setPageSize}
         />
       </ManagementPanel>
+      <ConfirmDialog
+        open={Boolean(deletingWorkflow)}
+        title="删除工作流"
+        description={`确定删除「${deletingWorkflow?.name ?? ""}」吗？已生成的图片不受影响。`}
+        confirmLabel="删除"
+        destructive
+        busy={deleteBusy}
+        onOpenChange={(next) => {
+          if (!next) setDeletingWorkflow(null);
+        }}
+        onConfirm={async () => {
+          const target = deletingWorkflow;
+          if (!target) return;
+          setDeleteBusy(true);
+          try {
+            await deleteWorkflow(target.id);
+            setItems((current) => current.filter((item) => item.id !== target.id));
+            setDeletingWorkflow(null);
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "删除失败");
+          } finally {
+            setDeleteBusy(false);
+          }
+        }}
+      />
       <WorkflowTaskHistoryDialog
         open={taskHistoryOpen}
         tasks={tasks}
@@ -1754,7 +1774,7 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
         <Button size="sm" onClick={onRun}><Play />运行</Button>
         {workflow.editable !== false ? <Button size="icon" variant="ghost" title="编辑" onClick={onEdit}><Pencil /></Button> : null}
         <Button size="icon" variant="ghost" title="复制" onClick={onCopy}><Copy /></Button>
-        {workflow.editable !== false ? <Button size="icon" variant="ghost" className="ml-auto text-destructive dark:text-rose-300" title="删除" onClick={onDelete}><Trash2 /></Button> : null}
+        {workflow.editable !== false ? <Button size="icon" variant="ghost" className="ml-auto text-destructive" title="删除" onClick={onDelete}><Trash2 /></Button> : null}
       </div>
     </article>
   );
@@ -1930,7 +1950,7 @@ function WorkflowTaskRow({ task, now, onOpen }: { task: WorkflowTask; now: numbe
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <Button size="icon" variant="ghost" title="复制提示词" onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(task.prompt); }}><Copy /></Button>
+        <Button size="icon" variant="ghost" title="复制提示词" onClick={(event) => { event.stopPropagation(); copyWithToast(task.prompt, "提示词已复制"); }}><Copy /></Button>
         <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
     </article>
@@ -2042,14 +2062,14 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
               )}
             </section>
             <aside className="min-w-0 p-4 sm:p-6">
-              {task.error ? <section className="mb-5 border-l-2 border-rose-500 bg-destructive/10 px-3 py-2.5 text-sm text-destructive dark:bg-rose-950/30 dark:text-rose-300"><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
+              {task.error ? <section className={cn("mb-5 border-l-2 border-rose-500 px-3 py-2.5 text-sm", statusToneClasses.danger.soft)}><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
               <section className="border-b border-border pb-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold">当前图片提示词</h3>
                     {activeImage ? <p className="mt-1 truncate text-xs text-muted-foreground">{activeImageTitle} · 第 {selectedImage + 1}/{task.images.length} 张</p> : null}
                   </div>
-                  <Button size="icon" variant="ghost" title="复制当前图片提示词" disabled={!activeImagePrompt} onClick={() => void navigator.clipboard.writeText(activeImagePrompt)}><Copy /></Button>
+                  <Button size="icon" variant="ghost" title="复制当前图片提示词" disabled={!activeImagePrompt} onClick={() => copyWithToast(activeImagePrompt, "提示词已复制")}><Copy /></Button>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/85">{activeImagePrompt || "未记录"}</p>
               </section>
@@ -2215,7 +2235,7 @@ function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenc
               </div>
             </div>
             {workflow.scope === "public" && workflow.template_references.some((reference) => reference.visibility !== "public") ? (
-              <p className="mb-3 border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">公开工作流只能使用公开素材。请移除个人模板图，或将工作流改为个人。</p>
+              <p className={cn("mb-3 border-l-2 border-amber-500 px-3 py-2 text-xs", statusToneClasses.warning.soft)}>公开工作流只能使用公开素材。请移除个人模板图，或将工作流改为个人。</p>
             ) : null}
             <WorkflowReferenceGrid
               references={workflow.template_references}
@@ -2279,7 +2299,7 @@ function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenc
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1"><Braces className="size-3.5" />使用双大括号插入变量</span>
                         <span>空变量会替换为空文本</span>
-                        {undefinedTemplateVariables.length ? <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><CircleAlert className="size-3.5" />未定义：{undefinedTemplateVariables.join("、")}</span> : null}
+                        {undefinedTemplateVariables.length ? <span className={cn("inline-flex items-center gap-1", statusToneClasses.warning.text)}><CircleAlert className="size-3.5" />未定义：{undefinedTemplateVariables.join("、")}</span> : null}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -2537,14 +2557,14 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 />
               </div>
               <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage={workflow.template_references.length ? "请添加至少一张新产品实拍图" : "未添加产品参考图"} disabled={referenceBusy} onRemove={onReferenceRemove} />
-              {referenceOverflow ? <p className="mt-2 text-xs text-destructive dark:text-rose-300">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
+              {referenceOverflow ? <p className="mt-2 text-xs text-destructive">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
             </div>
           </section>
           <div className="space-y-4">
             <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">生成提示词预览</h3>
-                <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(prompt)}><Copy />复制</Button>
+                <Button size="sm" variant="outline" onClick={() => copyWithToast(prompt, "提示词已复制")}><Copy />复制</Button>
               </div>
               <ScrollArea maxHeight="18rem" className="rounded-lg bg-muted/40" viewportClassName="p-3" viewClass="text-xs leading-5 whitespace-pre-wrap">
                 {prompt || "填写变量后会在这里预览最终提示词"}
@@ -2606,7 +2626,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                         aria-current={current ? "step" : undefined}
                         className={cn(
                           "flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium",
-                          complete && "border-emerald-200 bg-emerald-50/70 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-300",
+                          complete && statusToneClasses.success.panel,
                           current && "border-primary/35 bg-primary/[0.05] text-primary",
                           !complete && !current && "border-border text-muted-foreground",
                         )}
@@ -2706,7 +2726,7 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <Button className="size-8" size="icon" variant="ghost" title="上移" disabled={first || running} onClick={() => onMove(-1)}><ArrowUp /></Button>
           <Button className="size-8" size="icon" variant="ghost" title="下移" disabled={last || running} onClick={() => onMove(1)}><ArrowDown /></Button>
-          <Button className="size-8" size="icon" variant="ghost" title="复制提示词" onClick={() => void navigator.clipboard.writeText(draft.prompt)}><Copy /></Button>
+          <Button className="size-8" size="icon" variant="ghost" title="复制提示词" onClick={() => copyWithToast(draft.prompt, "提示词已复制")}><Copy /></Button>
           <Button className="size-8" size="icon" variant="ghost" title="删除草稿" disabled={running} onClick={onDelete}><Trash2 /></Button>
         </div>
       </header>
@@ -2719,7 +2739,7 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
         ) : running ? (
           <div className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-sky-500/30 bg-sky-500/[0.04] text-center">
             <LoaderCircle className="size-5 animate-spin text-sky-500" />
-            <span className="mt-2 text-xs font-medium text-sky-600 dark:text-sky-300">正在生成图片</span>
+            <span className={cn("mt-2 text-xs font-medium", statusToneClasses.info.text)}>正在生成图片</span>
           </div>
         ) : null}
         <div className="min-w-0">
@@ -2732,7 +2752,7 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
         </div>
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border bg-muted/15 px-3 py-2.5">
-        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-destructive dark:text-rose-300" : draft.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
+        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-destructive" : draft.status === "success" ? statusToneClasses.success.text : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
         <Button size="sm" variant={draft.status === "draft" || draft.status === "failed" ? "default" : "outline"} className="shrink-0" disabled={generationDisabled || !draft.prompt.trim() || running || draft.status === "success"} onClick={onRun}>
           {running ? <LoaderCircle className="animate-spin" /> : draft.status === "success" ? <CircleCheck /> : <Play />}
           {running ? "生成中" : draft.status === "success" ? "已生成" : "生成此图"}
@@ -2860,6 +2880,7 @@ function AgentDialog({
               </div>
               <WorkflowReferenceGrid references={references} className="grid-cols-5" disabled={busy} onRemove={onReferenceRemove} />
             </section>
+            {busy ? <AgentActivityLine>正在根据需求生成工作流草稿…</AgentActivityLine> : null}
             <Button className="w-full" disabled={busy || !prompt.trim() || !modelAvailable} onClick={onRun}>
               {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
               生成工作流草稿
@@ -2876,9 +2897,9 @@ function AgentDialog({
                 <p className="text-xs leading-5 text-muted-foreground">{draft.description || "暂无描述"}</p>
                 <ScrollArea maxHeight="16rem" className="rounded-lg bg-muted/50" viewportClassName="p-3" viewClass="whitespace-pre-wrap text-xs leading-5">{draft.config.prompt_template}</ScrollArea>
                 {warnings.length ? (
-                  <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/35 dark:text-amber-300">
+                  <AgentNotice className="space-y-1">
                     {warnings.map((warning) => <p key={warning}>{warning}</p>)}
-                  </div>
+                  </AgentNotice>
                 ) : null}
                 <Button className="w-full" disabled={busy} onClick={onApply}><Pencil />应用到编辑器</Button>
               </>

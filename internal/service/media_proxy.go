@@ -75,9 +75,30 @@ func isBlockedMediaProxyIP(ip net.IP) bool {
 	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return true
 	}
+	for _, network := range blockedMediaProxyNetworks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
 	ipv4 := ip.To4()
 	if ipv4 == nil {
 		return false
 	}
 	return ipv4[0] == 0 || ipv4[0] == 100 && ipv4[1] >= 64 && ipv4[1] <= 127
+}
+
+// Special-purpose ranges that net.IP helpers do not classify as private:
+// IETF protocol assignments, benchmarking, and the NAT64 well-known prefix.
+var blockedMediaProxyNetworks = mustParseMediaProxyCIDRs("192.0.0.0/24", "198.18.0.0/15", "64:ff9b::/96")
+
+func mustParseMediaProxyCIDRs(values ...string) []*net.IPNet {
+	networks := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, network, err := net.ParseCIDR(value)
+		if err != nil {
+			panic(err)
+		}
+		networks = append(networks, network)
+	}
+	return networks
 }

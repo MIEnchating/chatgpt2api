@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 
 import pybase64
 from curl_cffi import requests
-from capture_safety import download_image, new_capture_directory, require_access_token, write_private_capture
+from capture_safety import attachment_download_path, download_image, new_capture_directory, require_access_token, write_private_capture
 from sse_capture import iter_sse_payloads
 # PIL only needed for image upload; text-only prompts don't need it
 
@@ -722,8 +722,8 @@ def main():
             except Exception as e:
                 print(f"  File download failed: {type(e).__name__}")
 
-        for sid in sediment_ids:
-            att_path = f"/backend-api/conversation/{conversation_id}/attachment/{sid}/download"
+        for sid in (sediment_ids if conversation_id else []):
+            att_path = attachment_download_path(conversation_id, sid)
             try:
                 r = session.get(
                     BASE_URL + att_path,

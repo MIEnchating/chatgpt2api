@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1499,6 +1500,9 @@ func TestWriteEnvUpdatesReplacesDuplicateAssignments(t *testing.T) {
 }
 
 func TestWriteEnvUpdatesProtectsEnvironmentFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not enforced on Windows")
+	}
 	path := filepath.Join(t.TempDir(), ".env")
 	if err := writeEnvUpdates(path, map[string]string{"DATABASE_PASSWORD": "secret"}); err != nil {
 		t.Fatalf("create environment file: %v", err)

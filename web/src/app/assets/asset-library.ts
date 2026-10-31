@@ -74,6 +74,12 @@ export function canManageAsset(asset: MyAsset) {
   return asset.owned === true || (asset.owned !== false && !asset.ownerId);
 }
 
+// Group labels are derived for display only; mutations must start from the persisted records.
+export function selectPersistedAssets(persisted: readonly MyAsset[], targets: readonly MyAsset[]) {
+  const ids = new Set(targets.map((asset) => asset.id));
+  return persisted.filter((asset) => ids.has(asset.id));
+}
+
 export function assetListKey(asset: MyAsset) {
   return `${asset.owned === true ? "self" : asset.ownerId || (asset.owned === false ? "shared" : "self")}:${asset.id}`;
 }

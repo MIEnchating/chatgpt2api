@@ -2994,3 +2994,31 @@ func TestRecoverVideoContentPreservesOwnershipAndNeverResubmits(t *testing.T) {
 		t.Fatalf("submissions=%d downloads=%d", submissions, downloads)
 	}
 }
+
+func TestImageTaskSnapshotNewerKeepsTerminalStateOverCancelled(t *testing.T) {
+	success := map[string]any{"status": TaskStatusSuccess, "revision": 1}
+	failed := map[string]any{"status": TaskStatusError, "revision": 1}
+	cancelled := map[string]any{"status": TaskStatusCancelled, "revision": 2}
+	running := map[string]any{"status": TaskStatusRunning, "revision": 3}
+	for name, terminal := range map[string]map[string]any{"success": success, "error": failed} {
+		if imageTaskSnapshotNewer(cancelled, terminal) {
+			t.Fatalf("cancelled candidate overwrote existing %s", name)
+		}
+		if imageTaskSnapshotNewer(terminal, cancelled) {
+			t.Fatalf("%s candidate overwrote existing cancellation", name)
+		}
+	}
+	if !imageTaskSnapshotNewer(cancelled, running) || imageTaskSnapshotNewer(running, cancelled) {
+		t.Fatal("cancelled must supersede an active task and stay final")
+	}
+}
+
+func TestImageTaskServiceHandlerPanicBecomesErrorState(t *testing.T) {
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) { panic("boom") }
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Role: "user"}
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "panic-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
+		t.Fatal(err)
+	}
+	waitForTaskStatus(t, svc, identity, "panic-task", TaskStatusError)
+}

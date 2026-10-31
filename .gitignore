@@ -51,7 +51,8 @@ docker-compose-local.yml
 
 # Environment variables
 .env
-.env.local
+.env.*
+!.env.example
 
 # Database files
 *.db

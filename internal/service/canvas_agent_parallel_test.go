@@ -208,15 +208,22 @@ func TestCanvasAgentParallelGroupDeletionDoesNotRestoreResults(t *testing.T) {
 			t.Fatal("parallel tasks did not start")
 		}
 	}
-	current, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
-	if err != nil {
-		close(release)
-		t.Fatal(err)
-	}
-	current.Nodes, current.Connections = nil, nil
-	if _, err = w.service.canvas.SaveAtRevision(w.identity.ID, current); err != nil {
-		close(release)
-		t.Fatal(err)
+	// The worker saves concurrently, so a user edit must re-read and retry on a revision conflict.
+	for attempt := 0; ; attempt++ {
+		current, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+		if err != nil {
+			close(release)
+			t.Fatal(err)
+		}
+		current.Nodes, current.Connections = nil, nil
+		_, err = w.service.canvas.SaveAtRevision(w.identity.ID, current)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrCanvasRevisionConflict) || attempt >= 20 {
+			close(release)
+			t.Fatal(err)
+		}
 	}
 	close(release)
 	select {

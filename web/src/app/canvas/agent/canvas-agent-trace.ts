@@ -23,6 +23,13 @@ export function canvasAgentTraceSections(entries: readonly CanvasAgentTraceEntry
   return sections;
 }
 
+// Single place that turns a progressive label ("正在…") into its finished form, shared by native and Codex traces.
+export function canvasAgentOperationLabel(label: string, status: Extract<CanvasAgentTraceEntry, { type: "operation" }>["status"]) {
+  if (status === "success") return label.replace(/^正在/, "已");
+  if (status === "changed" || status === "error") return label.replace(/^正在/, "");
+  return label;
+}
+
 export function canvasAgentTraceProgress(entries: readonly CanvasAgentTraceEntry[] = [], running = false) {
   const latest = entries.findLast((entry) => entry.type === "operation") || entries.at(-1);
   if (!latest) return running ? "正在处理" : "查看详情";
@@ -32,7 +39,7 @@ export function canvasAgentTraceProgress(entries: readonly CanvasAgentTraceEntry
   }
   if (latest.type === "operation" && latest.status === "error") return "执行失败 · " + latest.label;
   if (latest.type === "operation" && latest.status === "running" && running) return latest.label;
-  if (latest.type === "operation") return latest.status === "success" ? latest.label.replace(/^正在/, "已") : latest.label;
+  if (latest.type === "operation") return latest.status === "success" ? canvasAgentOperationLabel(latest.label, "success") : latest.label;
   return running ? "正在整理思路" : "查看思考过程";
 }
 

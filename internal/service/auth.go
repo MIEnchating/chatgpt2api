@@ -598,7 +598,23 @@ func (s *AuthService) DeleteUser(id string) (bool, error) {
 	return true, nil
 }
 
+// Authenticate returns nil both for an unknown credential and for an unreadable auth store; use AuthenticateWithError to tell them apart.
 func (s *AuthService) Authenticate(raw string) *Identity {
+	var ignored error
+	return s.authenticate(raw, &ignored)
+}
+
+// AuthenticateWithError returns an AuthPersistenceError when auth storage cannot be read, so callers can answer 503 instead of 401.
+func (s *AuthService) AuthenticateWithError(raw string) (*Identity, error) {
+	var backendErr error
+	identity := s.authenticate(raw, &backendErr)
+	if backendErr != nil {
+		return nil, AuthPersistenceError{Err: backendErr}
+	}
+	return identity, nil
+}
+
+func (s *AuthService) authenticate(raw string, backendErr *error) *Identity {
 	candidate := util.Clean(raw)
 	if candidate == "" {
 		return nil
@@ -607,6 +623,7 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshAuthStateLocked(); err != nil {
+		*backendErr = err
 		return nil
 	}
 	for index, item := range s.items {
@@ -632,6 +649,7 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 				s.items[index] = item
 				if errors.Is(err, storage.ErrConcurrentRowUpdate) {
 					if err := s.refreshAuthStateLocked(); err != nil {
+						*backendErr = err
 						return nil
 					}
 					for _, current := range s.items {
@@ -938,7 +956,7 @@ func (s *AuthService) loadAuthDocument(name string) (any, error) {
 	if s.roleStore == nil {
 		return nil, nil
 	}
-	return s.roleStore.LoadJSONDocument(name)
+	return storage.LoadJSONDocumentBounded(s.roleStore, name)
 }
 
 func (s *AuthService) saveLocked() error {
@@ -983,7 +1001,7 @@ func (s *AuthService) saveAuthDocumentLocked(name string, document map[string]an
 	if s.roleStore == nil {
 		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
 	}
-	if err := s.roleStore.SaveJSONDocument(name, document); err != nil {
+	if err := storage.SaveJSONDocumentBounded(s.roleStore, name, document); err != nil {
 		return AuthPersistenceError{Err: err}
 	}
 	return nil

@@ -55,8 +55,17 @@ export function CanvasReferenceReturn({ expiresAt, onReturn, onDismiss }: {
 }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 200);
-    return () => window.clearInterval(interval);
+    let timer: number | undefined;
+    const tick = () => {
+      const current = Date.now();
+      setNow(current);
+      const remaining = expiresAt - current;
+      if (remaining <= 0) return;
+      // Wake exactly when the displayed whole second changes, and stop once expired.
+      timer = window.setTimeout(tick, remaining % 1000 || 1000);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
   }, [expiresAt]);
   const seconds = Math.max(0, Math.min(10, Math.ceil((expiresAt - now) / 1000)));
   if (!seconds) return null;

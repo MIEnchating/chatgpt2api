@@ -278,7 +278,7 @@ func (s *AnnouncementService) loadPreferencesLocked(ownerID string) (Announcemen
 	if s.store == nil {
 		return AnnouncementPreferences{}, announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	raw, err := s.store.LoadJSONDocument(announcementPreferenceDocumentName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, announcementPreferenceDocumentName(ownerID))
 	if err != nil {
 		return AnnouncementPreferences{}, announcementStorageError(err)
 	}
@@ -296,7 +296,7 @@ func (s *AnnouncementService) savePreferencesLocked(ownerID string, preferences 
 	if s.store == nil {
 		return announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	return announcementStorageError(s.store.SaveJSONDocument(announcementPreferenceDocumentName(ownerID), preferences))
+	return announcementStorageError(saveStoredJSONBounded(s.store, announcementPreferenceDocumentName(ownerID), preferences))
 }
 
 func announcementPreferenceDocumentName(ownerID string) string {
@@ -395,7 +395,7 @@ func (s *AnnouncementService) loadLocked() ([]Announcement, error) {
 	if s.store == nil {
 		return nil, announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	raw, err := s.store.LoadJSONDocument(announcementDocumentName)
+	raw, err := loadStoredJSONBounded(s.store, announcementDocumentName)
 	if err != nil {
 		return nil, announcementStorageError(err)
 	}
@@ -422,7 +422,7 @@ func (s *AnnouncementService) saveLocked(items []Announcement) error {
 	if s.store == nil {
 		return announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	return announcementStorageError(s.store.SaveJSONDocument(announcementDocumentName, map[string]any{"items": items}))
+	return announcementStorageError(saveStoredJSONBounded(s.store, announcementDocumentName, map[string]any{"items": items}))
 }
 
 func announcementStorageError(err error) error {

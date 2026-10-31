@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -16,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
@@ -164,12 +164,10 @@ func (cfg ssoConfig) request(r *http.Request, issuer, endpoint string, payload a
 	if err != nil {
 		return nil, errSSO
 	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, issuer+"/api/sso/chatgpt2api/"+endpoint, bytes.NewReader(body))
+	request, err := protocol.NewRelayJSONRequest(r.Context(), issuer, http.MethodPost, "/api/sso/chatgpt2api/"+endpoint, cfg.secret, "application/json", body)
 	if err != nil {
 		return nil, errSSO
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+cfg.secret)
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
@@ -240,21 +238,32 @@ func (a *App) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/studio", http.StatusSeeOther)
 }
 
-func (a *App) authenticateSession(r *http.Request, token string) *service.Identity {
-	identity := a.auth.Authenticate(token)
+// authenticateSession returns a non-nil error only when auth storage is unreadable, so callers can answer 503 instead of 401.
+func (a *App) authenticateSession(r *http.Request, token string) (*service.Identity, error) {
+	identity, authErr := a.auth.AuthenticateWithError(token)
+	if authErr != nil {
+		return nil, authErr
+	}
 	if identity == nil {
-		return nil
+		return nil, nil
 	}
 	if identity.SSOReference == "" {
-		return identity
+		return identity, nil
 	}
 	cfg, err := loadSSOConfig()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	user, err := cfg.request(r, identity.SSOIssuer, "session", map[string]string{"issuer": identity.SSOIssuer, "reference": identity.SSOReference})
-	if err != nil || identity.OwnerID != "newapi:"+util.Clean(user.ID) {
-		return nil
+	user, cached := a.ssoSessions.get(identity.SSOIssuer, identity.SSOReference)
+	if !cached {
+		user, err = cfg.request(r, identity.SSOIssuer, "session", map[string]string{"issuer": identity.SSOIssuer, "reference": identity.SSOReference})
+		if err != nil {
+			return nil, nil
+		}
+		a.ssoSessions.put(identity.SSOIssuer, identity.SSOReference, user)
+	}
+	if identity.OwnerID != "newapi:"+util.Clean(user.ID) {
+		return nil, nil
 	}
 	// Role changes require a fresh SSO exchange and session rotation. Never
 	// keep stale admin privileges or elevate an existing session in place.
@@ -263,7 +272,7 @@ func (a *App) authenticateSession(r *http.Request, token string) *service.Identi
 		role = service.AuthRoleAdmin
 	}
 	if identity.Role != role {
-		return nil
+		return nil, nil
 	}
-	return identity
+	return identity, nil
 }

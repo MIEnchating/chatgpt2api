@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, CircleAlert, Code2, LoaderCircle, MessageSquare, Square } from "lucide-react";
+import { Check, CircleAlert, Code2, LoaderCircle, MessageSquare, Square } from "lucide-react";
 import type { VideoContractAgentDetail } from "@/lib/api";
 import { videoContractToolLabels, videoContractToolSummary } from "@/lib/video-contract-agent-display";
 import { cn } from "@/lib/utils";
+import { AGENT_STEP_STATUS } from "@/components/agent/agent-step-status";
+import { AgentDisclosureButton } from "@/components/agent/agent-disclosure";
+import { AgentStepIcon } from "@/components/agent/agent-step-icon";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 function statusLabel(entry: VideoContractAgentDetail, running: boolean) {
-  if (entry.status === "failed") return "失败";
-  if (entry.status === "partial") return "部分完成";
-  if (entry.status === "running") return running ? "执行中" : "已中断";
-  return "完成";
+  if (entry.status === "failed") return AGENT_STEP_STATUS.error.label;
+  if (entry.status === "partial") return AGENT_STEP_STATUS.partial.label;
+  if (entry.status === "running") return running ? AGENT_STEP_STATUS.running.label : AGENT_STEP_STATUS.interrupted.label;
+  return AGENT_STEP_STATUS.success.label;
 }
 
 export function VideoContractAgentDetails({ entries, running }: { entries: VideoContractAgentDetail[]; running: boolean }) {
@@ -43,11 +46,10 @@ export function VideoContractAgentDetails({ entries, running }: { entries: Video
   return (
     <>
       <section ref={rootRef} aria-label="执行详情" className="min-w-0 border-t border-border/70 pt-3">
-        <button type="button" aria-expanded={open} className="flex w-full items-center gap-2 rounded-md py-1 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setOpen(value => !value)}>
-          <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
+        <AgentDisclosureButton expanded={open} onToggle={() => setOpen(value => !value)} className="py-1">
           <span className="font-medium">执行记录</span>
-          <span>{entries.length} 条</span>
-        </button>
+          <span className="flex-1">{entries.length} 条</span>
+        </AgentDisclosureButton>
         {open ? <ol className="mt-2 divide-y divide-border/40" aria-label="执行记录列表">
           {entries.map(entry => {
             const pending = running && entry.status === "running";
@@ -56,8 +58,8 @@ export function VideoContractAgentDetails({ entries, running }: { entries: Video
             const Icon = pending ? LoaderCircle : failed || entry.status === "partial" || entry.kind === "correction" ? CircleAlert : interrupted ? Square : entry.kind === "model" ? MessageSquare : Check;
             const label = entry.kind === "model" ? (entry.round ? `模型第 ${entry.round} 轮` : "模型回复") : entry.kind === "correction" ? "工具格式纠正" : videoContractToolLabels[entry.name] || entry.name;
             return (
-              <li key={entry.id} className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-2.5 py-3">
-                <Icon className={cn("mt-1 size-3.5", pending ? "animate-spin text-primary" : failed ? "text-destructive" : "text-muted-foreground")} />
+              <li key={entry.id} className="grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] gap-2 py-3">
+                <AgentStepIcon icon={Icon} status={pending ? "running" : failed ? "error" : entry.status === "partial" ? "partial" : interrupted ? "interrupted" : "success"} />
                 <div className="min-w-0 space-y-1.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-xs font-medium">{label}</span>

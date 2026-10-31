@@ -1,5 +1,6 @@
 import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Type, Video } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useNow } from "@/lib/use-now";
 
 import { CanvasConnectionFlow } from "./canvas-connection-flow";
 import { CanvasNodeToolbar } from "./canvas-node-toolbar";
@@ -175,7 +176,6 @@ export function CanvasEngine({
   const [dropTargetGroupID, setDropTargetGroupID] = useState("");
   const [hoveredNodeID, setHoveredNodeID] = useState("");
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
-  const [generationNow, setGenerationNow] = useState(Date.now());
 
   nodesRef.current = nodes;
   viewportRef.current = viewport;
@@ -215,12 +215,7 @@ export function CanvasEngine({
   }, [nodes]);
   const hasTimedLoadingNode = nodes.some((node) => node.generation_status === "loading" && (node.type === "text" || node.type === "image" || node.type === "video"));
 
-  useEffect(() => {
-    if (!hasTimedLoadingNode) return;
-    setGenerationNow(Date.now());
-    const timer = window.setInterval(() => setGenerationNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [hasTimedLoadingNode]);
+  const generationNow = useNow(hasTimedLoadingNode);
 
   useEffect(() => {
     if (hoveredNodeID && !renderedNodeIDs.has(hoveredNodeID)) setHoveredNodeID("");
@@ -1007,7 +1002,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
           </div>
         ) : node.type === "director" ? <CanvasDirectorNodePanel onOpen={() => onDirectorOpen(node.id)} /> : node.type === "audio" || node.type === "panorama" ? <CanvasSpecialNodeContent node={node} onPanoramaOpen={node.type === "panorama" && node.url ? () => onViewImage(node.id) : undefined} onPanoramaMoveStart={node.type === "panorama" ? (event) => onMouseDown(event, node.id) : undefined} /> : (node.type === "image" || node.type === "video" || node.type === "text") && node.generation_status === "error" ? (
           <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-6 text-center">
-            <span className="grid size-9 place-items-center rounded-full bg-rose-500/10 text-destructive dark:text-rose-300"><AlertCircle className="size-4.5" /></span>
+            <span className="grid size-9 place-items-center rounded-full bg-destructive/10 text-destructive"><AlertCircle className="size-4.5" /></span>
             <ScrollArea
               data-canvas-no-pan
               className="max-h-[calc(100%-88px)] max-w-[260px] text-muted-foreground"

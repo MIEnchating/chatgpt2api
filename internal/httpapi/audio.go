@@ -14,7 +14,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -225,13 +224,10 @@ func audioStringIn(value string, options ...string) bool {
 }
 
 func (a *App) fetchGrokTTSVoicesAt(ctx context.Context, baseURL, apiKey, model string) ([]map[string]any, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/v1/tts/voices?" + url.Values{"model": []string{model}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := protocol.NewRelayJSONRequest(ctx, baseURL, http.MethodGet, "/v1/tts/voices?"+url.Values{"model": []string{model}}.Encode(), apiKey, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Accept", "application/json")
 	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
@@ -309,13 +305,10 @@ func (a *App) relayAudioSpeech(ctx context.Context, payload map[string]any) (map
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.relayBaseURLFromPayload(payload)+path, bytes.NewReader(data))
+	req, err := protocol.NewRelayJSONRequest(ctx, a.relayBaseURLFromPayload(payload), http.MethodPost, path, apiKey, "audio/*, application/json", data)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "audio/*, application/json")
 	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
@@ -533,20 +526,13 @@ func (a *App) storeGeneratedAudio(data []byte, format string) (string, error) {
 		return "", err
 	}
 	name := "audio-" + hex.EncodeToString(id[:]) + "." + format
-	temporary, err := os.CreateTemp(a.audioDir, ".audio-*")
-	if err != nil {
-		return "", err
-	}
-	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return "", err
-	}
-	if err := temporary.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Rename(temporaryName, filepath.Join(a.audioDir, name)); err != nil {
+	if _, err := service.StoreMediaFile(bytes.NewReader(data), service.MediaFileWrite{
+		Directory:   a.audioDir,
+		Name:        name,
+		TempPattern: ".audio-*",
+		MaxBytes:    maxGeneratedAudioBytes,
+		AllowEmpty:  true,
+	}); err != nil {
 		return "", err
 	}
 	return name, nil

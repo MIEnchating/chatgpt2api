@@ -21,7 +21,7 @@ func (a *App) initializeRelayGroups(ctx context.Context, reader *service.NewAPIT
 	defer cancel()
 	var create func(context.Context, string) error
 	if identity.Provider == service.AuthProviderNewAPI && identity.SSOReference != "" && !reader.IsSub2API() {
-		create = ssoRelayGroupCreator(identity)
+		create = ssoRelayGroupCreator(identity, a.newSafeRelayHTTPClient(5*time.Second))
 	} else if user != nil {
 		create = passwordRelayGroupCreator(a.config.RelayBaseURL(), reader.Source(), *user, password, a.relayHTTPClient())
 	}

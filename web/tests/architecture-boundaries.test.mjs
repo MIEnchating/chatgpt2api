@@ -101,7 +101,7 @@ test("frontend layers only import their own or lower layers", async () => {
       for (const moduleName of importedModules(source, filename)) {
         const dependency = frontendLayer(resolveFrontendModule(filename, moduleName) || "");
         if (importer && dependency && dependency.rank > importer.rank) {
-          violations.push(`${path.relative(webRoot, filename)} -> ${moduleName}`);
+          violations.push(`${path.relative(webRoot, filename).split(path.sep).join("/")} -> ${moduleName}`);
         }
       }
     }
@@ -166,7 +166,7 @@ test("global overlays keep focus out of editable controls while dialogs receive 
   ]);
   for (const filename of await sourceFiles(path.join(webRoot, "src"))) {
     const source = await readFile(filename, "utf8");
-    const relative = path.relative(webRoot, filename);
+    const relative = path.relative(webRoot, filename).split(path.sep).join("/");
     if (/\bautoFocus\b/.test(source)) autoFocusViolations.push(relative);
     if (/onOpenAutoFocus/.test(source) && !allowedOpenAutoFocus.has(relative)) openAutoFocusViolations.push(relative);
   }

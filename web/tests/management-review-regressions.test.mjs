@@ -4,7 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import { createSettingsStore } from "../src/app/settings/store.ts";
 import { ALL_MUTATIONS_SCOPE, ScopedMutationLifecycle } from "../src/lib/scoped-mutation-lifecycle.ts";
-import { settleAssetOperations } from "../src/app/assets/asset-library.ts";
+import { selectPersistedAssets, settleAssetOperations } from "../src/app/assets/asset-library.ts";
 
 // Execute actual handlers with controlled state and asynchronous I/O boundaries.
 function handler(file, name, context) {
@@ -39,7 +39,7 @@ test("document imports enter plugin generation only after preliminary review and
       importGeneratePlugin: enabled, sessionKey: "session-a", isCurrentSession: () => true,
       importControllerRef: { current: null }, importStartedAtRef: { current: 0 },
       importVideoModelContract: async () => ({ contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] }),
-      normalizeVideoModelContractCollections: structuredClone, cloneVideoModelContract: structuredClone,
+      normalizeVideoModelContractCollections: (value) => structuredClone(value), cloneVideoModelContract: structuredClone,
       setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportElapsedSeconds: () => {}, setIsImporting: () => {},
       setImportOpen: () => {}, setEditingItem: () => {}, setReadOnly: () => {}, setGeneratedContracts: () => {},
       setGeneratedWarnings: value => { warnings = value; }, setGeneratedPublishError: () => {}, setGeneratedEditingIndex: () => {},
@@ -83,6 +83,7 @@ test("asset visibility changes stop before the next account write after invalida
   const pending = handler("assets/page.tsx", "updateSelectedVisibility", {
     bulkActionBusy: false, mutationControllerRef: { current: controller },
     visibilityManageableAssets: [{ managedPath: "managed", visibility: "private" }, { id: "custom", visibility: "private" }],
+    assets: [{ id: "custom", visibility: "private" }], selectPersistedAssets,
     settleAssetOperations, updateManagedImageVisibility: () => request.promise,
     upsertAsset: async () => { writes++; }, setBulkActionBusy: () => {},
     setManagedAssets: () => { feedback++; },

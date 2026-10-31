@@ -253,7 +253,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
           >
             <Bell className="size-4" />
             {unreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-semibold leading-4 text-white ring-2 ring-card">
+              <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold leading-4 text-white ring-2 ring-card">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             ) : null}
@@ -306,7 +306,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
       </Popover>
 
       <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="w-[min(92vw,520px)] rounded-2xl">
+        <DialogContent className="w-[min(92vw,520px)]">
           <DialogHeader>
             <DialogTitle>{selected?.title || "系统公告"}</DialogTitle>
             <DialogDescription>

@@ -158,6 +158,7 @@ import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
@@ -1704,7 +1705,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [progressByTurnKey, setProgressByTurnKey] = useState<Record<string, ImageTurnProgress>>(
     getImageTurnProgressSnapshot,
   );
-  const [progressNow, setProgressNow] = useState(Date.now());
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [visibilityMutatingImageKey, setVisibilityMutatingImageKey] = useState("");
   const [publishImageTarget, setPublishImageTarget] = useState<PublishImageTarget | null>(null);
@@ -2109,19 +2109,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [],
   );
 
-  useEffect(() => {
-    if (activeTaskCount === 0 && Object.keys(progressByTurnKey).length === 0) {
-      return;
-    }
-
-    setProgressNow(Date.now());
-    const timer = window.setInterval(() => {
-      setProgressNow(Date.now());
-    }, 1000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [activeTaskCount, progressByTurnKey]);
+  const progressNow = useNow(activeTaskCount > 0 || Object.keys(progressByTurnKey).length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -2313,7 +2301,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               conversationsRef.current = mergedItems;
               setConversations(mergedItems);
             })
-            .catch(() => undefined);
+            .catch(() => {
+              if (pageActiveRef.current) toast.error("打开会话失败，请稍后重试");
+            });
         }
       }
     };
@@ -5669,7 +5659,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
         <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
           {imageModelConfigError ? (
-            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300">
+            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4">
               <CircleAlert className="size-4 shrink-0" />
               <span className="min-w-0 flex-1 break-words">模型配置加载失败：{imageModelConfigError}</span>
               <Button type="button" variant="outline" size="sm" onClick={() => setImageModelConfigReloadKey((value) => value + 1)}>
@@ -5906,7 +5896,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
       {publishImageTarget ? (
         <Dialog open onOpenChange={(open) => (!open && !visibilityMutatingImageKey ? setPublishImageTarget(null) : null)}>
-          <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+          <DialogContent showCloseButton={false} className="p-6">
             <DialogHeader className="gap-2">
               <DialogTitle>公开图片</DialogTitle>
               <DialogDescription className="text-sm leading-6">
@@ -5963,7 +5953,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
       {deleteConfirm ? (
         <Dialog open onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}>
-          <DialogContent showCloseButton={false} className="rounded-2xl p-6">
+          <DialogContent showCloseButton={false} className="p-6">
             <DialogHeader className="gap-2">
               <DialogTitle>{deleteConfirmTitle}</DialogTitle>
               <DialogDescription className="text-sm leading-6">

@@ -329,7 +329,7 @@ func (s *CanvasDocumentService) ReferencesStorageObject(ownerID, storageKey stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := s.store.LoadJSONDocument(canvasWorkspaceName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
 	if err != nil || raw == nil {
 		return false, err
 	}
@@ -866,7 +866,7 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 }
 
 func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorkspace, error) {
-	raw, err := s.store.LoadJSONDocument(canvasWorkspaceName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
 	if err != nil {
 		return canvasWorkspace{}, err
 	}
@@ -909,7 +909,7 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 }
 
 func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID string, workspaceGeneration int64) (string, error) {
-	raw, err := s.store.LoadJSONDocument(canvasActiveProjectName(ownerID))
+	raw, err := loadStoredJSONBounded(s.store, canvasActiveProjectName(ownerID))
 	if err != nil || raw == nil {
 		return "", err
 	}
@@ -928,7 +928,7 @@ func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID string, workspac
 }
 
 func (s *CanvasDocumentService) saveActiveProjectLocked(ownerID, projectID string, workspaceGeneration int64) error {
-	return s.store.SaveJSONDocument(canvasActiveProjectName(ownerID), canvasActiveProject{
+	return saveStoredJSONBounded(s.store, canvasActiveProjectName(ownerID), canvasActiveProject{
 		Version:             canvasWorkspaceVersion,
 		ProjectID:           strings.TrimSpace(projectID),
 		WorkspaceGeneration: workspaceGeneration,
@@ -947,7 +947,7 @@ func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace *c
 	if err != nil {
 		return err
 	}
-	if err := s.store.SaveJSONDocument(canvasWorkspaceName(ownerID), normalized); err != nil {
+	if err := saveStoredJSONBounded(s.store, canvasWorkspaceName(ownerID), normalized); err != nil {
 		return err
 	}
 	*workspace = normalized

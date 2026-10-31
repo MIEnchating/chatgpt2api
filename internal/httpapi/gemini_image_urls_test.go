@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
@@ -86,6 +87,7 @@ func TestRunLoggedGeminiImageTaskLocalizesMarkdownURL(t *testing.T) {
 			defer upstream.Close()
 			app := newTestApp(t)
 			defer app.Close()
+			app.newImageDownloadClient = func(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
 			if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
 				t.Fatal(err)
 			}

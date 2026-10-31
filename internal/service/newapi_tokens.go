@@ -928,10 +928,11 @@ func (r *NewAPITokenReader) normalizeRelayKey(key string) string {
 
 func previewRelayKey(key string) string {
 	key = strings.TrimSpace(key)
-	if len(key) <= 12 {
-		return key
+	// Only the tail is shown so the preview never reveals a usable key prefix.
+	if len(key) <= 4 {
+		return "..."
 	}
-	return key[:7] + "..." + key[len(key)-4:]
+	return "..." + key[len(key)-4:]
 }
 
 func contextOrBackground(ctx context.Context) context.Context {

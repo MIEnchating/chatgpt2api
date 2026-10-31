@@ -31,7 +31,7 @@ func TestCanvasSharePublicReadOnlyAndRevocation(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &workspace); err != nil {
 		t.Fatal(err)
 	}
-	identity := app.authenticateSession(httptest.NewRequest("GET", "/", nil), auth)
+	identity, _ := app.authenticateSession(httptest.NewRequest("GET", "/", nil), auth)
 	if identity == nil {
 		t.Fatal("missing identity")
 	}
