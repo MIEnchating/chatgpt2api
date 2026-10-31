@@ -69,7 +69,7 @@ jobs:
           path: internal/web/dist/
           retention-days: 1
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -149,7 +149,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
