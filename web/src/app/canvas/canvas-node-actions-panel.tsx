@@ -106,8 +106,8 @@ export function CanvasNodeQuickActions({
     ]);
   }
 
-  if (node.type === "image") {
-    const upload: QuickAction = { key: "upload", label: uploading ? "上传中" : hasMedia ? "替换图片" : "上传图片", icon: Upload, disabled: busy || uploading, onClick: onUpload };
+  if (node.type === "image" || node.type === "video") {
+    const upload: QuickAction = { key: "upload", label: uploading ? "上传中" : hasMedia ? (node.type === "video" ? "替换视频" : "替换图片") : (node.type === "video" ? "上传视频" : "上传图片"), icon: Upload, disabled: busy || uploading, onClick: onUpload };
     if (hasMedia) moreActions.push(upload);
     else groups.push([upload]);
   }

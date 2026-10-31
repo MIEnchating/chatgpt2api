@@ -7,6 +7,7 @@ import { setCanvasAgentProcessing } from "./agent/canvas-agent-timing";
 import { isCanvasAgentSession } from "./agent/canvas-agent-sessions";
 import { answerBackendWorkflowReview, runBackendCanvasAgent, runBackendCanvasTool, stopCanvasAgentRun } from "./agent/canvas-agent-backend";
 import { copyClipboardText } from "@/lib/clipboard-text";
+import { useContentStableNodes } from "@/app/canvas/use-content-stable-nodes";
 import { CanvasAgentMessageEditor } from "./canvas-agent-message-editor";
 import { useCanvasAgentScroll } from "./use-canvas-agent-scroll";
 import { CanvasAgentAssetMenu, CanvasAgentComposer, CanvasAgentComposerToolbar, CanvasAgentSendButton } from "./canvas-agent-composer";
@@ -90,7 +91,7 @@ type InitialRequestBlockerNotice = {
 
 const CanvasAgentAssetPicker = lazy(() => import("./canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));
 
-export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: {
+export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: liveNodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: {
   backendRun?: CanvasDocument["agent_run"];
   onBackendDocument: (document: CanvasDocument) => void;
   open: boolean;
@@ -153,9 +154,11 @@ export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes, s
   const recoveryAttemptsRef = useRef(new Set<string>());
   const sessionsRef = useRef(sessions);
   const activeSessionIDRef = useRef(activeSessionID);
-  const nodesRef = useRef(nodes);
+  // Node geometry changes every drag frame; derived data below only needs node content.
+  const nodes = useContentStableNodes(liveNodes);
+  const nodesRef = useRef(liveNodes);
   const selectedNodeIDsRef = useRef(selectedNodeIDs);
-  nodesRef.current = nodes;
+  nodesRef.current = liveNodes;
   selectedNodeIDsRef.current = selectedNodeIDs;
   initialRequestRef.current = initialRequest;
   onInitialRequestConsumedRef.current = onInitialRequestConsumed;

@@ -49,7 +49,7 @@ export function CanvasVideoNodePlayer({
       className="relative size-full overflow-hidden rounded-[inherit] bg-black"
       data-canvas-media
       data-canvas-no-zoom
-      onMouseDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => { if (event.target instanceof Element && event.target.closest("button,input")) event.stopPropagation(); }}
       onWheel={(event) => event.stopPropagation()}
     >
       <video

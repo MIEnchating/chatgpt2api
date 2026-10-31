@@ -66,6 +66,8 @@ import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasVideoNodeBindings } from "@/app/canvas/canvas-video-node-bindings";
 import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
+import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
+import { ReferenceMediaCard } from "@/components/generation/reference-media-card";
 import { CanvasAudioTrimDialog } from "@/app/canvas/canvas-audio-trim-dialog";
 import { canvasMediaBlob, captureCanvasVideoFrame, extractCanvasAudio, type CanvasAudioTrim, type CanvasVideoFramePosition } from "@/app/canvas/canvas-media-editing";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
@@ -423,7 +425,7 @@ function canvasErrorMessage(error: unknown) {
   return message || "画布保存失败";
 }
 
-function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelect, relayTokenName, inputs, running, generationBusy, uploading = false, showPromptEditor = true, showGenerateFooter = true, videoModels, onPromptChange, onParametersChange, onGenerate, onStop, onUpload }: { node: CanvasNode; mentionReferences?: readonly CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; relayTokenName: string; inputs: readonly CanvasConfigInput[]; running: boolean; generationBusy: boolean; uploading?: boolean; showPromptEditor?: boolean; showGenerateFooter?: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void; onUpload?: () => void }) {
+function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelect, relayTokenName, inputs, running, generationBusy, showPromptEditor = true, showGenerateFooter = true, videoModels, onPromptChange, onParametersChange, onGenerate, onStop }: { node: CanvasNode; mentionReferences?: readonly CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; relayTokenName: string; inputs: readonly CanvasConfigInput[]; running: boolean; generationBusy: boolean; uploading?: boolean; showPromptEditor?: boolean; showGenerateFooter?: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void; onUpload?: () => void }) {
   const [prompt, setPrompt] = useState(node.prompt || "");
   const connectedPromptAvailable = inputs.some((input) => input.type === "text" && Boolean(input.text?.trim()));
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
@@ -533,13 +535,14 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
     <input ref={referenceAudioInputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceAudio(file); }} />
     {showPromptEditor ? <AppScrollArea className="h-0 min-h-0 flex-1" viewportClassName="pr-3"><div className="space-y-3">
       <div className="overflow-hidden">
-        <PromptTextareaFrame className="h-28 min-h-28">
+        <PromptTextareaFrame className="h-28 min-h-28 group-data-[expanded=true]/editor:h-72">
           <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
         </PromptTextareaFrame>
       </div>
       {workflowFields}
     </div></AppScrollArea> : workflowFields}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
+      {showPromptEditor ? <CanvasInlineModelSelect className="w-40 flex-none" value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /> : null}
       <CanvasParameterPopover icon={<SlidersHorizontal />} label="生成参数" summary={parameterSummary} width={400}>
         <div className="grid grid-cols-1 gap-4 text-xs">
           <VideoSettingsPanel model={params.generation_video_model} value={videoSettingsValue} ruleValues={videoRuleValues} onChange={updateVideoSettings} showTaskCount={false} />
@@ -548,26 +551,22 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
       </CanvasParameterPopover>
       {referencePanelVisible ? <CanvasParameterPopover icon={<Paperclip />} label="参考素材" width={420}>
         <div className="space-y-3 text-xs">
-          {visibleReferenceMaterials ? <div className="space-y-2">
-            <p className="text-[11px] leading-4 text-muted-foreground">首尾帧指定起止画面，参考图提供外观依据。视频可用于动作参考、编辑或延长；音频用于声音参考，能否驱动口型以模型为准。</p>
-            <div className="grid grid-cols-3 gap-2">{videoFieldVisible(imageRuleField) ? <button type="button" disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} onClick={() => referenceImageInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-wait disabled:opacity-50"><Upload className="size-3.5" />{referenceUploading === "image" ? "上传中…" : referenceImageURL ? "替换参考图" : "上传参考图"}</button> : null}{videoFieldVisible("reference_video") ? <button type="button" disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceVideoInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"><Video className="size-3.5" />{referenceUploading === "video" ? "上传中…" : referenceVideoURL ? "替换参考视频" : "上传参考视频"}</button> : null}{videoFieldVisible("reference_audio") ? <button type="button" disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceAudioInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"><Music className="size-3.5" />{referenceUploading === "audio" ? "上传中…" : referenceAudioURL ? "替换参考音频" : "上传参考音频"}</button> : null}</div>
-            {referenceImageURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考图片，也可以连接图片节点</p> : null}
-            {referenceVideoURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考视频，也可以连接视频节点</p> : null}
-            <div className="grid gap-2">{videoFieldVisible(imageRuleField) ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} disabled={videoFieldDisabled(imageRuleField)} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}{videoFieldVisible("reference_video") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label> : null}</div>
-            {audioReferenceSupported && videoFieldVisible("reference_audio") ? <label className="block space-y-1"><span className="text-[11px] text-muted-foreground">参考音频 URL（可选）</span><Input type="url" value={referenceAudioURL} disabled={videoFieldDisabled("reference_audio")} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: event.target.value ? [event.target.value] : [] })} placeholder="https://音频地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}
-          </div> : null}
+          {visibleReferenceMaterials ? <div className="space-y-4">
+          <p className="text-[11px] leading-4 text-muted-foreground">首尾帧指定起止画面，参考图提供外观依据。视频可用于动作参考、编辑或延长；音频用于声音参考，能否驱动口型以模型为准。</p>
+          {videoFieldVisible(imageRuleField) ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>{params.generation_video_reference_mode === "reference" ? "参考图" : "首帧图"}</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceImageURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceImageURL ? <ReferenceMediaCard kind="image" src={referenceImageURL} label="参考图" removeDisabled={videoFieldDisabled(imageRuleField)} onRemove={() => onParametersChange({ generation_video_reference_image_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考图" hint="PNG / JPG / WebP" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" loading={referenceUploading === "image"} disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} remaining={referenceImageURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceImage(files[0]); }} /></div></section> : null}
+          {videoFieldVisible("reference_video") ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>参考视频</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceVideoURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceVideoURL ? <ReferenceMediaCard kind="video" src={referenceVideoURL} label="参考视频" removeDisabled={videoFieldDisabled("reference_video")} onRemove={() => onParametersChange({ generation_video_reference_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考视频" hint="MP4 / MOV" accept="video/mp4,video/quicktime,.mp4,.mov" loading={referenceUploading === "video"} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} remaining={referenceVideoURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceVideo(files[0]); }} /></div></section> : null}
+          {videoFieldVisible("reference_audio") ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>参考音频</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceAudioURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceAudioURL ? <ReferenceMediaCard kind="audio" src={referenceAudioURL} label="参考音频" removeDisabled={videoFieldDisabled("reference_audio")} onRemove={() => onParametersChange({ generation_video_reference_audio_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考音频" hint="MP3 / WAV" accept="audio/mpeg,audio/wav,.mp3,.wav" loading={referenceUploading === "audio"} disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} remaining={referenceAudioURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceAudio(files[0]); }} /></div></section> : null}
+          <details className="group rounded-lg border border-border/70"><summary className="cursor-pointer list-none px-3 py-2 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">通过链接添加</summary><div className="grid gap-2 border-t border-border/70 p-3">{videoFieldVisible(imageRuleField) ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} disabled={videoFieldDisabled(imageRuleField)} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}{videoFieldVisible("reference_video") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label> : null}{audioReferenceSupported && videoFieldVisible("reference_audio") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考音频 URL（可选）</span><Input type="url" value={referenceAudioURL} disabled={videoFieldDisabled("reference_audio")} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: event.target.value ? [event.target.value] : [] })} placeholder="https://音频地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}</div></details>
+        </div> : null}
           {referenceFrameVisible ? <CanvasVideoNodeBindings node={node} inputs={inputs} showFirstFrame={videoFieldVisible("first_frame")} showLastFrame={videoFieldVisible("last_frame")} firstFrameDisabled={videoFieldDisabled("first_frame")} lastFrameDisabled={videoFieldDisabled("last_frame")} onChange={onParametersChange} /> : null}
         </div>
       </CanvasParameterPopover> : null}
-      <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 px-2.5 text-xs" />
-      {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /> : null}
+            {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /> : null}
       <div className="ml-auto flex min-w-0 items-center gap-2">
-        {showPromptEditor ? <CanvasInlineModelSelect className="w-40 flex-none" value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /> : null}
-        {showGenerateFooter ? <CanvasGenerationFooter
+                {showGenerateFooter ? <CanvasGenerationFooter
           running={running}
           disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable && videoModelContract(params.generation_video_model)?.capability.prompt?.required !== false) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
-          secondaryAction={onUpload ? { label: node.url ? "替换视频" : "上传视频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload } : undefined}
-          onGenerate={() => onGenerate(prompt.trim())}
+                    onGenerate={() => onGenerate(prompt.trim())}
           onStop={onStop}
         /> : null}
       </div>
@@ -788,6 +787,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [showImageInfo, setShowImageInfo] = useState(Boolean(DEFAULT_DOCUMENT.show_image_info));
   const [projects, setProjects] = useState<CanvasProjectSummary[]>([]);
   const [selectedNodeIDs, setSelectedNodeIDs] = useState(new Set<string>());
+  // Keep the array identity stable so the Agent panel is not handed a new prop on every canvas frame.
+  const agentSelectedNodeIDs = useMemo(() => [...selectedNodeIDs], [selectedNodeIDs]);
   const [selectedConnectionID, setSelectedConnectionID] = useState("");
   const [canvasMenuOpen, setCanvasMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -3958,7 +3959,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
 			const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.composer_content ?? sourceNode.prompt ?? "");
     const text = context.prompt.trim();
-		const requestPrompt = applyCameraPrompt(text, sourceNode.camera_control);
+		const requestPrompt = text;
     if (!text && !context.referenceImageURLs.length && !context.firstFrameURL && !context.lastFrameURL && !context.referenceVideoURLs.length && !context.referenceAudioURLs.length) return toast.error("请填写视频描述或连接参考素材");
 				const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
 			const configuredImageReferenceURLs = params.generation_video_reference_image_urls.filter((url) => url.trim());
@@ -5224,7 +5225,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onBackendDocument={applyBackendAgentDocument}
         open={agentOpen}
         nodes={nodes}
-        selectedNodeIDs={[...selectedNodeIDs]}
+        selectedNodeIDs={agentSelectedNodeIDs}
         referenceNodeClick={agentReferenceNodeClick}
         model={textModel}
         models={textModels}

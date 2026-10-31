@@ -1088,7 +1088,7 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, showImageInfo, selecte
             <span className="text-[11px] tracking-[0.16em] text-muted-foreground">
               {node.type === "video" ? "空视频节点" : "空图片节点"}
             </span>
-            <span className="text-[11px] text-muted-foreground/70">可拖入素材，或在节点下方上传</span>
+            <span className="text-[11px] text-muted-foreground/70">可拖入素材，或在节点上方上传</span>
           </div>
         ) : (
           <div className="flex size-full flex-col bg-card">

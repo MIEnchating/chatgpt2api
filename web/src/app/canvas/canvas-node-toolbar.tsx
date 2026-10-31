@@ -46,7 +46,7 @@ export function CanvasNodeToolbar({ node, viewport, expanded, editor, children }
     <div ref={toolbarRef} data-canvas-node-toolbar data-canvas-no-pan data-toolbar-node-id={node.id} role="group" aria-label="选中节点操作" className="pointer-events-auto absolute w-max max-w-[min(600px,calc(100%-1rem))]" style={{ left, top, visibility: visible ? "visible" : "hidden" }}>
       {children}
     </div>
-    <div ref={editorRef} data-canvas-node-input-anchor data-canvas-no-pan className="pointer-events-auto absolute w-[520px] max-w-[calc(100%-1rem)]" style={{ left: editorLeft, top: editorTop, "--canvas-node-editor-height": `${editorHeight}px`, visibility: visible && expanded ? "visible" : "hidden" } as CSSProperties}>
+    <div ref={editorRef} data-canvas-node-input-anchor data-canvas-no-pan className="pointer-events-auto absolute w-[520px] max-w-[calc(100%-1rem)] has-[[data-canvas-node-editor][data-expanded=true]]:w-[min(880px,calc(100%-1rem))]" style={{ left: editorLeft, top: editorTop, "--canvas-node-editor-height": `${editorHeight}px`, visibility: visible && expanded ? "visible" : "hidden" } as CSSProperties}>
       {editor}
     </div>
   </div>;

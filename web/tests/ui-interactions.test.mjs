@@ -200,7 +200,7 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.match(videoContractsSource, /h-\[min\(94dvh,940px\)\] w-\[min\(96vw,1360px\)\] max-w-none/);
   assert.match(videoContractsSource, /<DialogContent[\s\S]*?scrollable=\{false\}/);
   assert.match(videoContractsSource, /aria-label="视频配置分区"/);
-  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)\][^"]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,20rem\)\]/);
+  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)\][^"]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,22rem\)\]/);
   assert.match(videoContractsSource, /data-video-contract-details[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3"[\s\S]*?ariaLabel="契约表单"/);
   assert.match(videoContractsSource, /data-video-contract-preview[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"[\s\S]*?ariaLabel="契约预览"/);
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
@@ -209,7 +209,7 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"/);
   assert.match(videoContractsSource, /divide-y divide-border\/70/);
   assert.match(videoContractsSource, /data-video-contract-layout/);
-  assert.match(videoContractsSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,20rem\)\]/);
+  assert.match(videoContractsSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,22rem\)\]/);
   assert.match(videoContractsSource, /data-video-contract-details[\s\S]*data-video-contract-preview/);
   assert.doesNotMatch(videoContractsSource, /dialogView|role="tablist"|契约查看方式/);
   assert.match(videoContractsSource, /<ContractParameterPreview key=\{parameterPreviewKey\}/);

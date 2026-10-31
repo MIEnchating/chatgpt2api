@@ -776,6 +776,7 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
           <VideoSettingsPanel
             model={contract.models[0] || ""}
             contract={contract}
+            showTaskCount={false}
             value={value}
             ruleValues={ruleValues}
             onChange={(patch) => setValue((current) => ({ ...current, ...patch }))}
@@ -1722,17 +1723,17 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
           <div role="group" className="flex shrink-0 gap-1 overflow-x-auto rounded-lg bg-muted/40 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="视频配置分区">
             {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <button key={key} type="button" aria-pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors sm:flex-1 sm:text-sm", key === "preview" && "lg:hidden", editorSection === key ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
           </div>
-          <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
+          <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(320px,22rem)] lg:grid-rows-[minmax(0,1fr)]">
             <ScrollArea
               data-video-contract-details
               className={cn("h-full min-h-0 min-w-0", editorSection === "preview" && "hidden lg:block")}
               viewportClassName="h-full overscroll-y-contain pr-3"
-              viewClass="flex min-w-0 flex-col gap-7 pb-1"
+              viewClass="flex min-w-0 flex-col gap-6 pb-1 [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:border-t [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:border-border/60 [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:pt-6"
               ariaLabel="契约表单"
             >
               <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle>基本信息</SectionTitle>
-                <div className="grid items-start gap-4 sm:grid-cols-2">
+                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <TextField id="video-contract-name" label="契约名称" value={draft.contract.name} disabled={readOnly} placeholder="例如 MiniMax H3" onChange={(value) => updateContract((contract) => { contract.name = value; })} />
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-driver" label="接口协议" help="选择当前模型采用的视频协议。协议决定请求结构和参数转换，不控制创作页面显示哪些模型。" />
@@ -1742,7 +1743,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                     </Select>
                   </Field>
                   <NumericField id="video-contract-priority" label="同级优先级" help="仅在通配符具体度相同时生效，数值越大越优先；精确模型始终优先于通配符。" min={-1000} max={1000} value={draft.contract.priority} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.priority = value; })} />
-                  <div className="sm:col-span-2"><TagListField id="video-contract-models" label="模型匹配规则" help="填写上游实际接收的模型 ID，支持 * 通配符。精确匹配优先，其次选择固定字符更多、通配符更少的规则。这里只负责匹配契约，不控制创作页面显示哪些模型。" value={draft.models} disabled={readOnly} placeholder="例如 minimax-h3-*" onValueChange={(value) => setDraft((current) => {
+                  <div className="sm:col-span-2 lg:col-span-3"><TagListField id="video-contract-models" label="模型匹配规则" help="填写上游实际接收的模型 ID，支持 * 通配符。精确匹配优先，其次选择固定字符更多、通配符更少的规则。这里只负责匹配契约，不控制创作页面显示哪些模型。" value={draft.models} disabled={readOnly} placeholder="例如 minimax-h3-*" onValueChange={(value) => setDraft((current) => {
                     const contract = mutationFromDraft(current).contract;
                     contract.models = value;
                     contract.model_profiles = contract.model_profiles?.filter((profile) => value.some((model) => model.toLowerCase() === profile.model.toLowerCase()));
