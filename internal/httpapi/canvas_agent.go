@@ -172,6 +172,13 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		body["reference_image_urls"] = n.GenerationVideoReferenceImages
 		body["reference_video_urls"] = n.GenerationVideoReferenceURLs
 		body["reference_audio_urls"] = n.GenerationVideoReferenceAudio
+		if n.GenerationVideoReferenceMode != "reference" && n.GenerationVideoLastFrameURL != "" {
+			lastFrame, referenceErr := a.canvasAgentVideoReference(ctx, identity, n.GenerationVideoLastFrameURL, "image")
+			if referenceErr != nil {
+				return nil, referenceErr
+			}
+			body["last_frame_url"] = lastFrame
+		}
 		for field, kind := range map[string]string{"reference_image_urls": "image", "reference_video_urls": "video", "reference_audio_urls": "audio"} {
 			refs := []string{}
 			for _, raw := range util.AsStringSlice(body[field]) {

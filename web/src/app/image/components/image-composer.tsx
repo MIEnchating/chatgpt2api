@@ -916,7 +916,7 @@ export function ImageComposer({
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="z-[70] w-[min(calc(100vw-1rem),26rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
+                      className="w-[min(calc(100vw-1rem),26rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
                     >
                       <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
                         <div className="border-b border-border/70 px-4 py-3"><p className="text-sm font-semibold">图片参数</p><p className="mt-1 truncate text-xs text-muted-foreground">{imageModelLabel}</p></div>
@@ -951,7 +951,7 @@ export function ImageComposer({
                         align="start"
                         side="top"
                         sideOffset={8}
-                        className="z-[70] w-[min(calc(100vw-1rem),30rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
+                        className="w-[min(calc(100vw-1rem),30rem)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-elevated)]"
                       >
                         <div className="shrink-0 border-b border-border/70 px-4 pt-4 pb-3">
                           <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand-soft text-brand"><Video className="size-4" /></span><p className="text-sm font-semibold">视频设置</p></div><button type="button" onClick={() => setIsImageSettingsOpen(false)} aria-label="关闭视频设置" className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><X className="size-4" /></button></div>

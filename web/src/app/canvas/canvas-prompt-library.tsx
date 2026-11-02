@@ -14,14 +14,13 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+        size="icon"
+        className="size-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
         onClick={() => setOpen(true)}
         aria-label="打开提示词"
         title="提示词"
       >
         <BookOpenText className="size-3.5" />
-        提示词
       </Button>
       <ImagePromptMarket
         open={open}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from "react";
 import { BookOpen, ChevronRight, CircleAlert, FileText, Image, LoaderCircle, Pencil, Plus, Sparkles, Terminal, Wrench, ListChecks, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentStepIcon } from "@/components/agent/agent-step-icon";
 import { AGENT_STEP_STATUS, AGENT_STEP_TONE_CLASS } from "@/components/agent/agent-step-status";
 import type { CanvasNode } from "@/services/api/canvas";
@@ -38,7 +39,9 @@ export function CanvasAgentExecution({ entry, nodes, running, onFocusNode }: {
       {details ? <details open={expanded} onToggle={handleToggle} className="group/operation min-w-0 flex-1 text-xs text-muted-foreground">
         <summary className="flex min-h-6 min-w-0 cursor-pointer list-none items-center gap-2 rounded outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">{summary}</summary>
         {expanded ? <div className="my-2 min-w-0 border-l border-border/60 pl-3">
-          <pre className={cn("max-h-48 max-w-full overflow-y-auto whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]", entry.kind === "command" || entry.kind === "file" ? "font-mono" : "font-sans")}>{detail}</pre>
+          <ScrollArea className="max-h-48" viewportClassName="overscroll-contain pr-2">
+            <pre className={cn("max-w-full whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]", entry.kind === "command" || entry.kind === "file" ? "font-mono" : "font-sans")}>{detail}</pre>
+          </ScrollArea>
         </div> : null}
       </details> : <div className="flex min-h-6 min-w-0 items-center gap-2 text-xs text-muted-foreground">{summary}</div>}
       {node && onFocusNode ? <CanvasAgentNodeChip node={node} onFocus={onFocusNode} className="mt-1.5" /> : null}

@@ -62,6 +62,7 @@ export type CanvasNode = {
   generation_video_reference_audio_urls?: string[];
   generation_video_first_frame_node_id?: string;
   generation_video_last_frame_node_id?: string;
+  generation_video_last_frame_url?: string;
   generation_mode?: "image" | "text" | "video" | "audio";
   generation_text_model?: string;
   generation_workflow_inputs?: Record<string, string | number | boolean>;

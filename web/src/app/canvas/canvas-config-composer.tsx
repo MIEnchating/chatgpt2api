@@ -1,3 +1,4 @@
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -104,12 +105,12 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
   return (
     <div
       data-canvas-no-zoom
-      className="min-w-0"
+      className="flex h-full min-h-0 min-w-0 flex-col gap-2"
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background">
+      <div className="canvas-prompt-editor-resize relative min-h-0 flex-1">
           {!value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用画布图片或文本</div> : null}
           <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
           <div
@@ -119,7 +120,7 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
             aria-label="组装提示词"
             aria-multiline="true"
             suppressContentEditableWarning
-            className="min-h-28 w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
+            className="min-h-full w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
             onInput={() => { if (!composingRef.current) syncFromEditor(); }}
             onCopy={(event) => {
               if (copyContentEditableSelection(event.currentTarget, event.clipboardData, (selection) => canvasConfigPromptDisplay(serializeEditor(selection), inputs))) {
@@ -169,7 +170,7 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
             />
           ) : null}
       </div>
-      {promptTools ? <div className="mt-2 flex min-w-0 items-center border-t border-border/70 pt-2">{promptTools}</div> : null}
+      {promptTools ? <div className="min-w-0 shrink-0">{promptTools}</div> : null}
       {children ? <div className="mt-3 space-y-3 border-t border-border pt-3">{children}</div> : null}
       <ImageLightbox images={previewImages} currentIndex={0} open={Boolean(previewInput?.url)} onOpenChange={(open) => { if (!open) setPreviewInput(null); }} onIndexChange={() => undefined} />
     </div>
@@ -183,6 +184,7 @@ function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect 
   activeIndex: number;
   onSelect: (input: CanvasConfigInput) => void;
 }) {
+  const layer = useOverlayLayer("popover");
   const selectedRef = useRef(false);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
@@ -224,11 +226,12 @@ function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect 
   if (!position) return null;
 
   return createPortal(
-    <ScrollArea
+    <OverlayLayerProvider value={layer}>
+    <ScrollArea data-overlay-layer={layer}
       data-canvas-config-mention-menu
-      className="pointer-events-auto fixed z-[140] max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      className="pointer-events-auto fixed max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       viewportClassName="p-1"
-      style={position}
+      style={{ ...position, zIndex: layer }}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -253,7 +256,8 @@ function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect 
           </span>
         </button>
       ))}
-    </ScrollArea>,
+    </ScrollArea>
+    </OverlayLayerProvider>,
     document.body,
   );
 }

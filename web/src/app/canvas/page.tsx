@@ -1,5 +1,7 @@
 "use client";
 
+import { OverlaySurface } from "@/components/ui/overlay-layer";
+
 import { mergeCanvasDocuments, mergeCanvasHistory } from "./canvas-document-merge";
 import { fetchCanvasAgentRun } from "./agent/canvas-agent-backend";
 
@@ -64,16 +66,13 @@ import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-paramete
 import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameters";
 import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select";
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
-import { CanvasVideoNodeBindings } from "@/app/canvas/canvas-video-node-bindings";
+import { CanvasVideoReferences, type VideoReferenceSlot } from "@/app/canvas/canvas-video-references";
 import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
-import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
-import { ReferenceMediaCard } from "@/components/generation/reference-media-card";
 import { CanvasAudioTrimDialog } from "@/app/canvas/canvas-audio-trim-dialog";
 import { canvasMediaBlob, captureCanvasVideoFrame, extractCanvasAudio, type CanvasAudioTrim, type CanvasVideoFramePosition } from "@/app/canvas/canvas-media-editing";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { CanvasVideoPreview } from "@/app/canvas/canvas-video-player";
 import { canvasVideoDisplaySize, canvasVideoFileError } from "@/app/canvas/canvas-video-import";
-import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { remapCanvasResourceLabels } from "./canvas-resource-mentions";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import { CanvasAudioPromptPanel, CanvasAudioSettingsFields, CanvasPanoramaPromptPanel, CanvasPanoramaViewer } from "@/app/canvas/canvas-special-nodes";
@@ -89,7 +88,8 @@ import {
 } from "@/components/relay-token-required-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AppScrollArea, ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { CanvasNodeInputToolbar } from "@/app/canvas/canvas-node-input-toolbar";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -366,6 +366,7 @@ function canvasVideoParameters(node?: CanvasNode | null) {
 				exclude_upstream_text: node?.exclude_upstream_text ?? false,
 				generation_video_first_frame_node_id: node?.generation_video_first_frame_node_id,
 				generation_video_last_frame_node_id: node?.generation_video_last_frame_node_id,
+    generation_video_last_frame_url: node?.generation_video_last_frame_url || "",
 	  };
 }
 
@@ -399,6 +400,7 @@ function normalizeCanvasVideoNode(node: CanvasNode) {
     generation_video_reference_image_urls: params.generation_video_reference_image_urls,
     generation_video_reference_urls: params.generation_video_reference_urls,
     generation_video_reference_audio_urls: params.generation_video_reference_audio_urls,
+    generation_video_last_frame_url: params.generation_video_last_frame_url,
 				exclude_upstream_text: params.exclude_upstream_text,
 				generation_video_first_frame_node_id: params.generation_video_first_frame_node_id,
 				generation_video_last_frame_node_id: params.generation_video_last_frame_node_id,
@@ -427,6 +429,7 @@ function canvasErrorMessage(error: unknown) {
 
 function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelect, relayTokenName, inputs, running, generationBusy, showPromptEditor = true, showGenerateFooter = true, videoModels, onPromptChange, onParametersChange, onGenerate, onStop }: { node: CanvasNode; mentionReferences?: readonly CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; relayTokenName: string; inputs: readonly CanvasConfigInput[]; running: boolean; generationBusy: boolean; uploading?: boolean; showPromptEditor?: boolean; showGenerateFooter?: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void; onUpload?: () => void }) {
   const [prompt, setPrompt] = useState(node.prompt || "");
+  const [parameterSection, setParameterSection] = useState<"output" | "references">("output");
   const connectedPromptAvailable = inputs.some((input) => input.type === "text" && Boolean(input.text?.trim()));
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   const params = canvasVideoParameters(node);
@@ -439,10 +442,10 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const referenceAudioURL = params.generation_video_reference_audio_urls[0] || "";
   const videoRuleValues = {
     first_frame: params.generation_video_reference_mode === "first-frame" ? referenceImageURL || params.generation_video_first_frame_node_id || "" : "",
-    last_frame: params.generation_video_last_frame_node_id || "",
+    last_frame: params.generation_video_reference_mode === "first-frame" ? params.generation_video_last_frame_url || params.generation_video_last_frame_node_id || "" : "",
     reference_image: params.generation_video_reference_mode === "reference" ? params.generation_video_reference_image_urls.length : 0,
-    reference_video: params.generation_video_reference_urls.length,
-    reference_audio: params.generation_video_reference_audio_urls.length,
+    reference_video: params.generation_video_reference_mode === "reference" ? params.generation_video_reference_urls.length : 0,
+    reference_audio: params.generation_video_reference_mode === "reference" ? params.generation_video_reference_audio_urls.length : 0,
     generate_audio: params.generation_video_audio,
     size: params.generation_video_size,
     resolution: params.generation_video_resolution,
@@ -454,10 +457,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const videoFieldDisabled = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => videoContractUI.disabled.has(field);
   const imageRuleField = params.generation_video_reference_mode === "reference" ? "reference_image" : "first_frame";
   const visibleReferenceMaterials = videoFieldVisible(imageRuleField) || videoFieldVisible("reference_video") || videoFieldVisible("reference_audio");
-  const [referenceUploading, setReferenceUploading] = useState<"image" | "video" | "audio" | "" >("");
-  const referenceImageInputRef = useRef<HTMLInputElement>(null);
-  const referenceVideoInputRef = useRef<HTMLInputElement>(null);
-  const referenceAudioInputRef = useRef<HTMLInputElement>(null);
+  const [referenceUploading, setReferenceUploading] = useState<VideoReferenceSlot | "" >("");
   const videoSettingsValue: VideoSettingsValue = {
     size: params.generation_video_size,
     seconds: String(params.generation_video_seconds),
@@ -477,13 +477,13 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
       ...(patch.watermark !== undefined ? { generation_video_watermark: patch.watermark } : {}),
     });
   }
-  async function uploadReferenceImage(file: File) {
+  async function uploadReferenceImage(file: File, slot: "image" | "last-frame" = "image") {
     if (!file.type.startsWith("image/")) return toast.error("参考图片仅支持 PNG、JPG 或 WebP 格式");
     if (file.size > 20 * 1024 * 1024) return toast.error("参考图片不能超过 20 MiB");
-    setReferenceUploading("image");
+    setReferenceUploading(slot);
     try {
       const uploaded = await uploadImage(file);
-      onParametersChange({ generation_video_reference_mode: "first-frame", generation_video_reference_image_urls: [uploaded.url], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] });
+      onParametersChange(slot === "last-frame" ? { generation_video_last_frame_url: uploaded.url, generation_video_last_frame_node_id: undefined } : { generation_video_reference_image_urls: [uploaded.url], ...(params.generation_video_reference_mode === "first-frame" ? { generation_video_first_frame_node_id: undefined } : {}) });
       toast.success("参考图片已上传");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参考图片上传失败");
@@ -499,7 +499,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
     setReferenceUploading("video");
     try {
       const uploaded = await uploadVideoReference(file);
-      onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_image_urls: [], generation_video_reference_urls: [uploaded.url], generation_video_reference_audio_urls: [] });
+      onParametersChange({ generation_video_reference_urls: [uploaded.url] });
       toast.success("参考视频已上传");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参考视频上传失败");
@@ -516,7 +516,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
     setReferenceUploading("audio");
     try {
       const uploaded = await uploadAudioReference(file);
-      onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: [uploaded.url] });
+      onParametersChange({ generation_video_reference_audio_urls: [uploaded.url] });
       toast.success("参考音频已上传");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参考音频上传失败");
@@ -530,47 +530,40 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const parameterSummary = params.generation_video_size ? `${durationLabel} · ${videoSizeLabel(params.generation_video_size)}` : durationLabel;
   const workflowFields = <AutoDLWorkflowFields tokenName={relayTokenName} model={params.generation_video_model} value={node.generation_workflow_inputs || {}} onChange={(generation_workflow_inputs) => onParametersChange({ generation_workflow_inputs })} disabled={running} />;
   return <div className="flex h-full min-h-0 flex-col gap-2">
-    <input ref={referenceImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceImage(file); }} />
-    <input ref={referenceVideoInputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceVideo(file); }} />
-    <input ref={referenceAudioInputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceAudio(file); }} />
-    {showPromptEditor ? <AppScrollArea className="h-0 min-h-0 flex-1" viewportClassName="pr-3"><div className="space-y-3">
-      <div className="overflow-hidden">
-        <PromptTextareaFrame className="h-28 min-h-28 group-data-[expanded=true]/editor:h-72">
-          <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
-        </PromptTextareaFrame>
-      </div>
-      {workflowFields}
-    </div></AppScrollArea> : workflowFields}
-    <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
-      {showPromptEditor ? <CanvasInlineModelSelect className="w-40 flex-none" value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /> : null}
-      <CanvasParameterPopover icon={<SlidersHorizontal />} label="生成参数" summary={parameterSummary} width={400}>
-        <div className="grid grid-cols-1 gap-4 text-xs">
-          <VideoSettingsPanel model={params.generation_video_model} value={videoSettingsValue} ruleValues={videoRuleValues} onChange={updateVideoSettings} showTaskCount={false} />
-          {videoReferenceSupported ? <label className="space-y-1.5"><ImageParameterLabel help="首帧图生视频使用一张开场图片；多模态参考可以组合图片、视频和音频。">参考模式</ImageParameterLabel><Select value={params.generation_video_reference_mode} onValueChange={(value: "first-frame" | "reference") => onParametersChange({ generation_video_reference_mode: value })}><SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="first-frame">首帧图生视频</SelectItem><SelectItem value="reference">多模态参考</SelectItem></SelectContent></Select></label> : null}
-        </div>
-      </CanvasParameterPopover>
-      {referencePanelVisible ? <CanvasParameterPopover icon={<Paperclip />} label="参考素材" width={420}>
-        <div className="space-y-3 text-xs">
-          {visibleReferenceMaterials ? <div className="space-y-4">
-          <p className="text-[11px] leading-4 text-muted-foreground">首尾帧指定起止画面，参考图提供外观依据。视频可用于动作参考、编辑或延长；音频用于声音参考，能否驱动口型以模型为准。</p>
-          {videoFieldVisible(imageRuleField) ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>{params.generation_video_reference_mode === "reference" ? "参考图" : "首帧图"}</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceImageURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceImageURL ? <ReferenceMediaCard kind="image" src={referenceImageURL} label="参考图" removeDisabled={videoFieldDisabled(imageRuleField)} onRemove={() => onParametersChange({ generation_video_reference_image_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考图" hint="PNG / JPG / WebP" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" loading={referenceUploading === "image"} disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} remaining={referenceImageURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceImage(files[0]); }} /></div></section> : null}
-          {videoFieldVisible("reference_video") ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>参考视频</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceVideoURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceVideoURL ? <ReferenceMediaCard kind="video" src={referenceVideoURL} label="参考视频" removeDisabled={videoFieldDisabled("reference_video")} onRemove={() => onParametersChange({ generation_video_reference_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考视频" hint="MP4 / MOV" accept="video/mp4,video/quicktime,.mp4,.mov" loading={referenceUploading === "video"} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} remaining={referenceVideoURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceVideo(files[0]); }} /></div></section> : null}
-          {videoFieldVisible("reference_audio") ? <section className="space-y-2"><div className="flex items-center justify-between"><ImageParameterLabel>参考音频</ImageParameterLabel><span className="text-[11px] tabular-nums text-muted-foreground">{referenceAudioURL ? 1 : 0}/1</span></div><div className="grid grid-cols-3 gap-2">{referenceAudioURL ? <ReferenceMediaCard kind="audio" src={referenceAudioURL} label="参考音频" removeDisabled={videoFieldDisabled("reference_audio")} onRemove={() => onParametersChange({ generation_video_reference_audio_urls: [] })} /> : null}<ReferenceFileUpload label="上传参考音频" hint="MP3 / WAV" accept="audio/mpeg,audio/wav,.mp3,.wav" loading={referenceUploading === "audio"} disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} remaining={referenceAudioURL ? 0 : 1} onFiles={async (files) => { await uploadReferenceAudio(files[0]); }} /></div></section> : null}
-          <details className="group rounded-lg border border-border/70"><summary className="cursor-pointer list-none px-3 py-2 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">通过链接添加</summary><div className="grid gap-2 border-t border-border/70 p-3">{videoFieldVisible(imageRuleField) ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} disabled={videoFieldDisabled(imageRuleField)} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}{videoFieldVisible("reference_video") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label> : null}{audioReferenceSupported && videoFieldVisible("reference_audio") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考音频 URL（可选）</span><Input type="url" value={referenceAudioURL} disabled={videoFieldDisabled("reference_audio")} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: event.target.value ? [event.target.value] : [] })} placeholder="https://音频地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}</div></details>
+    {showPromptEditor ? <PromptTextareaFrame className="min-h-0 flex-1">
+      <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" containerClassName="min-h-full" className="min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
+    </PromptTextareaFrame> : null}
+    <CanvasNodeInputToolbar action={showGenerateFooter ? <CanvasGenerationFooter
+      running={running}
+      disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable && videoModelContract(params.generation_video_model)?.capability.prompt?.required !== false) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
+      onGenerate={() => onGenerate(prompt.trim())}
+      onStop={onStop}
+    /> : undefined}>
+      {showPromptEditor ? <CanvasInlineModelSelect value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /> : null}
+      <CanvasParameterPopover icon={<SlidersHorizontal />} label="视频参数" summary={parameterSummary} width={440}>
+        {referencePanelVisible ? <div role="group" aria-label="视频设置分类" className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
+          <button type="button" aria-pressed={parameterSection === "output"} className={cn("flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-medium transition-colors", parameterSection === "output" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setParameterSection("output")}><Video className="size-3.5" />视频参数</button>
+          <button type="button" aria-pressed={parameterSection === "references"} className={cn("flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-medium transition-colors", parameterSection === "references" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setParameterSection("references")}><Paperclip className="size-3.5" />参考素材</button>
         </div> : null}
-          {referenceFrameVisible ? <CanvasVideoNodeBindings node={node} inputs={inputs} showFirstFrame={videoFieldVisible("first_frame")} showLastFrame={videoFieldVisible("last_frame")} firstFrameDisabled={videoFieldDisabled("first_frame")} lastFrameDisabled={videoFieldDisabled("last_frame")} onChange={onParametersChange} /> : null}
+        <div hidden={referencePanelVisible && parameterSection !== "output"} className="space-y-4 text-xs">
+          {workflowFields}
+          <VideoSettingsPanel model={params.generation_video_model} value={videoSettingsValue} ruleValues={videoRuleValues} onChange={updateVideoSettings} showTaskCount={false} />
         </div>
-      </CanvasParameterPopover> : null}
-            {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /> : null}
-      <div className="ml-auto flex min-w-0 items-center gap-2">
-                {showGenerateFooter ? <CanvasGenerationFooter
-          running={running}
-          disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable && videoModelContract(params.generation_video_model)?.capability.prompt?.required !== false) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
-                    onGenerate={() => onGenerate(prompt.trim())}
-          onStop={onStop}
-        /> : null}
-      </div>
-    </div>
+        {referencePanelVisible ? <div hidden={parameterSection !== "references"}>
+          <CanvasVideoReferences node={node} inputs={inputs} mode={params.generation_video_reference_mode} supportsMultimodal={videoReferenceSupported}
+            supportsLastFrame={Boolean(videoModelContract(params.generation_video_model)?.generation.modes.some(mode => mode.materials.last_frame.max > 0))}
+            uploading={referenceUploading} onChange={onParametersChange}
+            onUpload={async (slot, file) => { if (slot === "video") await uploadReferenceVideo(file); else if (slot === "audio") await uploadReferenceAudio(file); else await uploadReferenceImage(file, slot); }}
+            materials={[
+              { slot: "image", label: params.generation_video_reference_mode === "reference" ? "参考图" : "首帧", hint: "PNG / JPG / WebP", help: "首帧确定开场画面，参考图用于提供主体和风格依据。", accept: "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp", url: referenceImageURL, nodeID: params.generation_video_reference_mode === "first-frame" ? params.generation_video_first_frame_node_id : undefined, visible: videoFieldVisible(imageRuleField), disabled: videoFieldDisabled(imageRuleField) },
+              { slot: "last-frame", label: "尾帧", hint: "PNG / JPG / WebP", help: "确定视频结束时的画面；需要成对提供首尾帧时，请同时添加两张图片。", accept: "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp", url: params.generation_video_last_frame_url, nodeID: params.generation_video_last_frame_node_id, visible: params.generation_video_reference_mode === "first-frame" && videoFieldVisible("last_frame") && Boolean(videoModelContract(params.generation_video_model)?.generation.modes.some(mode => mode.materials.last_frame.max > 0)), disabled: videoFieldDisabled("last_frame") },
+              { slot: "video", label: "参考视频", hint: "MP4 / MOV", help: "提供动作或镜头参考，具体能力由模型决定。", accept: "video/mp4,video/quicktime,.mp4,.mov", url: referenceVideoURL, visible: params.generation_video_reference_mode === "reference" && videoFieldVisible("reference_video") && videoMultimodalReferenceLimits(params.generation_video_model).video > 0, disabled: videoFieldDisabled("reference_video") },
+              { slot: "audio", label: "参考音频", hint: "MP3 / WAV", help: "提供声音参考，能否驱动口型由模型决定。", accept: "audio/mpeg,audio/wav,.mp3,.wav", url: referenceAudioURL, visible: params.generation_video_reference_mode === "reference" && videoFieldVisible("reference_audio") && audioReferenceSupported, disabled: videoFieldDisabled("reference_audio") },
+            ]} />
+        </div> : null}
+      </CanvasParameterPopover>
+      {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /> : null}
+    </CanvasNodeInputToolbar>
   </div>;
 }
 
@@ -654,11 +647,10 @@ function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, mod
           className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground/55"
         />
       </PromptTextareaFrame>
-      <div className="flex min-w-0 shrink-0 items-center gap-2">
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} stopping={cancelling} disabled={running ? cancelling : !canGenerate} onGenerate={onGenerate} onStop={onStop} />}>
         <CanvasInlineModelSelect value={model} models={models} label="文本模型" onChange={onModelChange} />
         <CanvasPromptLibrary onSelect={(value) => updateContent(value, true)} />
-        <CanvasGenerationFooter running={running} stopping={cancelling} disabled={running ? cancelling : !canGenerate} onGenerate={onGenerate} onStop={onStop} />
-      </div>
+      </CanvasNodeInputToolbar>
     </div>
   );
 }
@@ -711,21 +703,18 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
           className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground/55"
         />
       </PromptTextareaFrame>
-      <ScrollArea className="shrink-0" viewClass="flex w-max min-w-full items-center gap-1" >
-        <CanvasImageParameterPopover node={node} imageModel={imageModel} imageModels={imageModels} onChange={onParametersChange} showModel={false} />
-        <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 shrink-0 text-xs" />
-        <div className="ml-auto shrink-0"><CanvasPromptLibrary onSelect={updatePrompt} /></div>
-      </ScrollArea>
-      <div className="flex min-w-0 shrink-0 items-center gap-2">
-        <CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => onParametersChange({ generation_model })} />
-        <CanvasGenerationFooter
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter
           running={running}
           stopping={cancelling}
           disabled={running ? !canStop || cancelling : !imageModelReady || (!prompt.trim() && !connectedPromptAvailable) || generationBusy}
           onGenerate={submit}
           onStop={onStop}
-        />
-      </div>
+        />}>
+        <CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => onParametersChange({ generation_model })} />
+        <CanvasImageParameterPopover node={node} imageModel={imageModel} imageModels={imageModels} onChange={onParametersChange} showModel={false} />
+        <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 shrink-0 text-xs" />
+        <CanvasPromptLibrary onSelect={updatePrompt} />
+      </CanvasNodeInputToolbar>
     </div>
   );
 }
@@ -904,7 +893,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
   }
 
-  const resolvedAgentConfig = normalizeCanvasAgentConfig(agentConfig);
+  const resolvedAgentConfig = useMemo(() => normalizeCanvasAgentConfig(agentConfig), [agentConfig]);
 
   const openDirectorNode = openDirectorNodeID
     ? nodes.find((node) => node.id === openDirectorNodeID && node.type === "director") || null
@@ -1489,28 +1478,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       return;
     }
     focusCanvasNode(nodeID);
-  }
-
-  function focusCanvasNodeInput(nodeID: string) {
-    const node = nodesRef.current.find((item) => item.id === nodeID);
-    const host = hostRef.current;
-    const editor = host?.querySelector<HTMLElement>("[data-canvas-node-editor]");
-    const layer = host?.querySelector<HTMLElement>("[data-canvas-node-overlays]");
-    if (!node || !editor || !layer) return;
-    const toolbar = host?.querySelector<HTMLElement>("[data-canvas-node-toolbar]");
-    const top = 76 + (toolbar?.offsetHeight || 44);
-    const editorHeight = editor.offsetHeight;
-    const availableHeight = layer.clientHeight - top - editorHeight - 36;
-    const zoom = Math.max(CANVAS_MIN_ZOOM, Math.min(1.5,
-      Math.max(1, canvasSize.width - 32) / node.width,
-      Math.max(1, availableHeight) / (node.height + 36),
-    ));
-    const contentHeight = (node.height + 36) * zoom + 12 + editorHeight;
-    const centeredTop = top + Math.max(0, (layer.clientHeight - top - contentHeight) / 2) + 36 * zoom;
-    // On short screens, keep the input visible without shrinking or detaching it.
-    const editorTop = Math.max(16, Math.min(centeredTop + node.height * zoom + 12, layer.clientHeight - editorHeight - 12));
-    const nodeTop = editorTop - node.height * zoom - 12;
-    animateCanvasViewport({ zoom, x: canvasSize.width / 2 - (node.x + node.width / 2) * zoom, y: nodeTop - node.y * zoom });
   }
 
   function animateCanvasViewport(target: CanvasDocument["viewport"]) {
@@ -3964,13 +3931,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
 			const configuredImageReferenceURLs = params.generation_video_reference_image_urls.filter((url) => url.trim());
 			const configuredAudioReferenceURLs = params.generation_video_reference_audio_urls.filter((url) => url.trim());
-			const frameReferencesEnabled = supportsVideoFrameReferences(params.generation_video_model);
+			const frameReferencesEnabled = params.generation_video_reference_mode !== "reference" && supportsVideoFrameReferences(params.generation_video_model);
 			const videoImageReferences = canvasVideoGenerationReferences(context, configuredImageReferenceURLs, frameReferencesEnabled);
 			const allImageReferenceURLs = videoImageReferences.referenceImageURLs;
-			const referenceVideoURLs = Array.from(new Set([...configuredVideoReferenceURLs, ...context.referenceVideoURLs])).slice(0, 3);
-			const referenceAudioURLs = Array.from(new Set([...configuredAudioReferenceURLs, ...context.referenceAudioURLs])).slice(0, 3);
-			const firstFrameURL = videoImageReferences.firstFrameURL;
-			const lastFrameURL = videoImageReferences.lastFrameURL;
+			const referenceVideoURLs = Array.from(new Set(params.generation_video_reference_mode === "reference" ? [...configuredVideoReferenceURLs, ...context.referenceVideoURLs] : [])).slice(0, 3);
+			const referenceAudioURLs = Array.from(new Set(params.generation_video_reference_mode === "reference" ? [...configuredAudioReferenceURLs, ...context.referenceAudioURLs] : [])).slice(0, 3);
+			const firstFrameURL = frameReferencesEnabled ? videoImageReferences.firstFrameURL : "";
+			const lastFrameURL = frameReferencesEnabled ? videoImageReferences.lastFrameURL : "";
 		let referenceMode: "first-frame" | "reference" = params.generation_video_reference_mode === "reference" ? "reference" : "first-frame";
 		const supportsMultimodalReferences = supportsVideoMultimodalReferences(params.generation_video_model);
 		const multimodalLimits = videoMultimodalReferenceLimits(params.generation_video_model);
@@ -4666,40 +4633,33 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             ? audioModels.includes(nodeAudioModel)
             : videoModels.includes(configVideoParams.generation_video_model);
       const canGenerateWithParameters = mode !== "video" || videoSecondsIsValid(configVideoParams.generation_video_model, configVideoParams.generation_video_seconds);
-      const configPromptTools = mode === "image"
-        ? <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="h-8 shrink-0 px-2.5 text-xs" /><CanvasInlineModelSelect className="min-w-32 basis-40" value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => updateNodeGenerationParameters(node.id, { generation_model })} /></div>
-        : mode === "text"
-          ? <CanvasInlineModelSelect value={nodeTextModel} models={textModels} label="文本模型" onChange={(generation_text_model) => updateNodeGenerationParameters(node.id, { generation_text_model })} />
-          : mode === "audio"
-            ? <CanvasInlineModelSelect value={nodeAudioModel} models={audioModels} label="音频模型" onChange={(generation_audio_model) => updateNodeGenerationParameters(node.id, { generation_audio_model })} />
-            : <CanvasInlineModelSelect value={canvasVideoParameters(node).generation_video_model} models={videoModels} label="视频模型" onChange={(model) => updateNodeGenerationParameters(node.id, canvasVideoModelPatch(model))} />;
-      return (
-        <div className="flex h-full min-h-0 flex-col">
-          <AppScrollArea className="h-0 flex-1" viewportClassName="pr-3">
-            <div className="space-y-3">
-              <CanvasConfigComposer
-                node={node}
-                inputs={inputs}
-                referenceCandidates={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current).map((reference) => ({ nodeID: reference.nodeID, type: reference.kind, title: reference.title, text: reference.text, url: reference.previewURL }))}
-                onReferenceSelect={(sourceID) => connectNodes(sourceID, node.id)}
-                promptTools={configPromptTools}
-                onComposerChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)}
-              >
-                <label className="grid gap-1 text-xs"><span className="text-muted-foreground">生成模式</span><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></label>
-                                {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
-              </CanvasConfigComposer>
-              {mode === "video" ? <div className="rounded-xl border border-border bg-card p-3"><CanvasVideoPromptPanel relayTokenName={tokenNameForModel("video", configVideoParams.generation_video_model)} node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={running} generationBusy={false} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} /></div> : null}
-            </div>
-          </AppScrollArea>
-          <CanvasGenerationFooter
-            className="mt-3"
-            running={running}
-            disabled={!running && (!canGenerate || !canGenerateWithModel || !canGenerateWithParameters)}
-            onGenerate={mode === "video" ? () => void runVideoGeneration(node.id, (node.composer_content ?? node.prompt ?? "").trim()) : () => void runGeneration(node.id)}
-            onStop={() => requestStopGeneration(node.id)}
-          />
-        </div>
-      );
+      const configModel = mode === "image" ? node.generation_model?.trim() || imageModel : mode === "text" ? nodeTextModel : mode === "audio" ? nodeAudioModel : configVideoParams.generation_video_model;
+      const configModels = mode === "image" ? imageModels : mode === "text" ? textModels : mode === "audio" ? audioModels : videoModels;
+      const configPromptTools = <CanvasNodeInputToolbar action={<CanvasGenerationFooter
+        running={running}
+        disabled={!running && (!canGenerate || !canGenerateWithModel || !canGenerateWithParameters)}
+        onGenerate={mode === "video" ? () => void runVideoGeneration(node.id, (node.composer_content ?? node.prompt ?? "").trim()) : () => void runGeneration(node.id)}
+        onStop={() => requestStopGeneration(node.id)}
+      />}>
+        <CanvasInlineModelSelect value={configModel} models={configModels} label="生成模型" onChange={(value) => updateNodeGenerationParameters(node.id, mode === "image" ? { generation_model: value } : mode === "text" ? { generation_text_model: value } : mode === "audio" ? { generation_audio_model: value } : canvasVideoModelPatch(value))} />
+        <CanvasParameterPopover icon={<SlidersHorizontal />} label="生成设置" summary={{ image: "图片", text: "文本", video: "视频", audio: "音频" }[mode]}>
+          <div className="space-y-3">
+            <label className="grid gap-1 text-xs"><span className="text-muted-foreground">生成模式</span><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></label>
+            {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
+          </div>
+        </CanvasParameterPopover>
+        {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="h-8 shrink-0 px-2.5 text-xs" /></> : null}
+        {mode === "video" ? <CanvasVideoPromptPanel relayTokenName={tokenNameForModel("video", configVideoParams.generation_video_model)} node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={running} generationBusy={false} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} /> : null}
+        <CanvasPromptLibrary onSelect={(value) => updateNodeComposerContent(node.id, value, true)} />
+      </CanvasNodeInputToolbar>;
+      return <CanvasConfigComposer
+        node={node}
+        inputs={inputs}
+        referenceCandidates={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current).map((reference) => ({ nodeID: reference.nodeID, type: reference.kind, title: reference.title, text: reference.text, url: reference.previewURL }))}
+        onReferenceSelect={(sourceID) => connectNodes(sourceID, node.id)}
+        promptTools={configPromptTools}
+        onComposerChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)}
+      />;
     }
     if (node.type === "text") {
       const model = node.generation_text_model?.trim() || textModel;
@@ -5023,7 +4983,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onNodesChange={replaceNodes}
         onNodesCommit={pushHistory}
         onViewportChange={updateViewport}
-        onNodeInputFocus={focusCanvasNodeInput}
         onSelectionChange={selectionChanged}
         onConnect={connectNodes}
         canConnect={canConnect}
@@ -5090,10 +5049,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {assetPickerMounted ? <Suspense fallback={(
         <Dialog open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
-          <DialogContent scrollable={false} className="flex h-[min(820px,92dvh)] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
+          <DialogContent scrollable={false} className="flex h-[min(760px,92dvh)] w-[min(94vw,960px)] max-w-none flex-col gap-0 overflow-hidden p-0">
             <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
               <DialogTitle>选择素材</DialogTitle>
-              <DialogDescription>从我的素材或公开素材库插入文本、图片、视频和音频。</DialogDescription>
+              <DialogDescription>选择文本、图片、视频或音频，点击即可插入画布。</DialogDescription>
             </DialogHeader>
             <LoadingState className="min-h-0 flex-1" label="正在加载素材选择器" />
           </DialogContent>
@@ -5199,12 +5158,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         <CanvasAngleDialog sourceURL={imageTool?.kind === "angle" ? imageTool.sourceURL : ""} open={imageTool?.kind === "angle"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={angleCanvasNode} />
       </> : null}
       {previewPanorama?.url ? (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewNodeID("")}>
+        <OverlaySurface className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewNodeID("")}>
           <div className="relative h-[85vh] w-[85vw] overflow-hidden rounded-xl" onClick={(event) => event.stopPropagation()}>
             <CanvasPanoramaViewer src={previewPanorama.url} alt={previewPanorama.title || "全景图"} proxyGeneratedPanorama={Boolean(previewPanorama.task_id && !previewPanorama.storage_key)} immersive />
             <Button variant="secondary" size="icon" className="absolute right-3 top-3 z-20 size-9" aria-label="关闭全景图" title="关闭全景图" onClick={() => setPreviewNodeID("")}><X /></Button>
           </div>
-        </div>
+        </OverlaySurface>
       ) : null}
       {previewVideo?.url ? <CanvasVideoPreview src={previewVideo.url} title={previewVideo.title || "视频"} onDownload={() => void downloadNodeImage(previewVideo.id)} onClose={() => setPreviewNodeID("")} /> : null}
       {imageLightboxMounted ? <ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} /> : null}
@@ -5437,7 +5396,8 @@ function CanvasRightClickMenu({ mediaNode, onInfo, onCopyContent, menu, onClose,
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight));
 
   return (
-    <ScrollArea data-canvas-context-menu data-canvas-no-pan className="fixed z-[100] max-h-[calc(100dvh-1rem)] w-52 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-card py-1.5 shadow-2xl" viewClass="" viewportClassName="overscroll-contain" style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+    <OverlaySurface kind="popover" className="fixed w-52 max-w-[calc(100vw-1rem)]" style={{ left, top }}>
+    <ScrollArea data-canvas-context-menu data-canvas-no-pan className="max-h-[calc(100dvh-1rem)] rounded-xl border border-border bg-card py-1.5 shadow-2xl" viewClass="" viewportClassName="overscroll-contain" onPointerDown={(event) => event.stopPropagation()}>
       {menu.type === "canvas" ? (
         <>
           <ContextMenuButton icon={<Type />} onClick={onAddText}>添加文字节点</ContextMenuButton>
@@ -5464,6 +5424,7 @@ function CanvasRightClickMenu({ mediaNode, onInfo, onCopyContent, menu, onClose,
         </>
       )}
     </ScrollArea>
+    </OverlaySurface>
   );
 }
 

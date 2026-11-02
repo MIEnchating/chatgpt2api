@@ -1,3 +1,7 @@
+:root {
+  --scrollbar-foreground: rgb(var(--text-muted-rgb));
+}
+
 .director-mobile-navigation {
   display: none;
 }

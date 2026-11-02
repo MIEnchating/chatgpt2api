@@ -296,7 +296,7 @@ export function PromptSourcesCard() {
               <Field>
                 <FieldLabel>JSON 格式</FieldLabel>
                 <div className="overflow-hidden rounded-lg border border-border bg-muted/40">
-                  <ScrollArea maxHeight={320} className="max-h-80" viewportClassName="overscroll-contain" always>
+                  <ScrollArea maxHeight={320} className="max-h-80" viewportClassName="overscroll-contain">
                     <pre className="min-w-max p-4 font-mono text-xs leading-6 text-foreground">{PROMPT_SOURCE_EXAMPLE}</pre>
                   </ScrollArea>
                 </div>

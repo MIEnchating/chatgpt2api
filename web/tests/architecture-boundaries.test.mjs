@@ -134,7 +134,7 @@ test("media uploads use storage-service metadata instead of decoding files again
   assert.doesNotMatch(assetForm, /inspectAssetFile/);
 });
 
-test("global dialogs use the shared scroll area instead of native scrollbars", async () => {
+test("global dialogs use the shared native scroll viewport", async () => {
   const source = await readFile(path.join(webRoot, "src/components/ui/dialog.tsx"), "utf8");
   assert.match(source, /import \{ ScrollArea \} from "@\/components\/ui\/scroll-area"/);
   assert.match(source, /scrollable \? \(/);

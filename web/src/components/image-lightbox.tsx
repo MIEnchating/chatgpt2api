@@ -1,5 +1,6 @@
 "use client";
 
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -70,6 +71,7 @@ export function ImageLightbox({
   onOpenChange,
   onIndexChange,
 }: ImageLightboxProps) {
+  const layer = useOverlayLayer("modal");
   const current = images[currentIndex];
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < images.length - 1;
@@ -254,11 +256,14 @@ export function ImageLightbox({
   if (!current) return null;
 
   return (
+    <OverlayLayerProvider value={layer}>
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-y-0 left-0 z-[1000] h-dvh w-screen bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay style={{ zIndex: layer - 1 }} className="fixed inset-y-0 left-0 h-dvh w-screen bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 left-0 z-[1001] flex h-dvh w-screen flex-col outline-none"
+          data-overlay-layer={layer}
+          style={{ zIndex: layer }}
+          className="fixed inset-y-0 left-0 flex h-dvh w-screen flex-col outline-none"
           tabIndex={-1}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
@@ -383,5 +388,6 @@ export function ImageLightbox({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+    </OverlayLayerProvider>
   );
 }

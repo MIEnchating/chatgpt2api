@@ -1,9 +1,11 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { LoaderCircle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function ReferenceFileUpload({ label, hint, accept, disabled = false, loading = false, remaining = 1, onFiles }: {
+export function ReferenceFileUpload({ label, hint, accept, disabled = false, loading = false, remaining = 1, icon, showLabel = true, onFiles }: {
+  icon?: ReactNode;
+  showLabel?: boolean;
   label: string;
   hint: string;
   accept: string;
@@ -67,11 +69,12 @@ export function ReferenceFileUpload({ label, hint, accept, disabled = false, loa
       onClick={() => inputRef.current?.click()}
       className={cn("group block w-full min-w-0 overflow-hidden rounded-xl border border-dashed border-border/70 bg-background text-muted-foreground transition-colors enabled:hover:border-brand/60 enabled:hover:bg-brand-soft/40 enabled:hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50", dragging && "border-brand bg-brand-soft text-brand ring-2 ring-brand/20")}
     >
-      <span className="flex h-16 flex-col items-center justify-center gap-1 bg-muted/20">
-        {loading || busy ? <LoaderCircle className="size-5 animate-spin" /> : <Plus className="size-5" />}
+      <span className={cn("flex flex-col items-center justify-center gap-1 bg-muted/20", showLabel ? "h-16" : "h-24 px-1")}>
+        {loading || busy ? <LoaderCircle className="size-5 animate-spin" /> : icon || <Plus className="size-5" />}
         <span className="text-[10px] leading-4">{loading || busy ? "正在上传…" : dragging ? "松开上传" : "点击或拖入"}</span>
+        {!showLabel ? <span className="text-[9px] leading-4 text-muted-foreground/65">{hint}</span> : null}
       </span>
-      <span className="block truncate px-2 py-1.5 text-[11px] font-medium">{label}</span>
+      {showLabel ? <span className="block truncate px-2 py-1.5 text-[11px] font-medium">{label}</span> : null}
     </button>
   </div>;
 }

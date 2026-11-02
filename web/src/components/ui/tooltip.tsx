@@ -4,6 +4,7 @@ import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "@/lib/utils";
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 
 const TOOLTIP_DELAY = 300;
 const TOOLTIP_NAVIGATION_KEYS = new Set(["Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"]);
@@ -37,7 +38,8 @@ function TooltipTrigger({ onFocus, ...props }: React.ComponentProps<typeof Toolt
   }} />;
 }
 
-function TooltipContent({ className, sideOffset = 10, children, ...props }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+function TooltipContent({ className, sideOffset = 10, children, style, ...props }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  const layer = useOverlayLayer("tooltip");
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
@@ -45,10 +47,12 @@ function TooltipContent({ className, sideOffset = 10, children, ...props }: Reac
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-[1100] max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-3 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          "pointer-events-auto max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-3 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           className,
         )}
         {...props}
+        data-overlay-layer={layer}
+        style={{ ...style, zIndex: layer }}
       >
         {children}
         <TooltipPrimitive.Arrow width={14} height={7} asChild>
@@ -225,6 +229,7 @@ function TooltipDomBridge() {
   if (!target || !anchorRect) return null;
 
   return (
+    <OverlayLayerProvider value={Number(target.closest<HTMLElement>("[data-overlay-layer]")?.dataset.overlayLayer || 0)}>
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <span
@@ -240,6 +245,7 @@ function TooltipDomBridge() {
       </TooltipTrigger>
       <TooltipContent>{target.dataset.tooltip}</TooltipContent>
     </Tooltip>
+    </OverlayLayerProvider>
   );
 }
 

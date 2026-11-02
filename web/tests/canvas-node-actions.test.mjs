@@ -225,9 +225,9 @@ test("canvas prompt editors keep scrollable input and parameter panels", () => {
   assert.match(promptScrollFrameSource, /<ScrollArea className="h-full"/);
   assert.match(promptScrollFrameSource, /querySelector\("textarea"\)/);
   assert.match(promptScrollFrameSource, /Math\.max\(frame\.clientHeight, textarea\.scrollHeight\)/);
-  assert.ok((pageSource.match(/className="h-0 min-h-0 flex-1"/g) || []).length >= 1);
-  assert.ok((specialNodesSource.match(/<AppScrollArea className="min-h-0 flex-1"/g) || []).length >= 2);
-  assert.match(configComposerSource, /canvas-prompt-editor-resize relative h-28/);
+  assert.ok((pageSource.match(/<CanvasNodeInputToolbar/g) || []).length >= 4);
+  assert.ok((specialNodesSource.match(/<CanvasNodeInputToolbar/g) || []).length >= 2);
+  assert.match(configComposerSource, /canvas-prompt-editor-resize relative min-h-0 flex-1/);
   assert.match(configComposerSource, /<ScrollArea className="h-full" viewportClassName="h-full"/);
   assert.doesNotMatch(pageSource, /canvas-prompt-resize/);
   assert.doesNotMatch(specialNodesSource, /canvas-prompt-resize/);
@@ -236,7 +236,7 @@ test("canvas prompt editors keep scrollable input and parameter panels", () => {
 test("config prompt references use a stable standalone picker and reliable deletion", () => {
   assert.match(configComposerSource, /createPortal\(/);
   assert.match(configComposerSource, /data-canvas-config-mention-menu/);
-  assert.match(configComposerSource, /className="pointer-events-auto fixed z-\[140\]/);
+  assert.match(configComposerSource, /useOverlayLayer\("popover"\)/);
   assert.match(configComposerSource, /composerCaretRect\(editor\)/);
   assert.match(configComposerSource, /remove\.addEventListener\("pointerdown", deleteReference\)/);
   assert.match(configComposerSource, /onChange\(serializeEditor\(editor\), true\)/);

@@ -1,3 +1,4 @@
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { FileText, Image as ImageIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
@@ -146,6 +147,7 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
   activeIndex: number;
   onSelect: (reference: CanvasResourceReference) => void;
 }) {
+  const layer = useOverlayLayer("popover");
   const selectedRef = useRef(false);
   const rect = textarea.getBoundingClientRect();
   const boundary = textarea.closest("[role='dialog']")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
@@ -163,11 +165,12 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
   };
 
   return createPortal(
-    <ScrollArea
+    <OverlayLayerProvider value={layer}>
+    <ScrollArea data-overlay-layer={layer}
       data-canvas-resource-mention-menu
-      className="pointer-events-auto fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      className="pointer-events-auto fixed max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       viewportClassName="p-1"
-      style={{ left, top }}
+      style={{ left, top, zIndex: layer }}
       onPointerDown={stop}
       onMouseDown={stop}
       onClick={(event) => event.stopPropagation()}
@@ -199,7 +202,8 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
           </span>
         </button>
       ))}
-    </ScrollArea>,
+    </ScrollArea>
+    </OverlayLayerProvider>,
     document.body,
   );
 }

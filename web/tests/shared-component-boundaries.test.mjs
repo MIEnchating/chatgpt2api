@@ -69,6 +69,45 @@ function event(target, currentTarget = target, key = "ArrowDown") {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test("select trigger closes once without a following touch click reopening it", () => {
+  for (const pointerType of ["mouse", "touch", "pen"]) {
+    const state = hooks();
+    const changes = [];
+    const context = { open: true, setOpen(value) { context.open = value; changes.push(value); } };
+    const react = { ...state.react, createContext: () => ({}), useContext: () => context };
+    const { SelectTrigger } = loadSource("../src/components/ui/select.tsx", { react });
+    const trigger = state.render(SelectTrigger);
+    assert.match(trigger.props.className, /pointer-events-auto/);
+    const down = { ...event(), button: 0, ctrlKey: false, pointerType };
+    trigger.props.onPointerDown(down);
+    assert.equal(down.defaultPrevented, true);
+    assert.deepEqual(changes, [false]);
+    const closed = state.render(SelectTrigger);
+    const click = event();
+    closed.props.onClick(click);
+    assert.equal(click.defaultPrevented, true, "Radix click-to-open must not run after closing");
+    assert.doesNotMatch(closed.props.className, /pointer-events-auto/);
+    const nextDown = { ...event(), button: 0, ctrlKey: false, pointerType };
+    closed.props.onPointerDown(nextDown);
+    const nextClick = event();
+    closed.props.onClick(nextClick);
+    assert.equal(nextDown.defaultPrevented, false);
+    assert.equal(nextClick.defaultPrevented, false, "a later interaction can open normally");
+  }
+});
+
+test("select trigger respects disabled state, consumer cancellation, and modified clicks", () => {
+  for (const mode of ["disabled", "cancelled", "right", "control"]) {
+    const state = hooks();
+    const changes = [];
+    const react = { ...state.react, createContext: () => ({}), useContext: () => ({ open: true, setOpen: (value) => changes.push(value) }) };
+    const { SelectTrigger } = loadSource("../src/components/ui/select.tsx", { react });
+    const trigger = state.render(SelectTrigger, { disabled: mode === "disabled", onPointerDown: (e) => { if (mode === "cancelled") e.preventDefault(); } });
+    trigger.props.onPointerDown({ ...event(), button: mode === "right" ? 2 : 0, ctrlKey: mode === "control" });
+    assert.deepEqual(changes, [], mode);
+  }
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -119,21 +158,20 @@ class KeyboardTarget {
   closest() { return this.control ? this : null; }
 }
 
-test("scroll containers preserve editing keys and consumer cancellation", () => {
+test("native scroll containers leave keyboard scrolling to the browser", () => {
   for (const mode of ["input", "editable", "cancelled", "consumer", "plain"]) {
     const state = hooks();
     const { ScrollArea } = loadSource("../src/components/ui/scroll-area.tsx", { react: state.react }, { HTMLElement: KeyboardTarget, Element: KeyboardTarget });
     let consumerCalls = 0;
     const root = state.render(ScrollArea, { onKeyDown(e) { consumerCalls++; if (mode === "consumer") e.preventDefault(); } });
-    let scrollCalls = 0;
-    root.props.children[0].props.ref({ scrollTo() { scrollCalls++; } });
+    const viewport = root.props.children;
+    assert.match(viewport.props.className, /overflow-auto/);
     const target = new KeyboardTarget(mode === "input", mode === "editable");
     const e = event(target);
     if (mode === "cancelled") e.preventDefault();
     root.props.onKeyDown(e);
-    assert.equal(e.defaultPrevented, mode === "plain" || mode === "cancelled" || mode === "consumer", mode);
+    assert.equal(e.defaultPrevented, mode === "cancelled" || mode === "consumer", mode);
     assert.equal(consumerCalls, 1, mode);
-    assert.equal(scrollCalls, mode === "plain" ? 1 : 0, mode);
   }
 });
 

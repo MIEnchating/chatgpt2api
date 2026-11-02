@@ -1,4 +1,4 @@
-import { AudioLines, FileText, Image as ImageIcon, LoaderCircle, Plus, Search, Video } from "lucide-react";
+import { AudioLines, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, LoaderCircle, Plus, Search, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -126,33 +126,32 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent scrollable={false} className="flex h-[min(820px,92dvh)] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
-            <DialogTitle>选择素材</DialogTitle>
-            <DialogDescription>从我的素材或公开素材库插入文本、图片、视频和音频。</DialogDescription>
+        <DialogContent scrollable={false} className="flex h-[min(760px,92dvh)] w-[min(94vw,960px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 gap-1 border-b border-border/60 px-4 py-4 pr-12 sm:px-6 sm:pr-14">
+            <DialogTitle className="text-lg">选择素材</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">选择文本、图片、视频或音频，点击即可插入画布。</DialogDescription>
           </DialogHeader>
-          <div className="flex shrink-0 items-center gap-1 border-b border-border px-5 pt-3 sm:px-6">
-            {([{"value":"my-assets","label":"我的素材"},{"value":"library","label":"素材库"}] as const).map((item) => (
-              <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("h-10 border-b-2 px-3 text-sm font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring", tab === item.value ? "border-brand text-brand" : "border-transparent hover:text-foreground")}>{item.label}</button>
-            ))}
-          </div>
-          <div className="grid shrink-0 gap-3 px-4 pt-3 sm:px-6">
-            <SearchInput value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
-            <div className="flex flex-wrap items-center justify-between gap-2">
-            <ScrollArea role="group" ariaLabel="素材类型" className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full gap-1" >
-              {kinds.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => setKind(item.value)} className={cn("h-8 shrink-0 rounded-md px-2.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring", kind === item.value && "bg-card text-foreground shadow-sm")}>{item.label}</button>)}
-            </ScrollArea>
-            {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : null}
+          <div className="shrink-0 space-y-3 border-b border-border/60 px-4 py-3 sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <div role="group" aria-label="素材来源" className="inline-flex shrink-0 gap-1 rounded-xl bg-muted/60 p-1">
+                {([{"value":"my-assets","label":"我的素材"},{"value":"library","label":"素材库"}] as const).map((item) => (
+                  <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("h-8 rounded-lg px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", tab === item.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>{item.label}</button>
+                ))}
+              </div>
+              {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs" onClick={() => setCreateOpen(true)}><Plus className="size-3.5" />新增素材</Button> : null}
             </div>
+            <div className="flex min-w-0 items-center gap-2">
+              <SearchInput containerClassName="min-w-0 flex-1" className="h-10 rounded-lg" value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
+              <Select value={groupFilter} onValueChange={setGroupFilter} disabled={!groupsLoaded}>
+                <SelectTrigger className="h-10 w-28 shrink-0 rounded-lg text-xs sm:w-36" aria-label="筛选素材标签"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="ungrouped">未标签</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <ScrollArea role="group" ariaLabel="素材类型" className="max-w-full" viewClass="flex w-max min-w-full gap-1">
+              {kinds.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => setKind(item.value)} className={cn("h-7 shrink-0 rounded-lg px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", kind === item.value ? "bg-brand-soft text-brand" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>{item.label}</button>)}
+            </ScrollArea>
           </div>
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 py-3 sm:px-6">
-            <Select value={groupFilter} onValueChange={setGroupFilter} disabled={!groupsLoaded}>
-              <SelectTrigger className="h-8 w-44" aria-label="筛选素材标签"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="ungrouped">未标签</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
-            </Select>
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground" role="status">{filtered.length} 个结果</span>
-          </div>
-          <ScrollArea className="min-h-0 flex-1 bg-muted/15" viewportClassName="px-4 py-4 sm:px-6">
+          <ScrollArea className="min-h-0 flex-1 bg-muted/15" viewportClassName="overscroll-contain px-4 py-4 sm:px-6">
             {(loading || remoteLoading) && !tabAssets.length ? (
               <div className="grid h-72 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
             ) : visible.length ? (
@@ -163,13 +162,14 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
               <EmptyState icon={Search} title={query || kind !== "all" || groupFilter !== "all" ? "没有匹配的素材" : "暂无可用素材"} description={query || kind !== "all" || groupFilter !== "all" ? "调整关键词、类型或标签后再试。" : "新增素材后，可以从这里插入画布。"} action={query || kind !== "all" || groupFilter !== "all" ? <Button variant="outline" size="sm" onClick={() => { setQuery(""); setKind("all"); setGroupFilter("all"); }}>清除筛选</Button> : tab === "my-assets" ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : undefined} />
             )}
           </ScrollArea>
-          {filtered.length > PAGE_SIZE ? (
-            <DialogFooter flush className="flex-row justify-center text-xs text-muted-foreground sm:justify-center">
-              <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</Button>
-              <span>第 {page} / {totalPages} 页</span>
-              <Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>下一页</Button>
-            </DialogFooter>
-          ) : null}
+          <DialogFooter flush className="min-h-14 flex-row items-center justify-between gap-2 px-4 py-2.5 text-xs text-muted-foreground sm:justify-between sm:px-6">
+            <span className="shrink-0 tabular-nums" role="status">{filtered.length} 个结果</span>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="上一页" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="size-4" /></Button>
+              <span className="min-w-14 text-center tabular-nums">第 {page} / {totalPages} 页</span>
+              <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="下一页" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}><ChevronRight className="size-4" /></Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <AssetForm
@@ -188,19 +188,32 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
 function CanvasAssetCard({ asset, onInsert }: { asset: MyAsset; onInsert: () => void }) {
   const Icon = asset.kind === "image" ? ImageIcon : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : FileText;
   const preview = asset.coverUrl || asset.url || "";
+  const kindLabel = { text: "文本", image: "图片", video: "视频", audio: "音频" }[asset.kind];
   return (
-    <button type="button" aria-label={`插入素材：${asset.title}`} className="group min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left outline-none transition hover:border-brand/40 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring" onClick={onInsert}>
-      <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
-        {asset.kind === "image" && preview ? <AuthenticatedImage src={preview} alt={asset.title} className="size-full object-cover" /> : null}
-        {asset.kind === "video" && asset.coverUrl ? <AuthenticatedImage src={asset.coverUrl} alt={asset.title} className="size-full object-cover" /> : null}
-        {asset.kind === "video" && !asset.coverUrl && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : null}
-        {asset.kind === "text" ? <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content}</p> : null}
-        {asset.kind === "audio" || (!preview && asset.kind !== "text") ? <Icon className="size-9 text-muted-foreground" /> : null}
+    <button type="button" aria-label={`插入素材：${asset.title}`} title={asset.title} className="group min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card text-left outline-none transition-[border-color,box-shadow] hover:border-brand/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring" onClick={onInsert}>
+      <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden border-b border-border/40 bg-muted/35">
+        {asset.kind === "image" && preview ? <PickerMediaPreview key={preview} src={preview} kind="image" title={asset.title} /> : null}
+        {asset.kind === "video" && asset.coverUrl && asset.coverUrl !== asset.url ? <PickerMediaPreview key={asset.coverUrl} src={asset.coverUrl} kind="image" title={asset.title} /> : null}
+        {asset.kind === "video" && (!asset.coverUrl || asset.coverUrl === asset.url) && asset.url ? <PickerMediaPreview key={asset.url} src={asset.url} kind="video" title={asset.title} /> : null}
+        {asset.kind === "text" ? <p className="line-clamp-4 w-full whitespace-pre-wrap break-words px-3 text-xs leading-5 text-muted-foreground">{asset.content || "暂无文本内容"}</p> : null}
+        {asset.kind === "audio" || (!preview && asset.kind !== "text") ? <span className="grid size-12 place-items-center rounded-2xl bg-brand-soft text-brand"><Icon className="size-6" /></span> : null}
+        <span className="pointer-events-none absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-card/90 text-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Plus className="size-3.5" /></span>
       </div>
-      <div className="flex items-center justify-between gap-2 p-2.5">
-        <span className="truncate text-xs font-medium">{asset.title}</span>
-        <span className="shrink-0 text-[10px] text-muted-foreground">{{ text: "文本", image: "图片", video: "视频", audio: "音频" }[asset.kind]}</span>
+      <div className="space-y-1.5 p-2.5 sm:p-3">
+        <span className="line-clamp-2 min-h-8 break-words text-xs font-medium leading-4">{asset.title || "未命名素材"}</span>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Icon className="size-3" />{kindLabel}</span>
       </div>
     </button>
   );
+}
+
+function PickerMediaPreview({ src, kind, title }: { src: string; kind: "image" | "video"; title: string }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const mediaClass = cn("absolute inset-0 size-full object-cover", status !== "loaded" && "opacity-0");
+  return <>
+    {status !== "loaded" ? <span role="status" aria-label={status === "loading" ? "正在加载缩略图" : "缩略图加载失败"} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-muted-foreground">
+      {status === "loading" ? <><span className="absolute inset-0 animate-pulse bg-muted/40 motion-reduce:animate-none" /><LoaderCircle className="relative size-5 animate-spin text-brand motion-reduce:animate-none" /><span className="relative text-[10px]">加载中</span></> : <><ImageIcon className="size-5" /><span className="text-[10px]">缩略图加载失败</span></>}
+    </span> : null}
+    {kind === "image" ? <AuthenticatedImage src={src} alt={title} loading="lazy" onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} /> : <video src={`${src}#t=0.1`} muted playsInline preload="metadata" onLoadedData={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} />}
+  </>;
 }

@@ -23,7 +23,7 @@ export function useCanvasCodexApproval() {
       signal.addEventListener("abort", cancel, { once: true });
     });
   }
-  const dialog = <Dialog open={!!pending} onOpenChange={(open) => !open && settle({ accepted: false })}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{pending?.title || "Codex 请求确认"}</DialogTitle><DialogDescription>确认当前请求后，Codex 才会继续操作。你也可以直接输入自己的答案。</DialogDescription></DialogHeader>
+  const dialog = <Dialog open={!!pending} onOpenChange={(open) => !open && settle({ accepted: false })}><DialogContent className="max-h-[85dvh] sm:max-w-xl"><DialogHeader><DialogTitle>{pending?.title || "Codex 请求确认"}</DialogTitle><DialogDescription>确认当前请求后，Codex 才会继续操作。你也可以直接输入自己的答案。</DialogDescription></DialogHeader>
     {pending?.description && <ScrollArea className="max-h-56 rounded-lg bg-muted/50 text-sm" viewClass="whitespace-pre-wrap break-words p-3">{pending.description}</ScrollArea>}
     {pending?.questions ? pending.questions.map((question) => <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}</legend><CanvasAgentAnswerInput options={question.options || []} value={answers[question.id] || ""} onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))} onSelect={(value) => {
       const next = { ...answers, [question.id]: value };

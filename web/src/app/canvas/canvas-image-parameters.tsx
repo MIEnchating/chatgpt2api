@@ -1,3 +1,4 @@
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -36,6 +37,7 @@ type CanvasImageParameterPatch = Partial<Pick<CanvasNode,
 >>;
 
 export function CanvasImageParameterPopover({ node, imageModel, imageModels = [], onChange, expanded = false, showModel = true, showSize = true }: { node: CanvasNode; imageModel: string; imageModels?: string[]; onChange: (patch: CanvasImageParameterPatch) => void; expanded?: boolean; showModel?: boolean; showSize?: boolean }) {
+  const layer = useOverlayLayer("popover");
   const buttonRef = useRef<HTMLSpanElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -134,7 +136,7 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
       <span ref={buttonRef} className="inline-flex">
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" aria-expanded={open} aria-label="打开图片参数" className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background", open && "border-brand-border bg-brand-soft text-brand")} onClick={() => setOpen((value) => !value)}>
+            <button type="button" aria-expanded={open} aria-label="打开图片参数" className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background", open && "border-brand-border bg-brand-soft text-brand")} onClick={() => setOpen((value) => !value)} onKeyDown={(event) => { if (open && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
               <SlidersHorizontal className="size-3.5 text-brand" />
               <span className="font-semibold">{sizeLabel}</span>
               <span className="text-muted-foreground">·</span>
@@ -145,14 +147,17 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
         </Tooltip>
       </span>
       {open && buttonRect && panelPlacement ? createPortal(
+        <OverlayLayerProvider value={layer}>
         <ScrollArea
+          data-overlay-layer={layer}
           ref={panelRef}
           data-canvas-parameter-panel
           data-canvas-no-pan
           role="dialog"
           ariaLabel="图片参数"
-          className="fixed z-[1200] rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-elevated)]"
+          className="pointer-events-auto fixed rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-elevated)]"
           style={{
+            zIndex: layer,
             left: panelPlacement.left,
             width: panelPlacement.width,
             maxHeight: panelPlacement.maxHeight,
@@ -172,7 +177,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
           }}
         >
         <div className="p-3 pr-4">{parameterFields}</div>
-        </ScrollArea>,
+        </ScrollArea>
+        </OverlayLayerProvider>,
         document.body,
       ) : null}
     </>

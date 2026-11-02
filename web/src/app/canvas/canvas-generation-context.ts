@@ -183,6 +183,7 @@ function canvasVideoFrameReferences(
   sourceNode: CanvasNode | undefined,
   inputs: ReturnType<typeof canvasGenerationInputs>,
 ) {
+  if (sourceNode?.generation_video_reference_mode === "reference") return { firstFrameURL: null, lastFrameURL: null };
   const imageURLByNodeID = new Map(inputs.filter((input) => input.type === "image" && input.url).map((input) => [input.nodeID, input.url as string]));
   return {
     firstFrameURL: sourceNode?.generation_video_first_frame_node_id
@@ -190,7 +191,7 @@ function canvasVideoFrameReferences(
       : null,
     lastFrameURL: sourceNode?.generation_video_last_frame_node_id
       ? imageURLByNodeID.get(sourceNode.generation_video_last_frame_node_id) || null
-      : null,
+      : sourceNode?.generation_video_last_frame_url?.trim() || null,
   };
 }
 

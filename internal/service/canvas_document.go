@@ -126,6 +126,7 @@ type CanvasNode struct {
 	GenerationVideoReferenceURLs         []string             `json:"generation_video_reference_urls,omitempty"`
 	GenerationVideoReferenceAudio        []string             `json:"generation_video_reference_audio_urls,omitempty"`
 	GenerationVideoFirstFrameNodeID      string               `json:"generation_video_first_frame_node_id,omitempty"`
+	GenerationVideoLastFrameURL          string               `json:"generation_video_last_frame_url,omitempty"`
 	GenerationVideoLastFrameNodeID       string               `json:"generation_video_last_frame_node_id,omitempty"`
 	GenerationMode                       string               `json:"generation_mode,omitempty"`
 	GenerationTextModel                  string               `json:"generation_text_model,omitempty"`
@@ -457,6 +458,7 @@ func canvasDocumentStorageObjectIDs(document CanvasDocument) []string {
 		add(node.StorageKey)
 		add(node.URL)
 		add(node.ThumbnailURL)
+		add(node.GenerationVideoLastFrameURL)
 		for _, values := range [][]string{node.GenerationReferenceURLs, node.GenerationVideoReferenceImages, node.GenerationVideoReferenceURLs, node.GenerationVideoReferenceAudio} {
 			for _, value := range values {
 				add(value)
@@ -1420,6 +1422,10 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.GenerationVideoReferenceMode = strings.ToLower(strings.TrimSpace(node.GenerationVideoReferenceMode))
 	node.GenerationVideoFirstFrameNodeID = strings.TrimSpace(node.GenerationVideoFirstFrameNodeID)
 	node.GenerationVideoLastFrameNodeID = strings.TrimSpace(node.GenerationVideoLastFrameNodeID)
+	node.GenerationVideoLastFrameURL = strings.TrimSpace(node.GenerationVideoLastFrameURL)
+	if len(node.GenerationVideoLastFrameURL) > canvasDocumentMaxURL {
+		return CanvasNode{}, invalidCanvasDocument("video last frame URL is invalid")
+	}
 	node.GenerationMode = strings.ToLower(strings.TrimSpace(node.GenerationMode))
 	node.GenerationTextModel = strings.TrimSpace(node.GenerationTextModel)
 	node.GenerationAudioModel = strings.TrimSpace(node.GenerationAudioModel)

@@ -4,6 +4,7 @@ import { Check, ChevronDown } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 
 type SelectOpenContextValue = {
   open: boolean;
@@ -57,9 +58,12 @@ function SelectTrigger({
   className,
   children,
   onPointerDown,
+  onClick,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
   const select = React.useContext(SelectOpenContext);
+  const closingPointerRef = React.useRef(false);
 
   return (
     <SelectPrimitive.Trigger
@@ -67,13 +71,28 @@ function SelectTrigger({
       className={cn(
         "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm whitespace-nowrap shadow-xs outline-none transition-[border-color,box-shadow,background-color] duration-150 enabled:hover:border-ring/40 enabled:hover:bg-accent/30 data-[state=open]:border-foreground/25 data-[state=open]:bg-accent/30 motion-reduce:transition-none data-[placeholder]:text-muted-foreground disabled:cursor-not-allowed disabled:bg-muted/50 disabled:opacity-60 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive aria-invalid:focus-visible:border-destructive aria-invalid:focus-visible:ring-destructive/20 [&>span]:min-w-0 [&>span]:truncate [&>span]:text-left [&>span>span]:whitespace-nowrap",
         className,
+        select?.open && "pointer-events-auto",
       )}
       onPointerDown={(event) => {
+        closingPointerRef.current = false;
         onPointerDown?.(event);
-        if (!event.defaultPrevented && select?.open) {
+        if (!event.defaultPrevented && !props.disabled && event.button === 0 && !event.ctrlKey && select?.open) {
+          closingPointerRef.current = true;
           event.preventDefault();
           select.setOpen(false);
         }
+      }}
+      onClick={(event) => {
+        onClick?.(event);
+        // Radix opens touch/pen triggers on click, after our pointerdown closes them.
+        if (closingPointerRef.current) {
+          closingPointerRef.current = false;
+          event.preventDefault();
+        }
+      }}
+      onKeyDown={(event) => {
+        closingPointerRef.current = false;
+        onKeyDown?.(event);
       }}
       {...props}
     >
@@ -90,14 +109,17 @@ function SelectContent({
   children,
   position = "popper",
   sideOffset = 6,
+  style,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const layer = useOverlayLayer("select");
   return (
+    <OverlayLayerProvider value={layer}>
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          "relative z-[1300] max-w-[calc(100vw-1rem)] min-w-[8rem] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-popover)] origin-[var(--radix-select-content-transform-origin)] data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 motion-reduce:animate-none",
+          "relative max-w-[calc(100vw-1rem)] min-w-[8rem] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-popover)] origin-[var(--radix-select-content-transform-origin)] data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 motion-reduce:animate-none",
           position === "popper" &&
             "w-[var(--radix-select-trigger-width)] min-w-[min(12rem,calc(100vw-1rem))]",
           className,
@@ -106,10 +128,11 @@ function SelectContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         {...props}
+        data-overlay-layer={layer}
+        style={{ ...style, zIndex: layer }}
       >
         <ScrollArea
           viewportTag={SelectPrimitive.Viewport}
-          manageKeyboard={false}
           maxHeight="min(24rem, calc(var(--radix-select-content-available-height) - 0.5rem))"
           className="w-full"
           viewportClassName="w-full overscroll-contain p-1"
@@ -119,6 +142,7 @@ function SelectContent({
         </ScrollArea>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
+    </OverlayLayerProvider>
   );
 }
 

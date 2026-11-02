@@ -17,7 +17,7 @@ const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
 	  "generation_video_parameters", "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",
 	  "generation_video_audio", "generation_video_watermark", "generation_video_reference_mode",
 	  "generation_video_reference_image_urls", "generation_video_reference_urls", "generation_video_reference_audio_urls",
-	  "generation_video_first_frame_node_id", "generation_video_last_frame_node_id", "generation_mode", "generation_text_model",
+	  "generation_video_first_frame_node_id", "generation_video_last_frame_node_id", "generation_video_last_frame_url", "generation_mode", "generation_text_model",
   "generation_audio_model", "generation_audio_voice", "generation_audio_format", "generation_audio_speed",
   "generation_audio_instructions", "generation_audio_grok_voice", "generation_audio_grok_language",
   "generation_audio_grok_format", "generation_audio_grok_speed", "generation_audio_glm_voice",
@@ -84,6 +84,7 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.generation_video_reference_image_urls !== undefined && (!Array.isArray(source.generation_video_reference_image_urls) || source.generation_video_reference_image_urls.some((url) => typeof url !== "string"))) return null;
     if (source.generation_video_reference_audio_urls !== undefined && (!Array.isArray(source.generation_video_reference_audio_urls) || source.generation_video_reference_audio_urls.some((url) => typeof url !== "string"))) return null;
     if (source.generation_video_first_frame_node_id !== undefined && typeof source.generation_video_first_frame_node_id !== "string") return null;
+    if (source.generation_video_last_frame_url !== undefined && typeof source.generation_video_last_frame_url !== "string") return null;
     if (source.generation_video_last_frame_node_id !== undefined && typeof source.generation_video_last_frame_node_id !== "string") return null;
 	    ids.add(id);
     nodes.push({ ...source, id, type, x: source.x, y: source.y, width: source.width, height: source.height, scale_x: source.scale_x, scale_y: source.scale_y } as CanvasNode);

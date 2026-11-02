@@ -497,14 +497,14 @@ func TestCanvasDocumentServiceFindsStorageObjectReferences(t *testing.T) {
 		Title: "Stored media",
 		Nodes: []CanvasNode{
 			{ID: "image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1, URL: "/api/files/image-a/content", StorageKey: "server:image-a"},
-			{ID: "text", Type: "text", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1},
+			{ID: "text", Type: "text", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1, GenerationVideoLastFrameURL: "/api/files/tail/content"},
 		},
 		AgentSessions: json.RawMessage(`[{"references":[{"storageKey":"server:session-image"}]}]`),
 	})
 	if err != nil {
 		t.Fatalf("saveCanvas() error = %v", err)
 	}
-	for _, storageKey := range []string{"server:image-a", "server:session-image"} {
+	for _, storageKey := range []string{"server:image-a", "server:session-image", "server:tail"} {
 		referenced, err := canvas.ReferencesStorageObject("owner-a", storageKey)
 		if err != nil || !referenced {
 			t.Fatalf("ReferencesStorageObject(%q) = (%v, %v)", storageKey, referenced, err)
@@ -1235,12 +1235,13 @@ func TestCanvasDocumentServiceStoresVideoNodeBindings(t *testing.T) {
 		ID: "video", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
 		GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720", GenerationVideoSeconds: 8, GenerationVideoResolution: "1080p",
 		ExcludeUpstreamText: true, GenerationVideoFirstFrameNodeID: " first ", GenerationVideoLastFrameNodeID: " last ",
+		GenerationVideoLastFrameURL: " /api/files/tail/content ",
 	}}})
 	if err != nil {
 		t.Fatalf("Save(video bindings) error = %v", err)
 	}
 	node := document.Nodes[0]
-	if !node.ExcludeUpstreamText || node.GenerationVideoFirstFrameNodeID != "first" || node.GenerationVideoLastFrameNodeID != "last" {
+	if !node.ExcludeUpstreamText || node.GenerationVideoFirstFrameNodeID != "first" || node.GenerationVideoLastFrameNodeID != "last" || node.GenerationVideoLastFrameURL != "/api/files/tail/content" {
 		t.Fatalf("frame bindings = %#v", node)
 	}
 }

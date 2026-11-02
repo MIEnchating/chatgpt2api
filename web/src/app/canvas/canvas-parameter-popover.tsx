@@ -43,7 +43,7 @@ export function CanvasParameterPopover({ icon, label, summary, width = 380, disa
         data-canvas-no-pan
         role="dialog"
         aria-label={label}
-        className="z-[1200] max-w-[calc(100vw-1rem)] p-3"
+        className="max-w-[calc(100vw-1rem)] rounded-2xl border-border/70 p-4"
         style={{ width }}
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
@@ -51,7 +51,11 @@ export function CanvasParameterPopover({ icon, label, summary, width = 380, disa
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
       >
-        <div className="pr-1">{children}</div>
+        <div className="mb-4 flex items-center gap-2 border-b border-border/60 pb-3">
+          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand [&_svg]:size-4">{icon}</span>
+          <span className="text-sm font-semibold">{label}</span>
+        </div>
+        <div className="min-w-0">{children}</div>
       </PopoverContent>
     </Popover>
   );

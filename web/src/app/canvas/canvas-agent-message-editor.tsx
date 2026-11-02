@@ -24,7 +24,7 @@ export function CanvasAgentMessageEditor({ text, disabled, onSave, onCancel }: {
   }, []);
   function save() { if (draft.trim() && !disabled) onSave(draft.trim()); }
   return <form data-agent-message-editor className="w-full min-w-0 rounded-xl border border-brand/25 bg-brand-soft p-2" onSubmit={(event) => { event.preventDefault(); save(); }}>
-    <ScrollArea className="max-h-72" manageKeyboard={false}>
+    <ScrollArea className="max-h-72">
       <Textarea ref={inputRef} aria-label="编辑消息内容" value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;

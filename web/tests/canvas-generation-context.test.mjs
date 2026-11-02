@@ -472,3 +472,13 @@ test("retry fallback finds the nearest upstream generation configuration", () =>
   assert.equal(findCanvasRetryConfigurationNode("child", nodes, connections)?.id, "config");
   assert.equal(findCanvasRetryConfigurationNode("config", nodes, connections), null);
 });
+
+test("uploaded last frames survive context rebuilding and are excluded in reference mode", () => {
+  const video = node("video", "video", { generation_video_last_frame_url: " /api/storage/objects/tail/content " });
+  const context = buildCanvasGenerationContext(video.id, [video], [], "test");
+  assert.equal(context.lastFrameURL, "/api/storage/objects/tail/content");
+  assert.deepEqual(context.referenceImageURLs, []);
+  const reference = { ...video, generation_video_reference_mode: "reference" };
+  assert.equal(buildCanvasGenerationContext(reference.id, [reference], [], "test").lastFrameURL, null);
+  assert.equal(reference.generation_video_last_frame_url, video.generation_video_last_frame_url);
+});

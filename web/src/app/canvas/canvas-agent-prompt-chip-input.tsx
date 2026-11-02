@@ -1,3 +1,4 @@
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -343,6 +344,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
 }
 
 function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRect | null; references: CanvasResourceReference[]; activeIndex: number; onSelect: (reference: CanvasResourceReference) => void }) {
+  const layer = useOverlayLayer("popover");
   const selectedRef = useRef(false);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
 
@@ -366,7 +368,8 @@ function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRec
   const top = clamp(showAbove ? anchor.top - gap - menuHeight : anchor.bottom + gap, 8, window.innerHeight - menuHeight - 8);
 
   return createPortal(
-    <ScrollArea data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl" viewClass="" viewportClassName="overscroll-contain" manageKeyboard={false} style={{ left, top }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
+    <OverlayLayerProvider value={layer}>
+    <ScrollArea data-overlay-layer={layer} data-canvas-resource-mention-menu="true" className="pointer-events-auto fixed max-h-56 w-64 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl" viewClass="" viewportClassName="overscroll-contain" style={{ left, top, zIndex: layer }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
       {references.map((reference, index) => (
         <button
           key={reference.id}
@@ -388,7 +391,8 @@ function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRec
           <span className="min-w-0 flex-1"><span className="block font-medium">{reference.label}</span><span className="block truncate opacity-65">{reference.text || reference.title}</span></span>
         </button>
       ))}
-    </ScrollArea>,
+    </ScrollArea>
+    </OverlayLayerProvider>,
     document.body,
   );
 }

@@ -1,5 +1,6 @@
 import { CircleAlert, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentNotice } from "@/components/agent/agent-notice";
 import type { CanvasAssistantSession } from "./agent/canvas-agent-types";
 import type { CanvasDocument } from "@/services/api/canvas";
@@ -19,7 +20,7 @@ export function CanvasAgentResumeNotice({ session, run, busy, onResume }: {
   if (!failed && !interrupted && !incomplete) return null;
   const reason = matchingRun?.error || (failed ? latest.text : "");
   return <AgentNotice data-agent-resume-notice className="mb-2 shrink-0">
-    <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" /><div className="min-w-0 flex-1"><p className="font-medium">{failed ? "任务遇到错误，尚未完成" : interrupted ? "服务重启，任务已暂停" : "任务已暂停，仍有步骤未完成"}</p>{reason ? <p className="mt-1 max-h-20 overflow-auto break-words leading-5 text-muted-foreground">{reason}</p> : null}<p className="mt-1 leading-5 text-muted-foreground">已有结果已保留，继续时会先核对执行记录和剩余步骤。</p></div></div>
+    <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" /><div className="min-w-0 flex-1"><p className="font-medium">{failed ? "任务遇到错误，尚未完成" : interrupted ? "服务重启，任务已暂停" : "任务已暂停，仍有步骤未完成"}</p>{reason ? <ScrollArea className="mt-1 max-h-20" viewportClassName="overscroll-contain pr-2"><p className="break-words leading-5 text-muted-foreground">{reason}</p></ScrollArea> : null}<p className="mt-1 leading-5 text-muted-foreground">已有结果已保留，继续时会先核对执行记录和剩余步骤。</p></div></div>
     <Button type="button" size="sm" variant="outline" className="mt-2 w-full" onClick={onResume}><Play className="size-3.5" />继续未完成任务</Button>
   </AgentNotice>;
 }

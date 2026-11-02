@@ -82,7 +82,6 @@ type CanvasEngineProps = {
   onConnectionDropEmpty: (origin: ConnectionOrigin, position: Point, menu: Point) => void;
   onTitleChange: (nodeID: string, title: string) => void;
   onNodePanelToggle: (nodeID: string) => void;
-  onNodeInputFocus: (nodeID: string) => void;
   onNodeMediaLoad: (nodeID: string, width: number, height: number, bytes?: number, sourceURL?: string) => void;
   onViewImage: (nodeID: string) => void;
   onFocusNode: (nodeID: string) => void;
@@ -128,7 +127,6 @@ export function CanvasEngine({
   onConnectionDropEmpty: onConnectionDropEmptyProp,
   onTitleChange: onTitleChangeProp,
   onNodePanelToggle,
-  onNodeInputFocus,
   onNodeMediaLoad: onNodeMediaLoadProp,
   onViewImage: onViewImageProp,
   onFocusNode: onFocusNodeProp,
@@ -821,7 +819,7 @@ export function CanvasEngine({
         ) : null}
       </div>
       {actionNode && actionNode.type !== "group" && renderNodeQuickActions ? <CanvasNodeToolbar key={actionNode.id} node={actionNode} viewport={viewport} expanded={editorOpen} editor={
-        actionNode.type !== "director" ? <CanvasNodeEditor open={editorOpen} title={actionNode.title || NODE_TYPE_BADGE[actionNode.type].label} onClose={() => onNodePanelToggle(actionNode.id)} onFocus={() => onNodeInputFocus(actionNode.id)}>
+        actionNode.type !== "director" ? <CanvasNodeEditor open={editorOpen} title={actionNode.title || NODE_TYPE_BADGE[actionNode.type].label} onClose={() => onNodePanelToggle(actionNode.id)}>
           {renderNodePanel(actionNode)}
         </CanvasNodeEditor> : null
       }>

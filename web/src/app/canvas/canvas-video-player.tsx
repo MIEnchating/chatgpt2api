@@ -1,3 +1,4 @@
+import { OverlaySurface } from "@/components/ui/overlay-layer";
 import { Download, Maximize, Maximize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -161,7 +162,7 @@ export function CanvasVideoPreview({
   }
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
+    <OverlaySurface className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
       <div
         ref={playerRef}
         className="relative flex max-h-[85vh] max-w-[85vw] items-center justify-center overflow-hidden rounded-xl bg-black shadow-2xl fullscreen:h-screen fullscreen:w-screen fullscreen:max-h-none fullscreen:max-w-none fullscreen:rounded-none [&:fullscreen>video]:h-screen [&:fullscreen>video]:w-screen [&:fullscreen>video]:max-h-none [&:fullscreen>video]:max-w-none"
@@ -281,6 +282,6 @@ export function CanvasVideoPreview({
           </div>
         </div>
       </div>
-    </div>
+    </OverlaySurface>
   );
 }

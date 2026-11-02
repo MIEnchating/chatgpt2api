@@ -40,7 +40,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { copyWithToast } from "@/lib/clipboard-text";
-import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 
 type PromptMarketSourceFilter = "all" | PromptMarketSourceId;
@@ -138,7 +138,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [favoriteBusyIds, setFavoriteBusyIds] = useState<Set<string>>(() => new Set());
   const [saveBusyIds, setSaveBusyIds] = useState<Set<string>>(() => new Set());
   const [selectedPrompt, setSelectedPrompt] = useState<BananaPrompt | null>(null);
-  const scrollAreaRef = useRef<ScrollAreaHandle>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(open);
   const favoriteRequestLifecycleRef = useRef(new PromptFavoriteRequestLifecycle());
   openRef.current = open;
@@ -576,7 +576,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
           ) : null}
         </div>
 
-        <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 px-4 py-3 sm:px-6 sm:py-4">
+        <ScrollArea viewportRef={scrollAreaRef} className="min-h-0 flex-1 px-4 py-3 sm:px-6 sm:py-4">
           {favoriteFilter !== "favorites" && isLoading ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
               <LoaderCircle className="size-6 animate-spin text-brand" />

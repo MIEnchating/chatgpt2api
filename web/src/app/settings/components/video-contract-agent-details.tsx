@@ -76,7 +76,7 @@ export function VideoContractAgentDetails({ entries, running }: { entries: Video
         </ol> : null}
       </section>
       <Dialog open={Boolean(selected)} onOpenChange={value => { if (!value) setSelectedID(null); }}>
-        <DialogContent className="z-[70] w-[min(calc(100%-2rem),48rem)]" overlayClassName="z-[60]">
+        <DialogContent className="w-[min(calc(100%-2rem),48rem)]">
           <DialogHeader>
             <DialogTitle>{selected ? videoContractToolLabels[selected.name] || selected.name : "工具调用"} · 原始数据</DialogTitle>
             <DialogDescription>查看本次工具调用的参数和返回内容，敏感值已由服务端隐藏。</DialogDescription>

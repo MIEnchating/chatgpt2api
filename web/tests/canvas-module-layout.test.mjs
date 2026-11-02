@@ -49,7 +49,7 @@ test("canvas node, asset, and prompt search share clearable, keyboard-aware sear
 });
 
 test("asset picker keeps its results scrollable and distinguishes empty filters from an empty library", () => {
-  assert.match(picker, /h-\[min\(820px,92dvh\)\]/);
+  assert.match(picker, /h-\[min\(760px,92dvh\)\]/);
   assert.match(picker, /<SearchInput/);
   assert.match(picker, /aria-pressed=\{kind === item\.value\}/);
   assert.match(picker, /role="status">\{filtered\.length\} 个结果/);

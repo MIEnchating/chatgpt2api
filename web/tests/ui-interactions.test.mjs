@@ -49,33 +49,28 @@ const workflowTaskDialogSource = workflowSource.slice(
   workflowSource.indexOf("function WorkflowEditor"),
 );
 
-test("custom scroll areas keep native wheel momentum inside the canvas", () => {
+test("native scroll areas keep wheel input inside the canvas", () => {
   assert.match(scrollAreaSource, /event\.stopPropagation\(\)/);
-  assert.doesNotMatch(scrollAreaSource, /root\.closest\("\[data-canvas-export-root\]"\)/);
-  assert.doesNotMatch(scrollAreaSource, /wrap\.scrollTop \+ deltaY/);
-  assert.doesNotMatch(scrollAreaSource, /event\.preventDefault\(\);\s*wrap\.scrollTop/);
+  assert.match(scrollAreaSource, /root\.addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.doesNotMatch(scrollAreaSource, /event\.preventDefault\(\)/);
 });
 
-test("custom scrollbar dragging follows native scroll state once per frame", () => {
-  assert.match(scrollAreaSource, /scrollFrameRef/);
-  assert.match(scrollAreaSource, /requestAnimationFrame\(\(\) => \{\s*scrollFrameRef\.current = null;\s*setScroll/);
-  assert.match(scrollAreaSource, /wrap\.scrollTo\(\{ top: position\.scrollTop, left: position\.scrollLeft, behavior: "auto" \}\)/);
-  assert.match(scrollAreaSource, /transform: `translate3d/);
-  assert.match(scrollAreaSource, /touch-none select-none transition-opacity duration-150/);
+test("scroll areas expose one browser-owned viewport", () => {
+  assert.match(scrollAreaSource, /data-slot="scroll-area-viewport"/);
+  assert.match(scrollAreaSource, /flex-1 overflow-auto outline-none/);
+  assert.match(scrollAreaSource, /onScroll=\{onScroll\}/);
+  assert.doesNotMatch(scrollAreaSource, /scrollbar-width:none|webkit-scrollbar\]:hidden|verticalThumb|horizontalThumb/);
 });
 
-test("scrollbar tracks page like a native scrollbar and fade after input", () => {
-  assert.match(scrollAreaSource, /metrics\.viewportHeight \* 0\.9/);
-  assert.match(scrollAreaSource, /metrics\.viewportWidth \* 0\.9/);
-  assert.match(scrollAreaSource, /scheduleScrollbarHide/);
-  assert.match(scrollAreaSource, /}, 700\)/);
-  assert.match(scrollAreaSource, /SCROLL_OVERFLOW_TOLERANCE_PX = 1/);
-  assert.match(scrollAreaSource, /measuredSize - viewportSize <= SCROLL_OVERFLOW_TOLERANCE_PX \? viewportSize : measuredSize/);
+test("native scroll viewports retain height limits and external refs", () => {
+  assert.match(scrollAreaSource, /ref=\{viewportRef\}/);
+  assert.match(scrollAreaSource, /maxHeight: maxHeight \?\? wrapStyle\?\.maxHeight/);
+  assert.doesNotMatch(scrollAreaSource, /ResizeObserver|requestAnimationFrame|PointerCapture/);
 });
 
 test("an open select closes when its trigger is pressed again", () => {
   assert.match(selectSource, /SelectOpenContext/);
-  assert.match(selectSource, /if \(!event\.defaultPrevented && select\?\.open\)/);
+  assert.match(selectSource, /!event\.defaultPrevented && !props\.disabled && event\.button === 0 && !event\.ctrlKey && select\?\.open/);
   assert.match(selectSource, /event\.preventDefault\(\);\s*select\.setOpen\(false\)/);
   assert.match(selectSource, /transition-transform duration-200 ease-in-out/);
   assert.match(selectSource, /select\?\.open && "rotate-180"/);
@@ -166,10 +161,9 @@ test("dialog close buttons stay fixed while the body scrollbar updates", () => {
   assert.doesNotMatch(dialogSource, /data-scroll-overflow-y=true[^\n]*dialog-auto-close/);
   assert.match(dialogSource, /transition-colors[^"]*sm:top-4 sm:right-4/);
   assert.doesNotMatch(dialogSource, /transition-\[right,background-color,opacity\]/);
-  assert.match(scrollAreaSource, /data-scroll-overflow-y=\{verticalOverflow > 0 \|\| undefined\}/);
   assert.match(dialogSource, /min-w-0 shrink-0 flex flex-col gap-2 pr-10 text-left/);
   assert.match(dialogSource, /min-w-0 text-xl leading-7 font-semibold \[overflow-wrap:anywhere\]/);
-  assert.match(scrollAreaSource, /const effectiveAlways = always/);
+  assert.match(scrollAreaSource, /flex-1 overflow-auto outline-none/);
 });
 
 test("dialog scrolling is limited to the body between its fixed header and footer", () => {
@@ -179,7 +173,7 @@ test("dialog scrolling is limited to the body between its fixed header and foote
   assert.match(dialogSource, /data-slot="dialog-body"/);
   assert.match(dialogSource, /\{headers\}[\s\S]*?<ScrollArea[\s\S]*?\{body\}[\s\S]*?\{footers\}/);
   assert.doesNotMatch(scrollAreaSource, /closest\('\[data-slot="dialog-content"\]'\)/);
-  assert.match(scrollAreaSource, /showScrollbar\(\);\s*scheduleScrollbarHide\(\)/);
+  assert.match(scrollAreaSource, /onScroll=\{onScroll\}/);
 });
 
 test("dialog footers share compact inset and full-width fixed styles", () => {
@@ -401,7 +395,7 @@ test("video contracts support page selection and ordered bulk operations", () =>
 });
 
 test("large dialog pagination and actions use the shared footer layouts", () => {
-  assert.match(canvasAssetPickerSource, /<DialogFooter flush className="flex-row justify-center/);
+  assert.match(canvasAssetPickerSource, /<DialogFooter flush className="[^"]*flex-row[^"]*justify-between/);
   assert.match(promptSourceContentDialogSource, /<DialogFooter flush className="flex-row flex-wrap justify-center/);
   assert.match(assetDisplaySource, /<DialogFooter>/);
   assert.doesNotMatch(assetDisplaySource, /flex justify-end gap-2 border-t border-border pt-4/);

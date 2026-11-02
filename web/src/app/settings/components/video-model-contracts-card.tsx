@@ -1720,9 +1720,9 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </div>
             </div>
           </DialogHeader>
-          <div role="group" className="flex shrink-0 gap-1 overflow-x-auto rounded-lg bg-muted/40 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="视频配置分区">
+          <ScrollArea role="group" className="shrink-0 rounded-lg bg-muted/40 p-1" viewClass="flex w-max min-w-full gap-1" aria-label="视频配置分区">
             {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <button key={key} type="button" aria-pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors sm:flex-1 sm:text-sm", key === "preview" && "lg:hidden", editorSection === key ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
-          </div>
+          </ScrollArea>
           <fieldset disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(320px,22rem)] lg:grid-rows-[minmax(0,1fr)]">
             <ScrollArea
               data-video-contract-details

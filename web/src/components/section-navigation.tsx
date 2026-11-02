@@ -55,7 +55,7 @@ export function SectionNavigation<T extends string>({
           const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
           buttons[next]?.focus();
         }}
-      ><ScrollArea viewportRef={navigationRef} manageKeyboard={false} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 p-1 lg:grid lg:w-full">
+      ><ScrollArea viewportRef={navigationRef} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 p-1 lg:grid lg:w-full">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.id === activeId;

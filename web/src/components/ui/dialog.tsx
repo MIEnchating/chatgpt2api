@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -27,7 +28,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 backdrop-blur-[2px]",
+        "fixed inset-0 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 backdrop-blur-[2px]",
         className,
       )}
       {...props}
@@ -50,10 +51,12 @@ function DialogContent({
   showCloseButton = true,
   scrollable = true,
   overlayClassName,
+  style,
   onCloseAutoFocus,
   onInteractOutside,
   ...props
 }: DialogContentProps) {
+  const layer = useOverlayLayer("modal");
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
   const dialogChildren = flattenDialogChildren(children);
   const headers = dialogChildren.filter(isDialogHeaderElement);
@@ -63,8 +66,9 @@ function DialogContent({
   );
 
   return (
+    <OverlayLayerProvider value={layer}>
     <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
+      <DialogOverlay className={overlayClassName} style={{ zIndex: layer - 1 }} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         tabIndex={-1}
@@ -87,10 +91,12 @@ function DialogContent({
           }
         }}
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-5 overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-5 overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}
+        data-overlay-layer={layer}
+        style={{ ...style, zIndex: layer }}
       >
         {scrollable ? (
           <>
@@ -98,7 +104,7 @@ function DialogContent({
             {body.length > 0 ? (
               <ScrollArea
                 data-slot="dialog-body"
-                className="-mx-1 min-h-0 min-w-0 flex-1 px-1 data-[scroll-overflow-y=true]:pr-4"
+                className="-mx-1 min-h-0 min-w-0 flex-1 px-1"
                 viewportClassName="overscroll-contain py-1"
                 viewClass="grid min-w-0 gap-4"
               >
@@ -116,6 +122,7 @@ function DialogContent({
         ) : null}
       </DialogPrimitive.Content>
     </DialogPortal>
+    </OverlayLayerProvider>
   );
 }
 

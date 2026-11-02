@@ -7,6 +7,7 @@ import { setCanvasAgentProcessing } from "./agent/canvas-agent-timing";
 import { isCanvasAgentSession } from "./agent/canvas-agent-sessions";
 import { answerBackendWorkflowReview, runBackendCanvasAgent, runBackendCanvasTool, stopCanvasAgentRun } from "./agent/canvas-agent-backend";
 import { copyClipboardText } from "@/lib/clipboard-text";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import { useContentStableNodes } from "@/app/canvas/use-content-stable-nodes";
 import { CanvasAgentMessageEditor } from "./canvas-agent-message-editor";
 import { useCanvasAgentScroll } from "./use-canvas-agent-scroll";
@@ -91,7 +92,7 @@ type InitialRequestBlockerNotice = {
 
 const CanvasAgentAssetPicker = lazy(() => import("./canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));
 
-export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: liveNodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: {
+type CanvasAgentPanelProps = {
   backendRun?: CanvasDocument["agent_run"];
   onBackendDocument: (document: CanvasDocument) => void;
   open: boolean;
@@ -117,7 +118,36 @@ export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: l
   onInitialRequestConsumed?: () => void;
   onFocusNode?: (nodeID: string) => void;
   onClose: () => void;
-}) {
+};
+
+// Keep viewport updates outside the conversation tree without freezing event handlers.
+export function CanvasAgentPanel(props: CanvasAgentPanelProps) {
+  const onBackendDocument = useStableCallback(props.onBackendDocument);
+  const onModelChange = useStableCallback(props.onModelChange);
+  const onDisplayModeChange = useStableCallback(props.onDisplayModeChange);
+  const getAgentContext = useStableCallback(props.getAgentContext);
+  const onSessionsChange = useStableCallback(props.onSessionsChange);
+  const onPersist = useStableCallback(props.onPersist);
+  const onAgentConfigChange = useStableCallback(props.onAgentConfigChange);
+  const onExecuteAction = useStableCallback(props.onExecuteAction);
+  const onInitialRequestConsumed = useStableCallback((...args: Parameters<NonNullable<CanvasAgentPanelProps["onInitialRequestConsumed"]>>) => props.onInitialRequestConsumed?.(...args));
+  const onFocusNode = useStableCallback((...args: Parameters<NonNullable<CanvasAgentPanelProps["onFocusNode"]>>) => props.onFocusNode?.(...args));
+  const onClose = useStableCallback(props.onClose);
+  const onImageModelChange = useStableCallback(props.mediaModels.image.onChange);
+  const onVideoModelChange = useStableCallback(props.mediaModels.video.onChange);
+  const { value: image, options: imageOptions } = props.mediaModels.image;
+  const { value: video, options: videoOptions } = props.mediaModels.video;
+  const mediaModels = useMemo(() => ({
+    image: { value: image, options: imageOptions, onChange: onImageModelChange },
+    video: { value: video, options: videoOptions, onChange: onVideoModelChange },
+  }), [image, imageOptions, video, videoOptions, onImageModelChange, onVideoModelChange]);
+  return <MemoizedCanvasAgentPanel {...props} mediaModels={mediaModels}
+    onBackendDocument={onBackendDocument} onModelChange={onModelChange} onDisplayModeChange={onDisplayModeChange} getAgentContext={getAgentContext} onSessionsChange={onSessionsChange} onPersist={onPersist} onAgentConfigChange={onAgentConfigChange} onExecuteAction={onExecuteAction} onInitialRequestConsumed={props.onInitialRequestConsumed ? onInitialRequestConsumed : undefined} onFocusNode={props.onFocusNode ? onFocusNode : undefined} onClose={onClose} />;
+}
+
+const MemoizedCanvasAgentPanel = memo(CanvasAgentPanelContent);
+
+function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: liveNodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: CanvasAgentPanelProps) {
   const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
   const relayTokenName = model ? tokenNameForModel("text", model) : "";
   const [initialSession] = useState(createSession);
@@ -679,7 +709,7 @@ export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: l
       <Button size="sm" className="h-7 gap-1 px-2 text-[11px]" variant="ghost" aria-label="删除所选对话" disabled={busy || !checkedSessionIDs.length} onClick={() => setDeleteSessionIDs(checkedSessionIDs)}><Trash2 className="size-3" />删除所选</Button>
       <Button size="sm" className="h-7 px-2 text-[11px]" variant="ghost" aria-label="删除全部对话" disabled={busy || !historySessions.length} onClick={() => setDeleteSessionIDs(historySessions.map((item) => item.id))}>清空</Button>
     </div> : null}
-    <div className="relative flex min-h-0 flex-1 flex-col"><div data-agent-message-scroll tabIndex={0} ref={messageScroll.viewportRef} className="mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 pr-3"><div ref={messageScroll.contentRef} className="space-y-3">{view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { if (busy || abortRef.current) return; if (id !== activeSessionIDRef.current) { setInput(""); setEditingUserMessageID(""); draftAttachments.clear(); setComposerReferenceNodeIDs([]); setRemovedReferenceNodeIDs(new Set()); } commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <AssistantMessages protocolMessages={activeSession.protocolMessages} messages={activeSession.messages} nodes={nodes} onFocusNode={onFocusNode} onRetry={retryMessage} onEdit={editUserMessage} editingMessageID={editingUserMessageID} onCancelEdit={cancelMessageEdit} onSaveEdit={(message, text) => { void submit(text, message.references || [], [], { editUserMessageID: message.id }); }} editDisabled={busy || Boolean(activeSession.agentState.pendingQuestion)} busy={busy} pendingQuestion={activeSession.agentState.pendingQuestion?.question} /> : <div className={cn("flex flex-col items-center justify-center px-4 text-center", agentMode === "codex" && !codex.connected ? "py-3" : "min-h-[min(18rem,46cqh)] py-5")}><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">{agentMode === "codex" ? <Terminal className="size-5" /> : <Sparkles className="size-5" />}</div><div className="mt-3 text-sm font-medium">{agentMode === "codex" && !codex.connected ? "与 Codex 一起创作" : "从一个想法开始"}</div><div className="mt-1.5 max-w-[260px] text-xs leading-5 text-muted-foreground">{agentMode === "codex" && !codex.connected ? "连接本地 Codex，让想法变成画布上的内容。你也可以先写下创作目标。" : "描述创作目标，Agent 会与你沟通并直接操作当前画布"}</div>{agentMode === "codex" && !codex.connected ? <Button type="button" size="sm" variant="outline" className="mt-4 gap-1.5 text-xs" onClick={() => setCodexSettingsOpen(true)}><Plug className="size-3.5" />{codex.connecting ? "查看连接进度" : "连接 Codex"}</Button> : null}{!input.trim() && (agentMode !== "codex" || codex.connected) ? <div className="mt-4 grid w-full gap-2 text-left">{["帮我整理当前画布的创作思路", "规划一组风格统一的品牌海报", "把当前创意拆解成分镜方案"].map((suggestion) => <button key={suggestion} type="button" className="rounded-lg bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setInput(suggestion); requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]')?.focus()); }}>{suggestion}</button>)}</div> : null}</div>}</div></div>
+    <div className="relative flex min-h-0 flex-1 flex-col"><ScrollArea data-agent-message-scroll tabindex={0} viewportRef={messageScroll.viewportRef} className="mx-1 min-h-0 flex-1 w-auto" viewportClassName="overscroll-contain p-2 pr-3"><div ref={messageScroll.contentRef} className="space-y-3">{view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { if (busy || abortRef.current) return; if (id !== activeSessionIDRef.current) { setInput(""); setEditingUserMessageID(""); draftAttachments.clear(); setComposerReferenceNodeIDs([]); setRemovedReferenceNodeIDs(new Set()); } commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <AssistantMessages protocolMessages={activeSession.protocolMessages} messages={activeSession.messages} nodes={nodes} onFocusNode={onFocusNode} onRetry={retryMessage} onEdit={editUserMessage} editingMessageID={editingUserMessageID} onCancelEdit={cancelMessageEdit} onSaveEdit={(message, text) => { void submit(text, message.references || [], [], { editUserMessageID: message.id }); }} editDisabled={busy || Boolean(activeSession.agentState.pendingQuestion)} busy={busy} pendingQuestion={activeSession.agentState.pendingQuestion?.question} /> : <div className={cn("flex flex-col items-center justify-center px-4 text-center", agentMode === "codex" && !codex.connected ? "py-3" : "min-h-[min(18rem,46cqh)] py-5")}><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">{agentMode === "codex" ? <Terminal className="size-5" /> : <Sparkles className="size-5" />}</div><div className="mt-3 text-sm font-medium">{agentMode === "codex" && !codex.connected ? "与 Codex 一起创作" : "从一个想法开始"}</div><div className="mt-1.5 max-w-[260px] text-xs leading-5 text-muted-foreground">{agentMode === "codex" && !codex.connected ? "连接本地 Codex，让想法变成画布上的内容。你也可以先写下创作目标。" : "描述创作目标，Agent 会与你沟通并直接操作当前画布"}</div>{agentMode === "codex" && !codex.connected ? <Button type="button" size="sm" variant="outline" className="mt-4 gap-1.5 text-xs" onClick={() => setCodexSettingsOpen(true)}><Plug className="size-3.5" />{codex.connecting ? "查看连接进度" : "连接 Codex"}</Button> : null}{!input.trim() && (agentMode !== "codex" || codex.connected) ? <div className="mt-4 grid w-full gap-2 text-left">{["帮我整理当前画布的创作思路", "规划一组风格统一的品牌海报", "把当前创意拆解成分镜方案"].map((suggestion) => <button key={suggestion} type="button" className="rounded-lg bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setInput(suggestion); requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]')?.focus()); }}>{suggestion}</button>)}</div> : null}</div>}</div></ScrollArea>
       {view === "chat" && messageScroll.showLatest ? <Button type="button" size="sm" variant="outline" className="absolute bottom-3 left-1/2 z-20 h-8 -translate-x-1/2 gap-1.5 rounded-full bg-card shadow-md" onClick={messageScroll.scrollToLatest}><ArrowDown className="size-3.5" />回到最新</Button> : null}
     </div>
     {view === "chat" ? <div data-agent-input-area className="flex min-h-0 max-h-[70%] shrink-0 flex-col p-3 pt-1">
@@ -688,7 +718,7 @@ export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: l
       {!conversationReply && !busy && !activeSession.agentState.pendingQuestion && (waitingReason || (activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成"))) && !needsMediaChoice ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status" className="flex items-center gap-1.5"><Clock className="size-3.5" />{waitingReason || mediaWaitingReason.replace("待手动生成", "已暂缓生成")}</p>{activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成") ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => chooseMediaGeneration("立即生成")}>生成待处理节点</Button> : null}</div> : null}
       {pendingDelete ? <div className="mb-2 overflow-hidden rounded-lg border"><div className="px-3 py-2"><p className="truncate text-xs font-medium">删除“{pendingDelete.title}”？</p><p className="mt-1 text-[11px] text-muted-foreground">相关连线和任务记录将按现有逻辑清理</p></div><div className="grid grid-cols-2 border-t"><button type="button" className="h-8 text-xs hover:bg-muted" onClick={() => settleDeleteConfirmation(false)}>取消</button><button type="button" className="h-8 border-l text-xs font-medium text-destructive hover:bg-muted" onClick={() => settleDeleteConfirmation(true)}>确认删除</button></div></div> : null}
       {activeSession.agentState.pendingQuestion ? <CanvasAgentQuestionCard key={`${activeSession.id}:${activeSession.agentState.pendingQuestion.id}`} question={activeSession.agentState.pendingQuestion} busy={busy} active={open && view === "chat"} onAnswer={(answer) => submit(answer, undefined, composerReferenceNodeIDs, { mediaGenerationChoice: canvasAgentQuestionMediaChoice(activeSession.agentState.pendingQuestion!, answer) }) === "started"} onCancel={cancelQuestion} /> : needsMediaChoice && !editingUserMessageID ? <CanvasAgentQuestionCard key={`${activeSession.id}:media-generation`} question={canvasAgentMediaGenerationQuestion(`${activeSession.id}:media-generation`, Number(mediaWaitingReason.match(/(\d+) 个节点/)?.[1] || 1))} busy={busy} active={open && view === "chat" && !editingUserMessageID} onAnswer={chooseMediaGeneration} /> : <CanvasAgentComposer onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); if (!busy) void draftAttachments.upload(Array.from(event.dataTransfer.files)); }}>
-        <ScrollArea native data-agent-composer-scroll className="min-h-0 max-h-[min(220px,24cqh)]" viewportClassName="overscroll-contain pr-2" manageKeyboard={false}>
+        <ScrollArea data-agent-composer-scroll className="min-h-0 max-h-[min(220px,24cqh)]" viewportClassName="overscroll-contain pr-2">
         <CanvasAgentPromptChipInput
           value={input}
           references={resourceReferences}
@@ -729,8 +759,8 @@ export function CanvasAgentPanel({ backendRun, onBackendDocument, open, nodes: l
 
 const ASSISTANT_MARKDOWN_COMPONENTS: Components = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4" />,
-  pre: ({ node: _node, ...props }) => <ScrollArea native className="my-2 rounded-lg bg-muted" viewClass="w-max min-w-full"><pre {...props} /></ScrollArea>,
-  table: ({ node: _node, ...props }) => <ScrollArea native className="my-2" viewClass="w-max min-w-full"><table {...props} /></ScrollArea>,
+  pre: ({ node: _node, ...props }) => <ScrollArea className="my-2 rounded-lg bg-muted" viewClass="w-max min-w-full"><pre {...props} /></ScrollArea>,
+  table: ({ node: _node, ...props }) => <ScrollArea className="my-2" viewClass="w-max min-w-full"><table {...props} /></ScrollArea>,
 };
 
 const AssistantMarkdown = memo(function AssistantMarkdown({ children, components = ASSISTANT_MARKDOWN_COMPONENTS }: { children: string; components?: Components }) {

@@ -1,12 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ComponentProps, MouseEvent as ReactMouseEvent } from "react";
-import { AudioLines, Image as ImageIcon, LoaderCircle, Upload } from "lucide-react";
+import { AudioLines, Image as ImageIcon, LoaderCircle, SlidersHorizontal, Upload } from "lucide-react";
 
 import { AutoDLWorkflowFields } from "@/components/autodl-workflow-fields";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loading-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AppScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchGrokTTSVoices, type GrokTTSVoice } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
@@ -16,7 +15,8 @@ import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
-import { CanvasParameterHeader } from "@/app/canvas/canvas-parameter-header";
+import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
+import { CanvasNodeInputToolbar } from "@/app/canvas/canvas-node-input-toolbar";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
   AUDIO_FORMAT_OPTIONS,
@@ -57,20 +57,16 @@ export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSel
   const model = node.generation_audio_model || models[0] || "";
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
-        <div className="overflow-hidden">
-          <PromptTextareaFrame className="h-32 min-h-24">
-            <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-          </PromptTextareaFrame>
-          <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
-            <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
-            <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
-          </div>
-        </div>
-        <div className="space-y-3"><CanvasParameterHeader summary={model || undefined} /><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div>
-      </AppScrollArea>
-      <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} secondaryAction={{ label: node.url ? "替换音频" : "上传音频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <PromptTextareaFrame className="min-h-0 flex-1">
+        <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={() => onPromptChange(prompt, true)} placeholder="输入需要合成的旁白、对白或音频内容" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 shadow-none focus-visible:ring-0" />
+      </PromptTextareaFrame>
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} onGenerate={onGenerate} onStop={onStop} />}>
+        <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
+        <CanvasParameterPopover icon={<SlidersHorizontal />} label="音频参数"><div className="space-y-3"><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div></CanvasParameterPopover>
+        <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
+        <button type="button" aria-label={node.url ? "替换音频" : "上传音频"} title={node.url ? "替换音频" : "上传音频"} disabled={uploading || running} onClick={onUpload} className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-50">{uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}</button>
+      </CanvasNodeInputToolbar>
     </div>
   );
 }
@@ -128,19 +124,16 @@ export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReference
   const prompt = node.panorama_source_prompt ?? node.prompt ?? "";
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
-        <div className="overflow-hidden">
-          <PromptTextareaFrame className="h-36 min-h-28">
-            <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-          </PromptTextareaFrame>
-          <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} /><CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /></div>
-        </div>
-        <div>
-          <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} expanded showModel={false} showSize={false} />
-        </div>
-      </AppScrollArea>
-      <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} secondaryAction={{ label: "替换图片", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <PromptTextareaFrame className="min-h-0 flex-1">
+        <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 shadow-none focus-visible:ring-0" />
+      </PromptTextareaFrame>
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} onGenerate={onGenerate} onStop={onStop} />}>
+        <CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} />
+        <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} showModel={false} showSize={false} />
+        <CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} />
+        <button type="button" aria-label="替换图片" title="替换图片" disabled={uploading || running} onClick={onUpload} className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-50">{uploading ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}</button>
+      </CanvasNodeInputToolbar>
     </div>
   );
 }

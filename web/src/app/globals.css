@@ -1,19 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "/native-scrollbars.css";
 
 @custom-variant dark (&:is(.dark *));
 
-/* Style browser-owned scrollbars without replacing native scrolling or hit targets. */
-[data-canvas-agent-panel] :where([data-agent-message-scroll], [data-slot="scroll-area-viewport"], textarea, pre) {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
-}
-
-[data-canvas-agent-panel] :where([data-agent-message-scroll], [data-slot="scroll-area-viewport"], textarea, pre):is(:hover, :focus-visible) {
-  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent) transparent;
-}
-
-[data-canvas-agent-panel] [data-agent-message-scroll] {
+[data-canvas-agent-panel] [data-agent-message-scroll] > [data-slot="scroll-area-viewport"] {
   scrollbar-gutter: stable;
 }
 
@@ -265,7 +256,6 @@ input[type="number"]::-webkit-outer-spin-button {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
   background: rgba(24, 26, 30, 0.98);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   transform: translateX(50%);
@@ -370,26 +360,6 @@ input[type="number"]::-webkit-outer-spin-button {
   }
 }
 
-@keyframes scroll-area-fade-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes scroll-area-fade-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -439,6 +409,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 :root {
+  --scrollbar-foreground: var(--muted-foreground);
   --page-section-gap: 0.75rem;
   --page-padding: 0.75rem;
   --theme-transition-x: 50vw;
@@ -819,15 +790,6 @@ input[type="number"]::-webkit-outer-spin-button {
 
   .elevated-shadow {
     box-shadow: var(--shadow-elevated);
-  }
-
-  .hide-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none;
   }
 
   .canvas-grid {

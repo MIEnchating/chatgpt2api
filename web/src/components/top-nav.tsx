@@ -299,7 +299,7 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
         <nav
           aria-label="主导航"
           className="col-span-2 row-start-2 -mx-1 min-w-0 xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch"
-        ><ScrollArea viewportRef={navigationRef} manageKeyboard={false} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 px-1 pb-0.5 xl:gap-1.5 xl:py-1 [@media(min-width:1280px)]:justify-center">
+        ><ScrollArea viewportRef={navigationRef} viewportClassName="overscroll-x-contain scroll-px-1 touch-pan-x" viewClass="flex w-max min-w-full gap-1 px-1 pb-0.5 xl:gap-1.5 xl:py-1 [@media(min-width:1280px)]:justify-center">
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} onPreloadRoute={onPreloadRoute} />
           ))}

@@ -1,5 +1,7 @@
 "use client";
 
+import { OverlaySurface } from "@/components/ui/overlay-layer";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type CanvasDirectorPanorama = {
@@ -144,13 +146,13 @@ export function CanvasDirector({
   }, [panoramas, postToDirector, ready]);
 
   return (
-    <div data-canvas-director-workspace className="fixed inset-0 z-[2000] bg-black">
+    <OverlaySurface data-canvas-director-workspace className="fixed inset-0 bg-black">
       <iframe
         ref={iframeRef}
         title="3D导演台"
         src="/director/index.html"
         className="block size-full border-0"
       />
-    </div>
+    </OverlaySurface>
   );
 }
