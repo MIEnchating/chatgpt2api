@@ -43,9 +43,8 @@ func (s *plainStore) SaveJSONDocument(string, any) error {
 
 func shortenTaskStorageTimeout(t *testing.T) {
 	t.Helper()
-	original := taskStorageTimeout
-	taskStorageTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { taskStorageTimeout = original })
+	original := taskStorageTimeout.Swap(int64(50 * time.Millisecond))
+	t.Cleanup(func() { taskStorageTimeout.Store(original) })
 }
 
 func TestBoundedStorageHelpersReturnWhenTheDatabaseHangs(t *testing.T) {

@@ -3,13 +3,18 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"chatgpt2api/internal/storage"
 )
 
 // taskStorageTimeout bounds one task-document read or write so a slow database cannot hold the task lock indefinitely.
-var taskStorageTimeout = 10 * time.Second
+var taskStorageTimeout = func() *atomic.Int64 {
+	timeout := &atomic.Int64{}
+	timeout.Store(int64(10 * time.Second))
+	return timeout
+}()
 
 func jsonDocumentStoreFromBackend(backend storage.Backend) storage.JSONDocumentBackend {
 	if store, ok := backend.(storage.JSONDocumentBackend); ok {
@@ -48,7 +53,7 @@ func loadStoredJSONBounded(store storage.JSONDocumentBackend, name string) (any,
 	if !ok {
 		return store.LoadJSONDocument(name)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), taskStorageTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(taskStorageTimeout.Load()))
 	defer cancel()
 	return contextStore.LoadJSONDocumentContext(ctx, name)
 }
@@ -62,7 +67,7 @@ func saveStoredJSONBounded(store storage.JSONDocumentBackend, name string, value
 	if !ok {
 		return store.SaveJSONDocument(name, value)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), taskStorageTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(taskStorageTimeout.Load()))
 	defer cancel()
 	return contextStore.SaveJSONDocumentContext(ctx, name, value)
 }
