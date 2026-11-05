@@ -6,7 +6,7 @@ import type { StoredImage } from "@/lib/image-conversation-types";
 export async function fetchStoredMedia(image: StoredImage, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const fallback = image.videoUrl || (image.b64_json
-    ? `data:image/${image.outputFormat || "png"};base64,${image.b64_json}`
+    ? `data:${image.outputFormat === "svg" ? "image/svg+xml" : `image/${image.outputFormat || "png"}`};base64,${image.b64_json}`
     : (image.path ? getManagedImageUrlFromPath(image.path) : "") || image.url || "");
   const url = await resolveStorageObjectURL(image.storageKey, fallback, signal);
   if (!url) throw new Error("媒体文件没有可用地址");

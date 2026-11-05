@@ -243,7 +243,7 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	if len(imageData) > util.MaxRasterImageEncodedBytes {
 		return "", errors.New("image data is too large")
 	}
-	info, err := util.InspectRasterImage(imageData, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(imageData)
 	if err != nil {
 		return "", fmt.Errorf("invalid image data: %w", err)
 	}
@@ -721,7 +721,7 @@ func (s *ImageService) ImageBytes(value string, scope ImageAccessScope) ([]byte,
 	if len(data) > util.MaxRasterImageEncodedBytes {
 		return nil, "", errors.New("stored image is too large")
 	}
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(data)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid stored image: %w", err)
 	}
@@ -995,7 +995,7 @@ func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	if len(data) > util.MaxRasterImageEncodedBytes {
 		return map[string]any{}
 	}
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(data)
 	if err != nil {
 		return map[string]any{}
 	}
@@ -2115,6 +2115,14 @@ func imageDimensionsFromValues(widthValue, heightValue any) (int, int, bool) {
 }
 
 func imageFileDimensions(path string) (int, int, bool) {
+	if strings.EqualFold(filepath.Ext(path), ".svg") {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return 0, 0, false
+		}
+		info, err := util.InspectGeneratedImage(data)
+		return info.Width, info.Height, err == nil
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, false

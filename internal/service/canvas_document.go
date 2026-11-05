@@ -1,6 +1,7 @@
 package service
 
 import (
+	"chatgpt2api/internal/model"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -72,95 +73,96 @@ type CanvasCameraControl struct {
 }
 
 type CanvasNode struct {
-	GenerationWorkflowInputs             map[string]any       `json:"generation_workflow_inputs,omitempty"`
-	ID                                   string               `json:"id"`
-	Type                                 string               `json:"type"`
-	X                                    float64              `json:"x"`
-	Y                                    float64              `json:"y"`
-	Width                                float64              `json:"width"`
-	Height                               float64              `json:"height"`
-	FontSize                             int                  `json:"font_size,omitempty"`
-	NaturalWidth                         int                  `json:"natural_width,omitempty"`
-	NaturalHeight                        int                  `json:"natural_height,omitempty"`
-	Bytes                                int64                `json:"bytes,omitempty"`
-	FreeResize                           bool                 `json:"free_resize,omitempty"`
-	ScaleX                               float64              `json:"scale_x"`
-	ScaleY                               float64              `json:"scale_y"`
-	Angle                                float64              `json:"angle,omitempty"`
-	URL                                  string               `json:"url,omitempty"`
-	StorageKey                           string               `json:"storage_key,omitempty"`
-	ThumbnailURL                         string               `json:"thumbnail_url,omitempty"`
-	Title                                string               `json:"title,omitempty"`
-	Prompt                               string               `json:"prompt,omitempty"`
-	ComposerContent                      *string              `json:"composer_content,omitempty"`
-	ExcludeUpstreamText                  bool                 `json:"exclude_upstream_text,omitempty"`
-	GroupID                              string               `json:"group_id,omitempty"`
-	TaskID                               string               `json:"task_id,omitempty"`
-	GenerationModel                      string               `json:"generation_model,omitempty"`
-	GenerationSize                       string               `json:"generation_size,omitempty"`
-	GenerationResolution                 string               `json:"generation_resolution,omitempty"`
-	GenerationQuality                    string               `json:"generation_quality,omitempty"`
-	GenerationCount                      int                  `json:"generation_count,omitempty"`
-	GenerationOutputFormat               string               `json:"generation_output_format,omitempty"`
-	GenerationOutputCompression          *int                 `json:"generation_output_compression,omitempty"`
-	GenerationStream                     *bool                `json:"generation_stream,omitempty"`
-	GenerationPartialImages              int                  `json:"generation_partial_images,omitempty"`
-	GenerationSnapToMultiple16           *bool                `json:"generation_snap_to_multiple_16,omitempty"`
-	GenerationResponseFormatB64JSON      bool                 `json:"generation_response_format_b64_json,omitempty"`
-	GenerationCodexCLICompatibility      bool                 `json:"generation_codex_cli_compatibility,omitempty"`
-	GenerationStatus                     string               `json:"generation_status,omitempty"`
-	GenerationStartedAt                  int64                `json:"generation_started_at,omitempty"`
-	GenerationProgress                   float64              `json:"generation_progress,omitempty"`
-	GenerationError                      string               `json:"generation_error,omitempty"`
-	GenerationType                       string               `json:"generation_type,omitempty"`
-	GenerationReferenceURLs              []string             `json:"generation_reference_urls,omitempty"`
-	GenerationVideoModel                 string               `json:"generation_video_model,omitempty"`
-	GenerationVideoSize                  string               `json:"generation_video_size,omitempty"`
-	GenerationVideoParameters            map[string]any       `json:"generation_video_parameters,omitempty"`
-	GenerationVideoSeconds               int                  `json:"generation_video_seconds,omitempty"`
-	GenerationVideoResolution            string               `json:"generation_video_resolution,omitempty"`
-	GenerationVideoAudio                 *bool                `json:"generation_video_audio,omitempty"`
-	GenerationVideoWatermark             *bool                `json:"generation_video_watermark,omitempty"`
-	GenerationVideoReferenceMode         string               `json:"generation_video_reference_mode,omitempty"`
-	GenerationVideoReferenceImages       []string             `json:"generation_video_reference_image_urls,omitempty"`
-	GenerationVideoReferenceURLs         []string             `json:"generation_video_reference_urls,omitempty"`
-	GenerationVideoReferenceAudio        []string             `json:"generation_video_reference_audio_urls,omitempty"`
-	GenerationVideoFirstFrameNodeID      string               `json:"generation_video_first_frame_node_id,omitempty"`
-	GenerationVideoLastFrameURL          string               `json:"generation_video_last_frame_url,omitempty"`
-	GenerationVideoLastFrameNodeID       string               `json:"generation_video_last_frame_node_id,omitempty"`
-	GenerationMode                       string               `json:"generation_mode,omitempty"`
-	GenerationTextModel                  string               `json:"generation_text_model,omitempty"`
-	GenerationAudioModel                 string               `json:"generation_audio_model,omitempty"`
-	GenerationAudioVoice                 string               `json:"generation_audio_voice,omitempty"`
-	GenerationAudioFormat                string               `json:"generation_audio_format,omitempty"`
-	GenerationAudioSpeed                 float64              `json:"generation_audio_speed,omitempty"`
-	GenerationAudioInstructions          string               `json:"generation_audio_instructions,omitempty"`
-	GenerationAudioGrokVoice             string               `json:"generation_audio_grok_voice,omitempty"`
-	GenerationAudioGrokLanguage          string               `json:"generation_audio_grok_language,omitempty"`
-	GenerationAudioGrokFormat            string               `json:"generation_audio_grok_format,omitempty"`
-	GenerationAudioGrokSpeed             float64              `json:"generation_audio_grok_speed,omitempty"`
-	GenerationAudioGLMVoice              string               `json:"generation_audio_glm_voice,omitempty"`
-	GenerationAudioGLMFormat             string               `json:"generation_audio_glm_format,omitempty"`
-	GenerationAudioGLMSpeed              float64              `json:"generation_audio_glm_speed,omitempty"`
-	GenerationAudioMiMoVoice             string               `json:"generation_audio_mimo_voice,omitempty"`
-	GenerationAudioMiMoFormat            string               `json:"generation_audio_mimo_format,omitempty"`
-	GenerationAudioMiMoVoiceDesignPrompt string               `json:"generation_audio_mimo_voice_design_prompt,omitempty"`
-	GenerationAudioMiMoVoiceCloneNodeID  string               `json:"generation_audio_mimo_voice_clone_node_id,omitempty"`
-	GenerationAudioGeminiVoice           string               `json:"generation_audio_gemini_voice,omitempty"`
-	AudioTaskID                          string               `json:"audio_task_id,omitempty"`
-	AudioTaskResultID                    string               `json:"audio_task_result_id,omitempty"`
-	DurationMS                           int64                `json:"duration_ms,omitempty"`
-	MimeType                             string               `json:"mime_type,omitempty"`
-	PanoramaSourcePrompt                 string               `json:"panorama_source_prompt,omitempty"`
-	PanoramaFinalPrompt                  string               `json:"panorama_final_prompt,omitempty"`
-	PanoramaProjection                   string               `json:"panorama_projection,omitempty"`
-	DirectorProject                      json.RawMessage      `json:"director_project,omitempty"`
-	CameraControl                        *CanvasCameraControl `json:"camera_control,omitempty"`
-	BatchChildIDs                        []string             `json:"batch_child_ids,omitempty"`
-	BatchRootID                          string               `json:"batch_root_id,omitempty"`
-	BatchPrimaryID                       string               `json:"batch_primary_id,omitempty"`
-	BatchExpanded                        *bool                `json:"batch_expanded,omitempty"`
-	CreatedAt                            string               `json:"created_at,omitempty"`
+	GenerationImageOptions               model.ImageGenerationOptions `json:"generation_image_options,omitempty"`
+	GenerationWorkflowInputs             map[string]any               `json:"generation_workflow_inputs,omitempty"`
+	ID                                   string                       `json:"id"`
+	Type                                 string                       `json:"type"`
+	X                                    float64                      `json:"x"`
+	Y                                    float64                      `json:"y"`
+	Width                                float64                      `json:"width"`
+	Height                               float64                      `json:"height"`
+	FontSize                             int                          `json:"font_size,omitempty"`
+	NaturalWidth                         int                          `json:"natural_width,omitempty"`
+	NaturalHeight                        int                          `json:"natural_height,omitempty"`
+	Bytes                                int64                        `json:"bytes,omitempty"`
+	FreeResize                           bool                         `json:"free_resize,omitempty"`
+	ScaleX                               float64                      `json:"scale_x"`
+	ScaleY                               float64                      `json:"scale_y"`
+	Angle                                float64                      `json:"angle,omitempty"`
+	URL                                  string                       `json:"url,omitempty"`
+	StorageKey                           string                       `json:"storage_key,omitempty"`
+	ThumbnailURL                         string                       `json:"thumbnail_url,omitempty"`
+	Title                                string                       `json:"title,omitempty"`
+	Prompt                               string                       `json:"prompt,omitempty"`
+	ComposerContent                      *string                      `json:"composer_content,omitempty"`
+	ExcludeUpstreamText                  bool                         `json:"exclude_upstream_text,omitempty"`
+	GroupID                              string                       `json:"group_id,omitempty"`
+	TaskID                               string                       `json:"task_id,omitempty"`
+	GenerationModel                      string                       `json:"generation_model,omitempty"`
+	GenerationSize                       string                       `json:"generation_size,omitempty"`
+	GenerationResolution                 string                       `json:"generation_resolution,omitempty"`
+	GenerationQuality                    string                       `json:"generation_quality,omitempty"`
+	GenerationCount                      int                          `json:"generation_count,omitempty"`
+	GenerationOutputFormat               string                       `json:"generation_output_format,omitempty"`
+	GenerationOutputCompression          *int                         `json:"generation_output_compression,omitempty"`
+	GenerationStream                     *bool                        `json:"generation_stream,omitempty"`
+	GenerationPartialImages              int                          `json:"generation_partial_images,omitempty"`
+	GenerationSnapToMultiple16           *bool                        `json:"generation_snap_to_multiple_16,omitempty"`
+	GenerationResponseFormatB64JSON      bool                         `json:"generation_response_format_b64_json,omitempty"`
+	GenerationCodexCLICompatibility      bool                         `json:"generation_codex_cli_compatibility,omitempty"`
+	GenerationStatus                     string                       `json:"generation_status,omitempty"`
+	GenerationStartedAt                  int64                        `json:"generation_started_at,omitempty"`
+	GenerationProgress                   float64                      `json:"generation_progress,omitempty"`
+	GenerationError                      string                       `json:"generation_error,omitempty"`
+	GenerationType                       string                       `json:"generation_type,omitempty"`
+	GenerationReferenceURLs              []string                     `json:"generation_reference_urls,omitempty"`
+	GenerationVideoModel                 string                       `json:"generation_video_model,omitempty"`
+	GenerationVideoSize                  string                       `json:"generation_video_size,omitempty"`
+	GenerationVideoParameters            map[string]any               `json:"generation_video_parameters,omitempty"`
+	GenerationVideoSeconds               int                          `json:"generation_video_seconds,omitempty"`
+	GenerationVideoResolution            string                       `json:"generation_video_resolution,omitempty"`
+	GenerationVideoAudio                 *bool                        `json:"generation_video_audio,omitempty"`
+	GenerationVideoWatermark             *bool                        `json:"generation_video_watermark,omitempty"`
+	GenerationVideoReferenceMode         string                       `json:"generation_video_reference_mode,omitempty"`
+	GenerationVideoReferenceImages       []string                     `json:"generation_video_reference_image_urls,omitempty"`
+	GenerationVideoReferenceURLs         []string                     `json:"generation_video_reference_urls,omitempty"`
+	GenerationVideoReferenceAudio        []string                     `json:"generation_video_reference_audio_urls,omitempty"`
+	GenerationVideoFirstFrameNodeID      string                       `json:"generation_video_first_frame_node_id,omitempty"`
+	GenerationVideoLastFrameURL          string                       `json:"generation_video_last_frame_url,omitempty"`
+	GenerationVideoLastFrameNodeID       string                       `json:"generation_video_last_frame_node_id,omitempty"`
+	GenerationMode                       string                       `json:"generation_mode,omitempty"`
+	GenerationTextModel                  string                       `json:"generation_text_model,omitempty"`
+	GenerationAudioModel                 string                       `json:"generation_audio_model,omitempty"`
+	GenerationAudioVoice                 string                       `json:"generation_audio_voice,omitempty"`
+	GenerationAudioFormat                string                       `json:"generation_audio_format,omitempty"`
+	GenerationAudioSpeed                 float64                      `json:"generation_audio_speed,omitempty"`
+	GenerationAudioInstructions          string                       `json:"generation_audio_instructions,omitempty"`
+	GenerationAudioGrokVoice             string                       `json:"generation_audio_grok_voice,omitempty"`
+	GenerationAudioGrokLanguage          string                       `json:"generation_audio_grok_language,omitempty"`
+	GenerationAudioGrokFormat            string                       `json:"generation_audio_grok_format,omitempty"`
+	GenerationAudioGrokSpeed             float64                      `json:"generation_audio_grok_speed,omitempty"`
+	GenerationAudioGLMVoice              string                       `json:"generation_audio_glm_voice,omitempty"`
+	GenerationAudioGLMFormat             string                       `json:"generation_audio_glm_format,omitempty"`
+	GenerationAudioGLMSpeed              float64                      `json:"generation_audio_glm_speed,omitempty"`
+	GenerationAudioMiMoVoice             string                       `json:"generation_audio_mimo_voice,omitempty"`
+	GenerationAudioMiMoFormat            string                       `json:"generation_audio_mimo_format,omitempty"`
+	GenerationAudioMiMoVoiceDesignPrompt string                       `json:"generation_audio_mimo_voice_design_prompt,omitempty"`
+	GenerationAudioMiMoVoiceCloneNodeID  string                       `json:"generation_audio_mimo_voice_clone_node_id,omitempty"`
+	GenerationAudioGeminiVoice           string                       `json:"generation_audio_gemini_voice,omitempty"`
+	AudioTaskID                          string                       `json:"audio_task_id,omitempty"`
+	AudioTaskResultID                    string                       `json:"audio_task_result_id,omitempty"`
+	DurationMS                           int64                        `json:"duration_ms,omitempty"`
+	MimeType                             string                       `json:"mime_type,omitempty"`
+	PanoramaSourcePrompt                 string                       `json:"panorama_source_prompt,omitempty"`
+	PanoramaFinalPrompt                  string                       `json:"panorama_final_prompt,omitempty"`
+	PanoramaProjection                   string                       `json:"panorama_projection,omitempty"`
+	DirectorProject                      json.RawMessage              `json:"director_project,omitempty"`
+	CameraControl                        *CanvasCameraControl         `json:"camera_control,omitempty"`
+	BatchChildIDs                        []string                     `json:"batch_child_ids,omitempty"`
+	BatchRootID                          string                       `json:"batch_root_id,omitempty"`
+	BatchPrimaryID                       string                       `json:"batch_primary_id,omitempty"`
+	BatchExpanded                        *bool                        `json:"batch_expanded,omitempty"`
+	CreatedAt                            string                       `json:"created_at,omitempty"`
 }
 
 type CanvasConnection struct {
@@ -1573,13 +1575,13 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if len(node.GenerationSize) > 64 || len(node.GenerationResolution) > 16 {
 		return CanvasNode{}, invalidCanvasDocument("node generation size is invalid")
 	}
-	if node.GenerationQuality != "" && node.GenerationQuality != "low" && node.GenerationQuality != "medium" && node.GenerationQuality != "high" {
+	if node.GenerationQuality != "" && node.GenerationQuality != "low" && node.GenerationQuality != "medium" && node.GenerationQuality != "high" && node.GenerationQuality != "xhigh" && node.GenerationQuality != "max" {
 		return CanvasNode{}, invalidCanvasDocument("node generation quality is invalid")
 	}
 	if node.GenerationCount < 0 || node.GenerationCount > canvasDocumentMaxGenerationCount {
 		return CanvasNode{}, invalidCanvasDocument("node generation count is invalid")
 	}
-	if node.GenerationOutputFormat != "" && node.GenerationOutputFormat != "png" && node.GenerationOutputFormat != "jpeg" && node.GenerationOutputFormat != "webp" {
+	if node.GenerationOutputFormat != "" && node.GenerationOutputFormat != "png" && node.GenerationOutputFormat != "jpeg" && node.GenerationOutputFormat != "webp" && node.GenerationOutputFormat != "gif" && node.GenerationOutputFormat != "svg" {
 		return CanvasNode{}, invalidCanvasDocument("node generation output format is invalid")
 	}
 	if (node.GenerationOutputCompression != nil && (*node.GenerationOutputCompression < 0 || *node.GenerationOutputCompression > 100)) || node.GenerationPartialImages < 0 || node.GenerationPartialImages > 3 {

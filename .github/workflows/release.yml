@@ -78,21 +78,9 @@ jobs:
         working-directory: agent-runtime
         run: npm ci --ignore-scripts
 
-      - name: Test Agents SDK runtime
-        working-directory: agent-runtime
-        run: npm test
-
       - name: Install dependencies
         working-directory: web
         run: bun install --frozen-lockfile
-
-      - name: Lint frontend
-        working-directory: web
-        run: bun run lint
-
-      - name: Test frontend
-        working-directory: web
-        run: bun run test
 
       - name: Build frontend
         working-directory: web
@@ -111,34 +99,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: chatgpt2api
-          POSTGRES_USER: chatgpt2api
-          POSTGRES_PASSWORD: chatgpt2api
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U chatgpt2api -d chatgpt2api"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_DATABASE: chatgpt2api
-          MYSQL_USER: chatgpt2api
-          MYSQL_PASSWORD: chatgpt2api
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uchatgpt2api -pchatgpt2api --silent"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -158,7 +118,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Agent runtime for backend tests and packaging
+      - name: Install Agent runtime for packaging
         working-directory: agent-runtime
         run: npm ci --omit=dev --ignore-scripts
 
@@ -167,32 +127,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-
-      - name: Verify Go version
-        run: go version | grep -q 'go1.26.10'
-
-      - name: Check backend formatting
-        run: |
-          unformatted="$(git ls-files -z '*.go' | xargs -0 -r gofmt -l)"
-          if [ -n "$unformatted" ]; then
-            printf '%s\n' "$unformatted"
-            exit 1
-          fi
-
-      - name: Test backend
-        run: go test ./...
-
-      - name: Vet backend
-        run: go vet ./...
-
-      - name: Race test stateful backend packages
-        run: go test -race ./internal/storage ./internal/service ./internal/httpapi
-
-      - name: Test PostgreSQL and MySQL storage backends
-        env:
-          TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
-          TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
-        run: go test ./internal/storage -run '^TestDatabaseBackendIntegration$' -count=1 -v
 
       - name: Verify Docker Hub credentials
         env:

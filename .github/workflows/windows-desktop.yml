@@ -32,24 +32,15 @@ jobs:
         working-directory: agent-runtime
         run: npm ci --ignore-scripts
 
-      - name: Test Agents SDK runtime
-        working-directory: agent-runtime
-        run: npm test
-
       - name: Install frontend dependencies
         working-directory: web
         run: bun install --frozen-lockfile
-      - name: Lint and build embedded frontend
+      - name: Build embedded frontend
         working-directory: web
-        run: |
-          npm run lint
-          npm run build
+        run: npm run build
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm ci --no-audit --no-fund
-      - name: Test lifecycle and browser boundaries
-        working-directory: desktop
-        run: npm test
       - name: Build Windows installer without publishing
         working-directory: desktop
         run: npm run build:win

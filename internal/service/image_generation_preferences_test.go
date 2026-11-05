@@ -341,3 +341,23 @@ func TestImageGenerationPreferencesRegenerationBehavior(t *testing.T) {
 		}
 	}
 }
+
+func TestGPTImage26WorkbenchQualityPersists(t *testing.T) {
+	for _, quality := range []string{"xhigh", "max"} {
+		value := defaultCreationWorkbenchPreferences()
+		value.ImageModel, value.ImageQuality, value.ImageOutputFormat = "gpt-image-2.6-sunburst", quality, "gif"
+		value.ImageOptions.Complexity, value.ImageOptions.Markup = "medium", "data:image/png;base64,transient"
+		got, err := normalizeCreationWorkbenchPreferences(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ImageQuality != quality || got.ImageOptions.Complexity != "medium" || got.ImageOptions.Markup != "" {
+			t.Fatalf("unexpected preferences: %#v", got)
+		}
+		var preferences ImageGenerationPreferences
+		applyWorkbenchSettings(&preferences, defaultCreationWorkbenchPreferences(), got)
+		if preferences.ImageModelSettings[value.ImageModel].ImageQuality != quality || preferences.ImageModelSettings[value.ImageModel].ImageOptions.Complexity != "medium" {
+			t.Fatal("model settings lost image options")
+		}
+	}
+}

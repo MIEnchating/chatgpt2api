@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
@@ -3021,4 +3022,34 @@ func TestImageTaskServiceHandlerPanicBecomesErrorState(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForTaskStatus(t, svc, identity, "panic-task", TaskStatusError)
+}
+
+func TestImageTaskServiceGPTImage26Options(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.gif"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	frames, duration := 9, 200
+	options := model.ImageGenerationOptions{Complexity: "medium", Background: "opaque", FrameCount: &frames, FrameDurationMS: &duration}
+	task, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "animation", "animate", "gpt-image-2.6-flare", "auto", "max", "https://base.test", 1, nil, ImageOutputOptions{Format: "gif"}, ImageToolOptions{Options: options})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task["complexity"] != "medium" || util.ToInt(task["frame_count"], 0) != frames {
+		t.Fatalf("lost task options: %#v", task)
+	}
+	select {
+	case payload := <-handlerCalls:
+		for key, want := range map[string]any{"quality": "max", "output_format": "gif", "complexity": "medium", "background": "opaque", "frame_count": frames, "frame_duration_ms": duration} {
+			if payload[key] != want {
+				t.Fatalf("payload[%s] = %#v, want %#v", key, payload[key], want)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for image handler")
+	}
+	waitForTaskStatus(t, svc, identity, "animation", TaskStatusSuccess)
 }

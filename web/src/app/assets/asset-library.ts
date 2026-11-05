@@ -14,7 +14,7 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
     ownerId: item.owner_id,
     ownerName: item.owner_name,
     owned,
-    mimeType: item.output_format ? `image/${item.output_format}` : undefined,
+    mimeType: item.output_format === "svg" ? "image/svg+xml" : item.output_format ? `image/${item.output_format}` : undefined,
     bytes: item.size,
     width: item.width,
     height: item.height,

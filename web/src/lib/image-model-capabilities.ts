@@ -293,6 +293,7 @@ export function supportsImageMask(model: string) {
 
 export function imageReferenceImageLimit(model: string) {
   const configured = configuredImageModel(model);
+  if (isGPTImage26(model)) return Math.min(configured?.max_reference_images ?? 16, 16);
   if (configured) return configured.max_reference_images;
   const value = model.trim().toLowerCase();
   const route = imageModelRoute(model);
@@ -325,6 +326,7 @@ export function imageReferenceImageLimit(model: string) {
 
 export function imageOutputCountLimit(model: string) {
   const configured = configuredImageModel(model);
+  if (isGPTImage26(model)) return Math.min(configured?.max_output_count ?? 10, 10);
   if (configured) return configured.max_output_count;
   const capabilities = apimartImageCapabilities(model);
   return capabilities && !capabilities.hasCount ? 1 : 15;
@@ -347,7 +349,7 @@ export function supportsImageSize(model: string) {
 export function supportsImageExactDimensions(model: string) {
   const configured = configuredImageModel(model);
   if (configured) return configured.exact_dimensions;
-  return model.trim().toLowerCase() === "gpt-image-2";
+  return model.trim().toLowerCase() === "gpt-image-2" || isGPTImage26(model);
 }
 
 export function supportsImageAspectRatio(model: string, aspectRatio: string) {
@@ -417,7 +419,7 @@ export function supportsStructuredImageParameters(model: string) {
   if (configuredImageModel(model)) return true;
   const value = model.trim().toLowerCase();
   const route = imageModelRoute(model);
-  return value === "gpt-image-2" || route === "google-gemini-image" || route === "agnes-image" || route === "kie-image" || route === "apimart-image" || isOfficialXAIImageModelName(value);
+  return value === "gpt-image-2" || isGPTImage26(model) || route === "google-gemini-image" || route === "agnes-image" || route === "kie-image" || route === "apimart-image" || isOfficialXAIImageModelName(value);
 }
 
 export function supportsImageOutputControls(model: string) {
@@ -441,6 +443,7 @@ export function supportsImageQuality(model: string) {
 export function supportsImageQualityValue(model: string, quality: string) {
   const configured = configuredImageModel(model);
   if (configured) return quality === "" || configured.quality_values.includes(quality);
+  if (isGPTImage26(model)) return ["", "low", "medium", "high", "xhigh", "max"].includes(quality);
   if (!quality) {
     return true;
   }
@@ -453,4 +456,8 @@ export function supportsImageQualityValue(model: string, quality: string) {
   if (imageModelRoute(model) === "zhipu-image") return ["low", "medium", "high"].includes(quality);
   if (imageModelRoute(model) === "agnes-image") return ["low", "medium", "high"].includes(quality);
   return supportsImageQuality(model) && ["low", "medium", "high"].includes(quality);
+}
+
+export function isGPTImage26(model: string) {
+  return ["gpt-image-2.6-sunburst", "gpt-image-2.6-flare"].includes(model.trim().toLowerCase());
 }

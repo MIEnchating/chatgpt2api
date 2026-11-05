@@ -66,3 +66,10 @@ func TestImageModelDefinitionsRejectInvalidEnvironment(t *testing.T) {
 		t.Fatal("invalid environment configuration was accepted")
 	}
 }
+
+func TestImageModelDefinitionsAcceptExtendedQuality(t *testing.T) {
+	d := model.ImageModelDefinition{Protocol: "openai-image", QualityValues: []string{"low", "medium", "high", "xhigh", "max"}, MaxReferenceImages: 16, MaxOutputCount: 10}
+	if err := validateImageModelDefinition(d); err != nil {
+		t.Fatal(err)
+	}
+}

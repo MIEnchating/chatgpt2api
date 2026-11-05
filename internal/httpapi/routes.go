@@ -1022,6 +1022,15 @@ func imageToolOptionsFromBody(body map[string]any) service.ImageToolOptions {
 		Stream:         util.ToBool(body["stream"]),
 		ResponseFormat: util.Clean(body["response_format"]),
 	}
+	options.Options.Complexity = util.Clean(body["complexity"])
+	options.Options.Background = util.Clean(body["background"])
+	options.Options.Markup = util.Clean(body["markup"])
+	if value, ok := util.StrictInt(body["frame_count"]); ok {
+		options.Options.FrameCount = &value
+	}
+	if value, ok := util.StrictInt(body["frame_duration_ms"]); ok {
+		options.Options.FrameDurationMS = &value
+	}
 	if partialImages, ok := imagePartialImagesFromBody(body["partial_images"]); ok {
 		options.PartialImages = partialImages
 		options.PartialImagesSet = true

@@ -1,18 +1,21 @@
 package service
 
+import "chatgpt2api/internal/model"
+
 type ImageWorkbenchSettings struct {
-	ImageSize              string `json:"image_size"`
-	ImageSizeMode          string `json:"image_size_mode"`
-	ImageAspectRatio       string `json:"image_aspect_ratio"`
-	ImageResolution        string `json:"image_resolution"`
-	ImageCustomRatio       string `json:"image_custom_ratio"`
-	ImageCustomWidth       string `json:"image_custom_width"`
-	ImageCustomHeight      string `json:"image_custom_height"`
-	ImageSnapToMultiple16  bool   `json:"image_snap_to_multiple_16"`
-	ImageQuality           string `json:"image_quality"`
-	ImageCount             int    `json:"image_count"`
-	ImageOutputFormat      string `json:"image_output_format"`
-	ImageOutputCompression string `json:"image_output_compression"`
+	ImageOptions           model.ImageGenerationOptions `json:"image_options,omitempty"`
+	ImageSize              string                       `json:"image_size"`
+	ImageSizeMode          string                       `json:"image_size_mode"`
+	ImageAspectRatio       string                       `json:"image_aspect_ratio"`
+	ImageResolution        string                       `json:"image_resolution"`
+	ImageCustomRatio       string                       `json:"image_custom_ratio"`
+	ImageCustomWidth       string                       `json:"image_custom_width"`
+	ImageCustomHeight      string                       `json:"image_custom_height"`
+	ImageSnapToMultiple16  bool                         `json:"image_snap_to_multiple_16"`
+	ImageQuality           string                       `json:"image_quality"`
+	ImageCount             int                          `json:"image_count"`
+	ImageOutputFormat      string                       `json:"image_output_format"`
+	ImageOutputCompression string                       `json:"image_output_compression"`
 }
 
 type VideoWorkbenchSettings struct {
@@ -37,6 +40,7 @@ func applyWorkbenchSettings(preferences *ImageGenerationPreferences, previous, n
 		previous.ImageCustomWidth = next.ImageCustomWidth
 		previous.ImageCustomHeight = next.ImageCustomHeight
 		previous.ImageSnapToMultiple16 = next.ImageSnapToMultiple16
+		previous.ImageOptions = next.ImageOptions
 		previous.ImageQuality = next.ImageQuality
 		previous.ImageCount = next.ImageCount
 		previous.ImageOutputFormat = next.ImageOutputFormat
@@ -54,6 +58,7 @@ func applyWorkbenchSettings(preferences *ImageGenerationPreferences, previous, n
 				ImageCustomWidth:       next.ImageCustomWidth,
 				ImageCustomHeight:      next.ImageCustomHeight,
 				ImageSnapToMultiple16:  next.ImageSnapToMultiple16,
+				ImageOptions:           next.ImageOptions,
 				ImageQuality:           next.ImageQuality,
 				ImageCount:             next.ImageCount,
 				ImageOutputFormat:      next.ImageOutputFormat,

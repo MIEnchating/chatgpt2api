@@ -88,7 +88,7 @@ function getStoredImageSrc(image: StoredImage, resolvedStorageURLs: Readonly<Rec
     return image.videoUrl || image.url || "";
   }
   if (image.b64_json) {
-    return `data:image/${image.outputFormat || "png"};base64,${image.b64_json}`;
+    return `data:${image.outputFormat === "svg" ? "image/svg+xml" : `image/${image.outputFormat || "png"}`};base64,${image.b64_json}`;
   }
   if (image.path) {
     const managedURL = getManagedImageUrlFromPath(image.path);

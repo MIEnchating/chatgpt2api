@@ -11,7 +11,7 @@ const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
   "free_resize", "scale_x", "scale_y", "angle", "url", "storage_key", "thumbnail_url", "title", "prompt",
   "composer_content", "exclude_upstream_text", "group_id", "task_id", "generation_model", "generation_size",
   "generation_resolution", "generation_quality", "generation_count", "generation_output_format",
-  "generation_output_compression", "generation_stream", "generation_partial_images", "generation_snap_to_multiple_16",
+  "generation_image_options", "generation_output_compression", "generation_stream", "generation_partial_images", "generation_snap_to_multiple_16",
   "generation_response_format_b64_json", "generation_codex_cli_compatibility", "generation_status",
 	  "generation_started_at", "generation_progress", "generation_error", "generation_type", "generation_reference_urls",
 	  "generation_video_parameters", "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",

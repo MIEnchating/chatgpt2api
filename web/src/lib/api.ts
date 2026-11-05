@@ -1,3 +1,5 @@
+import { type ImageGenerationOptions, imageGenerationRequestOptions, imageOutputSupportsStreaming } from "@/lib/image-generation-options";
+import { isGPTImage26 } from "@/lib/image-model-capabilities";
 import { httpRequest, httpRequestEventStream } from "@/lib/request";
 import { installImageModelDefinitions, type ImageModelDefinitions } from "@/lib/image-model-definitions";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
@@ -86,9 +88,9 @@ export {
   supportsStructuredImageParameters,
 } from "@/lib/image-model-capabilities";
 
-export type ImageQuality = "low" | "medium" | "high";
+export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
 export type ImageRequestQuality = "auto" | ImageQuality;
-export type ImageOutputFormat = "png" | "jpeg" | "webp";
+export type ImageOutputFormat = "png" | "jpeg" | "webp" | "svg" | "gif";
 export type ImageModeration = "auto" | "low";
 export type ImageVisibility = "private" | "public";
 
@@ -114,8 +116,8 @@ export function relayModelOptionsFromList(
   return options;
 }
 
-const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high"]);
-const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp"]);
+const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high", "xhigh", "max"]);
+const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp", "svg", "gif"]);
 const IMAGE_MODERATION_VALUES = new Set<string>(["auto", "low"]);
 
 export function isImageQuality(value: unknown): value is ImageQuality {
@@ -397,6 +399,7 @@ export type LoginPageImageSettings = {
 };
 
 export type CreationWorkbenchPreferences = {
+  image_options?: ImageGenerationOptions;
   composer_mode: "image" | "video";
   video_task_count: number;
   video_parameters: import("./video-model-contracts").VideoParameterValues;
@@ -454,6 +457,7 @@ export type ImageGenerationPreferences = {
 export type ImageAPIMode = "images" | "responses" | "chat";
 
 export type ImageTaskToolOptions = {
+  imageOptions?: ImageGenerationOptions;
   apiMode?: ImageAPIMode;
   moderation?: string;
   inputImageMask?: string;
@@ -1025,6 +1029,8 @@ export async function createImageGenerationTask(
   fallbackReferenceImage?: FallbackReferenceImage,
   requestOptions?: CreationTaskRequestOptions,
 ) {
+  const imageOptions = imageGenerationRequestOptions(model || "", outputFormat, toolOptions?.imageOptions, false);
+  stream = Boolean(stream && imageOutputSupportsStreaming(outputFormat));
   const normalizedPartialImages = stream
     ? normalizedImagePartialImages(partialImages)
     : undefined;
@@ -1039,22 +1045,23 @@ export async function createImageGenerationTask(
     timeout: 30_000,
     body: {
       client_task_id: clientTaskId,
+      ...imageOptions,
       prompt: requestPrompt,
-      api_mode: toolOptions?.apiMode || "images",
+      api_mode: isGPTImage26(model || "") ? "images" : toolOptions?.apiMode || "images",
       ...(model ? { model } : {}),
       ...(size ? { size } : {}),
       ...(requestedSize ? { requested_size: requestedSize } : {}),
       ...(imageResolution ? { image_resolution: imageResolution } : {}),
       ...(quality && !toolOptions?.codexCLICompatibility ? { quality } : {}),
       ...(outputFormat ? { output_format: outputFormat } : {}),
-      ...(typeof outputCompression === "number"
+      ...(typeof outputCompression === "number" && (outputFormat === "jpeg" || outputFormat === "webp")
         ? { output_compression: outputCompression }
         : {}),
       ...(stream ? { stream: true } : {}),
       ...(normalizedPartialImages !== undefined
         ? { partial_images: normalizedPartialImages }
         : {}),
-      ...(toolOptions?.responseFormatB64JSON
+      ...(toolOptions?.responseFormatB64JSON && !isGPTImage26(model || "")
         ? { response_format: "b64_json" }
         : {}),
       ...(toolOptions?.moderation
@@ -1248,7 +1255,10 @@ export async function createImageEditTask(
   fallbackReferenceImage?: FallbackReferenceImage,
   requestOptions?: CreationTaskRequestOptions,
 ) {
+  const imageOptions = imageGenerationRequestOptions(model || "", outputFormat, toolOptions?.imageOptions, true);
+  if (imageOptions.markup && toolOptions?.inputImageMask) throw new Error("标注层不能与遮罩同时使用");
   const formData = new FormData();
+  for (const [key, value] of Object.entries(imageOptions)) formData.append(key, String(value));
   const uploadFiles = Array.isArray(files) ? files : [files];
   let maskFile: File | undefined;
   if (toolOptions?.inputImageMask) {
@@ -1288,7 +1298,7 @@ export async function createImageEditTask(
       toolOptions?.codexCLICompatibility,
     ),
   );
-  formData.append("api_mode", toolOptions?.apiMode || "images");
+  formData.append("api_mode", isGPTImage26(model || "") ? "images" : toolOptions?.apiMode || "images");
   if (model) {
     formData.append("model", model);
   }
@@ -1307,7 +1317,7 @@ export async function createImageEditTask(
   if (outputFormat) {
     formData.append("output_format", outputFormat);
   }
-  if (typeof outputCompression === "number") {
+  if (typeof outputCompression === "number" && (outputFormat === "jpeg" || outputFormat === "webp")) {
     formData.append("output_compression", String(outputCompression));
   }
   if (stream) {
@@ -1317,7 +1327,7 @@ export async function createImageEditTask(
       formData.append("partial_images", String(normalizedPartialImages));
     }
   }
-  if (toolOptions?.responseFormatB64JSON) {
+  if (toolOptions?.responseFormatB64JSON && !isGPTImage26(model || "")) {
     formData.append("response_format", "b64_json");
   }
   if (toolOptions?.moderation) {

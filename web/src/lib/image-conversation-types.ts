@@ -64,6 +64,7 @@ export type StoredImageSizeSelection = {
 };
 
 export type ImageTurn = {
+  imageOptions?: import("./image-generation-options").ImageGenerationOptions;
   id: string;
   source?: "image-workbench" | "workflow";
   workflowId?: string;

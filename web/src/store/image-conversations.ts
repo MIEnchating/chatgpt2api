@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeImageGenerationOptions } from "@/lib/image-generation-options";
+
 import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
 
 import {
@@ -735,6 +737,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     count: Math.max(1, Number(turn.count || images.length || 1)),
     size: typeof turn.size === "string" ? turn.size : "",
     ...(sizeSelection ? { sizeSelection } : {}),
+    imageOptions: normalizeImageGenerationOptions(turn.imageOptions),
     quality: isImageQuality(turn.quality) ? turn.quality : undefined,
     outputFormat: isImageOutputFormat(turn.outputFormat) ? turn.outputFormat : undefined,
     outputCompression:

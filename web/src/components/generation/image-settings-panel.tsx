@@ -1,10 +1,14 @@
+import { isGPTImage26 } from "@/lib/image-model-capabilities";
+import type { ImageGenerationOptions } from "@/lib/image-generation-options";
+import type { ImageOutputFormat } from "@/lib/api";
+import { toast } from "sonner";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
 import {
-  IMAGE_WORKBENCH_QUALITY_OPTIONS,
+  imageWorkbenchQualityOptions,
   buildImageSize,
   formatImageSizeDisplay,
   isHighResolutionImageSize,
@@ -26,6 +30,8 @@ export type ImageSettingsValue = ImageSizeSelection & {
   snapToMultiple16: boolean;
   quality: "" | ImageQuality;
   count: number;
+  imageOptions?: ImageGenerationOptions;
+  outputFormat?: ImageOutputFormat;
 };
 
 export function ImageSettingsPanel({
@@ -49,7 +55,7 @@ export function ImageSettingsPanel({
 }) {
   const definition = configuredImageModel(model);
   const selectedRatio = value.aspectRatio === "custom" ? value.customRatio : value.aspectRatio;
-  const qualityOptions = definition ? IMAGE_WORKBENCH_QUALITY_OPTIONS.filter((option) => option.value === "" || definition.quality_values.includes(option.value)) : IMAGE_WORKBENCH_QUALITY_OPTIONS;
+  const qualityOptions = imageWorkbenchQualityOptions(model);
   useEffect(() => {
     if (!definition) return;
     const patch: Partial<ImageSettingsValue> = {};
@@ -65,7 +71,7 @@ export function ImageSettingsPanel({
   const displayedHeight = value.mode === "custom" ? value.customHeight : dimensions.height;
   const sizeLabel = computedSize ? formatImageSizeDisplay(computedSize) : value.mode === "auto" ? "自动" : "尺寸无效";
   const highResolution = Boolean(computedSize && isHighResolutionImageSize(computedSize, value));
-  const countLimit = Math.max(1, Math.min(10, imageOutputCountLimit(model)));
+  const countLimit = value.outputFormat === "svg" ? 1 : Math.max(1, Math.min(10, imageOutputCountLimit(model)));
   const count = Math.max(1, Math.min(countLimit, Math.floor(Number(value.count) || 1)));
 
   function beginCustomSize() {
@@ -88,7 +94,7 @@ export function ImageSettingsPanel({
     <div className="flex flex-col gap-3 [&>section]:rounded-xl [&>section]:border [&>section]:border-border/70 [&>section]:bg-muted/15 [&>section]:p-3.5">
       {showQuality && qualityOptions.length > 1 ? <section className="order-1 space-y-2.5">
         <ImageParameterLabel help="选择画面精细程度，更高质量通常需要更长生成时间。">画面质量</ImageParameterLabel>
-        <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/70 p-1" role="group" aria-label="图片质量">
+        <div className={cn("grid gap-1 rounded-xl bg-muted/70 p-1", qualityOptions.length > 4 ? "grid-cols-3" : "grid-cols-4")} role="group" aria-label="图片质量">
           {qualityOptions.map((option) => (
             <button
               key={option.value || "auto"}
@@ -156,6 +162,49 @@ export function ImageSettingsPanel({
         disabled={disabled}
         onChange={onChange}
       /> : null}
+
+      {isGPTImage26(model) ? <section className="order-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <ImageParameterLabel help="控制生成前的规划程度；高复杂度适合密集文字和复杂构图，也可能增加耗时。">复杂度</ImageParameterLabel>
+            <Select disabled={disabled} value={value.imageOptions?.complexity || "high"} onValueChange={(complexity) => onChange({ imageOptions: { ...value.imageOptions, complexity: complexity as ImageGenerationOptions["complexity"] } })}>
+              <SelectTrigger aria-label="图片复杂度" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="low">低</SelectItem><SelectItem value="medium">中</SelectItem><SelectItem value="high">高（默认）</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <ImageParameterLabel>输出格式</ImageParameterLabel>
+            <Select disabled={disabled} value={value.outputFormat || "png"} onValueChange={(format) => onChange({ outputFormat: format as ImageOutputFormat, ...(format === "svg" ? { count: 1 } : {}), ...(format === "gif" ? { mode: "auto" as const, resolution: "auto" as const } : {}), imageOptions: { ...value.imageOptions, background: format === "png" || format === "webp" ? value.imageOptions?.background : "auto", markup: format === "gif" || format === "svg" ? undefined : value.imageOptions?.markup } })}>
+              <SelectTrigger aria-label="图片输出格式" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>{["png", "jpeg", "webp", "svg", "gif"].map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <ImageParameterLabel>背景</ImageParameterLabel>
+          <Select disabled={disabled || value.outputFormat === "gif" || value.outputFormat === "svg"} value={value.imageOptions?.background || "auto"} onValueChange={(background) => onChange({ imageOptions: { ...value.imageOptions, background: background as ImageGenerationOptions["background"] }, ...(background === "transparent" && value.outputFormat === "jpeg" ? { outputFormat: "png" as const } : {}) })}>
+            <SelectTrigger aria-label="图片背景" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="auto">自动</SelectItem><SelectItem value="opaque">不透明</SelectItem><SelectItem value="transparent">透明</SelectItem></SelectContent>
+          </Select>
+        </div>
+        {value.outputFormat === "gif" ? <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1.5 text-xs">动画帧数<NumberInput disabled={disabled} value={value.imageOptions?.frame_count ?? 9} min={2} max={16} aria-label="动画帧数" onValueChange={(raw) => onChange({ imageOptions: { ...value.imageOptions, frame_count: Math.max(2, Math.min(16, Math.round(Number(raw) || 9))) } })} /></label>
+          <label className="space-y-1.5 text-xs">每帧时长（毫秒）<NumberInput disabled={disabled} value={value.imageOptions?.frame_duration_ms ?? 200} min={20} max={2000} aria-label="每帧时长" onValueChange={(raw) => onChange({ imageOptions: { ...value.imageOptions, frame_duration_ms: Math.max(20, Math.min(2000, Math.round(Number(raw) / 10) * 10 || 200)) } })} /></label>
+        </div> : null}
+        {value.outputFormat === "gif" || value.outputFormat === "svg" ? <p className="text-xs text-muted-foreground">仅支持文生图，完成后一次返回。GIF 建议使用自动尺寸；帧数越多，可用的单帧尺寸越小。</p> : <div className="space-y-1.5">
+          <ImageParameterLabel help="上传与第一张参考图尺寸一致的透明 PNG，用圈选或涂画指示修改位置，并在提示词中描述修改要求。">编辑标注层</ImageParameterLabel>
+          <Input type="file" accept="image/png" disabled={disabled} aria-label="上传编辑标注层" onChange={async (event) => {
+            const file = event.target.files?.[0]; event.target.value = "";
+            if (!file) return;
+            if (file.type !== "image/png" || file.size > 4 * 1024 * 1024) { toast.error("标注层需要是不超过 4 MB 的透明 PNG"); return; }
+            try {
+              const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+              onChange({ imageOptions: { ...value.imageOptions, markup: data } });
+            } catch { toast.error("无法读取标注层"); }
+          }} />
+          {value.imageOptions?.markup ? <div className="flex items-center justify-between gap-2"><img src={value.imageOptions.markup} alt="编辑标注层预览" className="h-16 w-24 rounded border object-contain" /><button type="button" disabled={disabled} className="text-xs text-muted-foreground underline" onClick={() => onChange({ imageOptions: { ...value.imageOptions, markup: undefined } })}>移除标注层</button></div> : null}
+        </div>}
+      </section> : null}
 
       {showCount ? <section className="order-4 flex min-w-0 flex-wrap items-center justify-between gap-2">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>

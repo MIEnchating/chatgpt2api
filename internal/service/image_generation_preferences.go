@@ -1,6 +1,7 @@
 package service
 
 import (
+	"chatgpt2api/internal/model"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,28 +60,29 @@ type ImageGenerationPreferences struct {
 }
 
 type CreationWorkbenchPreferences struct {
-	ComposerMode           string         `json:"composer_mode"`
-	VideoTaskCount         int            `json:"video_task_count"`
-	VideoParameters        map[string]any `json:"video_parameters"`
-	ImageModel             string         `json:"image_model"`
-	ImageSize              string         `json:"image_size"`
-	ImageSizeMode          string         `json:"image_size_mode"`
-	ImageAspectRatio       string         `json:"image_aspect_ratio"`
-	ImageResolution        string         `json:"image_resolution"`
-	ImageCustomRatio       string         `json:"image_custom_ratio"`
-	ImageCustomWidth       string         `json:"image_custom_width"`
-	ImageCustomHeight      string         `json:"image_custom_height"`
-	ImageSnapToMultiple16  bool           `json:"image_snap_to_multiple_16"`
-	ImageQuality           string         `json:"image_quality"`
-	ImageCount             int            `json:"image_count"`
-	ImageOutputFormat      string         `json:"image_output_format"`
-	ImageOutputCompression string         `json:"image_output_compression"`
-	VideoModel             string         `json:"video_model"`
-	VideoSize              string         `json:"video_size"`
-	VideoSeconds           string         `json:"video_seconds"`
-	VideoResolution        string         `json:"video_resolution"`
-	VideoGenerateAudio     bool           `json:"video_generate_audio"`
-	VideoWatermark         bool           `json:"video_watermark"`
+	ImageOptions           model.ImageGenerationOptions `json:"image_options,omitempty"`
+	ComposerMode           string                       `json:"composer_mode"`
+	VideoTaskCount         int                          `json:"video_task_count"`
+	VideoParameters        map[string]any               `json:"video_parameters"`
+	ImageModel             string                       `json:"image_model"`
+	ImageSize              string                       `json:"image_size"`
+	ImageSizeMode          string                       `json:"image_size_mode"`
+	ImageAspectRatio       string                       `json:"image_aspect_ratio"`
+	ImageResolution        string                       `json:"image_resolution"`
+	ImageCustomRatio       string                       `json:"image_custom_ratio"`
+	ImageCustomWidth       string                       `json:"image_custom_width"`
+	ImageCustomHeight      string                       `json:"image_custom_height"`
+	ImageSnapToMultiple16  bool                         `json:"image_snap_to_multiple_16"`
+	ImageQuality           string                       `json:"image_quality"`
+	ImageCount             int                          `json:"image_count"`
+	ImageOutputFormat      string                       `json:"image_output_format"`
+	ImageOutputCompression string                       `json:"image_output_compression"`
+	VideoModel             string                       `json:"video_model"`
+	VideoSize              string                       `json:"video_size"`
+	VideoSeconds           string                       `json:"video_seconds"`
+	VideoResolution        string                       `json:"video_resolution"`
+	VideoGenerateAudio     bool                         `json:"video_generate_audio"`
+	VideoWatermark         bool                         `json:"video_watermark"`
 }
 
 type ImageGenerationPreferenceService struct {
@@ -579,6 +581,7 @@ func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (
 		return CreationWorkbenchPreferences{}, fmt.Errorf("video parameters must fit within 32 KiB")
 	}
 
+	value.ImageOptions.Markup = ""
 	value.ImageModel = normalizeOptionalShortPreference(value.ImageModel)
 	value.ImageSize = normalizeShortPreference(value.ImageSize, defaults.ImageSize)
 	value.ImageSizeMode = strings.ToLower(normalizeShortPreference(value.ImageSizeMode, defaults.ImageSizeMode))
@@ -591,14 +594,14 @@ func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (
 	value.ImageCustomWidth = normalizeShortPreference(value.ImageCustomWidth, defaults.ImageCustomWidth)
 	value.ImageCustomHeight = normalizeShortPreference(value.ImageCustomHeight, defaults.ImageCustomHeight)
 	value.ImageQuality = strings.ToLower(strings.TrimSpace(value.ImageQuality))
-	if value.ImageQuality != "" && value.ImageQuality != "low" && value.ImageQuality != "medium" && value.ImageQuality != "high" {
+	if value.ImageQuality != "" && value.ImageQuality != "low" && value.ImageQuality != "medium" && value.ImageQuality != "high" && value.ImageQuality != "xhigh" && value.ImageQuality != "max" {
 		return CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_quality is not supported")
 	}
 	if value.ImageCount < 1 || value.ImageCount > 10 {
 		return CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_count must be between 1 and 10")
 	}
 	value.ImageOutputFormat = strings.ToLower(normalizeShortPreference(value.ImageOutputFormat, defaults.ImageOutputFormat))
-	if value.ImageOutputFormat != "png" && value.ImageOutputFormat != "jpeg" && value.ImageOutputFormat != "webp" {
+	if value.ImageOutputFormat != "png" && value.ImageOutputFormat != "jpeg" && value.ImageOutputFormat != "webp" && value.ImageOutputFormat != "gif" && value.ImageOutputFormat != "svg" {
 		return CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_output_format is not supported")
 	}
 	value.ImageOutputCompression = strings.TrimSpace(value.ImageOutputCompression)

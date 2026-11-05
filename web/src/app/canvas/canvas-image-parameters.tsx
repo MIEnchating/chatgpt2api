@@ -28,6 +28,7 @@ type CanvasImageParameterPatch = Partial<Pick<CanvasNode,
   | "generation_resolution"
   | "generation_quality"
   | "generation_count"
+  | "generation_image_options"
   | "generation_output_format"
   | "generation_output_compression"
   | "generation_stream"
@@ -87,6 +88,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
     ...selection,
     snapToMultiple16,
     quality,
+    imageOptions: node.generation_image_options,
+    outputFormat: node.generation_output_format || "png",
     count,
   };
 
@@ -102,6 +105,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
       generation_size: next.mode === "auto" ? "" : nextSize,
       generation_resolution: next.resolution,
       generation_quality: next.quality || undefined,
+      generation_image_options: next.imageOptions,
+      generation_output_format: next.outputFormat,
       generation_count: next.count,
       generation_snap_to_multiple_16: next.snapToMultiple16,
     });

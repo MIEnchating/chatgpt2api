@@ -144,9 +144,9 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 			return nil, err
 		}
 		if len(images) > 0 {
-			_, err = a.tasks.SubmitEditWithOptions(ctx, identity, n.TaskID, n.Prompt, n.GenerationModel, n.GenerationSize, n.GenerationQuality, a.relayBaseURL(), images, n.GenerationCount, imageTaskRequestMetadata(body), service.ImageOutputOptions{Format: n.GenerationOutputFormat, Compression: n.GenerationOutputCompression}, service.ImageToolOptions{})
+			_, err = a.tasks.SubmitEditWithOptions(ctx, identity, n.TaskID, n.Prompt, n.GenerationModel, n.GenerationSize, n.GenerationQuality, a.relayBaseURL(), images, n.GenerationCount, imageTaskRequestMetadata(body), service.ImageOutputOptions{Format: n.GenerationOutputFormat, Compression: n.GenerationOutputCompression}, service.ImageToolOptions{Options: n.GenerationImageOptions})
 		} else {
-			_, err = a.tasks.SubmitGenerationWithOptions(ctx, identity, n.TaskID, n.Prompt, n.GenerationModel, n.GenerationSize, n.GenerationQuality, a.relayBaseURL(), n.GenerationCount, imageTaskRequestMetadata(body), service.ImageOutputOptions{Format: n.GenerationOutputFormat, Compression: n.GenerationOutputCompression}, service.ImageToolOptions{})
+			_, err = a.tasks.SubmitGenerationWithOptions(ctx, identity, n.TaskID, n.Prompt, n.GenerationModel, n.GenerationSize, n.GenerationQuality, a.relayBaseURL(), n.GenerationCount, imageTaskRequestMetadata(body), service.ImageOutputOptions{Format: n.GenerationOutputFormat, Compression: n.GenerationOutputCompression}, service.ImageToolOptions{Options: n.GenerationImageOptions})
 		}
 	case "video":
 		model := n.GenerationVideoModel

@@ -261,7 +261,7 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
 		if err != nil {
 			if decoded, fallbackErr := util.B64Decode(b64); fallbackErr == nil {
-				info, inspectErr := util.InspectRasterImage(decoded, "image/png", "image/jpeg", "image/webp")
+				info, inspectErr := util.InspectGeneratedImage(decoded)
 				if inspectErr != nil {
 					return nil, "", inspectErr
 				}
@@ -269,7 +269,7 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 			}
 			return nil, "", err
 		}
-		info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+		info, err := util.InspectGeneratedImage(data)
 		if err != nil {
 			return nil, "", err
 		}
@@ -310,7 +310,7 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 	if len(data) > maxRelayImageBytes {
 		return nil, "", errors.New("image is too large")
 	}
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(data)
 	if err != nil {
 		return nil, "", err
 	}
@@ -346,7 +346,7 @@ func imageDataURLBytes(value string) ([]byte, string, error) {
 	if len(data) > maxRelayImageBytes {
 		return nil, "", errors.New("image is too large")
 	}
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(data)
 	if err != nil {
 		return nil, "", err
 	}
@@ -415,7 +415,7 @@ func isManagedImageVisibilityPath(value string) bool {
 }
 
 func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL string, data []byte) string {
-	if info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp"); err == nil {
+	if info, err := util.InspectGeneratedImage(data); err == nil {
 		return info.Format
 	}
 	for _, value := range []string{util.Clean(item["output_format"]), util.Clean(payload["output_format"])} {
@@ -453,7 +453,7 @@ func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL 
 
 func relayImageQualityCheck(data []byte, outputFormat string, payload map[string]any) map[string]any {
 	check := map[string]any{}
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, err := util.InspectGeneratedImage(data)
 	actualFormat := ""
 	if err == nil {
 		actualFormat = info.Format
@@ -532,8 +532,8 @@ func normalizeActualImageFormat(format string) string {
 		return "jpeg"
 	case "png":
 		return "png"
-	case "webp":
-		return "webp"
+	case "webp", "gif", "svg":
+		return strings.ToLower(strings.TrimSpace(format))
 	default:
 		return ""
 	}

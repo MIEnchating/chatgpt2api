@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
@@ -69,6 +70,7 @@ type ImageOutputOptions struct {
 }
 
 type ImageToolOptions struct {
+	Options          model.ImageGenerationOptions
 	Moderation       string
 	InputImageMask   string
 	Stream           bool
@@ -2166,6 +2168,17 @@ func mergeImageOutputOptions(payload map[string]any, options ImageOutputOptions)
 }
 
 func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
+	for key, value := range map[string]string{"complexity": options.Options.Complexity, "background": options.Options.Background, "markup": options.Options.Markup} {
+		if value != "" {
+			payload[key] = value
+		}
+	}
+	if options.Options.FrameCount != nil {
+		payload["frame_count"] = *options.Options.FrameCount
+	}
+	if options.Options.FrameDurationMS != nil {
+		payload["frame_duration_ms"] = *options.Options.FrameDurationMS
+	}
 	for key, value := range map[string]string{
 		"moderation":       NormalizeImageModeration(options.Moderation),
 		"input_image_mask": options.InputImageMask,
@@ -2190,7 +2203,12 @@ func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
 }
 
 func mergePublicImageToolTaskFields(target, source map[string]any) {
-	for _, key := range []string{"moderation"} {
+	for _, key := range []string{"frame_count", "frame_duration_ms"} {
+		if source[key] != nil {
+			target[key] = source[key]
+		}
+	}
+	for _, key := range []string{"moderation", "complexity", "background"} {
 		if value := util.Clean(source[key]); value != "" {
 			target[key] = value
 		}
@@ -2209,8 +2227,8 @@ func NormalizeImageOutputFormat(format string) string {
 		return "png"
 	case "jpg", "jpeg":
 		return "jpeg"
-	case "webp":
-		return "webp"
+	case "webp", "gif", "svg":
+		return strings.ToLower(strings.TrimSpace(format))
 	default:
 		return "png"
 	}

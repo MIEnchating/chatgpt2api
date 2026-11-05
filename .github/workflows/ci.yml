@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, closed]
 
 permissions:
   contents: read
@@ -17,6 +17,7 @@ env:
 
 jobs:
   test:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -44,6 +45,10 @@ jobs:
 
       - name: Test Agents SDK runtime
         working-directory: agent-runtime
+        run: npm test
+
+      - name: Test desktop lifecycle and browser boundaries
+        working-directory: desktop
         run: npm test
 
       - name: Install dependencies
@@ -114,6 +119,7 @@ jobs:
           rm .env
 
   storage-integration:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:

@@ -1,4 +1,7 @@
 "use client";
+
+import type { ImageGenerationOptions } from "@/lib/image-generation-options";
+import type { ImageOutputFormat } from "@/lib/api";
 import {
   ArrowUp,
   BookOpenText,
@@ -74,6 +77,10 @@ type ImageComposerProps = {
   imageCustomHeight: string;
   imageSnapToMultiple16: boolean;
   imageQuality: "" | ImageQuality;
+  imageOptions?: ImageGenerationOptions;
+  imageOutputFormat: ImageOutputFormat;
+  onImageOptionsChange: (options: ImageGenerationOptions) => void;
+  onImageOutputFormatChange: (format: ImageOutputFormat) => void;
   videoModel: string;
   videoModelOptions: ReadonlyArray<{ value: string; label: string }>;
   videoSize: string;
@@ -274,6 +281,7 @@ export function ImageComposer({
   imageCustomHeight,
   imageSnapToMultiple16,
   imageQuality,
+  imageOptions, imageOutputFormat, onImageOptionsChange, onImageOutputFormatChange,
   videoModel,
   videoModelOptions,
   videoSize,
@@ -415,10 +423,13 @@ export function ImageComposer({
     customHeight: imageCustomHeight,
     snapToMultiple16: imageSnapToMultiple16,
     quality: imageQuality,
+    imageOptions, outputFormat: imageOutputFormat,
     count: Number(imageCount) || 1,
   };
 
   function updateImageSettings(patch: Partial<ImageSettingsValue>) {
+    if (patch.imageOptions !== undefined) onImageOptionsChange(patch.imageOptions);
+    if (patch.outputFormat !== undefined) onImageOutputFormatChange(patch.outputFormat);
     if (patch.mode !== undefined) onImageSizeModeChange(patch.mode);
     if (patch.aspectRatio !== undefined) onImageAspectRatioChange(patch.aspectRatio);
     if (patch.resolution !== undefined) onImageResolutionChange(patch.resolution);

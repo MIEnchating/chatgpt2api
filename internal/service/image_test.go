@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"net/url"
@@ -21,6 +22,30 @@ import (
 
 	"chatgpt2api/internal/storage"
 )
+
+func TestImageStoragePreservesAnimatedGIF(t *testing.T) {
+	service := NewImageService(testImageConfig{root: t.TempDir()})
+	palette := color.Palette{color.Transparent, color.White}
+	first := image.NewPaletted(image.Rect(0, 0, 8, 8), palette)
+	second := image.NewPaletted(image.Rect(0, 0, 8, 8), palette)
+	second.SetColorIndex(0, 0, 1)
+	var encoded bytes.Buffer
+	if err := gif.EncodeAll(&encoded, &gif.GIF{Image: []*image.Paletted{first, second}, Delay: []int{20, 30}, LoopCount: 0}); err != nil {
+		t.Fatal(err)
+	}
+	url, err := service.SaveImageBytes(context.Background(), encoded.Bytes(), "", "owner", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, mime, err := service.ImageBytes(url, ImageAccessScope{OwnerID: "owner"})
+	if err != nil || mime != "image/gif" || !bytes.Equal(data, encoded.Bytes()) {
+		t.Fatalf("animation changed: %s %v", mime, err)
+	}
+	decoded, err := gif.DecodeAll(bytes.NewReader(data))
+	if err != nil || len(decoded.Image) != 2 || decoded.Delay[1] != 30 {
+		t.Fatalf("animation frames lost: %v", err)
+	}
+}
 
 type testImageConfig struct {
 	root string

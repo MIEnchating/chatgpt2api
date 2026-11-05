@@ -1,3 +1,4 @@
+import { isGPTImage26, imageReferenceImageLimit } from "./image-model-capabilities";
 import { configuredImageModel } from "./image-model-definitions";
 
 export const CUSTOM_IMAGE_ASPECT_RATIO = "custom";
@@ -150,6 +151,8 @@ export const IMAGE_QUALITY_OPTIONS = [
   { value: "low", label: "低", description: "低质量，速度更快，适合草稿测试" },
   { value: "medium", label: "中", description: "均衡质量与速度，适合日常生成" },
   { value: "high", label: "高", description: "高质量，耗时更长，适合最终出图" },
+  { value: "xhigh", label: "超高", description: "更高的渲染质量" },
+  { value: "max", label: "最高", description: "最高渲染质量" },
 ] as const;
 
 export const IMAGE_WORKBENCH_QUALITY_OPTIONS = [
@@ -159,6 +162,13 @@ export const IMAGE_WORKBENCH_QUALITY_OPTIONS = [
   { value: "low", label: "低" },
 ] as const;
 
+export function imageWorkbenchQualityOptions(model: string) {
+  const definition = configuredImageModel(model);
+  if (!definition && !isGPTImage26(model)) return IMAGE_WORKBENCH_QUALITY_OPTIONS;
+  const options = [IMAGE_WORKBENCH_QUALITY_OPTIONS[0], { value: "max", label: "最高" }, { value: "xhigh", label: "超高" }, ...IMAGE_WORKBENCH_QUALITY_OPTIONS.slice(1)];
+  return definition ? options.filter((option) => option.value === "" || definition.quality_values.includes(option.value)) : options;
+}
+
 export function imageWorkbenchAcceptsReferenceImages(model: string) {
   const definition = configuredImageModel(model);
   if (definition) return definition.max_reference_images > 0;
@@ -166,6 +176,7 @@ export function imageWorkbenchAcceptsReferenceImages(model: string) {
 }
 
 export function imageWorkbenchReferenceImageLimit(model: string) {
+  if (isGPTImage26(model)) return imageReferenceImageLimit(model);
   const definition = configuredImageModel(model);
   if (definition) return definition.max_reference_images;
   return Number.POSITIVE_INFINITY;

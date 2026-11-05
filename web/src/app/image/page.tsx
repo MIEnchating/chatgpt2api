@@ -1,5 +1,8 @@
 "use client";
 
+import { type ImageGenerationOptions, normalizeImageGenerationOptions, imageOutputSupportsStreaming } from "@/lib/image-generation-options";
+import { isGPTImage26 } from "@/lib/image-model-capabilities";
+
 import { videoModelContract } from "@/lib/video-model-contracts";
 import { isVideoSaveFailure } from "@/lib/video-task-error";
 
@@ -36,7 +39,7 @@ import {
   DEFAULT_IMAGE_CUSTOM_HEIGHT,
   DEFAULT_IMAGE_CUSTOM_RATIO,
   DEFAULT_IMAGE_CUSTOM_WIDTH,
-  IMAGE_WORKBENCH_QUALITY_OPTIONS,
+  imageWorkbenchQualityOptions,
   buildImageSize,
   formatImageSizeDisplay,
   getImageSizeSelectionFromSize,
@@ -388,7 +391,7 @@ function imageFileExtensionForOutputFormat(format?: ImageOutputFormat) {
 }
 
 function imageMimeTypeForOutputFormat(format?: ImageOutputFormat) {
-  return format === "jpeg" ? "image/jpeg" : `image/${format || "png"}`;
+  return format === "svg" ? "image/svg+xml" : `image/${format || "png"}`;
 }
 
 async function fetchImageAsFile(url: string, fileName: string) {
@@ -728,8 +731,8 @@ function storedImageVisibilityPath(image: StoredImage) {
     }
   }
   if (image.b64_json?.trim()) {
-    const format = image.outputFormat === "jpeg" || image.outputFormat === "webp" ? image.outputFormat : "png";
-    return `data:image/${format};base64,${image.b64_json.trim()}`;
+    const format = image.outputFormat || "png";
+    return `data:${imageMimeTypeForOutputFormat(format)};base64,${image.b64_json.trim()}`;
   }
   return "";
 }
@@ -1509,6 +1512,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageCustomHeight, setImageCustomHeight] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_custom_height);
   const [imageSnapToMultiple16, setImageSnapToMultiple16] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_snap_to_multiple_16);
   const [imageQuality, setImageQuality] = useState<"" | ImageQuality>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_quality);
+  const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>({});
+  const [imageMarkup, setImageMarkup] = useState<string>();
+  useEffect(() => setImageMarkup(undefined), [imageModel, session.key]);
   const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_format);
   const [imageOutputCompression, setImageOutputCompression] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_compression);
   const {
@@ -1795,7 +1801,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     ? imageWorkbenchSupportsSize(editingTurnDraft.model)
     : false;
   const editingDraftQualityOptions = editingTurnDraft
-    ? IMAGE_WORKBENCH_QUALITY_OPTIONS
+    ? imageWorkbenchQualityOptions(editingTurnDraft.model)
     : [];
   const editingDraftQualitySupported = Boolean(editingTurnDraft);
   const editingDraftCustomRatioInvalid = editingTurnDraft && editingDraftEffectiveSizeSelection
@@ -2378,6 +2384,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setImageSnapToMultiple16(workbench.image_snap_to_multiple_16);
     setImageQuality(isImageQuality(workbench.image_quality) ? workbench.image_quality : "");
     setImageCount(String(workbench.image_count));
+    setImageOptions(normalizeImageGenerationOptions(workbench.image_options));
     setImageOutputFormat(isImageOutputFormat(workbench.image_output_format) ? workbench.image_output_format : DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression(workbench.image_output_compression);
   }
@@ -2469,6 +2476,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       image_snap_to_multiple_16: imageSnapToMultiple16,
       image_quality: isImageQuality(imageQuality) ? imageQuality : "",
       image_count: normalizedImageWorkbenchCount(Number(imageCount)),
+      image_options: { ...imageOptions, markup: undefined },
       image_output_format: imageOutputFormat,
       image_output_compression: supportsImageOutputCompression(imageOutputFormat)
         ? String(normalizeOutputCompressionValue(imageOutputCompression) ?? "")
@@ -2491,7 +2499,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (signature === currentWorkbenchSignatureRef.current) return;
     currentWorkbenchSignatureRef.current = signature;
     workbenchSaverRef.current?.enqueue(workbench);
-  }, [composerMode, imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoParameters, videoTaskCount, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
+  }, [imageOptions, composerMode, imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoParameters, videoTaskCount, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     setConversationDetailId(selectedConversationId);
@@ -2767,6 +2775,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const clearComposerInputs = useCallback(() => {
     promptApplyRequestIdRef.current += 1;
     setImagePrompt("");
+    setImageMarkup(undefined);
     setImageCount("1");
     setImageOutputFormat(DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression("");
@@ -3817,7 +3826,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             ? activeTurnSizeRequest.selection?.resolution
             : undefined;
         const taskQuality = imageQualityForRequest(activeTurn.quality || "");
-        const taskStream = Boolean(activeTurn.stream);
+        const taskStream = Boolean(activeTurn.stream && imageOutputSupportsStreaming(taskOutputFormat));
         const taskPartialImages = taskStream ? normalizedImagePartialImages(Number(activeTurn.partialImages)) : 0;
         const pendingTaskGroups = imageWorkbenchTaskDispatches(
           activeTurn.images.flatMap((image, imageIndex) =>
@@ -3844,7 +3853,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               taskStream,
               taskPartialImages,
               {
-                apiMode: activeTurn.apiMode,
+                imageOptions: activeTurn.imageOptions,
+              apiMode: activeTurn.apiMode,
                 responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
                 codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
                 systemPrompt: activeTurn.imageSystemPrompt ?? imageGenerationPreferences.system_prompt,
@@ -3871,6 +3881,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             taskStream,
             taskPartialImages,
             {
+              imageOptions: activeTurn.imageOptions,
               apiMode: activeTurn.apiMode,
               responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
               codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
@@ -5154,6 +5165,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         count: requestedCount,
         size: videoMode ? normalizedVideoTurnFields?.size || currentImageSize : currentImageSize,
         sizeSelection: currentImageSizeSelection,
+        imageOptions: isGPTImage26(effectiveModel) ? { ...imageOptions, markup: imageMarkup } : undefined,
         quality: effectiveImageQuality === "auto" ? undefined : effectiveImageQuality,
         outputFormat: effectiveOutputFormat,
         outputCompression: effectiveOutputCompression,
@@ -5788,6 +5800,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageCustomWidth={imageCustomWidth}
                 imageCustomHeight={imageCustomHeight}
                 imageSnapToMultiple16={imageSnapToMultiple16}
+                imageOptions={{ ...imageOptions, markup: imageMarkup }}
+                imageOutputFormat={imageOutputFormat}
+                onImageOptionsChange={(options) => { setImageMarkup(options.markup); setImageOptions({ ...options, markup: undefined }); }}
+                onImageOutputFormatChange={setImageOutputFormat}
                 imageQuality={imageQuality}
                 videoModel={videoModel}
                 videoModelOptions={videoModelOptions}

@@ -36,6 +36,7 @@ export type CanvasNode = {
   generation_resolution?: string;
   generation_quality?: ImageQuality;
   generation_count?: number;
+  generation_image_options?: import("@/lib/image-generation-options").ImageGenerationOptions;
   generation_output_format?: ImageOutputFormat;
   generation_output_compression?: number;
   generation_stream?: boolean;

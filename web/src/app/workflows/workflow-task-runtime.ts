@@ -121,7 +121,7 @@ export function creationTaskImages(task: CreationTask): WorkflowTaskImage[] {
     const format = String(item.output_format || task.output_format || "png")
       .toLowerCase()
       .replace("jpg", "jpeg");
-    const resolvedURL = url || (encoded ? `data:image/${format};base64,${encoded}` : "");
+    const resolvedURL = url || (encoded ? `data:${format === "svg" ? "image/svg+xml" : `image/${format}`};base64,${encoded}` : "");
     if (!resolvedURL) return [];
     const width = Number(item.width) || undefined;
     const height = Number(item.height) || undefined;

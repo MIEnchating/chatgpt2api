@@ -12,6 +12,9 @@ import (
 )
 
 func validateRelayImageRequest(pathValue, model string, payload map[string]any, images []protocol.UploadedImage) error {
+	if err := validateGPTImage26Request(pathValue, model, payload, images); err != nil {
+		return err
+	}
 	if err := validateConfiguredImageRequest(payload, images); err != nil {
 		return err
 	}

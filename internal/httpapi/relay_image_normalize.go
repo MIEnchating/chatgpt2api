@@ -144,15 +144,24 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 		delete(payload, "partial_images")
 	}
 
-	if _, ok := payload["size"]; ok {
+	if _, ok := payload["size"]; ok && !util.IsGPTImage26(model) {
 		if normalizedSize, ok := normalizeRelayImageSize(util.Clean(payload["size"])); ok && normalizedSize != "" {
 			payload["size"] = normalizedSize
 		} else {
 			delete(payload, "size")
 		}
 	}
-	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
-	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
+	qualities := map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"}
+	if util.IsGPTImage26(model) {
+		qualities["xhigh"], qualities["max"] = "xhigh", "max"
+	}
+	normalizeRelayImageEnum(payload, "quality", qualities)
+	backgrounds := map[string]string{"auto": "auto", "opaque": "opaque"}
+	if util.IsGPTImage26(model) {
+		backgrounds["transparent"] = "transparent"
+		delete(payload, "response_format")
+	}
+	normalizeRelayImageEnum(payload, "background", backgrounds)
 	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
 	normalizeRelayImageEnum(payload, "response_format", map[string]string{"b64_json": "b64_json"})
 
@@ -1007,8 +1016,8 @@ func normalizeRelayImageOutputFormat(format string) (string, bool) {
 		return "png", true
 	case "jpg", "jpeg":
 		return "jpeg", true
-	case "webp":
-		return "webp", true
+	case "webp", "gif", "svg":
+		return strings.ToLower(strings.TrimSpace(format)), true
 	default:
 		return "", false
 	}

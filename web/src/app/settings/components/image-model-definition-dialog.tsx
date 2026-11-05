@@ -75,7 +75,7 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
           </div>
           {draft.protocol !== "google-gemini-image" ? <fieldset className="grid gap-2">
             <legend className="mb-2 text-sm font-medium">质量档位</legend>
-            <div className="flex flex-wrap gap-5">{[["low", "低"], ["medium", "中"], ["high", "高"]].map(([value, label]) => (
+            <div className="flex flex-wrap gap-5">{[["low", "低"], ["medium", "中"], ["high", "高"], ...(draft.protocol === "openai-image" ? [["xhigh", "超高"], ["max", "最高"]] : [])].map(([value, label]) => (
               <label key={value} className="flex items-center gap-2 text-sm"><Checkbox checked={draft.quality_values.includes(value)} onCheckedChange={(checked) => toggleValue("quality_values", value, checked === true)} />{label}</label>
             ))}</div>
           </fieldset> : null}

@@ -190,3 +190,9 @@ func MaxImageReferenceImages(model string) int {
 	}
 	return maxImageReferenceImages
 }
+
+// IsGPTImage26 matches the current official Image 2.6 model IDs.
+func IsGPTImage26(model string) bool {
+	value := strings.ToLower(strings.TrimSpace(model))
+	return value == "gpt-image-2.6-sunburst" || value == "gpt-image-2.6-flare"
+}

@@ -32,6 +32,11 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		"requested_size":           firstForm(r.MultipartForm, "requested_size"),
 		"image_resolution":         firstForm(r.MultipartForm, "image_resolution"),
 		"quality":                  firstForm(r.MultipartForm, "quality"),
+		"complexity":               firstForm(r.MultipartForm, "complexity"),
+		"background":               firstForm(r.MultipartForm, "background"),
+		"markup":                   firstForm(r.MultipartForm, "markup"),
+		"frame_count":              firstForm(r.MultipartForm, "frame_count"),
+		"frame_duration_ms":        firstForm(r.MultipartForm, "frame_duration_ms"),
 		"moderation":               firstForm(r.MultipartForm, "moderation"),
 		"input_image_mask":         firstForm(r.MultipartForm, "input_image_mask"),
 		"output_format":            firstForm(r.MultipartForm, "output_format"),
@@ -45,6 +50,16 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		"token_name":               firstForm(r.MultipartForm, "token_name"),
 		"api_key":                  firstForm(r.MultipartForm, "api_key"),
 		"response_format":          firstForm(r.MultipartForm, "response_format"),
+	}
+	if headers := r.MultipartForm.File["markup"]; len(headers) > 0 {
+		if len(headers) != 1 || util.Clean(body["markup"]) != "" {
+			return nil, nil, errors.New("provide one markup PNG")
+		}
+		markup, err := readUpload(headers[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		body["markup"] = uploadedImageDataURL(markup)
 	}
 	maskHeaders := r.MultipartForm.File["mask"]
 	if len(maskHeaders) > 1 {

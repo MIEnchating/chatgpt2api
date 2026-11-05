@@ -341,7 +341,7 @@ function taskItemImageSource(item: CreationTaskData) {
   if (url) return url;
   const base64 = String(item.b64_json || "").trim();
   if (!base64) return "";
-  const mimeType = item.mime_type?.startsWith("image/") ? item.mime_type : "image/png";
+  const mimeType = item.mime_type?.startsWith("image/") ? item.mime_type : item.output_format === "svg" ? "image/svg+xml" : `image/${item.output_format || "png"}`;
   return `data:${mimeType};base64,${base64}`;
 }
 

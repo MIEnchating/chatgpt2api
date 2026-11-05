@@ -25,7 +25,7 @@ func relayMultipartRequest(ctx context.Context, baseURL, pathValue, apiKey strin
 		mask = &parsed
 	}
 	for key, value := range payload {
-		if key == "input_image_mask" {
+		if key == "input_image_mask" || key == "markup" {
 			continue
 		}
 		if value == nil {
@@ -64,6 +64,22 @@ func relayMultipartRequest(ctx context.Context, baseURL, pathValue, apiKey strin
 			return nil, err
 		}
 		if _, err := part.Write(mask.Data); err != nil {
+			return nil, err
+		}
+	}
+	if hasRelayImageMask(payload["markup"]) {
+		markup, _, err := relayImageMask(payload["markup"])
+		if err != nil {
+			return nil, err
+		}
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", `form-data; name="markup"; filename="markup.png"`)
+		header.Set("Content-Type", "image/png")
+		part, err := writer.CreatePart(header)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(markup.Data); err != nil {
 			return nil, err
 		}
 	}

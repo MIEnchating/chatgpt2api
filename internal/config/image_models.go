@@ -99,7 +99,7 @@ func validateImageModelDefinition(d model.ImageModelDefinition) error {
 		}
 	}
 	for _, quality := range d.QualityValues {
-		if quality != "low" && quality != "medium" && quality != "high" {
+		if quality != "low" && quality != "medium" && quality != "high" && quality != "xhigh" && quality != "max" {
 			return fmt.Errorf("无效的质量档位 %q", quality)
 		}
 	}

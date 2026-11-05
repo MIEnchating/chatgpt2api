@@ -573,6 +573,7 @@ function canvasImageParameters(node?: CanvasNode | null) {
     generation_size: node?.generation_size ?? defaults.generation_size,
     generation_resolution: node?.generation_resolution ?? defaults.generation_resolution,
     generation_quality: node?.generation_quality ?? defaults.generation_quality,
+    generation_image_options: node?.generation_image_options,
     generation_count: node?.generation_count ?? defaults.generation_count,
     generation_output_format: node?.generation_output_format ?? defaults.generation_output_format,
     generation_output_compression: node?.generation_output_compression ?? defaults.generation_output_compression,
@@ -4151,10 +4152,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       : undefined;
     const outputFormat = supportsImageOutputControls(generationModel) ? parameters.generation_output_format : undefined;
     const outputCompression = outputFormat ? parameters.generation_output_compression : undefined;
-    const count = canvasGenerationCount(generationModel, parameters.generation_count, options.resultCount, retrying);
+    const count = outputFormat === "svg" ? 1 : canvasGenerationCount(generationModel, parameters.generation_count, options.resultCount, retrying);
     const stream = supportsImageStreaming(generationModel) && imageGenerationPreferences.stream;
     const partialImages = stream ? imageGenerationPreferences.partial_images : 0;
     const compatibilityOptions = {
+      imageOptions: parameters.generation_image_options,
       apiMode: imageGenerationPreferences.api_mode,
       responseFormatB64JSON: parameters.generation_response_format_b64_json ?? false,
       codexCLICompatibility: parameters.generation_codex_cli_compatibility ?? false,

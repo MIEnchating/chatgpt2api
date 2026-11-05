@@ -45,6 +45,22 @@ curl -c ./cloud-cotton.cookies http://127.0.0.1:8090/auth/login \
 
 Gemini 聊天响应中的图片支持内嵌 Base64 数据，以及 `message.content` 内的 Markdown 图片链接（如 `![image](https://cdn.example.test/image.png)`）。远程图片由服务端下载、校验实际图片内容并保存到图库；链接下载失败会保留具体错误，普通文字链接不作为图片结果。
 
+### GPT Image 2.6
+
+`gpt-image-2.6-sunburst` 与 `gpt-image-2.6-flare` 使用 OpenAI Images 协议。工作台和画布共用参数面板，模型名原样发给中转服务，不修改用户已有的模型列表。
+
+- `complexity`：`low`、`medium`、`high`，省略由上游使用 `high`；与 `quality` 分开。
+- `background`：`auto`、`opaque`、`transparent`；透明背景限 PNG/WebP。
+- `output_format`：PNG/JPEG/WebP，以及仅用于文生图的 SVG/GIF。SVG 要求单个请求 `n=1`；两种新格式不发送流式、部分图片或压缩参数。普通单次请求最多 10 张、参考图最多 16 张；管理员配置的更低上限仍生效。
+- GIF 使用 `frame_count`（默认 9）和 `frame_duration_ms`（默认 200）。官方指南与 API Reference 的范围不一致，本项目暂取交集：2–16 帧、20–2000 毫秒。选择 GIF 时界面切换自动尺寸；显式尺寸按单帧像素数 × 帧数 × 数量不超过 8,294,400 做保守校验，最终可用范围仍由渠道决定。
+- 编辑标注 `markup` 使用与首张原图相同尺寸、实际包含透明像素的 PNG。界面可上传不超过 4 MB 的标注图；内部编辑请求支持上传 `markup` 文件或 PNG data URL，服务端转换为上游 multipart 文件。不能与 `mask` 同时使用。本地校验 PNG、透明像素和像素总量，尺寸一致性由上游按 EXIF 方向校正后校验。标注保存在该次创作记录或画布节点中，不写入通用生成偏好或公开任务字段。
+- 生成文件按原格式保存；GIF 保留动画帧，SVG 校验为静态、自包含的矢量内容，拒绝脚本、外部资源及不支持的元素。GIF 缩略图为静态首帧；SVG 预览使用已校验的原文件。下载保持原始格式。
+- 新参数随异步任务传递；工作台记录和画布节点保留复杂度、背景和动画设置，以便重试。GPT Image 2.6 不下发旧 `response_format`。
+
+质量档位支持 `auto/low/medium/high/xhigh/max`；官方指南费用计算章节明确列出 2.6 的 `xhigh/max`，参数说明部分仍只点名 2.5。精确尺寸暂按 16 倍数、单边最多 3840、像素最多 8,294,400、宽高比不超过 3:1 校验。本地适配不代表中转渠道已开放 SVG/GIF 或所有新参数。
+
+参考：[官方图像指南](https://developers.openai.com/api/docs/guides/image-generation)、[生成参数](https://developers.openai.com/api/reference/resources/images/methods/generate)、[编辑参数](https://developers.openai.com/api/reference/resources/images/methods/edit)（2026-11-05 核对）。
+
 ### 自定义模型协议与能力
 
 在“设置 → 全局模型配置”中添加图片模型后，点击该模型的设置按钮，选择调用协议并配置能力，最后点击“保存模型配置”。单个图片模型添加后会直接打开协议设置。模型名称原样传给上游，不会自动改名或自动切换协议。
