@@ -22,6 +22,8 @@ var agentTools []map[string]any
 var agentPrompts map[string]string
 var agentLabels map[string]string
 
+const canvasAgentMaxToolCalls = 12
+
 func init() {
 	b, _ := canvasAgentAssets.ReadFile("canvas_agent_assets/tools.json")
 	if err := json.Unmarshal(b, &agentTools); err != nil {
@@ -38,24 +40,32 @@ func init() {
 }
 
 type canvasAgentWorker struct {
-	persisted     CanvasDocument
-	conversation  bool
-	service       *CanvasAgentService
-	ctx           context.Context
-	identity      Identity
-	doc           CanvasDocument
-	req           CanvasAgentRequest
-	skills        []AgentSkill
-	session       map[string]any
-	state         map[string]any
-	messages      []map[string]any
-	checkpoint    string
-	activeCall    map[string]any
-	batchCalls    []map[string]any
-	batchFailed   bool
-	canvasChanged bool
-	layoutChanged bool
-	batchQuestion string
+	persisted         CanvasDocument
+	conversation      bool
+	service           *CanvasAgentService
+	ctx               context.Context
+	identity          Identity
+	doc               CanvasDocument
+	req               CanvasAgentRequest
+	skills            []AgentSkill
+	session           map[string]any
+	state             map[string]any
+	messages          []map[string]any
+	checkpoint        string
+	modelInstructions string
+	activeCall        map[string]any
+	batchCalls        []map[string]any
+	batchFailed       bool
+	canvasChanged     bool
+	layoutChanged     bool
+	batchQuestion     string
+	sdk               *AgentSDKSession
+	answerCallID      string
+	answerText        string
+	answerMediaChoice string
+	accepted          bool
+	visuals           []map[string]any
+	finalBlocked      bool
 }
 
 func (w *canvasAgentWorker) save() error {
@@ -79,7 +89,12 @@ func (w *canvasAgentWorker) save() error {
 	persisted := []map[string]any{}
 	_ = json.Unmarshal([]byte(agentJSON(sessions)), &persisted)
 	for _, session := range persisted {
+		if session["id"] == w.req.SessionID && w.sdk != nil && (w.sdk.State != "" || len(w.sdk.Items) > 0) {
+			omitCanvasAgentResponseCopies(session)
+			compactCanvasAgentToolJournal(session)
+		}
 		for _, message := range util.AsMapSlice(session["protocolMessages"]) {
+
 			if message["role"] == "user" || message["role"] == "system" {
 				if parts, ok := message["content"].([]any); ok {
 					savedParts := []map[string]any{}
@@ -114,6 +129,57 @@ func (w *canvasAgentWorker) save() error {
 	}
 	return err
 }
+
+// Tool payloads are durable in the private runtime. Public journals retain the
+// receipts needed to render history without duplicating node bodies on every read.
+func compactCanvasAgentToolJournal(session map[string]any) {
+	for _, message := range util.AsMapSlice(session["protocolMessages"]) {
+		if message["role"] != "tool" || len(util.Clean(message["content"])) <= 1024 {
+			continue
+		}
+		result := map[string]any{}
+		if json.Unmarshal([]byte(util.Clean(message["content"])), &result) != nil || result["ok"] != true || result["requiresUserReview"] == true {
+			continue
+		}
+		summary := map[string]any{"ok": true, "detailsOmitted": true}
+		for _, key := range []string{"code", "nodeId", "nodeIds", "taskId", "taskIds", "status", "submitted", "requiresUserReview", "sessionId", "pendingTaskIds", "completedTaskIds"} {
+			if value, ok := result[key]; ok {
+				summary[key] = value
+			}
+		}
+		if text := util.Clean(result["message"]); len(text) <= 1024 && text != "" {
+			summary["message"] = text
+		}
+		if node := agentMap(result["node"]); node["id"] != nil {
+			summary["nodeId"] = node["id"]
+		}
+		if ref := agentMap(result["reference"]); ref["id"] != nil {
+			summary["referenceId"] = ref["id"]
+		}
+		message["content"] = agentJSON(summary)
+	}
+}
+
+// SDK storage owns opaque reasoning and raw response items. Older public
+// entries only need their text and tool journal; keep the latest response until
+// its SDK checkpoint is committed, including the model-to-prepare crash window.
+func omitCanvasAgentResponseCopies(session map[string]any) {
+	messages := util.AsMapSlice(session["protocolMessages"])
+	latest := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i]["role"] == "assistant" {
+			latest = i
+			break
+		}
+	}
+	for i, message := range messages {
+		if i != latest && message["role"] == "assistant" {
+			delete(message, "responseItems")
+			delete(message, "reasoningContent")
+		}
+	}
+}
+
 func (w *canvasAgentWorker) assistant() map[string]any {
 	for _, m := range util.AsMapSlice(w.session["messages"]) {
 		if m["id"] == w.req.AssistantID {
@@ -144,6 +210,9 @@ func (w *canvasAgentWorker) trace(entry map[string]any) {
 	m["trace"] = append(items, entry)
 }
 func (w *canvasAgentWorker) finish(status, reply string) error {
+	if usage := agentMap(w.session["contextUsage"]); len(usage) > 0 {
+		usage["compacting"] = false
+	}
 	w.doc.AgentRun.Status = status
 	m := w.assistant()
 	if w.doc.AgentRun.Engine != "codex-tools" || status != "success" {
@@ -166,7 +235,10 @@ func (w *canvasAgentWorker) finish(status, reply string) error {
 		latest, readErr := w.service.canvas.Project(canvasAgentOwner(w.identity), w.doc.ID)
 		if readErr == nil && latest.AgentRun != nil && latest.AgentRun.ID == w.req.ID {
 			latest.AgentRun.Status = "error"
-			latest.AgentRun.Error = "最终进度保存失败，已保留上一次成功保存的记录。"
+			latest.AgentRun.Error = "执行记录保存失败，已保留上一次成功保存的记录。"
+			if len(w.doc.AgentSessions) > canvasDocumentMaxAgentDataBytes {
+				latest.AgentRun.Error = "会话执行记录超过 512 KB 存储上限，与模型上下文 token 上限无关；已保留上一次成功保存的记录。"
+			}
 			if messageErr := agentSetMessage(&latest, w.req.SessionID, w.req.AssistantID, "error", latest.AgentRun.Error); messageErr == nil {
 				if saved, saveErr := w.service.canvas.saveAgent(canvasAgentOwner(w.identity), latest); saveErr == nil {
 					w.doc = saved
@@ -201,94 +273,92 @@ func (w *canvasAgentWorker) run() {
 		if errors.Is(err, errCanvasAgentEditing) {
 			status = "waiting"
 		}
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) && w.ctx.Err() != nil {
 			status = "cancelled"
 			reply = "已停止继续执行，已创建节点和已提交媒体任务会保留。"
 			if w.service.ctx.Err() != nil {
 				status = "interrupted"
 				reply = "服务已停止，执行记录已保存；请核对已有结果后继续。"
+			} else {
+				if question := agentMap(w.state["pendingQuestion"]); len(question) > 0 {
+					name := "ask_user_question"
+					if question["purpose"] == "delete_node" {
+						name = "delete_node"
+					}
+					w.record(map[string]any{"id": question["id"], "name": name}, agentError("user_cancelled", "请求已停止，未批准任何依赖回答的操作"))
+					delete(w.state, "pendingQuestion")
+				}
+				if revokeErr := w.revokeSDKQuestion(); revokeErr != nil {
+					status = "error"
+					reply = revokeErr.Error()
+				}
+				w.doc.AgentRun.SDKState = ""
 			}
 		}
 		w.finish(status, reply)
 	}
 }
 func (w *canvasAgentWorker) execute() error {
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
 	w.conversation = w.isConversation()
 	if w.conversation {
 		w.assistant()["interactionMode"] = "conversation"
 	}
-	if w.doc.AgentRun.SDKState == "" && (!w.req.Resume || w.req.Edit || len(w.messages) == 0) {
-		// Previous turns keep their reference labels; pixels are read on demand.
-		for _, message := range w.messages {
-			if message["role"] != "user" {
-				continue
-			}
-			if parts := util.AsMapSlice(message["content"]); len(parts) > 0 {
-				texts := []map[string]any{}
-				for _, part := range parts {
-					if part["type"] == "text" {
-						texts = append(texts, part)
-					}
-				}
-				message["content"] = texts
-			}
-		}
-		w.messages = append(w.messages, map[string]any{"role": "user", "messageID": w.req.UserMessageID, "content": w.userContent()})
-	}
-	if w.req.Resume || w.doc.AgentRun.SDKState != "" {
-		if err := w.restoreActiveVisualReferences(); err != nil {
-			return err
-		}
-	}
+	delete(w.state, "pendingModelTaskId")
 	if w.req.MediaChoice != "" {
 		w.state["mediaGenerationDeferred"] = w.req.MediaChoice != "generate"
 	}
+	w.reconcilePendingMedia()
 	if err := w.save(); err != nil {
 		return err
-	}
-	if !w.conversation && (w.req.Resume || w.req.MediaChoice == "generate" || w.doc.AgentRun.SDKState != "") && w.autoMedia() && len(agentMap(w.state["pendingQuestion"])) == 0 {
-		pending := map[string]map[string]any{}
-		for _, m := range w.messages {
-			if m["role"] != "tool" {
-				continue
-			}
-			var result map[string]any
-			if json.Unmarshal([]byte(util.Clean(m["content"])), &result) != nil {
-				continue
-			}
-			id := util.Clean(result["nodeId"])
-			if id != "" {
-				pending[id] = m
-			}
-		}
-		for id, m := range pending {
-			n := w.node(id)
-			if n == nil || !slices.Contains([]string{"image", "video", "audio"}, n.Type) || n.GenerationStatus == "success" {
-				continue
-			}
-			if n.GenerationStatus != "idle" && n.GenerationStatus != "loading" {
-				continue
-			}
-			w.activeCall = map[string]any{"id": m["toolCallId"], "name": m["name"]}
-			result, err := w.generateNode(id)
-			if err != nil {
-				return err
-			}
-			w.record(w.activeCall, result)
-			if err = w.save(); err != nil {
-				return err
-			}
-		}
-		w.activeCall = nil
 	}
 	return w.runSDK()
 }
 
 func (w *canvasAgentWorker) record(call, result map[string]any) {
+	// Receipts commit with canvas side effects before SDK receives a tool result.
+	if w.activeCall != nil && w.activeCall["id"] == call["id"] && agentToolKind(util.Clean(call["name"])) != "read" && call["name"] != "read_skill_file" {
+		receipts := agentMap(w.session["toolReceipts"])
+		fingerprints := map[string]any{}
+		ids := agentStrings(result["nodeIds"])
+		if id := util.Clean(result["nodeId"]); id != "" {
+			ids = append(ids, id)
+		}
+		for _, id := range ids {
+			if w.node(id) != nil {
+				fingerprints[id] = w.deletionFingerprint(id)
+			}
+		}
+		receipts[util.Clean(call["id"])] = map[string]any{"name": call["name"], "fingerprint": canvasAgentToolCallFingerprint(call), "result": result, "nodeFingerprints": fingerprints, "done": false}
+		if id := util.Clean(result["nodeId"]); id != "" && result["submitted"] == true {
+			agentMap(receipts[util.Clean(call["id"])])["generationInputFingerprint"] = canvasAgentGenerationInputFingerprint(w.doc, id)
+		}
+		w.session["toolReceipts"] = receipts
+	}
 	m := map[string]any{"role": "tool", "name": call["name"], "toolCallId": call["id"], "content": agentJSON(result)}
 	for i := len(w.messages) - 1; i >= 0; i-- {
 		if w.messages[i]["role"] == "tool" && w.messages[i]["toolCallId"] == call["id"] {
 			w.messages[i] = m
+			return
+		}
+	}
+	for i := len(w.messages) - 1; i >= 0; i-- {
+		if w.messages[i]["role"] != "assistant" {
+			continue
+		}
+		for _, previous := range util.AsMapSlice(w.messages[i]["toolCalls"]) {
+			if previous["id"] != call["id"] {
+				continue
+			}
+			position := i + 1
+			for position < len(w.messages) && w.messages[position]["role"] == "tool" {
+				position++
+			}
+			w.messages = append(w.messages, nil)
+			copy(w.messages[position+1:], w.messages[position:])
+			w.messages[position] = m
 			return
 		}
 	}
@@ -333,8 +403,8 @@ func agentCalls(raw any) ([]map[string]any, error) {
 			return nil, errors.New("无效工具调用")
 		}
 	}
-	if len(calls) > 12 {
-		return nil, errors.New("每批最多 12 个工具调用")
+	if len(calls) > canvasAgentMaxToolCalls {
+		return nil, fmt.Errorf("每批最多 %d 个工具调用，本批未执行；请拆成多轮调用，需要批量创建或生成时使用画布工作流工具", canvasAgentMaxToolCalls)
 	}
 	out := []map[string]any{}
 	seen := map[string]bool{}

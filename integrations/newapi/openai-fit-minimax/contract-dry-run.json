@@ -1,0 +1,57 @@
+[
+  {
+    "contract": "openai.fit minimax H3-self（New API）",
+    "passed": true,
+    "models_tested": 1,
+    "modes_tested": 2,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "openai.fit minimax H3 768 Spica（New API）",
+    "passed": true,
+    "models_tested": 1,
+    "modes_tested": 2,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "openai.fit minimax-h3-chovy（New API）",
+    "passed": true,
+    "models_tested": 1,
+    "modes_tested": 2,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "openai.fit minimax H3（New API）",
+    "passed": true,
+    "models_tested": 1,
+    "modes_tested": 2,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "openai.fit minimax-H3-super（New API）",
+    "passed": true,
+    "models_tested": 1,
+    "modes_tested": 2,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  }
+]

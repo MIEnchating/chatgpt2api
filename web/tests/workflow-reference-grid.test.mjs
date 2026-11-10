@@ -9,10 +9,11 @@ const source = readFileSync(
 
 test("workflow dialogs share reference grids for templates and runtime inputs", () => {
   assert.match(source, /function WorkflowReferenceGrid\(/);
-  assert.equal((source.match(/<WorkflowReferenceGrid /g) || []).length, 3);
+  assert.equal((source.match(/<WorkflowReferenceGrid /g) || []).length, 4);
   assert.equal((source.match(/onClick=\{\(\) => onRemove\(reference\.id\)\}/g) || []).length, 1);
   assert.match(source, /aria-label=\{`移除参考图 \$\{reference\.name\}`\}/);
-  assert.match(source, /disabled=\{disabled\}[\s\S]*disabled:cursor-not-allowed disabled:opacity-50/);
+  assert.match(source, /<AttachmentAction aria-label=\{`移除参考图 \$\{reference\.name\}`\} disabled=\{disabled\}/);
+  assert.match(source, /<WorkflowReferenceGrid references=\{items as WorkflowReference\[\]\} className="grid-cols-4" openOriginal/);
   assert.match(source, /emptyMessage=\{workflow\.template_references\.length \? "请添加至少一张新产品实拍图" : "未添加产品参考图"\}/);
   assert.match(source, /className="grid-cols-5" disabled=\{busy\} onRemove=\{onReferenceRemove\}/);
   assert.match(source, /onMove=\{moveTemplateReference\}/);

@@ -1,13 +1,16 @@
-"use client";
+// shadcn/ui (MIT). See LICENSE.shadcn.
+"use client"
 
-import * as React from "react";
-import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-
-import { cn } from "@/lib/utils";
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
+import * as React from "react"
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer"
+import { Button } from "./button";
+import { cn } from "@/lib/utils"
+import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 const TOOLTIP_DELAY = 300;
 const TOOLTIP_NAVIGATION_KEYS = new Set(["Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"]);
+const TooltipSideContext = React.createContext<"top" | "right" | "bottom" | "left">("top");
+const TooltipSideProvider = TooltipSideContext.Provider;
 const TooltipFocusContext = React.createContext<React.RefObject<boolean>>({ current: false });
 
 function TooltipProvider({ delayDuration = TOOLTIP_DELAY, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
@@ -25,8 +28,10 @@ function TooltipProvider({ delayDuration = TOOLTIP_DELAY, ...props }: React.Comp
   return <TooltipFocusContext.Provider value={keyboardNavigation}><TooltipPrimitive.Provider delayDuration={delayDuration} {...props} /></TooltipFocusContext.Provider>;
 }
 
-function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root {...props} />;
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
 function TooltipTrigger({ onFocus, ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
@@ -38,41 +43,37 @@ function TooltipTrigger({ onFocus, ...props }: React.ComponentProps<typeof Toolt
   }} />;
 }
 
-function TooltipContent({ className, sideOffset = 10, children, style, ...props }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+function TooltipContent({
+  className,
+  sideOffset = 4,
+  side,
+  children,
+  style,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   const layer = useOverlayLayer("tooltip");
+  const inheritedSide = React.useContext(TooltipSideContext);
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
-        sideOffset={sideOffset}
-        collisionPadding={8}
-        className={cn(
-          "pointer-events-auto max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-3 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-          className,
-        )}
-        {...props}
         data-overlay-layer={layer}
         style={{ ...style, zIndex: layer }}
+        sideOffset={sideOffset}
+        side={side ?? inheritedSide}
+        className={cn(
+          "z-50 inline-flex w-fit max-w-xs origin-(--radix-tooltip-content-transform-origin) items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          className
+        )}
+        {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow width={14} height={7} asChild>
-          <svg viewBox="0 0 14 7" preserveAspectRatio="none" className="overflow-visible" aria-hidden="true">
-            {/* Cover the content border before drawing the two exposed arrow edges. */}
-            <path className="fill-popover" d="M0-2H14V-.5L7 6.5 0-.5Z" />
-            <path
-              className="fill-none stroke-border/70"
-              d="M0-.5 7 6.5 14-.5"
-              strokeWidth={1}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        </TooltipPrimitive.Arrow>
+        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
-  );
+  )
 }
+
 
 type TooltipHintProps = Omit<React.ComponentProps<typeof TooltipContent>, "children" | "content"> & {
   children: React.ReactElement;
@@ -96,14 +97,14 @@ function TooltipHint({ children, content, ...contentProps }: TooltipHintProps) {
   );
 }
 
-type TooltipButtonProps = Omit<React.ComponentProps<"button">, "title"> & {
+type TooltipButtonProps = Omit<React.ComponentProps<typeof Button>, "title"> & {
   tooltip: React.ReactNode;
 };
 
 const TooltipButton = React.forwardRef<HTMLButtonElement, TooltipButtonProps>(
   ({ "aria-label": ariaLabel, tooltip, ...props }, ref) => (
     <TooltipHint content={tooltip}>
-      <button
+      <Button variant="ghost" size="icon-sm"
         ref={ref}
         aria-label={ariaLabel || (typeof tooltip === "string" ? tooltip : undefined)}
         {...props}
@@ -243,10 +244,10 @@ function TooltipDomBridge() {
           }}
         />
       </TooltipTrigger>
-      <TooltipContent>{target.dataset.tooltip}</TooltipContent>
+      <TooltipContent side={target.closest('[data-tooltip-side="right"]') ? "right" : undefined}>{target.dataset.tooltip}</TooltipContent>
     </Tooltip>
     </OverlayLayerProvider>
   );
 }
 
-export { Tooltip, TooltipButton, TooltipContent, TooltipDomBridge, TooltipHint, TooltipProvider, TooltipTrigger };
+export { Tooltip, TooltipButton, TooltipContent, TooltipDomBridge, TooltipHint, TooltipProvider, TooltipSideProvider, TooltipTrigger };

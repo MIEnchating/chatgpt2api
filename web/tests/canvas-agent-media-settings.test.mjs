@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterAll, beforeAll, test } from "bun:test";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
-import { installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
+import { installVideoModelContracts, videoModelContract } from "../src/lib/video-model-contracts.ts";
 import { imageAdapterDefaults, installImageModelDefinitions } from "../src/lib/image-model-definitions.ts";
 import { canvasAgentMediaCapabilities, resolveCanvasAgentMediaSettings } from "../src/app/canvas/agent/canvas-agent-media-settings.ts";
 import { normalizeCanvasAgentAction } from "../src/app/canvas/agent/canvas-agent-tools.ts";
@@ -18,6 +18,22 @@ afterAll(() => {
 
 const defaults = { generation_size: "1:1", generation_quality: "low" };
 const action = (name, args) => normalizeCanvasAgentAction(name, { prompt: "按需求创作", sourceNodeIds: [], size: "1:1", ...(name === "generate_video" ? { seconds: 10, generateAudio: false } : { count: 1 }), ...args });
+
+test("Agent receives the selected video contract material transport and limits", () => {
+  for (const model of ["seedance2.0-A", "minimax-h3-768p"]) {
+    const contract = videoModelContract(model);
+    const materials = canvasAgentMediaCapabilities("test-image", model).video.referenceMaterials;
+    assert.deepEqual(materials, {
+      transport: contract.transport.local_material,
+      transports: [contract.transport.local_material],
+      multipartRepeatable: contract.transport.multipart_repeatable,
+      multipartMixedURLs: contract.transport.multipart_mixed_urls,
+      base64: false,
+      dataURL: false,
+      modes: contract.generation.modes,
+    });
+  }
+});
 
 test("each image can choose its own dimensions and quality without changing shared defaults", () => {
   const poster = resolveCanvasAgentMediaSettings(action("generate_image", { size: "9:16", quality: "high", count: 1 }), "test-image", defaults);

@@ -1,5 +1,19 @@
+import { Attachment, AttachmentGroup, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentActions, AttachmentAction } from "@/components/ui/attachment";
+
+import { FieldSet } from "@/components/ui/field";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LabeledField } from "@/components/labeled-field";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Toggle } from "@/components/ui/toggle";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, ChevronDown, Check, FilePlus2, LoaderCircle, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
+import { BookOpen, ChevronDown, Check, FilePlus2, FileText, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -7,7 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -48,14 +62,14 @@ function SkillPicker({ selectedIds, onChange, disabled, compact }: { selectedIds
 
   return <>
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label="创作技能" title="Skill" className={cn("relative h-8 gap-1 text-xs", compact ? "size-8 shrink-0 rounded-xl p-0 text-muted-foreground @max-[320px]/agent:size-7" : "min-w-0 shrink rounded-full bg-muted/60 px-2.5")}><BookOpen className="size-[18px] shrink-0" />{compact ? (selectedIds.length ? <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-brand text-[9px] text-white">{selectedIds.length}</span> : null) : <><span className="truncate">Skill{selectedIds.length ? ` · ${selectedIds.length}` : ""}</span><ChevronDown className="size-3 shrink-0" /></>}</Button></PopoverTrigger>
-      <PopoverContent scrollable={false} className="w-[min(320px,calc(100vw-2rem))] overflow-hidden p-3" side="top" align="start">
-        <div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium">创作 Skill</span><Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); setManage(true); }}><Settings2 className="size-3.5" />管理</Button></div>
+      <TooltipHint content={"Skill"}><span className="inline-flex min-w-0 max-w-full"><PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label="创作技能" className={cn("relative", compact ? "shrink-0" : "min-w-0 shrink")}><BookOpen className="size-[18px] shrink-0" />{compact ? (selectedIds.length ? <Badge className="absolute -right-0.5 -top-0.5">{selectedIds.length}</Badge> : null) : <><span className="truncate">Skill{selectedIds.length ? ` · ${selectedIds.length}` : ""}</span><ChevronDown className="shrink-0" /></>}</Button></PopoverTrigger></span></TooltipHint>
+      <PopoverContent className="w-[min(320px,calc(100vw-2rem))] overflow-hidden" side="top" align="start">
+        <div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium">创作 Skill</span><Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); setManage(true); }}><Settings2  />管理</Button></div>
         <p className="mb-2 text-xs text-muted-foreground">最多选 5 个，优先采用所选创作规则。</p>
-        {loading ? <LoaderCircle className="mx-auto my-4 size-5 animate-spin" /> : error ? <div className="text-xs text-destructive">{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>重试</Button></div> : null}
-        <ScrollArea className="min-h-0 max-h-72 flex-1"><div className="space-y-1">{items.map((skill) => <button key={skill.id} type="button" aria-pressed={selectedIds.includes(skill.id)} onClick={() => toggle(skill.id)} className={cn("flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selectedIds.includes(skill.id) && "bg-muted")}><span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border">{selectedIds.includes(skill.id) ? <Check className="size-3" /> : null}</span><span className="min-w-0"><span className="block text-sm">{skill.name}<span className="ml-2 text-[10px] text-muted-foreground">{skill.scope === "system" ? "系统" : "个人"}</span></span><span className="mt-0.5 block text-xs text-muted-foreground">{skill.description}</span></span></button>)}</div></ScrollArea>
-        {!loading && !error && !items.length ? <p className="rounded-lg bg-muted/50 px-3 py-4 text-center text-xs leading-5 text-muted-foreground">暂无可用 Skill，点击管理可新建或导入创作规则。</p> : null}
-        {selectedIds.some((id) => !items.some((item) => item.id === id)) && !loading && !error ? <p className="mt-2 text-xs text-destructive">部分所选 Skill 已被移除或停用，请重新选择。</p> : null}
+        {loading ? <LoadingState className="h-auto min-h-24 px-2 py-4" label="正在加载 Skill" /> : error ? <Alert variant="destructive"><AlertDescription>{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>重试</Button></AlertDescription></Alert> : null}
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-72 flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0"><div className="space-y-1">{items.map((skill) => <Toggle  key={skill.id} type="button" pressed={selectedIds.includes(skill.id)} onClick={() => toggle(skill.id)} className="flex w-full items-start text-left justify-start h-auto min-h-8 whitespace-normal py-2"><Check aria-hidden="true" className={selectedIds.includes(skill.id) ? "shrink-0" : "shrink-0 invisible"} /><span className="min-w-0"><span className="block text-sm">{skill.name}<span className="ml-2 text-[10px] text-muted-foreground">{skill.scope === "system" ? "系统" : "个人"}</span></span><span className="mt-0.5 block text-xs text-muted-foreground">{skill.description}</span></span></Toggle>)}</div></div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        {!loading && !error && !items.length ? <EmptyState compact title="暂无可用 Skill" description="点击管理可新建或导入创作规则。" className="min-h-32 p-3" /> : null}
+        {selectedIds.some((id) => !items.some((item) => item.id === id)) && !loading && !error ? <Alert variant="destructive" className="mt-2"><AlertDescription>部分所选 Skill 已被移除或停用，请重新选择。</AlertDescription></Alert> : null}
         {selectedIds.length ? <Button type="button" variant="ghost" size="sm" className="mt-2 w-full" onClick={() => onChange([])}>清空选择</Button> : null}
       </PopoverContent>
     </Popover>
@@ -157,29 +171,46 @@ function SkillManager({ open, onClose }: { open: boolean; onClose: () => void })
   }
 
   return <Dialog open={open} onOpenChange={(value) => { if (!value && !busy) { invalidateRead(); setEditorOpen(false); setDeleteID(""); onClose(); } }}>
-    <DialogContent className="w-[min(94vw,768px)]">
-      <DialogHeader><DialogTitle>Skill 管理</DialogTitle><DialogDescription>维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。</DialogDescription></DialogHeader>
+    <DialogContent className="w-[min(94vw,768px)] sm:max-w-none">
+      <DialogHeader><DialogTitle>Skill 管理</DialogTitle><DialogDescription>维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant={system ? "outline" : "secondary"} aria-pressed={!system} disabled={busy} onClick={() => { invalidateRead(); setSystem(false); setEditorOpen(false); setDeleteID(""); }}>个人</Button>
-        {admin ? <Button type="button" variant={system ? "secondary" : "outline"} aria-pressed={system} disabled={busy} onClick={() => { invalidateRead(); setSystem(true); setEditorOpen(false); setDeleteID(""); }}>系统</Button> : null}
+        <Toggle type="button"  pressed={!system} disabled={busy} onClick={() => { invalidateRead(); setSystem(false); setEditorOpen(false); setDeleteID(""); }}>个人</Toggle>
+        {admin ? <Toggle type="button"  pressed={system} disabled={busy} onClick={() => { invalidateRead(); setSystem(true); setEditorOpen(false); setDeleteID(""); }}>系统</Toggle> : null}
         <Button type="button" variant="outline" disabled={busy} onClick={() => { invalidateRead(); setEditing(null); setDraft(blankSkill()); setEditorOpen(true); }}><Plus />新建</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={() => importRef.current?.click()}><Upload />导入 Markdown</Button>
         <input ref={importRef} type="file" accept=".md,text/markdown" hidden onChange={(event) => { void importMarkdown(event.target.files?.[0]); event.target.value = ""; }} />
       </div>
-      {reading ? <p role="status" className="text-xs text-muted-foreground">正在读取文件…</p> : null}
-      {editorOpen ? <fieldset disabled={busy || reading} className="space-y-3">
-        <label className="block space-y-1 text-sm"><span>名称（必填）</span><Input required value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-        <label className="block space-y-1 text-sm"><span>说明</span><Input value={draft.description} maxLength={500} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
-        <label className="block space-y-1 text-sm"><span>创作规则（必填）</span><Textarea required aria-label="创作规则" value={draft.content} className="min-h-40 sm:min-h-64" rows={8} onChange={(event) => setDraft({ ...draft, content: event.target.value })} placeholder="描述适用场景、创作步骤、输出格式和约束。" /></label>
-        <label className="flex items-center gap-2 text-sm"><Checkbox checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked === true })} />启用</label>
-        {system ? <div className="space-y-2"><Button type="button" variant="outline" size="sm" onClick={() => attachmentRef.current?.click()}><FilePlus2 />添加附属文件</Button><input ref={attachmentRef} type="file" accept=".md,.txt" multiple hidden onChange={(event) => { void addAttachments(event.target.files); event.target.value = ""; }} /><p className="text-xs text-muted-foreground">在创作规则中引用下面的相对路径，Agent 会按需读取。</p>{Object.keys(draft.files || {}).map((path) => <div key={path} className="flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate">{path}</span><Button type="button" size="icon" variant="ghost" aria-label={`移除 ${path}`} onClick={() => setDraft((current) => ({ ...current, files: Object.fromEntries(Object.entries(current.files || {}).filter(([key]) => key !== path)) }))}><X /></Button></div>)}</div> : null}
-      </fieldset> : <div className="space-y-2">
-        {loading ? <LoaderCircle className="mx-auto my-8 animate-spin" /> : error ? <p className="text-sm text-destructive">{error}<Button type="button" variant="ghost" onClick={() => setRefresh((value) => value + 1)}>重试</Button></p> : !items.length ? <p className="py-8 text-center text-sm text-muted-foreground">暂无 Skill，可以新建或导入 Markdown。</p> : items.map((skill) => <div key={skill.id} className="rounded-lg border border-border p-3"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{skill.name}{!skill.enabled ? "（已停用）" : ""}</p><p className="text-xs text-muted-foreground">{skill.description}</p></div><Button type="button" size="icon" variant="ghost" disabled={busy} aria-label={`编辑 ${skill.name}`} onClick={() => { invalidateRead(); setEditing(skill); setDraft({ name: skill.name, description: skill.description, content: skill.content, enabled: skill.enabled, files: skill.files || {} }); setEditorOpen(true); }}><Pencil /></Button><Button type="button" size="icon" variant="ghost" disabled={busy} aria-label={`删除 ${skill.name}`} onClick={() => setDeleteID(skill.id)}><Trash2 /></Button></div>{deleteID === skill.id ? <div className="mt-2 flex items-center justify-end gap-2 text-xs"><span>确认删除该 Skill？</span><Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setDeleteID("")}>取消</Button><Button type="button" size="sm" variant="destructive" disabled={busy} onClick={() => void mutate((signal) => deleteAgentSkill(skill, signal))}>删除</Button></div> : null}</div>)}
+      {reading ? <LoadingState compact label="正在读取文件…" /> : null}
+      {editorOpen ? <FieldSet disabled={busy || reading} className="space-y-3">
+        <LabeledField className="grid gap-1 text-sm" label={<span>名称（必填）</span>}>{(fieldId) => <><Input id={fieldId} required value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></>}</LabeledField>
+        <LabeledField className="grid gap-1 text-sm" label={<span>说明</span>}>{(fieldId) => <><Input id={fieldId} value={draft.description} maxLength={500} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></>}</LabeledField>
+        <LabeledField className="grid gap-1 text-sm" label={<span>创作规则（必填）</span>}>{(fieldId) => <><Textarea id={fieldId} required aria-label="创作规则" value={draft.content} className="min-h-40 sm:min-h-64" rows={8} onChange={(event) => setDraft({ ...draft, content: event.target.value })} placeholder="描述适用场景、创作步骤、输出格式和约束。" /></>}</LabeledField>
+        <Label className="flex items-center gap-2 text-sm"><Checkbox checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked === true })} />启用</Label>
+        {system ? <div className="space-y-2"><Button type="button" variant="outline" size="sm" onClick={() => attachmentRef.current?.click()}><FilePlus2 />添加附属文件</Button><input ref={attachmentRef} type="file" accept=".md,.txt" multiple hidden onChange={(event) => { void addAttachments(event.target.files); event.target.value = ""; }} /><p className="text-xs text-muted-foreground">在创作规则中引用下面的相对路径，Agent 会按需读取。</p><AttachmentGroup className="flex-wrap overflow-x-visible">{Object.keys(draft.files || {}).map((path) => <Attachment key={path} size="sm" className="w-full">
+          <AttachmentMedia><FileText /></AttachmentMedia><AttachmentContent><AttachmentTitle title={path}>{path}</AttachmentTitle></AttachmentContent>
+          <AttachmentActions><AttachmentAction aria-label={`移除 ${path}`} disabled={busy || reading} onClick={() => setDraft((current) => ({ ...current, files: Object.fromEntries(Object.entries(current.files || {}).filter(([key]) => key !== path)) }))}><X /></AttachmentAction></AttachmentActions>
+        </Attachment>)}</AttachmentGroup></div> : null}
+      </FieldSet> : <div className="space-y-2">
+        {loading ? <LoadingState className="h-auto" label="正在加载 Skill" /> : error ? <Alert variant="destructive"><AlertDescription>{error}<Button type="button" variant="ghost" onClick={() => setRefresh((value) => value + 1)}>重试</Button></AlertDescription></Alert> : !items.length ? <EmptyState compact title="暂无 Skill" description="可以新建或导入 Markdown。" /> : items.map((skill) => <Card key={skill.id} className="p-3 gap-0"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{skill.name}{!skill.enabled ? "（已停用）" : ""}</p><p className="text-xs text-muted-foreground">{skill.description}</p></div><Button type="button" size="icon" variant="ghost" disabled={busy} aria-label={`编辑 ${skill.name}`} onClick={() => { invalidateRead(); setEditing(skill); setDraft({ name: skill.name, description: skill.description, content: skill.content, enabled: skill.enabled, files: skill.files || {} }); setEditorOpen(true); }}><Pencil /></Button><Button type="button" size="icon" variant="ghost" disabled={busy} aria-label={`删除 ${skill.name}`} onClick={() => setDeleteID(skill.id)}><Trash2 /></Button></div></Card>)}
       </div>}
       {editorOpen ? <DialogFooter>
         <Button type="button" variant="outline" disabled={busy || reading} onClick={() => { invalidateRead(); setEditorOpen(false); }}>取消</Button>
-        <Button type="button" disabled={busy || reading || !draft.name.trim() || !draft.content.trim()} aria-busy={busy} onClick={() => void mutate((signal) => saveAgentSkill({ ...draft, revision: editing?.revision }, editing?.id, system, signal))}>{busy ? <LoaderCircle className="animate-spin" /> : <Check />}保存</Button>
+        <Button type="button" disabled={busy || reading || !draft.name.trim() || !draft.content.trim()} aria-busy={busy} onClick={() => void mutate((signal) => saveAgentSkill({ ...draft, revision: editing?.revision }, editing?.id, system, signal))}>{busy ? <Spinner /> : <Check />}保存</Button>
       </DialogFooter> : null}
+    </ScrollArea>
+    <ConfirmDialog
+      open={Boolean(deleteID)}
+      onOpenChange={(open) => { if (!open) setDeleteID(""); }}
+      title="删除 Skill？"
+      description="删除后，该 Skill 将不再供 Agent 使用。"
+      confirmLabel="删除"
+      destructive
+      busy={busy}
+      onConfirm={() => {
+        const skill = items.find((item) => item.id === deleteID);
+        if (skill) void mutate((signal) => deleteAgentSkill(skill, signal));
+      }}
+    />
     </DialogContent>
   </Dialog>;
 }

@@ -1,6 +1,7 @@
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { CanvasMentionMenu } from "./canvas-mention-menu";
+import { ItemMedia } from "@/components/ui/item";
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
@@ -20,6 +21,7 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ImageLightbox } from "@/components/image-lightbox";
 
 import { CanvasAgentAttachmentChip } from "./canvas-agent-attachments";
+import { useContentEditableReferenceTargets } from "./use-contenteditable-reference-targets";
 import type { CanvasAssistantReference } from "./agent/canvas-agent-types";
 
 const EMPTY_ATTACHMENTS: CanvasAssistantReference[] = [];
@@ -38,21 +40,22 @@ type CanvasAgentPromptChipInputProps = {
   className?: string;
   style?: CSSProperties;
   placeholder?: string;
-  placeholderClassName?: string;
 };
 
 type MentionState = {
   query: string;
-  rect: DOMRect | null;
 };
 
 type PromptToken =
   | { type: "text"; value: string }
   | { type: "reference"; label: string; value: string };
 
-export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, attachments = EMPTY_ATTACHMENTS, onRemoveAttachments, readOnly, className, style, placeholder, placeholderClassName }: CanvasAgentPromptChipInputProps) {
+export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, attachments = EMPTY_ATTACHMENTS, onRemoveAttachments, readOnly, className, style, placeholder }: CanvasAgentPromptChipInputProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const referenceTargets = useContentEditableReferenceTargets(editorRef, "[data-ref-node-id]");
   const composingRef = useRef(false);
+  const mentionFrameRef = useRef<number | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const initializedRef = useRef(false);
   const caretRef = useRef<Range | null>(null);
   const [attachmentTargets, setAttachmentTargets] = useState<Map<string, HTMLElement>>(new Map());
@@ -60,6 +63,9 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   const [mention, setMention] = useState<MentionState | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+  }, []);
   const activeReferences = useMemo(() => references.filter((reference) => reference.active), [references]);
   const activeNodeIDs = useMemo(() => new Set(activeReferences.map((reference) => reference.nodeID)), [activeReferences]);
   const referenceByLabel = useMemo(() => new Map(activeReferences.map((reference) => [reference.label, reference])), [activeReferences]);
@@ -79,7 +85,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     initializedRef.current = true;
     caretRef.current = null;
     editor.textContent = "";
-    editor.append(createPromptFragment(tokens, referenceByLabel, setImagePreview));
+    editor.append(createPromptFragment(tokens, referenceByLabel));
     lastEmittedRef.current = value;
   }, [referenceByLabel, tokens, value]);
 
@@ -108,8 +114,9 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     const editor = editorRef.current;
     if (!editor) return;
     editor.querySelectorAll<HTMLElement>("[data-pending-reference='true']").forEach(removeReferenceChip);
-    pendingReferences?.forEach((reference) => appendReferenceChip(editor, reference, setImagePreview, true));
-  }, [pendingReferences]);
+    const committed = new Set(Array.from(editor.querySelectorAll<HTMLElement>("[data-ref-node-id]")).map(chip => chip.dataset.refNodeId));
+    pendingReferences?.filter(reference => activeNodeIDs.has(reference.nodeID) && !committed.has(reference.nodeID)).forEach((reference) => appendReferenceChip(editor, reference, true));
+  }, [pendingReferences, activeNodeIDs]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -142,7 +149,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
       const chip = document.createElement("span");
       chip.contentEditable = "false";
       chip.dataset.attachmentId = attachment.id;
-      chip.className = "mx-0.5 my-0.5 inline-flex h-7 max-w-[calc(50%-0.75rem)] select-none items-center gap-1 rounded-lg border border-border/60 bg-muted/20 px-1 text-xs leading-none whitespace-nowrap align-middle";
+      chip.className = "mx-0.5 my-0.5 inline-flex max-w-[calc(100%-0.5rem)] select-none items-center align-middle";
       const trailingSpace = document.createTextNode(" ");
       const range = caretRef.current;
       if (range && editor.contains(range.commonAncestorContainer)) {
@@ -191,6 +198,8 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   }
 
   function closeMention() {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+    mentionFrameRef.current = null;
     setMention(null);
     setActiveIndex(0);
   }
@@ -202,8 +211,16 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
       closeMention();
       return;
     }
-    setMention({ query: match[1] || "", rect: getCaretRect() });
+    setMention({ query: match[1] || "" });
     setActiveIndex(0);
+  }
+
+  function scheduleMention() {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+    mentionFrameRef.current = requestAnimationFrame(() => {
+      mentionFrameRef.current = null;
+      syncMention();
+    });
   }
 
   function syncFromEditor() {
@@ -221,7 +238,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     if (!editor) return;
     removeActiveContentEditableMention();
     const leadingSpace = document.createTextNode(" ");
-    const chip = createReferenceChip(reference, setImagePreview, `@${reference.label}`);
+    const chip = createReferenceChip(reference, `@${reference.label}`);
     const trailingSpace = document.createTextNode(" ");
     const selection = window.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
@@ -241,13 +258,13 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     emitChange(serializePromptEditor(editor));
   }
 
-  const showPlaceholder = !value.trim() && !pendingReferences?.length && !attachments.length;
+  const showPlaceholder = !isComposing && !value.trim() && !pendingReferences?.length && !attachments.length;
 
   return (
     <div className="relative w-full">
-      {showPlaceholder && placeholder ? <div className={`pointer-events-none absolute left-3 top-2 text-sm leading-5 text-muted-foreground ${placeholderClassName || ""}`}>{placeholder}</div> : null}
+      {showPlaceholder && placeholder ? <div className="pointer-events-none absolute left-2.5 top-2 text-base text-muted-foreground md:text-sm">{placeholder}</div> : null}
       <div
-        ref={editorRef}
+        data-slot="input-group-control" ref={editorRef}
         contentEditable={!readOnly}
         suppressContentEditableWarning
         role="textbox"
@@ -282,21 +299,24 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           const text = event.clipboardData.getData("text/plain");
           if (!text) return;
           event.preventDefault();
-          if (insertPromptText(editorRef.current, text, activeLabels, referenceByLabel, setImagePreview)) syncFromEditor();
+          if (insertPromptText(editorRef.current, text, activeLabels, referenceByLabel)) syncFromEditor();
         }}
         onCompositionStart={() => {
           composingRef.current = true;
+          setIsComposing(true);
+          closeMention();
         }}
         onCompositionEnd={() => {
           composingRef.current = false;
+          setIsComposing(false);
           syncFromEditor();
         }}
         onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
           event.stopPropagation();
-          const committed = commitPendingReferences();
           const nativeEvent = event.nativeEvent;
           const isComposing = composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229;
           if (isComposing) return;
+          const committed = commitPendingReferences();
           const mentionAction = mention ? getContentEditableMentionKeyAction(event.key, candidates.length) : null;
           if (mentionAction) {
             event.preventDefault();
@@ -315,11 +335,18 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
             onSubmit(committed.value, committed.referenceIDs);
             return;
           }
-          requestAnimationFrame(syncMention);
+          scheduleMention();
         }}
-        onPointerUp={() => requestAnimationFrame(syncMention)}
-        onBlur={() => window.setTimeout(closeMention, 120)}
+        onPointerUp={scheduleMention}
+        onBlur={closeMention}
       />
+      {referenceTargets.map((target, index) => {
+        const reference = activeReferences.find(item => item.nodeID === target.dataset.refNodeId);
+        return reference ? createPortal(<CanvasAgentAttachmentChip
+          attachment={{ id: reference.id, type: reference.kind, title: reference.kind === "text" ? reference.text || reference.title : reference.label, url: reference.previewURL }}
+          onPreview={setImagePreview}
+        />, target, `${reference.id}:${index}`) : null;
+      })}
       {attachments.map((attachment) => {
         const target = attachmentTargets.get(attachment.id);
         return target ? createPortal(<CanvasAgentAttachmentChip attachment={attachment} onPreview={setImagePreview} onRemove={readOnly ? undefined : () => {
@@ -337,63 +364,25 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           syncFromEditor();
         }} />, target, attachment.id) : null;
       })}
-      {mention && candidates.length ? <MentionMenu rect={mention.rect} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} onSelect={insertReference} /> : null}
+      {mention && candidates.length && editorRef.current ? <CanvasMentionMenu
+        editor={editorRef.current}
+        getAnchorRect={() => getCaretRect() || editorRef.current!.getBoundingClientRect()}
+        items={candidates}
+        getKey={(reference) => reference.id}
+        activeIndex={Math.min(activeIndex, candidates.length - 1)}
+        onActiveIndexChange={setActiveIndex}
+        onSelect={insertReference}
+        onClose={closeMention}
+        renderItem={(reference) => <>
+          <ReferencePreview reference={reference} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{reference.label} · {reference.title}</span>
+            {reference.text ? <span className="block truncate text-muted-foreground">{reference.text}</span> : null}
+          </span>
+        </>}
+      /> : null}
       {imagePreview ? <ImageLightbox images={[{ id: "agent-reference", src: imagePreview }]} currentIndex={0} open onOpenChange={(open) => { if (!open) setImagePreview(null); }} onIndexChange={() => undefined} /> : null}
     </div>
-  );
-}
-
-function MentionMenu({ rect, references, activeIndex, onSelect }: { rect: DOMRect | null; references: CanvasResourceReference[]; activeIndex: number; onSelect: (reference: CanvasResourceReference) => void }) {
-  const layer = useOverlayLayer("popover");
-  const selectedRef = useRef(false);
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, references]);
-
-  const selectReference = (reference: CanvasResourceReference) => {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
-    onSelect(reference);
-  };
-  const stopCanvasInteraction = (event: PointerEvent | MouseEvent) => event.stopPropagation();
-  const menuWidth = 256;
-  const maxMenuHeight = 224;
-  const menuHeight = Math.min(maxMenuHeight, references.length * 48 + 8);
-  const gap = 6;
-  const anchor = rect || new DOMRect(16, 16, 0, 0);
-  const left = clamp(anchor.left, 8, window.innerWidth - menuWidth - 8);
-  const showAbove = anchor.bottom + gap + menuHeight > window.innerHeight && anchor.top - gap - menuHeight >= 8;
-  const top = clamp(showAbove ? anchor.top - gap - menuHeight : anchor.bottom + gap, 8, window.innerHeight - menuHeight - 8);
-
-  return createPortal(
-    <OverlayLayerProvider value={layer}>
-    <ScrollArea data-overlay-layer={layer} data-canvas-resource-mention-menu="true" className="pointer-events-auto fixed max-h-56 w-64 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl" viewClass="" viewportClassName="overscroll-contain" style={{ left, top, zIndex: layer }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
-      {references.map((reference, index) => (
-        <button
-          key={reference.id}
-          ref={index === activeIndex ? activeItemRef : undefined}
-          type="button"
-          className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition ${index === activeIndex ? "bg-accent text-accent-foreground" : ""}`}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            selectReference(reference);
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            selectReference(reference);
-          }}
-        >
-          <ReferencePreview reference={reference} />
-          <span className="min-w-0 flex-1"><span className="block font-medium">{reference.label}</span><span className="block truncate opacity-65">{reference.text || reference.title}</span></span>
-        </button>
-      ))}
-    </ScrollArea>
-    </OverlayLayerProvider>,
-    document.body,
   );
 }
 
@@ -401,39 +390,21 @@ function ReferencePreview({ reference }: { reference: CanvasResourceReference })
   if (reference.kind === "image" && reference.previewURL) return <AuthenticatedImage src={reference.previewURL} alt="" className="size-9 shrink-0 rounded-md object-cover" />;
   if (reference.kind === "video" && reference.previewURL) return <video src={reference.previewURL} className="size-9 shrink-0 rounded-md bg-black object-cover" muted preload="metadata" />;
   const Icon = reference.kind === "audio" ? Music2 : reference.kind === "video" ? Video : reference.kind === "image" ? ImageIcon : FileText;
-  return <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted"><Icon className="size-4" /></span>;
+  return <ItemMedia variant="icon" className="grid size-9 shrink-0 place-items-center"><Icon className="size-4" /></ItemMedia>;
 }
 
-function createReferenceChip(reference: CanvasResourceReference, onImagePreview: (url: string) => void, serializedLabel = reference.label) {
+function createReferenceChip(reference: CanvasResourceReference, serializedLabel = reference.label) {
   const wrapper = document.createElement("span");
   wrapper.contentEditable = "false";
   wrapper.dataset.refLabel = serializedLabel;
   wrapper.dataset.refNodeId = reference.nodeID;
-  if (reference.kind === "image" && reference.previewURL) {
-    const image = document.createElement("img");
-    image.src = reference.previewURL;
-    image.alt = reference.title;
-    image.className = "size-6 rounded object-cover";
-    wrapper.className = "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded align-middle";
-    wrapper.appendChild(image);
-    wrapper.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onImagePreview(reference.previewURL || "");
-    });
-    return wrapper;
-  }
-  wrapper.className = "mx-px inline-flex h-6 max-w-40 items-center justify-center overflow-hidden rounded-md border border-border bg-card px-1 text-xs leading-none align-middle text-foreground";
   wrapper.dataset.tooltip = reference.text || reference.title;
-  const text = document.createElement("span");
-  text.className = "block truncate";
-  text.textContent = reference.kind === "text" ? reference.text || reference.title : reference.label;
-  wrapper.appendChild(text);
+  wrapper.className = "mx-px inline-flex max-w-40 items-center align-middle";
   return wrapper;
 }
 
-function appendReferenceChip(editor: HTMLElement, reference: CanvasResourceReference, onImagePreview: (url: string) => void, pending = false) {
-  const chip = createReferenceChip(reference, onImagePreview);
+function appendReferenceChip(editor: HTMLElement, reference: CanvasResourceReference, pending = false) {
+  const chip = createReferenceChip(reference);
   if (pending) chip.dataset.pendingReference = "true";
   appendContentEditableInline(editor, document.createTextNode(" "), chip, document.createTextNode(" "));
   editor.scrollTop = editor.scrollHeight;
@@ -483,20 +454,20 @@ function closestPromptEditor(node: Node) {
   return element?.closest("[contenteditable='true']") || null;
 }
 
-function createPromptFragment(tokens: PromptToken[], references: Map<string, CanvasResourceReference>, onImagePreview: (url: string) => void) {
+function createPromptFragment(tokens: PromptToken[], references: Map<string, CanvasResourceReference>) {
   const fragment = document.createDocumentFragment();
   for (const token of tokens) {
     const reference = token.type === "reference" ? references.get(token.label) : undefined;
-    fragment.append(reference ? createReferenceChip(reference, onImagePreview, token.value) : document.createTextNode(token.value));
+    fragment.append(reference ? createReferenceChip(reference, token.value) : document.createTextNode(token.value));
   }
   return fragment;
 }
 
-function insertPromptText(editor: HTMLElement | null, text: string, labels: string[], references: Map<string, CanvasResourceReference>, onImagePreview: (url: string) => void) {
+function insertPromptText(editor: HTMLElement | null, text: string, labels: string[], references: Map<string, CanvasResourceReference>) {
   const selection = window.getSelection();
   const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
   if (!editor || !range || !editor.contains(range.commonAncestorContainer)) return false;
-  const fragment = createPromptFragment(parsePromptTokens(text, labels), references, onImagePreview);
+  const fragment = createPromptFragment(parsePromptTokens(text, labels), references);
   const lastNode = fragment.lastChild;
   if (!lastNode) return false;
   range.deleteContents();
@@ -525,9 +496,4 @@ function parsePromptTokens(value: string, labels: string[]): PromptToken[] {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  if (maximum < minimum) return minimum;
-  return Math.min(Math.max(value, minimum), maximum);
 }

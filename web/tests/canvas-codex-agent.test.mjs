@@ -13,6 +13,14 @@ import { test } from "bun:test";
 import { CANVAS_AGENT_SKILL_FILE_TOOL, CANVAS_AGENT_TOOLS, isCanvasAgentMediaAction, normalizeCanvasAgentAction } from "../src/app/canvas/agent/canvas-agent-tools.ts";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("completed task status does not inherit historical media failures", () => {
+  const state = { phase: "video", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] };
+  const history = [{ role: "tool", name: "get_generation_task", toolCallId: "read-old", content: '{"ok":true,"nodeId":"old-video","status":"error"}' }];
+  assert.equal(canvasAgentWaitingReason(state, history, [], "success"), "");
+  assert.equal(canvasAgentWaitingReason(state, history, [], "error"), "生成失败 · 1 个节点");
+  assert.equal(canvasAgentWaitingReason({ ...state, pendingQuestion: { id: "q" } }, history, [], "success"), "等待回答");
+});
 function fixture(options = {}) {
   const slots = []; const effects = []; let index = 0; let connectInput; let accountKey = "private-account-credential-id";
   const rpcCalls = []; const replies = []; const toolResults = []; const executions = []; const threadReady = [];
@@ -53,7 +61,7 @@ function fixture(options = {}) {
   const module = { exports: {} };
   const source = ts.transpileModule(readFileSync(new URL("../src/app/canvas/agent/canvas-codex-agent.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(source, { exports: module.exports, require: (name) => { assert.ok(name in dependencies, name); return dependencies[name]; }, window, crypto, TextEncoder, AbortController, AbortSignal, DOMException, Error });
-  const input = { canvasId: "canvas", onDisconnect: options.onDisconnect || (() => {}), executeAction: async (action, onProgress) => { executions.push(action); return options.executeAction ? options.executeAction(action, onProgress) : { ok: true }; }, ask: options.ask || (async () => ({ accepted: true })) };
+  const input = { canvasId: "canvas", savedModel: options.savedModel, savedEffort: options.savedEffort, onSettingsChange: options.onSettingsChange || (() => {}), onDisconnect: options.onDisconnect || (() => {}), executeAction: async (action, onProgress) => { executions.push(action); return options.executeAction ? options.executeAction(action, onProgress) : { ok: true }; }, ask: options.ask || (async () => ({ accepted: true })) };
   let agent;
   function render() { index = 0; agent = module.exports.useCanvasCodexAgent(input); return agent; }
   render();
@@ -70,6 +78,35 @@ test("Codex connection hashes account and canvas scope instead of sending accoun
   const f = fixture();
   try { const agent = await f.connect(); assert.equal(agent.connected, true); assert.match(f.connectInput.canvasId, /^[a-f0-9]{64}$/); assert.notEqual(f.connectInput.canvasId, "private-account-credential-id"); }
   finally { f.cleanup(); }
+});
+
+test("Codex restores the canvas model and effort on connection and persists changes", async () => {
+  const changes = [];
+  const models = [
+    { model: "first", defaultReasoningEffort: "low", supportedReasoningEfforts: [{ reasoningEffort: "low" }] },
+    { model: "chosen", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }] },
+  ];
+  const f = fixture({ savedModel: "chosen", savedEffort: "high", onSettingsChange: (change) => changes.push(change), modelPage: () => ({ data: models, nextCursor: null }) });
+  try {
+    let agent = await f.connect();
+    assert.equal(agent.model, "chosen");
+    assert.equal(agent.effort, "high");
+    agent.setModel("first");
+    agent = f.render();
+    agent.setEffort("low");
+    assert.deepEqual(changes, [{ codexModel: "first", codexEffort: "low" }, { codexModel: "first", codexEffort: "low" }]);
+  } finally { f.cleanup(); }
+});
+
+test("an unavailable saved Codex model does not overwrite canvas settings", async () => {
+  const changes = [];
+  const f = fixture({ savedModel: "unavailable", savedEffort: "high", onSettingsChange: (change) => changes.push(change) });
+  try {
+    const agent = await f.connect();
+    assert.equal(agent.model, "codex-test");
+    assert.equal(agent.effort, "medium");
+    assert.deepEqual(changes, []);
+  } finally { f.cleanup(); }
 });
 
 test("stopping before turn-start acknowledgement interrupts the acknowledged turn", async () => {
@@ -608,7 +645,7 @@ test("Codex small talk skips prior media recovery and blocks canvas tools", asyn
     await flush();
     assert.equal(f.executions.length,0);
     const instructions=f.rpcCalls.find(call=>call.method==="thread/start").params.developerInstructions;
-    assert.match(instructions,/当前轮只聊天/);
+    assert.match(instructions,/不执行画布操作、不恢复历史计划、不主动生成媒体/);
     assert.doesNotMatch(instructions,/canvas prompt/);
     f.threadReady[0]({turn:{id:"conversation"}});await flush();
     f.event({type:"rpc",message:{id:"bad-tool",method:"item/tool/call",params:{threadId:"thread",turnId:"conversation",tool:"get_canvas_summary",arguments:{},callId:"read"}}});
@@ -617,4 +654,32 @@ test("Codex small talk skips prior media recovery and blocks canvas tools", asyn
     f.event({type:"rpc",message:{method:"turn/completed",params:{threadId:"thread",turnId:"conversation",turn:{status:"completed"}}}});
     await pending;
   } finally {f.cleanup();}
+});
+
+test("Codex streams public reasoning summaries while ignoring raw reasoning deltas", async () => {
+  const f = fixture();
+  try {
+    const agent = await f.connect(), trace = [];
+    const pending = agent.run({ ...f.runInput(), onTrace: entry => trace.push(entry) });
+    await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+    const event = (method, params) => f.event({ type: "rpc", message: { method, params: { threadId: "thread", turnId: "turn", ...params } } });
+    event("item/started", { item: { id: "reason", type: "reasoning", summary: [], content: [] } });
+    event("item/reasoning/summaryTextDelta", { itemId: "reason", summaryIndex: 0, delta: "检查" });
+    event("item/reasoning/summaryTextDelta", { itemId: "reason", summaryIndex: 0, delta: "画布" });
+    event("item/reasoning/textDelta", { itemId: "reason", delta: "private reasoning" });
+    assert.equal(trace.at(-1).text, "检查画布");
+    assert.equal(trace.at(-1).isStreaming, true);
+    event("item/completed", { item: { id: "reason", type: "reasoning", summary: ["检查画布"], content: ["private reasoning"] } });
+    assert.equal(trace.at(-1).isStreaming, false);
+    assert.equal(new Set(trace.map(entry => entry.id)).size, 1);
+    assert.doesNotMatch(JSON.stringify(trace), /private reasoning/);
+    event("item/started", { item: { id: "terminal", type: "commandExecution", command: "ls", status: "inProgress" } });
+    event("item/commandExecution/outputDelta", { itemId: "terminal", delta: "x".repeat(2200) });
+    assert.equal(trace.at(-1).terminal.output.length, 2200);
+    event("item/completed", { item: { id: "terminal", type: "commandExecution", command: "ls", aggregatedOutput: "x".repeat(2200), exitCode: 0, status: "completed" } });
+
+    event("item/completed", { item: { id: "answer", type: "agentMessage", text: "检查完成。" } });
+    event("turn/completed", { turn: { id: "turn", status: "completed" } });
+    await pending;
+  } finally { f.cleanup(); }
 });

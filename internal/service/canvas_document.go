@@ -157,6 +157,8 @@ type CanvasNode struct {
 	PanoramaFinalPrompt                  string                       `json:"panorama_final_prompt,omitempty"`
 	PanoramaProjection                   string                       `json:"panorama_projection,omitempty"`
 	DirectorProject                      json.RawMessage              `json:"director_project,omitempty"`
+	ScriptProject                        *CanvasScriptProject         `json:"script_project,omitempty"`
+	ScriptOperation                      *CanvasScriptOperation       `json:"script_operation,omitempty"`
 	CameraControl                        *CanvasCameraControl         `json:"camera_control,omitempty"`
 	BatchChildIDs                        []string                     `json:"batch_child_ids,omitempty"`
 	BatchRootID                          string                       `json:"batch_root_id,omitempty"`
@@ -592,11 +594,33 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 		}
 		current := workspace.Projects[projectIndex]
 		if !agentWrite && current.AgentRun != nil && current.AgentRun.Status == "running" {
-			normalized.AgentSessions = current.AgentSessions
+			normalized.AgentSessions = mergeCanvasAgentMessageQueues(current.AgentSessions, normalized.AgentSessions)
 			normalized.ActiveAgentSessionID = current.ActiveAgentSessionID
 		}
 		if !agentWrite {
 			normalized.AgentRun = current.AgentRun
+			// Browser snapshots cannot forge or erase server execution metadata.
+			var incoming, stored []map[string]any
+			_ = json.Unmarshal(normalized.AgentSessions, &incoming)
+			_ = json.Unmarshal(current.AgentSessions, &stored)
+			for _, session := range incoming {
+				delete(session, "toolReceipts")
+				delete(session, "contextUsage")
+				for _, previous := range stored {
+					if session["id"] == previous["id"] {
+						if receipts, ok := previous["toolReceipts"]; ok {
+							session["toolReceipts"] = receipts
+						}
+						if usage, ok := previous["contextUsage"]; ok {
+							session["contextUsage"] = usage
+						}
+						break
+					}
+				}
+			}
+			if incoming != nil {
+				normalized.AgentSessions, _ = json.Marshal(incoming)
+			}
 		}
 		if expectedRevision != nil && *expectedRevision != current.Revision {
 			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
@@ -1307,6 +1331,15 @@ func validateCanvasAgentJSON(value json.RawMessage, sessions bool) error {
 		if err := json.Unmarshal(value, &items); err != nil || len(items) > canvasDocumentMaxAgentSessions {
 			return invalidCanvasDocument("canvas agent sessions are invalid")
 		}
+		for _, item := range items {
+			var session map[string]any
+			if json.Unmarshal(item, &session) != nil {
+				return invalidCanvasDocument("canvas agent session is invalid")
+			}
+			if queue, exists := session["messageQueue"]; exists && !validateCanvasAgentMessageQueue(queue) {
+				return invalidCanvasDocument("canvas agent message queue is invalid")
+			}
+		}
 		return nil
 	}
 	var object map[string]json.RawMessage
@@ -1377,8 +1410,12 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, invalidCanvasDocument("node id is required")
 	}
 	node.Type = strings.ToLower(strings.TrimSpace(node.Type))
-	if node.Type != "image" && node.Type != "video" && node.Type != "text" && node.Type != "config" && node.Type != "audio" && node.Type != "panorama" && node.Type != "director" && node.Type != "group" {
-		return CanvasNode{}, invalidCanvasDocument("node type must be image, video, audio, panorama, director, group, text, or config")
+	if err := validateCanvasScript(node); err != nil {
+		return CanvasNode{}, err
+	}
+
+	if node.Type != "image" && node.Type != "video" && node.Type != "text" && node.Type != "config" && node.Type != "audio" && node.Type != "panorama" && node.Type != "director" && node.Type != "script" && node.Type != "group" {
+		return CanvasNode{}, invalidCanvasDocument("node type must be image, video, audio, panorama, director, script, group, text, or config")
 	}
 	if !finiteCanvasNumber(node.X) || !finiteCanvasNumber(node.Y) || math.Abs(node.X) > 1e7 || math.Abs(node.Y) > 1e7 {
 		return CanvasNode{}, invalidCanvasDocument("node position is invalid")

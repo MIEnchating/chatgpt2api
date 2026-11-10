@@ -51,15 +51,14 @@ type CanvasAgentRequest struct {
 	MediaChoice     string            `json:"mediaGenerationChoice"`
 }
 
-type CanvasAgentModelRequest struct {
+type AgentModelRequest struct {
 	OnText   func(string) error
-	TaskID   string
 	Model    string
 	Prompt   string
 	Messages []map[string]any
 	Metadata map[string]any
 }
-type CanvasAgentModel func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error)
+type AgentModel func(context.Context, Identity, AgentModelRequest) (map[string]any, error)
 type CanvasAgentMedia func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error)
 
 type CanvasAgentService struct {
@@ -68,17 +67,18 @@ type CanvasAgentService struct {
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	canvas    *CanvasDocumentService
+	execution *AgentExecutionService
 	workflows *WorkflowService
 	skills    *AgentSkillService
-	model     CanvasAgentModel
+	model     AgentModel
 	media     CanvasAgentMedia
 	active    map[string]context.CancelFunc
 	closed    bool
 }
 
-func NewCanvasAgentService(ctx context.Context, canvas *CanvasDocumentService, skills *AgentSkillService, model CanvasAgentModel, media CanvasAgentMedia) *CanvasAgentService {
+func NewCanvasAgentService(ctx context.Context, execution *AgentExecutionService, canvas *CanvasDocumentService, skills *AgentSkillService, model AgentModel, media CanvasAgentMedia) *CanvasAgentService {
 	ctx, cancel := context.WithCancel(ctx)
-	return &CanvasAgentService{ctx: ctx, cancel: cancel, canvas: canvas, skills: skills, model: model, media: media, active: map[string]context.CancelFunc{}}
+	return &CanvasAgentService{ctx: ctx, cancel: cancel, canvas: canvas, execution: execution, skills: skills, model: model, media: media, active: map[string]context.CancelFunc{}}
 }
 func (s *CanvasAgentService) Close() {
 	s.mu.Lock()
@@ -101,6 +101,29 @@ func (s *CanvasAgentService) Snapshot(identity Identity, project string) (Canvas
 	doc, err := s.canvas.Project(canvasAgentOwner(identity), project)
 	if err != nil {
 		return doc, err
+	}
+	// Reclaim duplicate response payloads before the browser appends another
+	// request to a nearly full public session. Never touch an active worker.
+	if doc.AgentRun != nil && s.active[agentKey(canvasAgentOwner(identity), project)] == nil && len(doc.AgentSessions) > canvasDocumentMaxAgentDataBytes/2 {
+		sessions, session, readErr := agentSession(doc, doc.AgentRun.SessionID)
+		if readErr != nil {
+			return doc, readErr
+		}
+		private := &canvasAgentWorker{service: s, identity: identity, doc: doc, req: CanvasAgentRequest{SessionID: doc.AgentRun.SessionID}}
+		if found, loadErr := private.loadSDKSession(); loadErr != nil {
+			return doc, loadErr
+		} else if found && (private.sdk.State != "" || len(private.sdk.Items) > 0) {
+			omitCanvasAgentResponseCopies(session)
+			compactCanvasAgentToolJournal(session)
+			compacted, _ := json.Marshal(sessions)
+			if string(compacted) != string(doc.AgentSessions) {
+				base := doc
+				doc.AgentSessions = compacted
+				if doc, err = s.canvas.saveAgentChanges(canvasAgentOwner(identity), base, doc); err != nil {
+					return doc, err
+				}
+			}
+		}
 	}
 	if doc.AgentRun != nil && doc.AgentRun.Status == "running" && s.active[agentKey(canvasAgentOwner(identity), project)] == nil {
 		doc.AgentRun.Status = "interrupted"
@@ -158,7 +181,16 @@ func (s *CanvasAgentService) start(identity Identity, project string, req Canvas
 	if err = validateCanvasAgentSessionForRun(session); err != nil {
 		return doc, err
 	}
+	if call != nil {
+		guard := canvasAgentWorker{service: s, identity: identity, doc: doc, req: req}
+		if found, loadErr := guard.loadSDKSession(); loadErr != nil {
+			return doc, loadErr
+		} else if found && len(guard.sdk.Question) > 0 {
+			return doc, invalidCanvasDocument("请先回答或取消内置 Agent 的待处理问题")
+		}
+	}
 	references := []map[string]any{}
+	missingReferences := false
 	seenReferences := map[string]bool{}
 	for _, ref := range req.References {
 		id, source := util.Clean(ref["id"]), util.Clean(ref["source"])
@@ -171,12 +203,19 @@ func (s *CanvasAgentService) start(identity Identity, project string, req Canvas
 		}
 		resolved, resolveErr := canvasAgentReference(doc, session, id, source)
 		if resolveErr != nil {
+			if req.Resume {
+				missingReferences = true
+				continue
+			}
 			return doc, invalidCanvasDocument(resolveErr.Error())
 		}
 		references = append(references, resolved)
 		seenReferences[key] = true
 	}
 	req.References = references
+	if missingReferences {
+		session["protocolMessages"] = append(util.AsMapSlice(session["protocolMessages"]), map[string]any{"role": "system", "content": "继续任务时，原请求中的部分引用素材已经移除或不可用。请重新读取当前画布并保留用户修改，不要重建已删除节点；缺少必需素材时询问用户，不要求提供内部 ID。"})
+	}
 	found := false
 	for _, m := range util.AsMapSlice(session["messages"]) {
 		if util.Clean(m["id"]) == req.AssistantID && m["role"] == "assistant" {
@@ -201,7 +240,7 @@ func (s *CanvasAgentService) start(identity Identity, project string, req Canvas
 	if call == nil && doc.AgentRun != nil && doc.AgentRun.SessionID == req.SessionID && !req.Edit {
 		sdkState = doc.AgentRun.SDKState
 	}
-	doc.AgentRun = &CanvasAgentRun{SDKState: sdkState, Engine: "openai-agents-sdk", ID: req.ID, SessionID: req.SessionID, AssistantID: req.AssistantID, Status: "running", UpdatedAt: util.NowISO()}
+	doc.AgentRun = &CanvasAgentRun{SDKState: sdkState, Engine: "langgraph", ID: req.ID, SessionID: req.SessionID, AssistantID: req.AssistantID, Status: "running", UpdatedAt: util.NowISO()}
 	if call != nil {
 		doc.AgentRun.Engine = "codex-tools"
 	}
@@ -209,6 +248,12 @@ func (s *CanvasAgentService) start(identity Identity, project string, req Canvas
 		if message["id"] == req.AssistantID {
 			setCanvasAgentProcessing(message, true, time.Now())
 		}
+	}
+	private := &canvasAgentWorker{service: s, identity: identity, doc: doc, req: req}
+	if found, loadErr := private.loadSDKSession(); loadErr != nil {
+		return doc, loadErr
+	} else if found && (private.sdk.State != "" || len(private.sdk.Items) > 0) {
+		omitCanvasAgentResponseCopies(session)
 	}
 	doc.AgentSessions, _ = json.Marshal(sessions)
 	doc, err = s.canvas.saveAgent(owner, doc)
@@ -268,9 +313,15 @@ func (s *CanvasAgentService) Stop(identity Identity, project, runID string) erro
 			if question["purpose"] == "delete_node" {
 				name = "delete_node"
 			}
-			session["protocolMessages"] = append(util.AsMapSlice(session["protocolMessages"]), map[string]any{"role": "tool", "name": name, "toolCallId": question["id"], "content": agentJSON(agentError("user_cancelled", "用户取消了请求，不执行依赖此回答的操作"))})
+			worker := canvasAgentWorker{messages: util.AsMapSlice(session["protocolMessages"])}
+			worker.record(map[string]any{"id": question["id"], "name": name}, agentError("user_cancelled", "用户取消了请求，不执行依赖此回答的操作"))
+			session["protocolMessages"] = worker.messages
 			delete(state, "pendingQuestion")
 			session["agentState"] = state
+		}
+		worker := &canvasAgentWorker{service: s, identity: identity, doc: doc, req: CanvasAgentRequest{SessionID: doc.AgentRun.SessionID}}
+		if e = worker.revokeSDKQuestion(); e != nil {
+			return e
 		}
 		doc.AgentSessions, _ = json.Marshal(sessions)
 		doc.AgentRun.Status = "cancelled"

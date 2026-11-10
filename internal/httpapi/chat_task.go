@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"chatgpt2api/internal/protocol"
+	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
 
@@ -32,6 +33,9 @@ func (a *App) executeChatTaskRequest(ctx context.Context, payload map[string]any
 	}
 	data, err := protocol.ResponseChatTaskData(result)
 	if err != nil {
+		if stream != nil {
+			return nil, service.AgentModelStreamError{Err: err}
+		}
 		return nil, err
 	}
 	return map[string]any{"created": result["created_at"], "output_type": "text", "data": []map[string]any{data}}, nil
@@ -62,13 +66,13 @@ func collectResponseChatTaskStream(payload map[string]any, stream *protocol.Stre
 		}
 	}
 	if err := <-stream.Err; err != nil {
-		return nil, err
+		return nil, service.AgentModelStreamError{Err: err}
 	}
 	if streamError != nil {
-		return nil, streamError
+		return nil, service.AgentModelStreamError{Err: streamError}
 	}
 	if response == nil {
-		return nil, errors.New("upstream response stream ended without a terminal event")
+		return nil, service.AgentModelStreamError{Err: errors.New("upstream response stream ended without a terminal event")}
 	}
 	return response, nil
 }

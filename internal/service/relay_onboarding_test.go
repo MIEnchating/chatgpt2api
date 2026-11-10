@@ -28,7 +28,7 @@ func TestRelayOnboardingReusesAllKeysByGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	mappings := map[string]string{"text": "shared", "image": "shared", "video": "shared", "audio": ""}
+	mappings := map[string][]string{"text": {"shared"}, "image": {"shared"}, "video": {"shared"}, "audio": {""}}
 	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, mappings, func(context.Context, string) error { t.Fatal("created despite existing keys"); return nil })
 	if len(warnings) > 0 {
 		t.Fatal(warnings)
@@ -40,6 +40,23 @@ func TestRelayOnboardingReusesAllKeysByGroup(t *testing.T) {
 	}
 	if _, exists := result["audio"]; exists {
 		t.Fatal("empty mapping enabled audio")
+	}
+}
+
+func TestRelayOnboardingMultipleGroupsAndPartialFailure(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertTestNewAPITokenNamed(t, dbURL, 1, 1, "first", "key-one", "one", -1, 0, true)
+	insertTestNewAPITokenNamed(t, dbURL, 2, 1, "second", "key-two", "two", -1, 0, true)
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	mappings := map[string][]string{"text": {"first", "second"}, "image": {"first", "missing"}, "video": {"missing"}}
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, mappings, nil)
+	if !reflect.DeepEqual(result["text"], []string{"key-one", "key-two"}) || len(result["image"]) != 0 || len(result["video"]) != 0 || len(warnings) != 1 {
+		t.Fatalf("result=%v warnings=%v", result, warnings)
 	}
 }
 
@@ -62,7 +79,7 @@ func TestRelayOnboardingCreatesOncePerGroupAcrossCategoriesAndConcurrentLogins(t
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"text": "shared", "image": "shared"}, create)
+			result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string][]string{"text": {"shared"}, "image": {"shared"}}, create)
 			if len(warnings) > 0 || !reflect.DeepEqual(result["text"], []string{"created"}) || !reflect.DeepEqual(result["image"], result["text"]) {
 				t.Errorf("result=%v warnings=%v", result, warnings)
 			}
@@ -94,7 +111,7 @@ func TestRelayOnboardingDoesNotCreateOnReadFailureOrAmbiguousName(t *testing.T) 
 				insertTestNewAPITokenNamed(t, dbURL, 1, 1, "shared", "same", "key-a", -1, 0, true)
 				insertTestNewAPITokenNamed(t, dbURL, 2, 1, "other", "same", "key-b", -1, 0, true)
 			}
-			_, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"text": "shared"}, func(context.Context, string) error { t.Fatal("must not create"); return nil })
+			_, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string][]string{"text": {"shared"}}, func(context.Context, string) error { t.Fatal("must not create"); return nil })
 			if len(warnings) != 1 {
 				t.Fatalf("warnings=%v", warnings)
 			}
@@ -111,7 +128,7 @@ func TestRelayOnboardingDoesNotRetryFailedCreationForSharedCategories(t *testing
 	}
 	defer reader.Close()
 	calls := 0
-	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"text": "shared", "image": "shared"}, func(context.Context, string) error { calls++; return errors.New("timeout") })
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string][]string{"text": {"shared"}, "image": {"shared"}}, func(context.Context, string) error { calls++; return errors.New("timeout") })
 	if calls != 1 || len(warnings) != 1 || len(result) != 0 {
 		t.Fatalf("calls=%d warnings=%v result=%v", calls, warnings, result)
 	}
@@ -128,7 +145,7 @@ func TestRelayOnboardingSub2APIReusesGroupRegardlessOfKeyNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "sub2api:1"}, map[string]string{"image": "shared", "video": "shared"}, func(context.Context, string) error { t.Fatal("created despite existing keys"); return nil })
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "sub2api:1"}, map[string][]string{"image": {"shared"}, "video": {"shared"}}, func(context.Context, string) error { t.Fatal("created despite existing keys"); return nil })
 	if len(warnings) != 0 || !reflect.DeepEqual(result["image"], []string{"first", "second"}) || !reflect.DeepEqual(result["image"], result["video"]) {
 		t.Fatalf("result=%v warnings=%v", result, warnings)
 	}
@@ -142,7 +159,7 @@ func TestRelayOnboardingRejectsAutoGroupWithoutCreating(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"image": "auto", "video": "auto"}, func(context.Context, string) error { t.Fatal("created auto key"); return nil })
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string][]string{"image": {"auto"}, "video": {"auto"}}, func(context.Context, string) error { t.Fatal("created auto key"); return nil })
 	if len(result) != 0 || len(warnings) != 1 {
 		t.Fatalf("result=%v warnings=%v", result, warnings)
 	}
@@ -157,7 +174,7 @@ func TestRelayOnboardingWithoutCreationCredentialOnlyReusesExistingKeys(t *testi
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"text": "existing", "image": "missing"}, nil)
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string][]string{"text": {"existing"}, "image": {"missing"}}, nil)
 	if !reflect.DeepEqual(result["text"], []string{"original-name"}) || len(result["image"]) != 0 || len(warnings) != 1 {
 		t.Fatalf("result=%v warnings=%v", result, warnings)
 	}
@@ -171,7 +188,7 @@ func TestRelayOnboardingRejectsIdentityWithoutPlatformUserID(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{Username: "alice"}, map[string]string{"image": "shared"}, func(context.Context, string) error {
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{Username: "alice"}, map[string][]string{"image": {"shared"}}, func(context.Context, string) error {
 		t.Fatal("created a key based only on a matching username")
 		return nil
 	})

@@ -1,9 +1,13 @@
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
+import { CanvasMentionMenu } from "./canvas-mention-menu";
+import { ItemMedia } from "@/components/ui/item";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { CanvasAgentAttachmentChip } from "./canvas-agent-attachments";
+import { useContentEditableReferenceTargets } from "./use-contenteditable-reference-targets";
 
 import {
+  appendContentEditableInline,
   contentEditableTextBeforeCaret,
   copyContentEditableSelection,
   deleteAdjacentContentEditableReference,
@@ -16,9 +20,9 @@ import {
 } from "@/app/canvas/canvas-contenteditable";
 import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigPromptDisplay, canvasConfigInputLabel, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import type { CanvasNode } from "@/services/api/canvas";
-import { cn } from "@/lib/utils";
+
 
 type ComposerToken =
   | { type: "text"; value: string }
@@ -35,6 +39,8 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
+  const mentionFrameRef = useRef<number | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const inputsRef = useRef(inputs);
   const composerChangeRef = useRef(onComposerChange);
   inputsRef.current = inputs;
@@ -44,6 +50,10 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
   const [mention, setMention] = useState<{ query: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [previewInput, setPreviewInput] = useState<CanvasConfigInput | null>(null);
+  const referenceTargets = useContentEditableReferenceTargets(editorRef, "[data-reference-node-id]");
+  useEffect(() => () => {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+  }, []);
   const candidates = useMemo(() => {
     if (!mention) return [];
     const query = mention.query.trim().toLowerCase();
@@ -65,13 +75,14 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
       }
       const input = inputByID.get(token.nodeID);
       if (input) {
-        const chip = createReferenceChip(input, currentInputs, setPreviewInput, () => removeReferenceChip(chip, editor, composerChangeRef.current));
-        editor.append(chip);
+        editor.append(createReferenceChip(input));
       }
     });
   }, [inputsSignature, value]);
 
   function closeMention() {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+    mentionFrameRef.current = null;
     setMention(null);
     setActiveIndex(0);
   }
@@ -81,6 +92,14 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
     if (!match || !referenceCandidates.length) return closeMention();
     setMention({ query: match[1] || "" });
     setActiveIndex(0);
+  }
+
+  function scheduleMention() {
+    if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);
+    mentionFrameRef.current = requestAnimationFrame(() => {
+      mentionFrameRef.current = null;
+      syncMention();
+    });
   }
 
   function syncFromEditor(commit = false) {
@@ -94,6 +113,22 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
     const editor = editorRef.current;
     if (!editor) return;
     removeActiveContentEditableMention();
+    const chip = createReferenceChip(input);
+    const trailingSpace = document.createTextNode(" ");
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (range && editor.contains(range.commonAncestorContainer)) {
+      const fragment = document.createDocumentFragment();
+      fragment.append(chip, trailingSpace);
+      range.insertNode(fragment);
+      range.setStartAfter(trailingSpace);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else {
+      appendContentEditableInline(editor, chip, trailingSpace);
+      placeContentEditableCaretAtEnd(editor);
+    }
     closeMention();
     onComposerChange(serializeEditor(editor));
     onReferenceSelect(input.nodeID);
@@ -111,11 +146,12 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
       onWheel={(event) => event.stopPropagation()}
     >
       <div className="canvas-prompt-editor-resize relative min-h-0 flex-1">
-          {!value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用画布图片或文本</div> : null}
-          <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
+          {!isComposing && !value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用画布图片或文本</div> : null}
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden h-full" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain h-full"><div className="min-w-0 w-full" style={{ minHeight: "100%" }}>
           <div
             ref={editorRef}
             contentEditable
+            data-slot="input-group-control"
             role="textbox"
             aria-label="组装提示词"
             aria-multiline="true"
@@ -134,8 +170,8 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
               event.preventDefault();
               if (insertPlainTextAtContentEditableSelection(text)) syncFromEditor();
             }}
-            onCompositionStart={() => { composingRef.current = true; }}
-            onCompositionEnd={() => { composingRef.current = false; syncFromEditor(); }}
+            onCompositionStart={() => { composingRef.current = true; setIsComposing(true); closeMention(); }}
+            onCompositionEnd={() => { composingRef.current = false; setIsComposing(false); syncFromEditor(); }}
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
               event.stopPropagation();
               if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -152,24 +188,45 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
                 requestAnimationFrame(() => syncFromEditor());
                 return;
               }
-              requestAnimationFrame(syncMention);
+              scheduleMention();
             }}
             onBlur={() => {
               syncFromEditor(true);
-              window.setTimeout(closeMention, 120);
+              closeMention();
             }}
           />
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           {mention && candidates.length && composerEditor ? (
-            <ComposerMentionMenu
+            <CanvasMentionMenu
               editor={composerEditor}
-              inputs={candidates}
-              allInputs={inputs}
+              getAnchorRect={() => composerCaretRect(composerEditor)}
+              items={candidates}
+              getKey={(input) => input.nodeID}
               activeIndex={Math.min(activeIndex, candidates.length - 1)}
+              onActiveIndexChange={setActiveIndex}
               onSelect={insertReference}
+              onClose={closeMention}
+              renderItem={(input) => <>
+                <ResourcePreview input={input} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{canvasConfigInputLabel(input, inputs.some((item) => item.nodeID === input.nodeID) ? inputs : [...inputs, input])} · {input.title}</span>
+                  {input.text ? <span className="block truncate text-muted-foreground">{input.text}</span> : null}
+                </span>
+              </>}
             />
           ) : null}
       </div>
+      {referenceTargets.map((target, index) => {
+        const input = inputs.find(item => item.nodeID === target.dataset.referenceNodeId);
+        return input ? createPortal(<CanvasAgentAttachmentChip
+          attachment={{ id: input.nodeID, type: input.type, title: canvasConfigInputLabel(input, inputs), url: input.url }}
+          onPreview={() => setPreviewInput(input)}
+          onRemove={() => {
+            const editor = editorRef.current;
+            if (editor && editor.contains(target)) removeReferenceChip(target, editor, composerChangeRef.current);
+          }}
+        />, target, `${input.nodeID}:${index}`) : null;
+      })}
       {promptTools ? <div className="min-w-0 shrink-0">{promptTools}</div> : null}
       {children ? <div className="mt-3 space-y-3 border-t border-border pt-3">{children}</div> : null}
       <ImageLightbox images={previewImages} currentIndex={0} open={Boolean(previewInput?.url)} onOpenChange={(open) => { if (!open) setPreviewInput(null); }} onIndexChange={() => undefined} />
@@ -177,143 +234,19 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
   );
 }
 
-function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect }: {
-  editor: HTMLDivElement;
-  inputs: CanvasConfigInput[];
-  allInputs: CanvasConfigInput[];
-  activeIndex: number;
-  onSelect: (input: CanvasConfigInput) => void;
-}) {
-  const layer = useOverlayLayer("popover");
-  const selectedRef = useRef(false);
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
-
-  useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, inputs]);
-
-  useLayoutEffect(() => {
-    function updatePosition() {
-      const anchor = composerCaretRect(editor);
-      const width = Math.min(288, Math.max(240, window.innerWidth - 16));
-      const estimatedHeight = 224;
-      const gap = 6;
-      const left = clamp(anchor.left, 8, window.innerWidth - width - 8);
-      const showAbove = anchor.bottom + gap + estimatedHeight > window.innerHeight && anchor.top - gap - estimatedHeight >= 8;
-      const top = clamp(showAbove ? anchor.top - gap - estimatedHeight : anchor.bottom + gap, 8, window.innerHeight - estimatedHeight - 8);
-      setPosition({ left, top, width });
-    }
-
-    updatePosition();
-    const resizeObserver = new ResizeObserver(updatePosition);
-    resizeObserver.observe(editor);
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [editor]);
-
-  function select(input: CanvasConfigInput) {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
-    onSelect(input);
-  }
-
-  if (!position) return null;
-
-  return createPortal(
-    <OverlayLayerProvider value={layer}>
-    <ScrollArea data-overlay-layer={layer}
-      data-canvas-config-mention-menu
-      className="pointer-events-auto fixed max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
-      viewportClassName="p-1"
-      style={{ ...position, zIndex: layer }}
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-      onWheel={(event) => event.stopPropagation()}
-    >
-      {inputs.map((input, index) => (
-        <button
-          key={input.nodeID}
-          ref={index === activeIndex ? activeItemRef : undefined}
-          type="button"
-          className={cn("flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs", index === activeIndex && "bg-accent text-accent-foreground")}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            select(input);
-          }}
-        >
-          <ResourcePreview input={input} />
-          <span className="min-w-0 flex-1">
-            <span className="block font-medium">{canvasConfigInputLabel(input, allInputs.some((item) => item.nodeID === input.nodeID) ? allInputs : [...allInputs, input])} · {input.title}</span>
-            <span className="block truncate text-muted-foreground">{input.text || input.title}</span>
-          </span>
-        </button>
-      ))}
-    </ScrollArea>
-    </OverlayLayerProvider>,
-    document.body,
-  );
-}
-
 function ResourcePreview({ input }: { input: CanvasConfigInput }) {
   if (input.type === "image" && input.url) return <img src={input.url} alt="" className="size-9 shrink-0 rounded-md object-cover" />;
   if (input.type === "video" && input.url) return <video src={input.url} className="size-9 shrink-0 rounded-md bg-black object-cover" muted preload="metadata" />;
   const Icon = input.type === "audio" ? Music2 : input.type === "video" ? Video : input.type === "image" ? ImageIcon : FileText;
-  return <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted"><Icon className="size-4" /></span>;
+  return <ItemMedia variant="icon" className="grid size-9 shrink-0 place-items-center"><Icon className="size-4" /></ItemMedia>;
 }
 
-function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput[], onPreview: (input: CanvasConfigInput) => void, onDelete?: () => void) {
+function createReferenceChip(input: CanvasConfigInput) {
   const chip = document.createElement("span");
   chip.contentEditable = "false";
   chip.dataset.referenceNodeId = input.nodeID;
   if (input.type === "text" && input.text) chip.dataset.tooltip = input.text;
-  chip.className = "mx-px inline-flex h-7 max-w-40 items-center gap-1 overflow-hidden rounded-md border border-border bg-card px-2 text-xs leading-none align-middle text-foreground";
-
-  const icon = document.createElement("span");
-  icon.textContent = input.type === "image" ? "▧" : "T";
-  icon.className = input.type === "image" ? "text-brand" : "text-amber-600 dark:text-amber-300";
-  const label = document.createElement("span");
-  label.className = "block truncate";
-  label.textContent = canvasConfigInputLabel(input, inputs);
-  chip.append(icon, label);
-  if (onDelete) {
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.ariaLabel = `删除${canvasConfigInputLabel(input, inputs)}引用`;
-    remove.textContent = "×";
-    remove.className = "ml-0.5 grid size-4 shrink-0 place-items-center rounded text-sm leading-none text-muted-foreground hover:bg-muted hover:text-foreground";
-    let removed = false;
-    const deleteReference = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (removed) return;
-      removed = true;
-      onDelete();
-    };
-    remove.addEventListener("pointerdown", deleteReference);
-    remove.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!removed) deleteReference(event);
-    });
-    chip.append(remove);
-  }
-  if (input.type === "image" && input.url) {
-    chip.className += " cursor-pointer";
-    chip.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.target instanceof Element && event.target.closest("button")) return;
-      onPreview(input);
-    });
-  }
+  chip.className = "mx-px inline-flex max-w-40 items-center align-middle";
   return chip;
 }
 
@@ -335,21 +268,12 @@ function composerCaretRect(editor: HTMLElement) {
       collapsed.collapse(true);
       const rect = Array.from(collapsed.getClientRects()).at(-1) || collapsed.getBoundingClientRect();
       if (rect && (rect.width || rect.height || rect.top || rect.left)) {
-        return {
-          bottom: rect.bottom || rect.top + 28,
-          left: rect.left,
-          top: rect.top,
-        };
+        return DOMRect.fromRect({ x: rect.left, y: rect.top, width: rect.width, height: rect.height || 28 });
       }
     }
   }
   const rect = editor.getBoundingClientRect();
-  return { bottom: rect.top + 40, left: rect.left + 12, top: rect.top + 12 };
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  if (maximum < minimum) return minimum;
-  return Math.min(Math.max(value, minimum), maximum);
+  return new DOMRect(rect.left + 12, rect.top + 12, 0, 28);
 }
 
 function serializeEditor(editor: HTMLElement) {

@@ -24,7 +24,10 @@ type videoContractAgentState struct {
 	inspected        bool
 	validations      int
 	sequence         int
+	modelRound       int
+	modelAttempt     int
 	documentRevision int
+	documentPrepared bool
 	result           *videoContractGenerationResult
 }
 
@@ -372,7 +375,20 @@ func previewVideoContractAgentRequests(ctx context.Context, result *videoContrac
 				count := util.ToInt(sample.Input[field], 0)
 				values := []string{}
 				for n := 0; n < count; n++ {
-					values = append(values, fmt.Sprintf("https://media.example/%s/%d", field, n+1))
+					value := fmt.Sprintf("https://media.example/%s/%d", field, n+1)
+					if effective.Transport.LocalMaterial == "base64" {
+						value = "YQ=="
+						if effective.Transport.Base64Format != "raw" {
+							mime := "image/png"
+							if field == "reference_video" {
+								mime = "video/mp4"
+							} else if field == "reference_audio" {
+								mime = "audio/mpeg"
+							}
+							value = "data:" + mime + ";base64," + value
+						}
+					}
+					values = append(values, value)
 				}
 				if count == 0 {
 					continue

@@ -1,3 +1,8 @@
+import { LabeledField } from "@/components/labeled-field";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { Toggle } from "@/components/ui/toggle";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Camera, Check, Grid2X2, ListRestart, Lock, LockOpen, PanelTop, RotateCcw, Rows3, Trash2, X, ZoomIn } from "lucide-react";
 
@@ -72,8 +77,8 @@ export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: 
   if (!sourceURL) return null;
   return (
     <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}>
-      <DialogContent className={`w-[min(94vw,780px)] ${dragCursor ? "tool-dragging" : ""}`} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
-        <DialogHeader><DialogTitle>裁剪图片</DialogTitle><DialogDescription>拖动裁剪框选择要保留的区域。</DialogDescription></DialogHeader>
+      <DialogContent className={cn("sm:max-w-none", `w-[min(94vw,780px)] ${dragCursor ? "tool-dragging" : ""}`)} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
+        <DialogHeader><DialogTitle>裁剪图片</DialogTitle><DialogDescription>拖动裁剪框选择要保留的区域。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="space-y-4">
           <EditableImageFrame source={source} className="h-[38dvh] sm:h-[58dvh]">
           <div ref={frameRef} className="relative mx-auto w-fit max-w-full overflow-hidden rounded-xl bg-black/90">
@@ -88,9 +93,9 @@ export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: 
             </div>
           </div>
           </EditableImageFrame>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground"><span>裁剪尺寸：{cropWidth && cropHeight ? `${cropWidth} × ${cropHeight}` : "读取中"}</span><span>原图：{dimensions.width ? `${dimensions.width} × ${dimensions.height}` : "读取中"}</span><Button type="button" variant="outline" size="sm" onClick={() => setLocked((value) => !value)}>{locked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}{locked ? "锁定比例" : "自由比例"}</Button></div>
+          <Card className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 flex-row"><span>裁剪尺寸：{cropWidth && cropHeight ? `${cropWidth} × ${cropHeight}` : "读取中"}</span><span>原图：{dimensions.width ? `${dimensions.width} × ${dimensions.height}` : "读取中"}</span><Button type="button" variant="outline" size="sm" onClick={() => setLocked((value) => !value)}>{locked ? <Lock  /> : <LockOpen  />}{locked ? "锁定比例" : "自由比例"}</Button></Card>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setCrop(defaultCrop)}><RotateCcw />重置</Button><Button type="button" variant="outline" disabled={busy} onClick={onClose}><X />取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(crop, source.url)}>{busy ? "处理中" : <><Check />确认裁剪</>}</Button></DialogFooter>
+        </ScrollArea><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setCrop(defaultCrop)}><RotateCcw />重置</Button><Button type="button" variant="outline" disabled={busy} onClick={onClose}><X />取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(crop, source.url)}>{busy ? "处理中" : <><Check />确认裁剪</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -159,10 +164,10 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
   if (!sourceURL) return null;
   return (
     <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}>
-      <DialogContent className={`w-[min(94vw,820px)] ${dragCursor ? "tool-dragging" : ""}`} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
-        <DialogHeader><DialogTitle>切分图片</DialogTitle><DialogDescription>生成 {total} 个图片子节点，并按原图网格排列到画布右侧。</DialogDescription></DialogHeader>
+      <DialogContent className={cn("sm:max-w-none", `w-[min(94vw,820px)] ${dragCursor ? "tool-dragging" : ""}`)} style={{ "--tool-cursor": dragCursor } as CSSProperties}>
+        <DialogHeader><DialogTitle>切分图片</DialogTitle><DialogDescription>生成 {total} 个图片子节点，并按原图网格排列到画布右侧。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,260px)]">
-          <div className="rounded-xl border border-border p-3">
+          <Card className="p-3 gap-0">
             <EditableImageFrame source={source} className="h-[30dvh] sm:h-[48dvh]">
               <div ref={frameRef} className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black shadow-xl">
                 <img src={source.url} alt="" className="block max-h-[30dvh] sm:max-h-[48dvh] max-w-full object-contain opacity-95" draggable={false} />
@@ -173,23 +178,23 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
               </div>
             </EditableImageFrame>
             <p className="mt-2 text-xs text-muted-foreground">原图：{dimensions.width ? `${dimensions.width} × ${dimensions.height}` : "读取中"}</p>
-          </div>
+          </Card>
           <div className="space-y-4">
-            <label className="block space-y-1.5 text-sm"><span>行数</span><Input type="number" min={1} max={12} value={rows} onChange={(event) => updateGrid("rows", event.target.value)} /></label>
-            <label className="block space-y-1.5 text-sm"><span>列数</span><Input type="number" min={1} max={12} value={columns} onChange={(event) => updateGrid("columns", event.target.value)} /></label>
+            <LabeledField className="grid gap-1.5 text-sm" label={<span>行数</span>}>{(fieldId) => <><Input id={fieldId} type="number" min={1} max={12} value={rows} onChange={(event) => updateGrid("rows", event.target.value)} /></>}</LabeledField>
+            <LabeledField className="grid gap-1.5 text-sm" label={<span>列数</span>}>{(fieldId) => <><Input id={fieldId} type="number" min={1} max={12} value={columns} onChange={(event) => updateGrid("columns", event.target.value)} /></>}</LabeledField>
             <div className="grid grid-cols-2 gap-2">
               <Button type="button" variant="outline" disabled={rows >= 12} onClick={() => addLine("horizontal")}><Rows3 />横向线</Button>
               <Button type="button" variant="outline" disabled={columns >= 12} onClick={() => addLine("vertical")}><PanelTop className="rotate-90" />纵向线</Button>
               <Button type="button" variant="outline" disabled={!activeLine} onClick={deleteActiveLine}><Trash2 />删除线</Button>
               <Button type="button" variant="outline" onClick={() => { setActiveLine(null); setHorizontalLines(buildCanvasGridLines(rows)); setVerticalLines(buildCanvasGridLines(columns)); }}><ListRestart />重置线</Button>
             </div>
-            <div className="space-y-2 rounded-xl border border-border px-3 py-3 text-sm">
+            <Card className="space-y-2 px-3 py-3 gap-0">
               <div><span className="text-muted-foreground">切片数量</span><strong className="float-right">{total} 个</strong></div>
               <div><span className="text-muted-foreground">平均约</span><strong className="float-right">{pieceSize ? `${pieceSize.width} × ${pieceSize.height}` : "读取中"}</strong></div>
-            </div>
+            </Card>
           </div>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm({ rows, columns, horizontalLines, verticalLines }, source.url)}>{busy ? "处理中" : <><Grid2X2 />生成子节点</>}</Button></DialogFooter>
+        </ScrollArea><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm({ rows, columns, horizontalLines, verticalLines }, source.url)}>{busy ? "处理中" : <><Grid2X2 />生成子节点</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -213,10 +218,10 @@ export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm 
   ];
   return (
     <Dialog open={open} onOpenChange={(value) => !value && !busy && onClose()}>
-      <DialogContent className="w-[min(94vw,820px)]">
-        <DialogHeader><DialogTitle>图片放大</DialogTitle><DialogDescription>生成更大尺寸的独立图片节点。</DialogDescription></DialogHeader>
+      <DialogContent className="w-[min(94vw,820px)] sm:max-w-none">
+        <DialogHeader><DialogTitle>图片放大</DialogTitle><DialogDescription>生成更大尺寸的独立图片节点。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
-          <div className="rounded-xl border border-border p-3">
+          <Card className="p-3 gap-0">
             <EditableImageFrame source={source} className="h-[30dvh] sm:h-[42dvh]">
               <img
                 src={source.url}
@@ -226,21 +231,21 @@ export function CanvasUpscaleDialog({ sourceURL, open, busy, onClose, onConfirm 
               />
             </EditableImageFrame>
             <p className="mt-2 flex justify-between text-xs text-muted-foreground"><span>源图</span><strong className="text-foreground">{dimensions.width ? `${dimensions.width} × ${dimensions.height} px` : "读取中"}</strong></p>
-          </div>
+          </Card>
           <div className="space-y-5 py-1">
             <div className="space-y-2 text-sm">
               <span className="font-medium">目标像素</span>
-              <div className="grid grid-cols-3 gap-1.5">{[1024, 2048, 4096].map((value) => <Button key={value} type="button" aria-pressed={target === value} variant={target === value ? "default" : "outline"} size="sm" disabled={Boolean(sourceLong && sourceLong >= value)} onClick={() => setTarget(value)}>{value / 1024}K · {value}px</Button>)}</div>
+              <div className="grid grid-cols-3 gap-1.5">{[1024, 2048, 4096].map((value) => <Toggle key={value} type="button" pressed={target === value}  size="sm" disabled={Boolean(sourceLong && sourceLong >= value)} onClick={() => setTarget(value)}>{value / 1024}K · {value}px</Toggle>)}</div>
               {sourceLong >= CANVAS_MAX_UPSCALE_LONG_EDGE ? <p className="text-xs font-medium text-destructive">图片已达到 4K，无需放大</p> : null}
             </div>
             <div className="space-y-2 text-sm">
               <span className="font-medium">放大算法</span>
-              <div className="grid gap-1.5">{algorithms.map((item) => <Button key={item.value} type="button" aria-pressed={algorithm === item.value} variant={algorithm === item.value ? "default" : "outline"} className="h-auto justify-start py-2 text-left" onClick={() => setAlgorithm(item.value)}><span className="grid"><strong>{item.title}</strong><span className={algorithm === item.value ? "text-xs font-normal text-primary-foreground/75" : "text-xs font-normal text-muted-foreground"}>{item.description}</span></span></Button>)}</div>
+              <div className="grid gap-1.5">{algorithms.map((item) => <Toggle key={item.value} type="button" pressed={algorithm === item.value}  className="justify-start text-left" onClick={() => setAlgorithm(item.value)}><span className="grid"><strong>{item.title}</strong><span className={algorithm === item.value ? "text-xs font-normal text-primary-foreground/75" : "text-xs font-normal text-muted-foreground"}>{item.description}</span></span></Toggle>)}</div>
             </div>
-            <div className="rounded-xl border border-border px-3 py-3 text-sm"><span className="text-muted-foreground">输出尺寸</span><strong className="float-right">{outputSize ? `${outputSize.width} × ${outputSize.height} px` : "读取中"}</strong></div>
+            <Card className="px-3 py-3 gap-0"><span className="text-muted-foreground">输出尺寸</span><strong className="float-right">{outputSize ? `${outputSize.width} × ${outputSize.height} px` : "读取中"}</strong></Card>
           </div>
         </div>
-        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={disabled || busy} onClick={() => onConfirm({ targetLongEdge: target, algorithm }, source.url)}>{busy ? "处理中" : <><ZoomIn />生成放大图</>}</Button></DialogFooter>
+        </ScrollArea><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={disabled || busy} onClick={() => onConfirm({ targetLongEdge: target, algorithm }, source.url)}>{busy ? "处理中" : <><ZoomIn />生成放大图</>}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -252,10 +257,10 @@ export function CanvasAngleDialog({ sourceURL, open, busy, onClose, onConfirm }:
   useEffect(() => { if (open) setParams({ horizontalAngle: 0, pitchAngle: 9, cameraDistance: 4.8, wideAngle: false }); }, [open, sourceURL]);
   const update = <K extends keyof CanvasImageAngleParams>(key: K, value: CanvasImageAngleParams[K]) => setParams((current) => ({ ...current, [key]: value }));
   if (!sourceURL) return null;
-  return <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}><DialogContent className="w-[min(94vw,860px)]"><DialogHeader><DialogTitle>AI 多角度</DialogTitle><DialogDescription>基于原图生成同一主体的新视角。</DialogDescription></DialogHeader><div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]"><EditableImageFrame source={source} className="h-40 sm:h-[280px]"><img src={source.url} alt="" className="size-40 rounded-2xl sm:size-52 object-contain shadow-xl" draggable={false} style={{ transform: anglePreviewTransform(params) }} /></EditableImageFrame><div className="space-y-5"><AngleControl label="左右角度" value={params.horizontalAngle} min={-60} max={60} step={1} suffix="°" onChange={(value) => update("horizontalAngle", value)} /><AngleControl label="俯仰角度" value={params.pitchAngle} min={-45} max={45} step={1} suffix="°" onChange={(value) => update("pitchAngle", value)} /><AngleControl label="镜头距离" value={params.cameraDistance} min={1} max={10} step={0.1} suffix="" onChange={(value) => update("cameraDistance", value)} /><div className="flex items-center justify-between gap-3 text-sm"><span>镜头</span><div className="flex gap-1.5"><Button type="button" size="sm" aria-pressed={!params.wideAngle} variant={!params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", false)}>标准</Button><Button type="button" size="sm" aria-pressed={params.wideAngle} variant={params.wideAngle ? "default" : "outline"} onClick={() => update("wideAngle", true)}>广角</Button></div></div><p className="text-xs text-muted-foreground">{canvasImageAngleLabel(params)}</p></div></div><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(params)}>{busy ? "处理中" : <><Camera />AI 生成</>}</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open && Boolean(sourceURL)} onOpenChange={(value) => !value && !busy && onClose()}><DialogContent className="w-[min(94vw,860px)] sm:max-w-none"><DialogHeader><DialogTitle>AI 多角度</DialogTitle><DialogDescription>基于原图生成同一主体的新视角。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1"><div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]"><EditableImageFrame source={source} className="h-40 sm:h-[280px]"><img src={source.url} alt="" className="size-40 rounded-2xl sm:size-52 object-contain shadow-xl" draggable={false} style={{ transform: anglePreviewTransform(params) }} /></EditableImageFrame><div className="space-y-5"><AngleControl label="左右角度" value={params.horizontalAngle} min={-60} max={60} step={1} suffix="°" onChange={(value) => update("horizontalAngle", value)} /><AngleControl label="俯仰角度" value={params.pitchAngle} min={-45} max={45} step={1} suffix="°" onChange={(value) => update("pitchAngle", value)} /><AngleControl label="镜头距离" value={params.cameraDistance} min={1} max={10} step={0.1} suffix="" onChange={(value) => update("cameraDistance", value)} /><div className="flex items-center justify-between gap-3 text-sm"><span>镜头</span><div className="flex gap-1.5"><Toggle type="button" size="sm" pressed={!params.wideAngle}  onClick={() => update("wideAngle", false)}>标准</Toggle><Toggle type="button" size="sm" pressed={params.wideAngle}  onClick={() => update("wideAngle", true)}>广角</Toggle></div></div><p className="text-xs text-muted-foreground">{canvasImageAngleLabel(params)}</p></div></div></ScrollArea><DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button><Button type="button" disabled={busy || !source.url} onClick={() => onConfirm(params)}>{busy ? "处理中" : <><Camera />AI 生成</>}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
-function AngleControl({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <label className="grid grid-cols-[64px_minmax(0,1fr)_48px] items-center gap-3 text-sm"><span>{label}</span><Slider min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label} /><strong className="text-right">{Number.isInteger(value) ? value : value.toFixed(1)}{suffix}</strong></label>; }
+function AngleControl({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <LabeledField className="grid grid-cols-[64px_minmax(0,1fr)_48px] items-center gap-3 text-sm" label={<span>{label}</span>}>{(fieldId) => <><Slider id={fieldId} min={min} max={max} step={step} value={[value]} onValueChange={([nextValue]) => onChange(Number(String(nextValue)))} aria-label={label} /><strong className="text-right">{Number.isInteger(value) ? value : value.toFixed(1)}{suffix}</strong></>}</LabeledField>; }
 function anglePreviewTransform(params: CanvasImageAngleParams) { const scale = 1.08 - params.cameraDistance * 0.035 + (params.wideAngle ? -0.08 : 0); return `perspective(520px) rotateY(${params.horizontalAngle * -0.45}deg) rotateX(${params.pitchAngle * 0.35}deg) scale(${Math.max(0.72, Math.min(1.08, scale))})`; }
 function moveCrop(crop: CanvasImageCropRect, dx: number, dy: number) { return { ...crop, x: clamp(crop.x + dx, 0, 1 - crop.width), y: clamp(crop.y + dy, 0, 1 - crop.height) }; }
 function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: string, locked: boolean, frame: DOMRect) {

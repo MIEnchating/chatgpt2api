@@ -1,4 +1,21 @@
 import type { VideoModelContract, VideoModelGenerationMode } from "./video-model-contracts";
+import { videoMaterialTransports } from "./video-model-contracts";
+
+export function setVideoMaterialTransports(transport: VideoModelContract["transport"], methods: NonNullable<VideoModelContract["transport"]["material_transports"]>) {
+  if (!methods.length) return transport;
+  const material_transports = videoMaterialTransports({ ...transport, material_transports: methods });
+  const next = { ...transport, material_transports, local_material: material_transports[0] };
+  if (material_transports.includes("base64")) next.base64_format ||= "data_url";
+  else delete next.base64_format;
+  if (next.local_material === "multipart") next.multipart_file_field ||= Object.keys(next.multipart_fields || {}).length ? "" : "input_reference[]";
+  else {
+    delete next.multipart_fields;
+    next.multipart_file_field = "";
+    next.multipart_repeatable = false;
+    next.multipart_mixed_urls = false;
+  }
+  return next;
+}
 
 export const VIDEO_MATERIALS = [
   { key: "first_frame", label: "首帧图片", description: "指定视频开始画面", max: 1 },

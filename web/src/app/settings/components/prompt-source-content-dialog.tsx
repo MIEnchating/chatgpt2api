@@ -1,16 +1,23 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { ItemMedia } from "@/components/ui/item";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ClipboardCopy, ImageIcon, LoaderCircle, RefreshCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, RefreshCcw } from "lucide-react";
 
 import type { BananaPrompt, PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { copyWithToast } from "@/lib/clipboard-text";
+import { CodeBlockCopyButton } from "@/components/ui/code-block";
 
 import type { PromptSourcePullResult } from "./use-prompt-source-pulls";
 
@@ -28,9 +35,9 @@ function PromptCover({ prompt, large = false }: { prompt: BananaPrompt; large?: 
   const hasCover = prompt.preview && !prompt.preview.startsWith("data:image/gif");
   if (!hasCover || failed) {
     return (
-      <div className={cn("flex shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground", large ? "size-full min-h-64" : "size-16")}>
+      <ItemMedia variant="icon" className={cn("flex shrink-0 items-center justify-center", large ? "size-full min-h-64" : "size-16")}>
         <ImageIcon className={large ? "size-10" : "size-5"} />
-      </div>
+      </ItemMedia>
     );
   }
   return (
@@ -100,19 +107,18 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
   const totalPages = Math.max(1, Math.ceil(prompts.length / PAGE_SIZE));
   const visiblePrompts = useMemo(() => prompts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [page, prompts]);
 
-  const copyPrompt = (prompt: BananaPrompt) => copyWithToast(prompt.prompt, "提示词已复制");
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent scrollable={false} className="flex h-[min(88dvh,780px)] w-[min(94vw,1180px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className={cn("sm:max-w-none", cn("h-[min(88dvh,780px)]", "flex w-[min(94vw,1180px)] max-w-none flex-col overflow-hidden"))}>
           <div className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 pr-14 sm:px-6 sm:pr-16">
             <div className="min-w-0">
-              <DialogTitle className="break-words text-base sm:text-xl">{source?.label || "提示词来源"} · 提示词内容</DialogTitle>
+              <DialogTitle className="break-words">{source?.label || "提示词来源"} · 提示词内容</DialogTitle>
               <DialogDescription className="mt-1">{isLoading && prompts.length === 0 ? "正在读取..." : `共 ${prompts.length} 条`}</DialogDescription>
             </div>
             <Button type="button" variant="outline" size="sm" disabled={isLoading || !source} onClick={() => void loadPrompts(false)}>
-              {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
+              {isLoading ? <Spinner /> : <RefreshCcw  />}
               立即更新
             </Button>
           </div>
@@ -121,17 +127,13 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
             <span>封面</span><span>标题</span><span>标签</span><span>操作</span>
           </div>
 
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
             {isLoading && prompts.length === 0 ? (
-              <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-muted-foreground">
-                <LoaderCircle className="size-5 animate-spin" />正在加载提示词内容
-              </div>
+              <LoadingState className="min-h-[360px]" label="正在加载提示词内容" />
             ) : error ? (
-              <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 px-5 text-center text-sm text-muted-foreground">
-                <p>{error}</p><Button type="button" variant="outline" onClick={() => void loadPrompts(false)}>重新加载</Button>
-              </div>
+              <EmptyState className="min-h-[360px]" title="提示词加载失败" description={error} action={<Button type="button" variant="outline" onClick={() => void loadPrompts(false)}>重新加载</Button>} />
             ) : visiblePrompts.length === 0 ? (
-              <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">该来源暂无提示词</div>
+              <EmptyState className="min-h-[360px]" title="该来源暂无提示词" />
             ) : (
               <div>
                 {visiblePrompts.map((prompt) => {
@@ -144,10 +146,10 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{prompt.prompt}</p>
                       </div>
                       <div className="flex min-w-0 flex-wrap gap-1.5">
-                        {tags.map((tag) => <TooltipHint key={tag} content={tag}><Badge variant="secondary" className="max-w-36 truncate rounded-md px-2 py-1 font-normal">{tag}</Badge></TooltipHint>)}
+                        {tags.map((tag) => <TooltipHint key={tag} content={tag}><Badge variant="secondary" className="max-w-36 truncate">{tag}</Badge></TooltipHint>)}
                       </div>
                       <div className="flex flex-nowrap items-center gap-1">
-                        <Button type="button" variant="ghost" size="sm" onClick={() => void copyPrompt(prompt)}><ClipboardCopy className="size-4" />复制</Button>
+                        <CodeBlockCopyButton size="sm" value={prompt.prompt}>复制</CodeBlockCopyButton>
                         <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedPrompt(prompt)}>详情</Button>
                       </div>
                     </div>
@@ -155,32 +157,32 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
                 })}
               </div>
             )}
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
 
-          <DialogFooter flush className="flex-row flex-wrap justify-center gap-1 sm:justify-center">
-            <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} aria-label="上一页"><ChevronLeft /></Button>
+          <DialogFooter className="m-0 shrink-0 flex-row flex-wrap justify-center sm:justify-center">
+            <Button type="button" variant="ghost" size="icon"  disabled={page <= 1} onClick={() => setPage((value) => value - 1)} aria-label="上一页"><ChevronLeft /></Button>
             {paginationItems(page, totalPages).map((item) => typeof item === "number" ? (
-              <Button key={item} type="button" aria-label={`第 ${item} 页`} aria-current={item === page ? "page" : undefined} variant={item === page ? "default" : "ghost"} size="icon" className="size-8" onClick={() => setPage(item)}>{item}</Button>
+              <Button key={item} type="button" aria-label={`第 ${item} 页`} aria-current={item === page ? "page" : undefined} variant={item === page ? "default" : "ghost"} size="icon"  onClick={() => setPage(item)}>{item}</Button>
             ) : <span key={item} className="flex size-8 items-center justify-center text-xs text-muted-foreground">...</span>)}
-            <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} aria-label="下一页"><ChevronRight /></Button>
+            <Button type="button" variant="ghost" size="icon"  disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} aria-label="下一页"><ChevronRight /></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(selectedPrompt)} onOpenChange={(nextOpen) => !nextOpen && setSelectedPrompt(null)}>
-        <DialogContent scrollable={false} className="flex h-[min(90dvh,680px)] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
+        <DialogContent className={cn("sm:max-w-none", cn("h-[min(90dvh,680px)]", "flex w-[min(94vw,920px)] max-w-none flex-col overflow-hidden"))}>
           <div className="grid h-full min-h-0 grid-rows-[minmax(0,0.65fr)_minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] md:grid-rows-1">
             <div className="flex min-h-0 items-center justify-center overflow-hidden bg-muted">
               {selectedPrompt ? <PromptCover prompt={selectedPrompt} large /> : null}
             </div>
             <div className="flex min-h-0 flex-col p-5 pr-7 sm:p-6 sm:pr-8">
-              <DialogTitle className="line-clamp-2 shrink-0 pr-6 text-base leading-7 md:pr-8 md:text-xl">{selectedPrompt?.title}</DialogTitle>
+              <DialogTitle className="line-clamp-2 shrink-0">{selectedPrompt?.title}</DialogTitle>
               <DialogDescription className="mt-1.5">{[selectedPrompt?.category, selectedPrompt?.author].filter(Boolean).join(" · ")}</DialogDescription>
-              <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
+              <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden mt-5 flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
                 <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>
-              </ScrollArea>
+              </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
               <div className="mt-4 flex shrink-0 justify-end border-t border-border pt-3">
-                {selectedPrompt ? <Button type="button" onClick={() => void copyPrompt(selectedPrompt)}><ClipboardCopy />复制提示词</Button> : null}
+                {selectedPrompt ? <CodeBlockCopyButton variant="default" size="default" value={selectedPrompt.prompt}>复制提示词</CodeBlockCopyButton> : null}
               </div>
             </div>
           </div>

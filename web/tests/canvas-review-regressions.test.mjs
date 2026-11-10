@@ -16,6 +16,7 @@ import { applyCanvasVideoTaskProgressNodes } from "../src/app/canvas/canvas-task
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { buildCanvasGenerationContext, canvasGenerationReferenceImageURLs, canvasGenerationNeedsRecovery } from "../src/app/canvas/canvas-generation-context.ts";
 import { prepareImageEditReferences } from "../src/lib/image-edit-references.ts";
+import { videoModelRequiresHTTPSReferences } from "../src/lib/video-model-capabilities.ts";
 import { appendCanvasHistorySnapshot, canvasHistoryLeaseExpired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, commitCanvasGenerationHistory } from "../src/app/canvas/canvas-history.ts";
 import { canvasSaveRequired, flushCanvasSaves } from "../src/app/canvas/canvas-save.ts";
 import { canCreateCanvasConnection } from "../src/app/canvas/canvas-connections.ts";
@@ -39,6 +40,70 @@ function pageHandler(file, name, dependencies) {
   const code = ts.transpileModule(`const handler = ${declaration.getText(source).replace(/^export\s+/, "")};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   return new Function(...Object.keys(dependencies), `${code}\nreturn handler;`)(...Object.values(dependencies));
 }
+
+for (const file of ["canvas-agent-prompt-chip-input.tsx", "canvas-config-composer.tsx"]) {
+  test(`${file} keeps IME composition separate from committed draft and mention selection`, () => {
+    const composingRef = { current: false };
+    let composing = false;
+    let closed = 0;
+    let synced = 0;
+    const dependencies = {
+      composingRef,
+      setIsComposing: value => { composing = value; },
+      closeMention: () => { closed++; },
+      syncFromEditor: () => { synced++; },
+    };
+    pageHandler(file, "onCompositionStart", dependencies)();
+    assert.equal(composingRef.current, true);
+    assert.equal(composing, true);
+    assert.equal(closed, 1);
+    assert.equal(synced, 0, "unconfirmed candidates must not be committed");
+    pageHandler(file, "onCompositionEnd", dependencies)();
+    assert.equal(composingRef.current, false);
+    assert.equal(composing, false);
+    assert.equal(synced, 1, "commit or cancellation must synchronize the editor");
+  });
+}
+
+test("Agent IME Enter never commits pending references or submits a message", () => {
+  const composingRef = { current: false };
+  let committed = 0;
+  const sent = [];
+  const handler = pageHandler("canvas-agent-prompt-chip-input.tsx", "onKeyDown", {
+    composingRef,
+    commitPendingReferences: () => { committed++; return { value: "去请问", referenceIDs: ["image-1"] }; },
+    onSubmit: (...args) => sent.push(args),
+    mention: null,
+  });
+  for (const signal of ["ref", "native", "keyCode"]) {
+    composingRef.current = signal === "ref";
+    handler({ key: "Enter", nativeEvent: { isComposing: signal === "native", keyCode: signal === "keyCode" ? 229 : 13 }, stopPropagation() {}, preventDefault() { assert.fail("IME candidate selection must retain native Enter"); } });
+  }
+  assert.equal(committed, 0);
+  assert.deepEqual(sent, []);
+  composingRef.current = false;
+  let prevented = false;
+  handler({ key: "Enter", nativeEvent: {}, stopPropagation() {}, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(committed, 1);
+  assert.deepEqual(sent, [["去请问", ["image-1"]]]);
+});
+
+test("canvas shortcuts leave shared menus and project popovers in control of keyboard input", () => {
+  for (const slot of ["dropdown-menu-content", "context-menu-content", "popover-content"]) {
+    const keydown = pageHandler("page.tsx", "keydown", {
+      window: { getSelection: () => ({ toString: () => "" }) },
+      documentRef: { current: {} },
+    });
+    for (const command of [{ key: "Delete" }, { key: "v" }, { key: "a", ctrlKey: true }, { key: "0", ctrlKey: true }]) {
+      keydown({
+        ...command,
+        target: { tagName: "DIV", closest: selector => selector.includes(`[data-slot='${slot}']`) ? {} : null },
+        preventDefault() { assert.fail("Canvas shortcuts must not consume overlay input"); },
+      });
+    }
+  }
+});
 
 test("canvas copy shortcuts preserve selected chat text even when keyboard focus is on the page", () => {
   for (const modifier of ["ctrlKey", "metaKey"]) {
@@ -171,6 +236,7 @@ for (const kind of ["audio", "video", "panorama"]) {
       let rejectPoll;
       const polling = new Promise((resolve) => { notifyPoll = resolve; });
       const dependencies = {
+        videoModelRequiresHTTPSReferences,
         applyCanvasVideoTaskProgressNodes, prepareImageEditReferences,
         nodesRef, documentRef, canvasOperationEpochRef, mountedRef: { current: true },
         connectionsRef: { current: [] }, activeGenerationsRef: { current: new Map() }, historyRef: { current: [] },
@@ -788,6 +854,40 @@ test("desktop leave rejects failed canvas saves and ignores unrelated events", a
   assert.equal(pending.length, 1);
   await assert.rejects(pending[0], /画布保存失败/);
   assert.equal(saves, 1);
+});
+
+test("generation checkpoint waits for its snapshot without waiting for later edits", async () => {
+  let finishSave;
+  let saves = 0;
+  let version = 0;
+  const documentRef = { current: { id: "project" } };
+  const handler = pageHandler("page.tsx", "persistGenerationCheckpoint", {
+    documentRef,
+    scheduleSave: () => { version++; },
+    persistCanvas: () => { saves++; return new Promise((resolve) => { finishSave = resolve; }); },
+  });
+  const pending = handler();
+  assert.equal(version, 1);
+  version++;
+  finishSave(true);
+  await pending;
+  assert.equal(saves, 1);
+});
+
+test("generation checkpoint rejects a failed save or a changed canvas", async () => {
+  const documentRef = { current: { id: "project" } };
+  const handler = pageHandler("page.tsx", "persistGenerationCheckpoint", {
+    documentRef,
+    scheduleSave: () => {},
+    persistCanvas: async () => false,
+  });
+  await assert.rejects(handler(), /执行记录保存失败/);
+  const switched = pageHandler("page.tsx", "persistGenerationCheckpoint", {
+    documentRef,
+    scheduleSave: () => {},
+    persistCanvas: async () => { documentRef.current.id = "other"; return true; },
+  });
+  await assert.rejects(switched(), /执行记录保存失败/);
 });
 
 test("blank video nodes use the effective model ratio before generation", () => {

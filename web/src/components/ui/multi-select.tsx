@@ -1,10 +1,21 @@
 "use client";
 
-import { Check, ChevronDown, X } from "lucide-react";
 import * as React from "react";
+import { X } from "lucide-react";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "./combobox";
+import { Badge } from "./badge";
+import { InputGroup } from "./input-group";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +27,9 @@ export type MultiSelectOption = {
 };
 
 export function MultiSelect({
+  id,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   className,
   collapseTags = true,
   collapseTagsTooltip = true,
@@ -26,6 +40,9 @@ export function MultiSelect({
   placeholder = "请选择",
   value,
 }: {
+  id?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
   className?: string;
   collapseTags?: boolean;
   collapseTagsTooltip?: boolean;
@@ -38,6 +55,7 @@ export function MultiSelect({
 }) {
   const [open, setOpen] = React.useState(false);
   const [visibleTagCount, setVisibleTagCount] = React.useState(value.length);
+  const anchor = React.useRef<HTMLDivElement>(null);
   const tagsViewportRef = React.useRef<HTMLDivElement>(null);
   const measuredTagRefs = React.useRef(new Map<string, HTMLSpanElement>());
   const measuredCollapseRefs = React.useRef(new Map<number, HTMLSpanElement>());
@@ -104,150 +122,134 @@ export function MultiSelect({
       onValueChange(selected.filter((valueItem) => valueItem !== item));
     }
   };
-  const toggle = (item: string) => {
-    if (!disabled) {
-      onValueChange(selected.includes(item) ? selected.filter((valueItem) => valueItem !== item) : [...selected, item]);
-    }
-  };
   const collapsedTag = collapsedSelected.length > 0 ? (
-    <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-muted/55 px-1.5 text-[11px] font-medium text-muted-foreground">
+    <Badge variant="secondary">
       +{collapsedSelected.length}
-    </span>
+    </Badge>
   ) : null;
 
   return (
-    <Popover open={!disabled && open} onOpenChange={(nextOpen) => {
-      if (!disabled) {
-        setOpen(nextOpen);
-      }
-    }}>
-      <PopoverTrigger asChild>
-        <div
-          data-slot="multi-select-trigger"
-          role="combobox"
-          tabIndex={disabled ? -1 : 0}
-          aria-expanded={open}
-          aria-haspopup="listbox"
-          aria-disabled={disabled}
-          className={cn(
-            "flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background pl-2 pr-3 py-1 text-sm shadow-xs outline-none transition-[border-color,box-shadow,background-color] duration-150 data-[state=open]:border-foreground/25 data-[state=open]:bg-accent/30 motion-reduce:transition-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20",
-            !disabled && "hover:border-ring/40 hover:bg-accent/30",
-            disabled && "cursor-not-allowed bg-muted/50 opacity-60",
-            className,
-          )}
-          onKeyDown={(event) => {
-            if (disabled || event.defaultPrevented || event.target !== event.currentTarget) return;
-            if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
-              event.preventDefault();
-              setOpen(true);
-            }
-          }}
-        >
-          <div ref={tagsViewportRef} className={cn("relative flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden", !collapseTags && "flex-wrap overflow-visible")}>
-            {visibleSelected.map((item) => {
-              const option = optionMap.get(item);
-              if (!option) return null;
-              return (
-                <span key={item} className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border border-border/70 bg-muted/55 pl-2 pr-1 text-[11px] font-medium text-foreground">
-                  <span className="truncate">{option.label}</span>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed"
-                    aria-label={`移除 ${option.label}`}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      remove(item);
+    <Combobox
+      multiple
+      autoHighlight
+      disabled={disabled}
+      items={options}
+      value={selected.map((item) => optionMap.get(item)!)}
+      isItemEqualToValue={(option, selectedOption) => option.value === selectedOption.value}
+      onValueChange={(nextSelected) => {
+        if (!disabled) onValueChange(nextSelected.map((option) => option.value));
+      }}
+      open={!disabled && open}
+      onOpenChange={(nextOpen) => {
+        if (!disabled) setOpen(nextOpen);
+      }}
+    >
+      <ComboboxTrigger
+        render={<InputGroup ref={anchor} />}
+        nativeButton={false}
+        id={id}
+        data-slot="multi-select-trigger"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        tabIndex={disabled ? -1 : 0}
+        disabled={disabled}
+        className={cn("h-auto min-h-8 cursor-pointer gap-1.5 p-1", className)}
+        onKeyDown={(event) => {
+          if (disabled || event.defaultPrevented || event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <div ref={tagsViewportRef} className={cn("relative flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden", !collapseTags && "flex-wrap overflow-visible")}>
+          {visibleSelected.map((item) => {
+            const option = optionMap.get(item);
+            if (!option) return null;
+            return (
+              <Badge key={item} variant="secondary" className="min-w-0 max-w-full">
+                <span className="truncate">{option.label}</span>
+                <Button variant="ghost" size="icon-xs"
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`移除 ${option.label}`}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    remove(item);
+                  }}
+                >
+                  <X />
+                </Button>
+              </Badge>
+            );
+          })}
+          {collapsedTag ? collapseTagsTooltip ? (
+            <TooltipHint
+              content={<div className="grid max-w-64 gap-1">{selected.map((item) => <span key={item} className="truncate">{optionMap.get(item)?.label || item}</span>)}</div>}
+            >
+              {collapsedTag}
+            </TooltipHint>
+          ) : collapsedTag : null}
+          {selected.length === 0 ? <span className="truncate px-1 text-muted-foreground">{options.length > 0 ? placeholder : emptyText}</span> : null}
+          {collapseTags ? (
+            <div className="pointer-events-none absolute left-0 top-0 invisible flex items-center gap-1.5" aria-hidden="true">
+              {selected.map((item) => {
+                const option = optionMap.get(item);
+                if (!option) return null;
+                return (
+                  <Badge variant="secondary"
+                    key={item}
+                    ref={(node) => {
+                      if (node) measuredTagRefs.current.set(item, node);
+                      else measuredTagRefs.current.delete(item);
                     }}
+                    className="w-max"
                   >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              );
-            })}
-            {collapsedTag ? collapseTagsTooltip ? (
-              <TooltipHint
-                content={<div className="grid max-w-64 gap-1">{selected.map((item) => <span key={item} className="truncate">{optionMap.get(item)?.label || item}</span>)}</div>}
-              >
-                {collapsedTag}
-              </TooltipHint>
-            ) : collapsedTag : null}
-            {selected.length === 0 ? <span className="truncate px-1 text-muted-foreground">{options.length > 0 ? placeholder : emptyText}</span> : null}
-            {collapseTags ? (
-              <div className="pointer-events-none absolute left-0 top-0 invisible flex items-center gap-1.5" aria-hidden="true">
-                {selected.map((item) => {
-                  const option = optionMap.get(item);
-                  if (!option) return null;
-                  return (
-                    <span
-                      key={item}
-                      ref={(node) => {
-                        if (node) measuredTagRefs.current.set(item, node);
-                        else measuredTagRefs.current.delete(item);
-                      }}
-                      className="inline-flex h-6 w-max items-center gap-1 rounded-md border border-border/70 bg-muted/55 pl-2 pr-1 text-[11px] font-medium"
-                    >
-                      <span>{option.label}</span>
-                      <span className="inline-flex size-4 items-center justify-center"><X className="size-3" /></span>
-                    </span>
-                  );
-                })}
-                {selected.map((_, index) => {
-                  const remaining = index + 1;
-                  return (
-                    <span
-                      key={remaining}
-                      ref={(node) => {
-                        if (node) measuredCollapseRefs.current.set(remaining, node);
-                        else measuredCollapseRefs.current.delete(remaining);
-                      }}
-                      className="inline-flex h-6 w-max items-center rounded-md border border-border/70 bg-muted/55 px-1.5 text-[11px] font-medium"
-                    >
-                      +{remaining}
-                    </span>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-in-out motion-reduce:transition-none", open && "rotate-180")} />
+                    <span>{option.label}</span>
+                    <Button variant="ghost" size="icon-xs" tabIndex={-1} disabled={disabled}><X /></Button>
+                  </Badge>
+                );
+              })}
+              {selected.map((_, index) => {
+                const remaining = index + 1;
+                return (
+                  <Badge variant="secondary"
+                    key={remaining}
+                    ref={(node) => {
+                      if (node) measuredCollapseRefs.current.set(remaining, node);
+                      else measuredCollapseRefs.current.delete(remaining);
+                    }}
+                    className="w-max"
+                  >
+                    +{remaining}
+                  </Badge>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
-      </PopoverTrigger>
-      <PopoverContent scrollable={false} align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[min(12rem,calc(100vw-1rem))] p-1.5">
-        <ScrollArea
-          maxHeight="min(20rem, calc(var(--radix-popover-content-available-height) - 0.75rem))"
-          viewportClassName="overscroll-contain pr-2"
-        >
-          <div role="listbox" aria-multiselectable="true" className="space-y-0.5">
-            {options.map((option) => {
-              const checked = selected.includes(option.value);
-              return (
-                <div key={option.value} className={cn("flex min-w-0 items-center gap-1 rounded-lg transition-colors duration-150 hover:bg-accent/70", checked && "bg-accent text-accent-foreground")}>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    role="option"
-                    aria-selected={checked}
-                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm leading-5 outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => toggle(option.value)}
-                  >
-                    <span className={cn("mt-0.5 flex size-4 shrink-0 self-start items-center justify-center rounded-[5px] border border-input bg-background shadow-xs", checked && "border-brand bg-brand text-brand-foreground")}>
-                      {checked ? <Check className="size-3" /> : null}
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className={cn("whitespace-normal [overflow-wrap:anywhere]", checked && "font-medium")}>{option.label}</span>
-                      {option.meta ? <span className="text-xs font-normal text-muted-foreground">{option.meta}</span> : null}
-                    </span>
-                  </button>
-                  {option.action ? <div className="shrink-0">{option.action}</div> : null}
-                </div>
-              );
-            })}
-            {options.length === 0 ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">{emptyText}</p> : null}
-          </div>
-        </ScrollArea>
-      </PopoverContent>
-    </Popover>
+      </ComboboxTrigger>
+      <ComboboxContent anchor={anchor} className="min-w-[min(12rem,calc(100vw-1rem))]">
+        <ComboboxInput showTrigger={false} disabled={disabled} placeholder="搜索选项…" aria-label="搜索选项" />
+        <ComboboxEmpty>{emptyText}</ComboboxEmpty>
+        <ComboboxList>
+          {(option: MultiSelectOption) => (
+            <ComboboxItem key={option.value} value={option} disabled={disabled}>
+              <span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span>
+              {option.meta ? <span className="shrink-0 text-xs text-muted-foreground">{option.meta}</span> : null}
+              {option.action ? <span className="flex shrink-0 items-center" onFocus={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+              }}>{option.action}</span> : null}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }

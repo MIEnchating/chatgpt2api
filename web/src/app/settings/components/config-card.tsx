@@ -1,12 +1,15 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Card } from "@/components/ui/card";
+
+import { PasswordInput } from "@/components/password-input";
+
 import type { ReactNode } from "react";
-import {
-  LoaderCircle,
-  PlugZap,
-  Save,
-  Settings2,
-} from "lucide-react";
+import { PlugZap, Save } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -18,42 +21,16 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { statusToneClasses } from "@/components/ui/status-tone";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { useSettingsStore } from "../store";
 import { RelayCreationGroups } from "./relay-creation-groups";
 import { SiteIconSettings } from "./site-icon-card";
-import { SettingsCard, settingsInputClassName } from "./settings-ui";
+import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
 
-const configSectionClassName = "flex flex-col gap-4 rounded-lg border border-border/70 bg-muted/20 p-4 sm:p-5";
 const configFieldClassName = "min-w-0 gap-1.5";
-const configGridClassName = "grid gap-x-4 gap-y-3 sm:grid-cols-2 2xl:grid-cols-3";
-
-function SectionHeading({
-  action,
-  title,
-}: {
-  action?: ReactNode;
-  tip?: string;
-  title: string;
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <h3 className="truncate text-sm leading-6 font-semibold text-foreground">
-          {title}
-        </h3>
-      </div>
-      {action ? (
-        <div className="flex w-full shrink-0 sm:w-auto sm:justify-end">
-          {action}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+const configGridClassName = "grid gap-x-4 gap-y-3 sm:grid-cols-2";
 
 function ConfigFieldLabel({
   children,
@@ -65,7 +42,7 @@ function ConfigFieldLabel({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <FieldLabel htmlFor={htmlFor} className="leading-6">{children}</FieldLabel>
+      <FieldLabel htmlFor={htmlFor} >{children}</FieldLabel>
     </div>
   );
 }
@@ -99,7 +76,7 @@ function NumberInputWithUnit({
       placeholder={placeholder}
       controlsLayout="split"
       suffix={unit}
-      className={settingsInputClassName}
+
     />
   );
 }
@@ -167,35 +144,30 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
 
   if (isLoadingConfig) {
     return (
-      <SettingsCard
-        icon={Settings2}
-        title="参数配置"
+      <SettingsPanel
+        title="站点与运行"
         description="配置站点接入、异步创作任务和媒体治理参数。"
       >
-        <div className="flex items-center justify-center py-10">
-          <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      </SettingsCard>
+        <LoadingState className="h-auto" label="正在加载站点设置" />
+      </SettingsPanel>
     );
   }
 
   return (
-    <SettingsCard
-      icon={Settings2}
-      title="参数配置"
+    <SettingsPanel
+      title="站点与运行"
       description="分组管理站点信息、运行限制、数据库和网络连接。"
       action={
         <Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
-          {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {isSavingConfig ? <Spinner /> : <Save  />}
           保存参数配置
         </Button>
       }
     >
-      <div className="grid gap-4">
-        <section className={configSectionClassName}>
-          <SectionHeading title="品牌信息" tip="网站名称和图标会用于浏览器标题、导航栏和登录页面。" />
+      <div className="grid gap-8">
+        <SettingsSection title="品牌信息" description="网站名称和图标会用于浏览器标题、导航栏和登录页面。" >
           <div className={cn("grid min-w-0 gap-5", isAdmin && "md:grid-cols-2")}>
-            <Field className="min-w-0 content-start gap-1.5">
+            <Field className="min-w-0 content-start">
               <ConfigFieldLabel htmlFor="settings-app-title" tip="修改后会同步更新网站标题和项目名称。">
                 网站名称
               </ConfigFieldLabel>
@@ -204,16 +176,15 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 value={String(config?.app_title || "")}
                 onChange={(event) => setAppTitle(event.target.value)}
                 placeholder="云棉"
-                className={settingsInputClassName}
+
               />
               <p className="text-xs leading-5 text-muted-foreground">保存参数配置后更新浏览器标题和站内名称</p>
             </Field>
             {isAdmin ? <SiteIconSettings /> : null}
           </div>
-        </section>
+        </SettingsSection>
 
-        <section className={configSectionClassName}>
-          <SectionHeading title="运行与存储" tip="配置创作任务超时、生成图库图片保留策略和对外访问地址。" />
+        <SettingsSection title="运行与存储" description="配置创作任务超时、生成图库图片保留策略和对外访问地址。" >
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-retention-days" tip="超过该天数的生成图库图片可由治理任务自动清理。">
@@ -257,7 +228,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               />
             </Field>
             <Field className={configFieldClassName}>
-              <ConfigFieldLabel htmlFor="settings-base-url" tip="仅覆盖服务器本机图片、缩略图和参考文件的公开地址；留空使用当前站点。外部存储使用各 Provider 自己的公开访问地址。">
+              <ConfigFieldLabel htmlFor="settings-base-url" tip="覆盖本机图片、缩略图和参考文件的公开地址；留空时浏览器使用相对地址。URL-only 视频模型引用本机素材时，必须填写上游可访问的公网地址。外部存储使用各 Provider 自己的公开访问地址。">
                 本机文件访问地址（可选）
               </ConfigFieldLabel>
               <Input
@@ -266,7 +237,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 value={String(config?.base_url || "")}
                 onChange={(event) => setBaseUrl(event.target.value)}
                 placeholder="留空使用当前站点"
-                className={settingsInputClassName}
+
               />
             </Field>
             <Field className={configFieldClassName}>
@@ -278,19 +249,18 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 value={String(config?.relay_base_url || "")}
                 onChange={(event) => setRelayBaseUrl(event.target.value)}
                 placeholder="http://newapi:3000"
-                className={settingsInputClassName}
+
               />
             </Field>
             {isAdmin ? <RelayCreationGroups /> : null}
             {isAdmin ? <div className="col-span-full"><ChannelParameterEditor value={config?.relay_parameter_translation || ""} onChange={setRelayParameterTranslation} baseURL={String(config?.relay_base_url || "")} models={[...configuredModelNames(config?.image_models), ...configuredModelNames(config?.video_models), ...configuredModelNames(config?.audio_models)]} disabled={isLoadingConfig || isSavingConfig} /></div> : null}
           </div>
-        </section>
+        </SettingsSection>
 
-        <section className={configSectionClassName}>
-          <SectionHeading
+        <SettingsSection
             title="用户默认限制"
-            tip="限制普通用户创作并发额度和提交速率；管理员不受限制。"
-          />
+            description="限制普通用户创作并发额度和提交速率；管理员不受限制。"
+          >
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-user-default-concurrent-limit" tip="普通用户同时运行的创作任务额度，0 表示不限制。">
@@ -318,24 +288,23 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 unit="次/分"
               />
             </Field>
-            {isAdmin ? <div className="flex min-h-16 items-center justify-between gap-4 rounded-lg border border-border/70 bg-background px-3 py-2">
+            {isAdmin ? <Field orientation="horizontal" className="col-span-full min-h-16 items-center justify-between gap-4 py-2">
               <div className="min-w-0">
-                <label htmlFor="settings-allow-user-custom-relay-config" className="block cursor-pointer text-sm font-medium text-foreground">允许自定义 API 配置</label>
-                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">普通用户可在 Key 选择中配置 Base URL 和 Key；管理员始终可用</p>
+                <Label htmlFor="settings-allow-user-custom-relay-config" className="block cursor-pointer text-sm font-medium text-foreground">允许自定义 API 配置</Label>
+                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">普通用户可在 API 密钥中配置 Base URL 和 Key；管理员始终可用</p>
               </div>
               <Switch
                 id="settings-allow-user-custom-relay-config"
                 checked={config?.allow_user_custom_relay_config === true}
                 onCheckedChange={setAllowUserCustomRelayConfig}
               />
-            </div> : null}
+            </Field> : null}
           </div>
-        </section>
+        </SettingsSection>
 
-        <section className={configSectionClassName}>
-          <SectionHeading
+        <SettingsSection
             title="网络与代理"
-            tip="配置服务端访问上游 API 时使用的出站代理；留空表示直连。"
+            description="配置服务端访问上游 API 时使用的出站代理；留空表示直连。"
             action={
               <Button
                 type="button"
@@ -345,12 +314,12 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 onClick={() => void handleTestProxy()}
                 disabled={isTestingProxy}
               >
-                {isTestingProxy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <PlugZap data-icon="inline-start" />}
+                {isTestingProxy ? <Spinner data-icon="inline-start" className="animate-spin" /> : <PlugZap data-icon="inline-start" />}
                 测试代理
               </Button>
             }
-          />
-          <Field className="gap-1.5">
+          >
+          <Field >
             <ConfigFieldLabel htmlFor="settings-proxy" tip="支持 HTTP、HTTPS 和 SOCKS 代理地址。">
               全局代理
             </ConfigFieldLabel>
@@ -362,23 +331,22 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 setProxyTestResult(null);
               }}
               placeholder="http://127.0.0.1:7890"
-              className={settingsInputClassName}
+
             />
             {proxyTestResult ? (
-              <div className={cn("rounded-lg border px-3 py-2 text-xs leading-5", proxyTestResult.ok ? statusToneClasses.success.panel : statusToneClasses.danger.panel)}>
+              <Card className="px-3 py-2">
                 {proxyTestResult.ok
                   ? `代理可用：HTTP ${proxyTestResult.status}，用时 ${proxyTestResult.latency_ms} ms`
                   : `代理不可用：${proxyTestResult.error ?? "未知错误"}（用时 ${proxyTestResult.latency_ms} ms）`}
-              </div>
+              </Card>
             ) : null}
           </Field>
-        </section>
+        </SettingsSection>
 
-        {isAdmin ? <section id="database-connection" className={configSectionClassName}>
-          <SectionHeading
+        {isAdmin ? <SettingsSection id="database-connection"
             title="数据库连接"
-            tip="用于读取 NewAPI 或 Sub2API 的用户余额、令牌和模型访问 Key；保存后立即生效。"
-          />
+            description="用于读取 NewAPI 或 Sub2API 的用户余额、令牌和模型访问 Key；保存后立即生效。"
+          >
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-relay-database-type" tip="选择要读取账号、余额和令牌的数据源结构。">数据源</ConfigFieldLabel>
@@ -386,7 +354,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 value={config?.relay_database_type === "sub2api" ? "sub2api" : "newapi"}
                 onValueChange={(value: "newapi" | "sub2api") => setRelayDatabaseType(value)}
               >
-                <SelectTrigger id="settings-relay-database-type" className={settingsInputClassName}><SelectValue /></SelectTrigger>
+                <SelectTrigger id="settings-relay-database-type" ><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="newapi">NewAPI</SelectItem>
                   <SelectItem value="sub2api">Sub2API</SelectItem>
@@ -396,7 +364,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-relay-database-driver" tip="SQLite 读取本地文件；PostgreSQL 和 MySQL 使用网络连接。">数据库引擎</ConfigFieldLabel>
               <Select value={databaseDriver} onValueChange={(value: "sqlite" | "postgres" | "mysql") => setRelayDatabaseDriver(value)}>
-                <SelectTrigger id="settings-relay-database-driver" className={settingsInputClassName}><SelectValue /></SelectTrigger>
+                <SelectTrigger id="settings-relay-database-driver" ><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="sqlite">SQLite</SelectItem>
                   <SelectItem value="postgres">PostgreSQL</SelectItem>
@@ -406,33 +374,33 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
             </Field>
             {databaseDriver === "sqlite" ? <Field className="sm:col-span-2">
               <ConfigFieldLabel htmlFor="settings-relay-database-name" tip="填写服务器上的 SQLite 数据库文件绝对路径。">数据库文件</ConfigFieldLabel>
-              <Input id="settings-relay-database-name" value={String(config?.relay_database_name || "")} onChange={(event) => setRelayDatabaseField("name", event.target.value)} placeholder="/app/data/newapi.db" className={settingsInputClassName} />
+              <Input id="settings-relay-database-name" value={String(config?.relay_database_name || "")} onChange={(event) => setRelayDatabaseField("name", event.target.value)} placeholder="/app/data/newapi.db"  />
             </Field> : <>
               <Field className={configFieldClassName}>
                 <ConfigFieldLabel htmlFor="settings-relay-database-host" tip="数据库服务器的域名或 IP 地址。">主机</ConfigFieldLabel>
-                <Input id="settings-relay-database-host" value={String(config?.relay_database_host || "")} onChange={(event) => setRelayDatabaseField("host", event.target.value)} placeholder="127.0.0.1" className={settingsInputClassName} />
+                <Input id="settings-relay-database-host" value={String(config?.relay_database_host || "")} onChange={(event) => setRelayDatabaseField("host", event.target.value)} placeholder="127.0.0.1"  />
               </Field>
               <Field className={configFieldClassName}>
                 <ConfigFieldLabel htmlFor="settings-relay-database-port" tip="留空时 PostgreSQL 使用 5432，MySQL 使用 3306。">端口</ConfigFieldLabel>
-                <NumberInput id="settings-relay-database-port" min={1} max={65535} step={1} inputMode="numeric" value={String(config?.relay_database_port || "")} onValueChange={(value) => setRelayDatabaseField("port", value)} placeholder={databaseDriver === "mysql" ? "3306" : "5432"} controlsLayout="split" className={settingsInputClassName} />
+                <NumberInput id="settings-relay-database-port" min={1} max={65535} step={1} inputMode="numeric" value={String(config?.relay_database_port || "")} onValueChange={(value) => setRelayDatabaseField("port", value)} placeholder={databaseDriver === "mysql" ? "3306" : "5432"} controlsLayout="split"  />
               </Field>
               <Field className={configFieldClassName}>
                 <ConfigFieldLabel htmlFor="settings-relay-database-user" tip="用于只读访问数据源的数据库账号。">账号</ConfigFieldLabel>
-                <Input id="settings-relay-database-user" value={String(config?.relay_database_user || "")} onChange={(event) => setRelayDatabaseField("user", event.target.value)} autoComplete="off" className={settingsInputClassName} />
+                <Input id="settings-relay-database-user" value={String(config?.relay_database_user || "")} onChange={(event) => setRelayDatabaseField("user", event.target.value)} autoComplete="off"  />
               </Field>
               <Field className={configFieldClassName}>
                 <ConfigFieldLabel htmlFor="settings-relay-database-password" tip="密码仅用于写入服务端，设置接口不会返回密码；留空表示保持现有密码。">密码</ConfigFieldLabel>
-                <Input id="settings-relay-database-password" type="password" value={String(config?.relay_database_password || "")} onChange={(event) => setRelayDatabaseField("password", event.target.value)} placeholder={config?.relay_database_password_configured ? "已配置，留空表示不修改" : "请输入数据库密码"} autoComplete="new-password" className={settingsInputClassName} />
+                <PasswordInput id="settings-relay-database-password" type="password" value={String(config?.relay_database_password || "")} onChange={(event) => setRelayDatabaseField("password", event.target.value)} placeholder={config?.relay_database_password_configured ? "已配置，留空表示不修改" : "请输入数据库密码"} autoComplete="new-password"  />
               </Field>
               <Field className="sm:col-span-2">
                 <ConfigFieldLabel htmlFor="settings-relay-database-name" tip="NewAPI 或 Sub2API 使用的数据库名称。">数据库</ConfigFieldLabel>
-                <Input id="settings-relay-database-name" value={String(config?.relay_database_name || "")} onChange={(event) => setRelayDatabaseField("name", event.target.value)} placeholder="newapi" className={settingsInputClassName} />
+                <Input id="settings-relay-database-name" value={String(config?.relay_database_name || "")} onChange={(event) => setRelayDatabaseField("name", event.target.value)} placeholder="newapi"  />
               </Field>
             </>}
           </div>
-        </section> : null}
+        </SettingsSection> : null}
 
       </div>
-    </SettingsCard>
+    </SettingsPanel>
   );
 }

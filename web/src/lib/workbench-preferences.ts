@@ -13,7 +13,7 @@ export function workbenchPreferenceKey(value: CreationWorkbenchPreferences) {
 }
 
 export function workbenchPreferenceSignature(value: CreationWorkbenchPreferences) {
-  return JSON.stringify([workbenchPreferenceKey(value), value.composer_mode === "video" ? videoWorkbenchSettings(value) : imageWorkbenchSettings(value)]);
+  return JSON.stringify([workbenchPreferenceKey(value), value.smart_context_enabled, value.context_text_model, value.composer_mode === "video" ? videoWorkbenchSettings(value) : imageWorkbenchSettings(value)]);
 }
 
 // Keep one latest snapshot per model, and serialize writes so slow requests cannot
@@ -24,6 +24,7 @@ export class WorkbenchPreferenceSaver {
   private paused = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
+  private latestGlobal = { smart_context_enabled: false, context_text_model: "" };
 
   constructor(private save: (value: CreationWorkbenchPreferences) => Promise<void>, private onError: (error: unknown) => void) {}
 
@@ -31,6 +32,11 @@ export class WorkbenchPreferenceSaver {
 
   enqueue(value: CreationWorkbenchPreferences) {
     if (this.stopped) return;
+    this.latestGlobal = { smart_context_enabled: value.smart_context_enabled, context_text_model: value.context_text_model };
+    for (const pending of this.pending.values()) {
+      pending.smart_context_enabled = value.smart_context_enabled;
+      pending.context_text_model = value.context_text_model;
+    }
     const key = workbenchPreferenceKey(value);
     this.pending.delete(key);
     this.pending.set(key, structuredClone(value));
@@ -49,6 +55,7 @@ export class WorkbenchPreferenceSaver {
         try { await this.save(value); }
         catch (error) {
           if (this.stopped) return;
+          Object.assign(value, this.latestGlobal);
           if (!this.pending.has(key)) this.pending = new Map([[key, value], ...this.pending]);
           this.paused = true;
           this.onError(error);

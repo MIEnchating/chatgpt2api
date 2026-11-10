@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
+import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasEmptyMediaNodeFrame, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
 
 test("locked resizing follows natural image dimensions", () => {
   assert.equal(canvasNodeAspectRatio({ width: 400, height: 400, natural_width: 1600, natural_height: 900 }), 1600 / 900);
@@ -51,6 +51,18 @@ test("generated media frames follow the reference aspect-ratio sizing contract",
   assert.deepEqual(canvasNodeSizeFromRatio("9:16", 420, 236), { width: 236.25, height: 420 });
   assert.deepEqual(canvasNodeSizeFromRatio("1536x1024", 340, 240), { width: 340, height: 226.66666666666666 });
   assert.deepEqual(canvasNodeSizeFromRatio("auto", 340, 240), null);
+});
+
+test("empty image and video nodes follow their configured ratio without changing existing media or free resizing", () => {
+  const base = { x: 0, y: 0, width: 360, height: 360 };
+  for (const node of [{ ...base, type: "video", generation_video_size: "9:16" }, { ...base, type: "image", generation_size: "1024x1536" }]) {
+    const frame = canvasEmptyMediaNodeFrame(node);
+    assert.equal(frame.width / frame.height, node.type === "video" ? 9 / 16 : 2 / 3);
+    assert.equal(frame.x + frame.width / 2, 180);
+    assert.equal(frame.y + frame.height / 2, 180);
+    assert.equal(canvasEmptyMediaNodeFrame({ ...node, url: "/existing" }).width, 360);
+    assert.equal(canvasEmptyMediaNodeFrame({ ...node, free_resize: true }).width, 360);
+  }
 });
 
 

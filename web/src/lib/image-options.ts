@@ -599,7 +599,7 @@ export function getImageSizeSelectionFromSize(size: string, preferredResolution?
       customHeight: baseSelection.customHeight,
     };
   }
-  if (customSize && !aspectRatio && (rawSizeWasNormalized || resolution === "auto")) {
+  if (customSize && !aspectRatio) {
     return {
       ...baseSelection,
       mode: "custom",

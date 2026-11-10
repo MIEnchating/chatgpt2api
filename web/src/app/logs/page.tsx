@@ -1,26 +1,35 @@
 "use client";
 
+import { Separator } from "@/components/ui/separator";
+
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { CodeBlock, CodeBlockContent, CodeBlockCopyButton } from "@/components/ui/code-block";
+
+import { Card } from "@/components/ui/card";
+
+
+
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronDown, Copy, Eye, ListFilter, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, Eye, ListFilter, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
+import { ManagementHeader, ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { LoadingState } from "@/components/ui/loading-state";
-import { statusToneClasses } from "@/components/ui/status-tone";
-import { copyWithToast } from "@/lib/clipboard-text";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 import { logCursorForPage, recordLogPageCursor, resetLogCursorStack } from "./log-pagination";
@@ -205,23 +214,23 @@ function durationMs(item: SystemLog | null) {
 
 function statusBadgeVariant(item: SystemLog | null) {
   const status = detailValue(item, "status");
-  if (status === "success") return "success";
-  if (status === "failed") return "danger";
+  if (status === "success") return "default";
+  if (status === "failed") return "destructive";
   const numeric = typeof status === "number" ? status : Number(status);
   if (Number.isFinite(numeric)) {
-    if (numeric >= 500) return "danger";
-    if (numeric >= 400) return "warning";
-    return "success";
+    if (numeric >= 500) return "destructive";
+    if (numeric >= 400) return "outline";
+    return "default";
   }
   const outcome = detailValue(item, "outcome");
-  if (outcome === "success") return "success";
-  if (outcome === "failed") return "danger";
+  if (outcome === "success") return "default";
+  if (outcome === "failed") return "destructive";
   return "secondary";
 }
 
 function levelBadgeVariant(level: string) {
-  if (level === "error") return "danger";
-  if (level === "warning") return "warning";
+  if (level === "error") return "destructive";
+  if (level === "warning") return "outline";
   return "secondary";
 }
 
@@ -232,15 +241,15 @@ function levelLabel(level: string) {
 }
 
 function levelDotClass(level: string) {
-  if (level === "error") return statusToneClasses.danger.dot;
-  if (level === "warning") return statusToneClasses.warning.dot;
-  return statusToneClasses.info.dot;
+  if (level === "error") return "bg-destructive";
+  if (level === "warning") return "bg-muted-foreground";
+  return "bg-muted-foreground";
 }
 
 function methodBadgeVariant(method: string) {
   if (method === "POST") return "default";
-  if (method === "DELETE") return "danger";
-  if (method === "PATCH" || method === "PUT") return "warning";
+  if (method === "DELETE") return "destructive";
+  if (method === "PATCH" || method === "PUT") return "outline";
   return "secondary";
 }
 
@@ -378,7 +387,7 @@ function LogsContent() {
   const detailFieldSections = getDetailFieldSections(detailLog);
   const currentRows = items;
   const activeFilters = activeFilterCount(filters, defaultLogView);
-  const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "danger").length;
+  const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "destructive").length;
   const warningCount = items.filter((item) => logLevel(item) === "warning").length;
   const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
 
@@ -457,7 +466,6 @@ function LogsContent() {
     setDetailOpen(true);
   };
 
-  const handleCopyDetailJSON = () => copyWithToast(detailJSON(detailLog), "日志详情已复制");
 
   useEffect(() => {
     let ignore = false;
@@ -497,8 +505,9 @@ function LogsContent() {
 
   return (
     <ManagementPage data-logs-layout aria-label="请求日志">
+      <ManagementHeader title="请求日志" description="检索请求记录、用量和运行状态。" />
       <ManagementPanel className="flex-1">
-        <ScrollArea className="max-h-[38dvh] shrink-0" viewportClassName="overscroll-contain"><ManagementToolbar>
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[38dvh] shrink-0" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0"><ManagementToolbar>
           <form className="space-y-3" onSubmit={handleSearch}>
             <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:flex-wrap 2xl:items-center">
               <SearchInput aria-label="搜索日志摘要或接口" placeholder="搜索摘要或接口" value={filters.summary || ""} onValueChange={(value) => updateFilter("summary", value)} containerClassName="flex-1" />
@@ -527,21 +536,21 @@ function LogsContent() {
                 />
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <Button type="submit" disabled={isLoading} className="h-10 flex-1 rounded-lg px-4 xl:flex-none">
-                  {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
+                <Button type="submit" disabled={isLoading} className="flex-1 xl:flex-none">
+                  {isLoading ? <Spinner /> : <Search  />}
                   查询
                 </Button>
                 <Button
                   type="button"
                   variant={isFiltersExpanded ? "secondary" : "outline"}
-                  className="h-10 flex-1 rounded-lg px-3 xl:flex-none"
+                  className="flex-1 xl:flex-none"
                   aria-expanded={isFiltersExpanded}
                   aria-controls="log-advanced-filters"
                   onClick={() => setIsFiltersExpanded((expanded) => !expanded)}
                 >
-                  <ListFilter className="size-4" />
+                  <ListFilter  />
                   更多筛选
-                  {activeFilters > 0 ? <Badge variant="secondary" className="min-w-5 px-1.5">{activeFilters}</Badge> : null}
+                  {activeFilters > 0 ? <Badge variant="secondary" className="min-w-5">{activeFilters}</Badge> : null}
                   <ChevronDown className={`size-4 transition-transform ${isFiltersExpanded ? "rotate-180" : ""}`} />
                 </Button>
                 <Button
@@ -549,9 +558,9 @@ function LogsContent() {
                   variant="outline"
                   onClick={() => void loadFirstLogPage(query, pageSize)}
                   disabled={isLoading}
-                  className="h-10 flex-1 rounded-lg px-3 xl:flex-none"
+                  className="flex-1 xl:flex-none"
                 >
-                  <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                  {isLoading ? <Spinner /> : <RefreshCw />}
                   刷新
                 </Button>
               </div>
@@ -584,8 +593,8 @@ function LogsContent() {
                         {statusOptions.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    <Button type="button" variant="ghost" onClick={clearFilters} className="h-10 shrink-0 rounded-lg px-3 text-muted-foreground">
-                      <X className="size-4" />
+                    <Button type="button" variant="ghost" onClick={clearFilters} className="shrink-0">
+                      <X  />
                       清空
                     </Button>
                   </div>
@@ -593,21 +602,21 @@ function LogsContent() {
               </div>
             </div>
           </form>
-        </ManagementToolbar></ScrollArea>
+        </ManagementToolbar></div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
 
         <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
           <div className="flex items-baseline gap-1.5">
             <span className="text-base font-semibold tabular-nums text-foreground">{isLoading && items.length === 0 ? "—" : items.length}</span>
             <span>条本页结果</span>
           </div>
-          <div className="hidden h-4 w-px bg-border sm:block" />
+          <Separator orientation="vertical" className="hidden h-4 sm:block" />
           <div className="flex items-center gap-1.5">
-            <span className={`size-1.5 rounded-full ${statusToneClasses.danger.dot}`} />
+            <span className={`size-1.5 rounded-full ${"bg-destructive"}`} />
             <span>本页错误</span>
             <span className="font-medium tabular-nums text-foreground">{errorCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className={`size-1.5 rounded-full ${statusToneClasses.warning.dot}`} />
+            <span className={`size-1.5 rounded-full ${"bg-muted-foreground"}`} />
             <span>本页警告</span>
             <span className="font-medium tabular-nums text-foreground">{warningCount}</span>
           </div>
@@ -618,9 +627,9 @@ function LogsContent() {
           </div>
         </div>
 
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
             <Table aria-label="请求日志" aria-busy={isLoading} className="min-w-[1040px] table-fixed">
-              <TableHeader className="sticky top-0 z-10 shadow-sm">
+              <TableHeader className="sticky top-0 z-10">
                 <TableRow>
                   <TableHead className="w-[150px]">时间</TableHead>
                   <TableHead>事件</TableHead>
@@ -638,14 +647,14 @@ function LogsContent() {
                   const eventPath = eventPathText(item);
                   const time = logTimeParts(item);
                   return (
-                    <TableRow key={`${item.time}-${index}`} className="cursor-pointer text-muted-foreground" onClick={() => openDetail(item)}>
+                    <TableRow key={`${item.time}-${index}`} className="cursor-pointer" onClick={() => openDetail(item)}>
                       <TableCell>
                         <div className="font-mono text-xs tabular-nums text-foreground">{time.time}</div>
                         {time.date ? <div className="mt-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{time.date}</div> : null}
                       </TableCell>
                       <TableCell className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
-                          {method ? <Badge variant={methodBadgeVariant(method)} className="shrink-0 rounded-md">{method}</Badge> : null}
+                          {method ? <Badge variant={methodBadgeVariant(method)} className="shrink-0">{method}</Badge> : null}
                           <span className="truncate font-medium text-foreground">{eventText(item)}</span>
                         </div>
                         {eventPath ? <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{eventPath}</div> : null}
@@ -654,22 +663,22 @@ function LogsContent() {
                         <div className="truncate text-foreground">{actorText(item)}</div>
                         {detailText(item, "ip_address") ? <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{detailText(item, "ip_address")}</div> : null}
                       </TableCell>
-                      <TableCell><Badge variant="secondary" className="max-w-full truncate rounded-md">{moduleText(item)}</Badge></TableCell>
+                      <TableCell><Badge variant="secondary" className="max-w-full truncate">{moduleText(item)}</Badge></TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={statusBadgeVariant(item)} className="rounded-md">{statusText(item)}</Badge>
+                          <Badge variant={statusBadgeVariant(item)} >{statusText(item)}</Badge>
                           <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
                             <span className={`size-1.5 rounded-full ${levelDotClass(level)}`} />
                             {levelLabel(level)}
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDuration(item)}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono tabular-nums">{formatDuration(item)}</TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8 rounded-lg"
+
                           aria-label="查看日志详情"
                           data-tooltip="查看详情"
                           onClick={(event) => {
@@ -677,30 +686,29 @@ function LogsContent() {
                             openDetail(item);
                           }}
                         >
-                          <Eye className="size-4" />
+                          <Eye  />
                         </Button>
                       </TableCell>
                     </TableRow>
                   );
                 })}
                 {isLoading && items.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="h-44 text-center">
-                      <LoaderCircle className="mx-auto size-5 animate-spin text-muted-foreground" />
-                      <div className="mt-2 text-sm text-muted-foreground">正在加载日志</div>
+                  <TableRow >
+                    <TableCell colSpan={7} className="text-center">
+                      <LoadingState label="正在加载日志" />
                     </TableCell>
                   </TableRow>
                 ) : null}
                 {!isLoading && items.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="p-0">
+                  <TableRow >
+                    <TableCell colSpan={7} >
                       <EmptyState compact icon={ListFilter} title={activeFilters > 0 ? "没有匹配的日志" : "暂无日志"} description={activeFilters > 0 ? "调整筛选条件后再试" : "系统产生操作记录后会显示在这里"} />
                     </TableCell>
                   </TableRow>
                 ) : null}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           <ManagementPagination
             mode="cursor"
             page={page}
@@ -717,29 +725,27 @@ function LogsContent() {
       </ManagementPanel>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border py-4 pl-4 pr-14 sm:py-5 sm:pl-6">
+        <DialogContent className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col overflow-hidden sm:max-w-none">
+          <DialogHeader className="shrink-0">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
                 <DialogTitle>日志详情</DialogTitle>
+                <DialogDescription className="sr-only">查看请求摘要、响应状态和详细日志。</DialogDescription>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <Badge variant="secondary" className="rounded-md">{moduleText(detailLog)}</Badge>
-                  <Badge variant={statusBadgeVariant(detailLog)} className="rounded-md">{statusText(detailLog)}</Badge>
-                  <Badge variant={levelBadgeVariant(logLevel(detailLog))} className="rounded-md">{logLevel(detailLog)}</Badge>
+                  <Badge variant="secondary" >{moduleText(detailLog)}</Badge>
+                  <Badge variant={statusBadgeVariant(detailLog)} >{statusText(detailLog)}</Badge>
+                  <Badge variant={levelBadgeVariant(logLevel(detailLog))} >{logLevel(detailLog)}</Badge>
                   <span>{detailLog?.time || "—"}</span>
                 </div>
               </div>
-              <Button type="button" variant="outline" className="h-9 shrink-0 self-start rounded-lg px-3" onClick={() => void handleCopyDetailJSON()}>
-                <Copy className="size-4" />
-                复制 JSON
-              </Button>
+              <CodeBlockCopyButton variant="outline" size="default" className="shrink-0 self-start" value={detailJSON(detailLog)}>复制 JSON</CodeBlockCopyButton>
             </div>
           </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-4 sm:p-5">
             <div className="space-y-5">
               <section className="space-y-3">
                 <div className="text-sm font-semibold text-foreground">摘要</div>
-                <div className="rounded-xl border border-border bg-muted/35 p-4">
+                <Card className="p-4 gap-0">
                   <div className="break-words text-sm font-medium text-foreground">{detailLog?.summary || "—"}</div>
                   <div className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <div>
@@ -753,7 +759,7 @@ function LogsContent() {
                     <div>
                       <div className="text-xs text-muted-foreground">接口</div>
                       <div className="mt-1 flex min-w-0 items-center gap-2 font-medium text-foreground">
-                        {detailMethod ? <Badge variant={methodBadgeVariant(detailMethod)} className="shrink-0 rounded-md">{detailMethod}</Badge> : null}
+                        {detailMethod ? <Badge variant={methodBadgeVariant(detailMethod)} className="shrink-0">{detailMethod}</Badge> : null}
                         <span className="truncate">{pathText(detailLog)}</span>
                       </div>
                     </div>
@@ -762,7 +768,7 @@ function LogsContent() {
                       <div className="mt-1 font-medium text-foreground">{formatDuration(detailLog)}</div>
                     </div>
                   </div>
-                </div>
+                </Card>
               </section>
 
               {detailFieldSections.length > 0 ? (
@@ -770,7 +776,7 @@ function LogsContent() {
                   <div className="text-sm font-semibold text-foreground">补充信息</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     {detailFieldSections.map((section) => (
-                      <div key={section.title} className="min-w-0 rounded-xl border border-border bg-background p-3">
+                      <Card key={section.title} className="min-w-0 p-3 gap-0">
                         <div className="mb-2 text-xs font-semibold text-muted-foreground">{section.title}</div>
                         <div className="space-y-2">
                           {section.entries.map(([key, value]) => (
@@ -780,7 +786,7 @@ function LogsContent() {
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </Card>
                     ))}
                   </div>
                 </section>
@@ -789,9 +795,7 @@ function LogsContent() {
               {typeof detailLog?.detail?.error === "string" && detailLog.detail.error ? (
                 <section className="space-y-3">
                   <div className="text-sm font-semibold text-foreground">错误信息</div>
-                  <ScrollArea className={`max-h-48 whitespace-pre-wrap break-words rounded-xl border p-4 text-xs leading-6 ${statusToneClasses.danger.panel}`}>
-                    {detailLog.detail.error}
-                  </ScrollArea>
+                  <CodeBlock variant="destructive"><CodeBlockContent wrap className="max-h-48">{detailLog.detail.error}</CodeBlockContent></CodeBlock>
                 </section>
               ) : null}
 
@@ -799,14 +803,14 @@ function LogsContent() {
                 <section className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold text-foreground">图片结果</div>
-                    <Badge variant="secondary" className="rounded-md">{detailUrls.length} 张</Badge>
+                    <Badge variant="secondary" >{detailUrls.length} 张</Badge>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                     {detailUrls.map((url, index) => (
-                      <button
+                      <Button variant="outline"
                         key={url}
                         type="button"
-                        className="group overflow-hidden rounded-xl border border-border bg-muted text-left"
+                        className="block h-auto justify-start whitespace-normal p-0 group overflow-hidden text-left"
                         onClick={() => {
                           setLightboxIndex(index);
                           setLightboxOpen(true);
@@ -816,13 +820,13 @@ function LogsContent() {
                           <AuthenticatedImage src={url} alt="" className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]" />
                         </div>
                         <div className="truncate border-t border-border px-3 py-2 text-xs text-muted-foreground">{url}</div>
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </section>
               ) : null}
             </div>
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         </DialogContent>
       </Dialog>
       <ImageLightbox

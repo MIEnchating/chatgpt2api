@@ -1,3 +1,4 @@
+import { isCanvasScriptProject } from "./canvas-script.ts";
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 import { CANVAS_CONFIG_REFERENCE_PATTERN } from "./canvas-config-inputs";
 
@@ -24,7 +25,7 @@ const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
   "generation_audio_glm_format", "generation_audio_glm_speed", "generation_audio_mimo_voice",
   "generation_audio_mimo_format", "generation_audio_mimo_voice_design_prompt", "generation_audio_mimo_voice_clone_node_id",
   "generation_audio_gemini_voice", "audio_task_id", "audio_task_result_id", "duration_ms", "mime_type",
-  "panorama_source_prompt", "panorama_final_prompt", "panorama_projection", "director_project", "camera_control",
+  "panorama_source_prompt", "panorama_final_prompt", "panorama_projection", "director_project", "script_project", "script_operation", "camera_control",
   "batch_child_ids", "batch_root_id", "batch_primary_id", "batch_expanded", "created_at",
 ]);
 
@@ -36,6 +37,7 @@ export function remapCanvasNodeReferences(node: CanvasNode, idMap: ReadonlyMap<s
   const childIDs = node.batch_child_ids?.flatMap((id) => idMap.has(id) ? [idMap.get(id)!] : []);
   return {
     ...node,
+    script_project: node.script_project ? { ...node.script_project, assets: node.script_project.assets.map((asset) => ({ ...asset, image_node_id: idMap.get(asset.image_node_id) || asset.image_node_id })) } : undefined,
     group_id: node.group_id ? idMap.get(node.group_id) : undefined,
     batch_root_id: node.batch_root_id ? idMap.get(node.batch_root_id) : undefined,
     batch_child_ids: childIDs?.length ? childIDs : undefined,
@@ -63,9 +65,10 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (!raw || typeof raw !== "object") return null;
     const source = raw as Partial<CanvasNode>;
     if (Object.keys(source).some((key) => !CANVAS_CLIPBOARD_NODE_FIELDS.has(key as keyof CanvasNode))) return null;
+    if (source.script_project !== undefined && (source.type !== "script" || !isCanvasScriptProject(source.script_project))) return null;
     const id = String(source.id || "").trim();
     const type = source.type;
-    if (!id || id.length > 128 || ids.has(id) || !["image", "video", "audio", "panorama", "director", "group", "text", "config"].includes(type || "")) return null;
+    if (!id || id.length > 128 || ids.has(id) || !["image", "video", "audio", "panorama", "director", "script", "group", "text", "config"].includes(type || "")) return null;
     if (!isFiniteNumber(source.x) || !isFiniteNumber(source.y) || Math.abs(source.x) > 1e7 || Math.abs(source.y) > 1e7) return null;
     if (!isFiniteNumber(source.width) || !isFiniteNumber(source.height) || source.width <= 0 || source.height <= 0 || source.width > 20000 || source.height > 20000) return null;
     if (source.font_size !== undefined && (!isFiniteNumber(source.font_size) || source.font_size < 10 || source.font_size > 32)) return null;

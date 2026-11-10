@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { applyCanvasTaskImage } from "../src/app/canvas/canvas-task-results.ts";
+import * as videoModelCapabilities from "../src/lib/video-model-capabilities.ts";
 
 function callback(path, name, context) {
   const source = ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -63,9 +64,10 @@ test("media loading rejects old URLs and corrects a frame even when metadata was
 test("video sound defaults respect explicit node choices and model audio support", () => {
   for (const control of ["toggle", "always", "unsupported"]) {
     const parameters = callback("../src/app/canvas/page.tsx", "canvasVideoParameters", {
-      videoSizeOptions: () => ["16:9"], resolveVideoSeconds: () => 5, videoResolutionOptions: () => ["720p"],
-      videoDefaultSize: () => "16:9", videoDefaultResolution: () => "720p", videoAudioControl: () => control,
+      ...videoModelCapabilities,
+      videoAudioControl: () => control,
     });
+    assert.equal(parameters({}).generation_video_audio, control === "always");
     assert.equal(parameters({ generation_video_audio: true }).generation_video_audio, control !== "unsupported");
     assert.equal(parameters({ generation_video_audio: false }).generation_video_audio, control === "always");
   }
@@ -77,6 +79,7 @@ test("video retries update the failed node even after switching to new-node rege
     const stopped = new Error("Stop before submitting a task");
     let resultNodes;
     const runVideo = callback("../src/app/canvas/page.tsx", "runVideoGeneration", {
+      videoModelRequiresHTTPSReferences: videoModelCapabilities.videoModelRequiresHTTPSReferences,
       documentRef: { current: { id: "project" } }, canvasOperationEpochRef: { current: 0 },
       nodesRef: { current: [source] }, activeGenerationsRef: { current: new Set() }, runningNodeID: "",
       canvasVideoParameters: () => ({ generation_video_model: "model", generation_video_size: "16:9", generation_video_reference_urls: [], generation_video_reference_image_urls: [], generation_video_reference_audio_urls: [] }),

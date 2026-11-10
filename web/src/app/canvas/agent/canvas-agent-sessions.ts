@@ -1,3 +1,4 @@
+import { MAX_AGENT_QUEUED_MESSAGES } from "./canvas-agent-message-queue";
 import { setCanvasAgentProcessing } from "./canvas-agent-timing";
 import type { CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentState, CanvasAssistantReference, CanvasAssistantSession } from "./canvas-agent-types";
@@ -18,15 +19,35 @@ export function isCanvasAgentSession(value: unknown): value is CanvasAssistantSe
     && (message.status === undefined || ["thinking", "running", "waiting", "success", "error"].includes(String(message.status)))
     && (message.trace === undefined || Array.isArray(message.trace) && message.trace.every((entry) => record(entry) && typeof entry.id === "string" && (
       entry.type === "text" && typeof entry.text === "string"
+      || entry.type === "reasoning" && typeof entry.text === "string" && typeof entry.isStreaming === "boolean"
       || entry.type === "question" && typeof entry.question === "string" && optionalStrings(entry, ["answer"]) && (entry.cancelled === undefined || typeof entry.cancelled === "boolean")
       || entry.type === "operation" && strings(entry, ["label", "detail"]) && optionalStrings(entry, ["nodeId"])
-        && ["plan", "workflow", "read", "image", "create", "edit", "generate", "command", "file", "tool"].includes(String(entry.kind))
+        && ["plan", "workflow", "read", "image", "create", "edit", "generate", "command", "file", "tool", "subagent"].includes(String(entry.kind))
         && ["running", "success", "error", "waiting", "changed"].includes(String(entry.status))
+        && (entry.terminal === undefined || record(entry.terminal) && strings(entry.terminal, ["command", "output"]) && optionalStrings(entry.terminal, ["cwd"]) && (entry.terminal.exitCode === undefined || Number.isInteger(entry.terminal.exitCode)))
+        && (entry.tool === undefined || record(entry.tool) && typeof entry.tool.name === "string")
+        && (entry.subagent === undefined || record(entry.subagent) && optionalStrings(entry.subagent, ["prompt", "model"]) && Array.isArray(entry.subagent.agents) && entry.subagent.agents.every(agent => record(agent) && strings(agent, ["id", "status"]) && optionalStrings(agent, ["message"])))
     )))
     && (message.references === undefined || (Array.isArray(message.references) && message.references.every((reference) => record(reference)
-      && strings(reference, ["id", "type", "title"]) && ["image", "panorama", "text", "video", "audio", "config", "director", "group"].includes(String(reference.type))
+      && strings(reference, ["id", "type", "title"]) && ["image", "panorama", "text", "video", "audio", "config", "director", "script", "group"].includes(String(reference.type))
       && optionalStrings(reference, ["label", "dataUrl", "url", "storageKey", "mimeType", "text"])
       && (reference.source === undefined || reference.source === "attachment")))))) return false;
+  if (value.contextUsage !== undefined) {
+    const usage = value.contextUsage;
+    if (!record(usage) || typeof usage.model !== "string" || usage.basis !== "compression-budget" || typeof usage.compacting !== "boolean"
+      || usage.inputTokens !== undefined && (!Number.isSafeInteger(usage.inputTokens) || Number(usage.inputTokens) < 0)
+      || !Number.isSafeInteger(usage.usedTokens) || Number(usage.usedTokens) < 0 || !Number.isSafeInteger(usage.maxTokens) || Number(usage.maxTokens) <= 0) return false;
+  }
+  if (value.messageQueue !== undefined) {
+    const queue = value.messageQueue;
+    if (!record(queue) || typeof queue.paused !== "boolean" || !optionalStrings(queue, ["steeringId"]) || !Array.isArray(queue.messages) || queue.messages.length > MAX_AGENT_QUEUED_MESSAGES) return false;
+    const ids = new Set<string>();
+    for (const item of queue.messages) {
+      if (!record(item) || !strings(item, ["id", "text", "createdAt"]) || !String(item.id) || !String(item.text).trim() || ids.has(String(item.id)) || !Array.isArray(item.references) || !item.references.every(reference => record(reference) && strings(reference, ["id", "type", "title"]) && optionalStrings(reference, ["label", "url", "dataUrl", "storageKey", "mimeType", "text"]) && (reference.source === undefined || reference.source === "attachment"))) return false;
+      ids.add(String(item.id));
+    }
+    if (queue.steeringId !== undefined && !ids.has(String(queue.steeringId))) return false;
+  }
   const state = value.agentState;
   if (!isCanvasAgentState(state)) return false;
   return optionalStrings(value, ["contextCheckpoint", "codexThreadId", "codexServiceId", "resumeAssistantMessageId"])

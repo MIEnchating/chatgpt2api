@@ -9,7 +9,7 @@ FROM --platform=$BUILDPLATFORM ${RUNTIME_IMAGE} AS agent-deps
 WORKDIR /app/agent-runtime
 COPY agent-runtime/package.json agent-runtime/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
-COPY agent-runtime/worker.mjs ./
+COPY agent-runtime/*.mjs ./
 
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-deps
 
@@ -25,6 +25,7 @@ FROM web-deps AS web-build
 
 COPY web ./
 COPY internal/service/canvas_agent_assets /app/internal/service/canvas_agent_assets
+COPY agent-runtime/context-policy.mjs /app/agent-runtime/context-policy.mjs
 ARG BUILD_NODE_OPTIONS=--max-old-space-size=1024
 ENV NODE_OPTIONS=${BUILD_NODE_OPTIONS}
 RUN bun run build

@@ -45,6 +45,10 @@ test('前后端、Agent runtime、桌面与数据库校验集中在 PR CI', () =
   for (const directory of ['agent-runtime', 'desktop']) {
     assert.ok(ci.includes(`working-directory: ${directory}\n        run: npm test`), directory);
   }
+  const databaseJob = ci.split('  storage-integration:\n')[1];
+  assert.ok(databaseJob.includes('TestAgentExecutionHistorySurvivesDatabaseReopen'));
+  assert.ok(databaseJob.includes('TestCanvasAgentSDKSessionPersistsAcrossDatabaseReopen'));
+  assert.match(databaseJob, /working-directory: agent-runtime\n        run: npm ci --ignore-scripts/);
 });
 
 test('第三方 Action 固定为完整提交 SHA 并在行尾注释版本', () => {

@@ -30,6 +30,20 @@ func TestVideoContractInputRejectsInvalidDurationWithoutDefaulting(t *testing.T)
 	}
 }
 
+func TestVideoContractInputCanonicalizesOptionCase(t *testing.T) {
+	contract := dramayaVideoContract(t)
+	contract.ModelProfiles = nil
+	contract.Capability.Resolutions = []string{"480P", "768P"}
+	contract.Capability.DefaultResolution = "480P"
+	body := map[string]any{"prompt": "Animate", "resolution": " 480p "}
+	if err := normalizeVideoContractInput(body, contract); err != nil {
+		t.Fatal(err)
+	}
+	if body["resolution"] != "480P" {
+		t.Fatalf("resolution = %#v, want 480P", body["resolution"])
+	}
+}
+
 func TestVideoExtendedParametersReachOutboundAndTaskMetadata(t *testing.T) {
 	c := dramayaVideoContract(t)
 	c.ModelProfiles = nil

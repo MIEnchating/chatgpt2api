@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestRelayCreationGroupsNormalizeMissingNullAndPersistedNil(t *testing.T) {
 	for _, value := range []any{nil, "", "  ", "<nil>"} {
@@ -9,8 +12,8 @@ func TestRelayCreationGroupsNormalizeMissingNullAndPersistedNil(t *testing.T) {
 			store.data["relay_"+kind+"_group"] = value
 		}
 		for _, kind := range []string{"text", "image", "video", "audio"} {
-			if got := store.Get()["relay_"+kind+"_group"]; got != "" {
-				t.Fatalf("value %v: %s group = %#v, want empty string", value, kind, got)
+			if got := store.Get()["relay_"+kind+"_group"]; !reflect.DeepEqual(got, []string{}) {
+				t.Fatalf("value %v: %s group = %#v, want empty list", value, kind, got)
 			}
 		}
 		if len(store.RelayCreationGroups()) != 0 {
@@ -18,7 +21,7 @@ func TestRelayCreationGroupsNormalizeMissingNullAndPersistedNil(t *testing.T) {
 		}
 	}
 	store := &Store{data: map[string]any{}, frozenSettings: true}
-	if got := store.Get()["relay_text_group"]; got != "" {
+	if got := store.Get()["relay_text_group"]; !reflect.DeepEqual(got, []string{}) {
 		t.Fatalf("missing group = %#v", got)
 	}
 }
@@ -37,7 +40,7 @@ func TestRelayCreationGroupsSharedGroupAndClearPersist(t *testing.T) {
 	if _, err := store.Update(values); err != nil {
 		t.Fatal(err)
 	}
-	if groups := store.RelayCreationGroups(); len(groups) != 4 || groups["text"] != "shared" || groups["audio"] != "shared" {
+	if groups := store.RelayCreationGroups(); len(groups) != 4 || !reflect.DeepEqual(groups["text"], []string{"shared"}) || !reflect.DeepEqual(groups["audio"], []string{"shared"}) {
 		t.Fatalf("shared groups = %#v", groups)
 	}
 	for key := range values {
@@ -52,5 +55,23 @@ func TestRelayCreationGroupsSharedGroupAndClearPersist(t *testing.T) {
 	}
 	if groups := reloaded.RelayCreationGroups(); len(groups) != 0 {
 		t.Fatalf("cleared groups returned after reload: %#v", groups)
+	}
+}
+
+func TestRelayCreationGroupsPersistMultipleSelections(t *testing.T) {
+	t.Setenv("ROOT_DIR", t.TempDir())
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update(map[string]any{"relay_text_group": []any{" first ", "second,group", "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.RelayCreationGroups()["text"]; !reflect.DeepEqual(got, []string{"first", "second,group"}) {
+		t.Fatalf("groups = %#v", got)
 	}
 }

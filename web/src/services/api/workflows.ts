@@ -1,3 +1,5 @@
+import { nanoid } from "nanoid";
+import { fetchAgentExecution, observeAgentExecution } from "@/lib/agent-executions";
 import { httpRequest } from "@/lib/request";
 
 export type WorkflowVariable = {
@@ -141,8 +143,11 @@ export async function draftWorkflowWithAgent(input: {
   model?: string;
   channelID?: string;
   references?: string[];
-}, options: { signal: AbortSignal }) {
-  return httpRequest<WorkflowAgentDraftResponse>("/api/workflows/agent-draft", {
+}, options: { signal: AbortSignal; onStarted?: (id: string) => void }) {
+  const runID = nanoid();
+  options.onStarted?.(runID);
+  try { return await httpRequest<WorkflowAgentDraftResponse>("/api/workflows/agent-draft", {
+    headers: { "X-Agent-Run-ID": runID },
     method: "POST",
     signal: options.signal,
     timeout: 610_000,
@@ -153,5 +158,10 @@ export async function draftWorkflowWithAgent(input: {
       ...(input.channelID ? { channel_id: input.channelID } : {}),
       ...(input.references?.length ? { references: input.references } : {}),
     },
-  });
+  }); } catch (error) {
+    if (options.signal.aborted) throw error;
+    const run = await fetchAgentExecution<WorkflowAgentDraftResponse>({ id: runID }, options.signal);
+    if (!run) throw error;
+    return observeAgentExecution<WorkflowAgentDraftResponse>(runID, options.signal);
+  }
 }

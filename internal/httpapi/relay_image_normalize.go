@@ -67,9 +67,8 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 		return
 	}
 	if route == util.ImageModelRouteAgnes {
-		delete(payload, "image_resolution")
 		ratioSource := firstNonEmpty(util.Clean(payload["ratio"]), util.Clean(payload["aspect_ratio"]), util.Clean(payload["size"]))
-		if strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(util.Clean(payload["model"]), "_", "-"), " ", "-"), "agnes-image-2.1-flash") {
+		if util.IsAgnesImageResolutionModel(util.Clean(payload["model"])) {
 			payload["size"] = agnesImageSize(util.Clean(payload["size"]), util.Clean(payload["image_resolution"]), util.Clean(payload["quality"]))
 			if ratioSource != "" {
 				if normalizedRatio := normalizeAgnesImageRatio(ratioSource); normalizedRatio != "" {
@@ -77,6 +76,7 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 				}
 			}
 		}
+		delete(payload, "image_resolution")
 		delete(payload, "quality")
 		delete(payload, "stream")
 		delete(payload, "partial_images")
@@ -288,7 +288,7 @@ func normalizeImagePayloadForModel(payload map[string]any) {
 				payload["ratio"] = normalizedRatio
 			}
 		}
-		if strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(util.Clean(payload["model"]), "_", "-"), " ", "-"), "agnes-image-2.1-flash") {
+		if util.IsAgnesImageResolutionModel(util.Clean(payload["model"])) {
 			payload["size"] = agnesImageSize(util.Clean(payload["size"]), util.Clean(payload["image_resolution"]), util.Clean(payload["quality"]))
 		}
 		delete(payload, "quality")

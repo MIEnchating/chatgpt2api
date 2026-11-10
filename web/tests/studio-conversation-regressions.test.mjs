@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { imageConversationHasActiveTurn, mergeImageConversationSnapshot } from "../src/lib/image-task-state.ts";
+import { isGPTImage26 } from "../src/lib/image-model-capabilities.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const store = ts.createSourceFile("store.ts", readFileSync(new URL("../src/store/image-conversations.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
@@ -37,6 +38,7 @@ function submissionFixture(conversation) {
   let cleared = 0, id = 0;
   const snapshot = { selectedConversationId: conversation?.id ?? null, imagePrompt: "next request" };
   const context = {
+    isGPTImage26,
     selectedConversationId: snapshot.selectedConversationId, isLoadingHistory: false,
     conversationsRef: { current: conversation ? [conversation] : [] },
     imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: isSummary,
@@ -44,6 +46,7 @@ function submissionFixture(conversation) {
     referenceUploadPendingCountRef: { current: 0 }, videoFrameUploadsRef: { current: new Map() },
     videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
     composerMode: "image", imagePrompt: snapshot.imagePrompt, imageModel: "new-model",
+    smartContextEnabled: false, contextTextModel: "vision-text", contextTextModels: ["vision-text"],
     imageCreationModelOptions: [{ value: "new-model" }], defaultImageModel: "new-model", requireRelayToken: () => true,
     referenceImages: [], videoFirstFrameURL: "", videoLastFrameURL: "", videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [], videoSeconds: "4",
     absoluteReferenceURL: value => value, cleanReferenceURLs: value => value,
@@ -72,6 +75,45 @@ function submissionFixture(conversation) {
   return { context, errors, queued, selected, get cleared() { return cleared; } };
 }
 const complete = () => ({ id: "conversation", turns: [{ id: "first", model: "old-model", status: "success", images: [{ status: "success" }] }] });
+
+test("direct generation never requires a text model or text key", async () => {
+  const fixture = submissionFixture(complete());
+  fixture.context.contextTextModels = [];
+  fixture.context.contextTextModel = "";
+  const kinds = [];
+  fixture.context.requireRelayToken = kind => { kinds.push(kind); return kind === "image"; };
+  await submit(fixture.context)();
+  assert.deepEqual(fixture.errors, []);
+  assert.deepEqual(kinds, ["image"]);
+  assert.equal(fixture.context.conversationsRef.current[0].turns.at(-1).promptContext, undefined);
+  assert.equal(fixture.queued.length, 1);
+});
+
+test("smart generation saves its model and execution ID before queueing", async () => {
+  const fixture = submissionFixture(complete());
+  fixture.context.smartContextEnabled = true;
+  const kinds = [];
+  fixture.context.requireRelayToken = kind => { kinds.push(kind); return true; };
+  await submit(fixture.context)();
+  assert.deepEqual(fixture.errors, []);
+  const turn = fixture.context.conversationsRef.current[0].turns.at(-1);
+  assert.deepEqual(kinds, ["image", "text"]);
+  assert.equal(turn.prompt, "next request");
+  assert.deepEqual(turn.studioAgent, { model: "vision-text", tokenName: "key-vision-text", runId: `${turn.id}-agent` });
+  assert.equal(fixture.queued.length, 1);
+});
+
+for (const missing of ["model", "key"]) {
+  test(`smart context refuses generation when its text ${missing} is missing`, async () => {
+    const fixture = submissionFixture(complete());
+    fixture.context.smartContextEnabled = true;
+    if (missing === "model") fixture.context.contextTextModels = [];
+    else fixture.context.requireRelayToken = kind => kind === "image";
+    await submit(fixture.context)();
+    assert.equal(fixture.queued.length, 0);
+    assert.equal(fixture.context.conversationsRef.current[0].turns.length, 1);
+  });
+}
 
 for (const status of ["queued", "generating"]) {
   test(`submit refuses a second request while the same conversation is ${status}`, async () => {
@@ -238,3 +280,79 @@ for (const name of ["saveImageConversation", "saveImageConversationCoalesced"]) 
     await assert.rejects(save({ id: "a", turns: [], historySummaryOnly: true }), /incomplete/);
   });
 }
+
+
+function renameFixture(conversation) {
+  const errors = [], writes = [], busy = [];
+  const context = {
+    renameTitle: "  New title  ", renameBusy: false, renamingConversation: { id: conversation.id },
+    conversationsRef: { current: [conversation] }, isImageConversationHistorySummaryOnly: isSummary,
+    pageActiveRef: { current: true }, setRenameBusy: value => busy.push(value), setRenameError: value => errors.push(value),
+    setRenamingConversation: value => { context.dialog = value; }, assertPageSessionCurrent() {},
+    getImageConversation: async () => { throw new Error("detail unavailable"); },
+    updateConversation: async (id, update, options) => {
+      const next = update(context.conversationsRef.current.find(item => item.id === id));
+      writes.push({ id, next, options }); return next;
+    },
+  };
+  const node = findNode(source, node => ts.isFunctionDeclaration(node) && node.name?.text === "handleRenameConversation");
+  return { context, errors, writes, busy, run: () => compile(node.getText(source).replace("async function handleRenameConversation", "async function"), context)() };
+}
+
+test("renaming uses a durable save and preserves the latest conversation turns", async () => {
+  const conversation = { ...complete(), title: "Old", revision: 4 };
+  const fixture = renameFixture(conversation);
+  fixture.context.conversationsRef.current = [{ ...conversation, turns: [...conversation.turns, { id: "second" }] }];
+  await fixture.run();
+  assert.equal(fixture.writes[0].next.title, "New title");
+  assert.equal(fixture.writes[0].next.turns.length, 2);
+  assert.deepEqual(fixture.writes[0].options, { persist: "durable" });
+  assert.equal(fixture.context.dialog, null);
+});
+
+test("renaming a history summary loads full turns before saving", async () => {
+  const summary = { id: "conversation", revision: 3, historySummaryOnly: true, turns: [] };
+  const fixture = renameFixture(summary);
+  const detail = { ...complete(), revision: 3 };
+  fixture.context.getImageConversation = async () => detail;
+  await fixture.run();
+  assert.equal(fixture.writes[0].next.turns.length, 1);
+  assert.equal(fixture.writes[0].next.historySummaryOnly, undefined);
+});
+
+for (const failure of ["load", "newer-summary", "save", "session-changed"]) {
+  test(`renaming keeps the dialog open and reports ${failure} errors`, async () => {
+    const summary = { id: "conversation", revision: 4, historySummaryOnly: true, turns: [] };
+    const fixture = renameFixture(failure === "save" ? complete() : summary);
+    if (failure !== "load") fixture.context.getImageConversation = async () => ({ ...complete(), revision: failure === "newer-summary" ? 3 : 4 });
+    if (failure === "save") fixture.context.updateConversation = async () => { throw new Error("save rejected"); };
+    if (failure === "session-changed") fixture.context.assertPageSessionCurrent = () => { throw new Error("session changed"); };
+    await fixture.run();
+    assert.ok(fixture.errors.at(-1));
+    assert.equal(fixture.context.dialog, undefined);
+    assert.deepEqual(fixture.busy, [true, false]);
+    assert.equal(fixture.writes.length, 0);
+  });
+}
+
+
+test("smart video generation can choose required material from conversation history", async () => {
+  const fixture = submissionFixture(complete());
+  Object.assign(fixture.context, {
+    composerMode: "video", smartContextEnabled: true, videoModel: "image-to-video",
+    setImagePrompt: () => {}, replaceReferenceImages: () => {}, setVideoFirstFrameURL: () => {}, setVideoLastFrameURL: () => {}, setVideoReferenceImageURLs: () => {}, setVideoReferenceVideoURLs: () => {}, setVideoReferenceAudioURLs: () => {}, videoReferenceAudioURLsRef: { current: [] },
+    videoModelOptions: [{ value: "image-to-video" }], videoTaskCount: "1", videoSize: "16:9",
+    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: { seed: 0 },
+    videoRequiresReferenceImage: () => true, videoRequiresReferenceVideo: () => true, videoRequiresReferenceAudio: () => true,
+    videoWorkbenchReferenceLimitError: () => "", videoReferenceImageLimit: () => 2,
+    videoReferenceCombinationError: () => { throw Error("Agent must select materials first"); },
+    normalizeVideoRequest: () => { throw Error("Agent must select materials first"); },
+    getComposerConversationMode: () => "video",
+  });
+  await submit(fixture.context)();
+  assert.deepEqual(fixture.errors, []);
+  const turn = fixture.context.conversationsRef.current[0].turns.at(-1);
+  assert.equal(turn.mode, "video"); assert.equal(turn.studioAgent.model, "vision-text");
+  assert.equal(turn.videoGenerateAudio, false); assert.deepEqual(turn.videoParameters, { seed: 0 });
+  assert.equal(fixture.queued.length, 1);
+});

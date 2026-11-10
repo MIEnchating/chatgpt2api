@@ -3,6 +3,9 @@
 import * as React from "react";
 import { X } from "lucide-react";
 
+import { Badge } from "./badge";
+import { Button } from "./button";
+import { InputGroup, InputGroupInput } from "./input-group";
 import { cn } from "@/lib/utils";
 
 type InputTagRejectReason = "duplicate" | "invalid" | "limit";
@@ -60,9 +63,6 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
     const composingRef = React.useRef(false);
     const [inputValue, setInputValue] = React.useState("");
     const limitReached = maxTags !== undefined && value.length >= maxTags;
-    const invalid = props["aria-invalid"] !== undefined &&
-      props["aria-invalid"] !== false &&
-      props["aria-invalid"] !== "false";
 
     const setInputRef = React.useCallback(
       (node: HTMLInputElement | null) => {
@@ -148,63 +148,48 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
     };
 
     return (
-      <div
+      <InputGroup
         data-slot="input-tag"
         data-disabled={disabled || undefined}
         data-readonly={readOnly || undefined}
         data-limit-reached={limitReached || undefined}
-        className={cn(
-          "flex min-h-10 w-full min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1.5 text-sm shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
-          !disabled && !readOnly && !invalid && "hover:border-foreground/25",
-          disabled && "cursor-not-allowed bg-muted/50 opacity-60",
-          readOnly && "bg-muted/30",
-          invalid && "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
-          className,
-        )}
+        className={cn("h-auto min-h-8 w-full min-w-0 flex-wrap items-center gap-1.5 p-1", className)}
         onClick={() => {
           if (!disabled && !readOnly && !limitReached) inputRef.current?.focus();
         }}
       >
         {value.map((tag, index) => (
-          <span
+          <Badge variant="secondary"
             key={`${tag}-${index}`}
             data-slot="input-tag-item"
-            className={cn(
-              "inline-flex min-h-7 max-w-full items-center gap-1 rounded-lg border border-border/70 bg-muted/65 pl-2.5 text-xs font-medium text-foreground",
-              (disabled || readOnly) && "pr-2.5",
-              tagClassName,
-            )}
+            className={cn("min-w-0 max-w-full", tagClassName)}
           >
             <span className="min-w-0 max-w-full truncate" title={tag}>{tag}</span>
             {!disabled && !readOnly ? (
-              <button
+              <Button variant="ghost" size="icon-xs"
                 type="button"
                 data-slot="input-tag-remove"
-                className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="flex shrink-0 cursor-pointer items-center justify-center"
                 aria-label={`删除标签 ${tag}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   removeTag(index);
                 }}
               >
-                <X className="size-3.5" />
-              </button>
+                <X  />
+              </Button>
             ) : null}
-          </span>
+          </Badge>
         ))}
         {!readOnly ? (
-          <input
+          <InputGroupInput
             {...props}
             ref={setInputRef}
             data-slot="input-tag-input"
             disabled={disabled || limitReached}
             value={inputValue}
             placeholder={value.length === 0 ? placeholder : undefined}
-            className={cn(
-              "h-7 max-w-full flex-1 bg-transparent px-1 text-base sm:text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
-              value.length === 0 ? "min-w-32" : "min-w-10",
-              inputClassName,
-            )}
+            className={cn("max-w-full flex-1 disabled:cursor-not-allowed", value.length === 0 ? "min-w-32" : "min-w-10", inputClassName)}
             onBlur={(event) => {
               if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
                 commitInput();
@@ -224,7 +209,7 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
             onPaste={handlePaste}
           />
         ) : null}
-      </div>
+      </InputGroup>
     );
   },
 );

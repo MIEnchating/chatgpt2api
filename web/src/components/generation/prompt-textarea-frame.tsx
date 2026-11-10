@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 export function PromptTextareaFrame({ children, className }: { children: ReactNode; className?: string }) {
@@ -43,9 +43,9 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
 
   return (
     <div ref={frameRef} className={cn("canvas-prompt-scroll-frame relative min-w-0 w-full overflow-hidden", className)}>
-      <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden h-full" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain h-full"><div className="min-w-0 w-full" style={{ minHeight: "100%" }}>
         {children}
-      </ScrollArea>
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
     </div>
   );
 }

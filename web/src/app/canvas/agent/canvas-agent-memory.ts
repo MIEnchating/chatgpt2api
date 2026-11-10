@@ -1,6 +1,6 @@
 import type { CanvasAgentProtocolMessage } from "./canvas-agent-types";
 
-export const CANVAS_AGENT_INPUT_TOKEN_BUDGET = 64_000;
+export { DEFAULT_CONTEXT_WINDOW_TOKENS as DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS, CONTEXT_COMPACTION_RATIO, contextTokenBudget } from "../../../../../agent-runtime/context-policy.mjs";
 const SUMMARY_CHUNK_TOKENS = 20_000;
 const SUMMARY_MAX_TOKENS = 4_000;
 

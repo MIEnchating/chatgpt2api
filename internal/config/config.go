@@ -46,6 +46,7 @@ var settingEnvKeys = map[string]string{
 	"image_models":                   "IMAGE_MODELS",
 	"image_model_definitions":        "IMAGE_MODEL_DEFINITIONS",
 	"model_capabilities":             "MODEL_CAPABILITIES",
+	"model_groups":                   "MODEL_GROUPS",
 	"video_models":                   "VIDEO_MODELS",
 	"text_models":                    "TEXT_MODELS",
 	"audio_models":                   "AUDIO_MODELS",
@@ -467,23 +468,40 @@ func (s *Store) RelayBaseURL() string {
 
 // RelayCreationGroups contains only explicitly configured category mappings.
 // Both providers use group names here; the Sub2API client resolves their IDs.
-func (s *Store) RelayCreationGroups() map[string]string {
-	groups := make(map[string]string)
+func (s *Store) RelayCreationGroups() map[string][]string {
+	groups := make(map[string][]string)
 	for _, kind := range []string{"text", "image", "video", "audio"} {
-		if group := normalizeRelayCreationGroup(s.settingValue("relay_"+kind+"_group", "")); group != "" {
-			groups[kind] = group
+		if selected := normalizeRelayCreationGroups(s.settingValue("relay_"+kind+"_group", "")); len(selected) > 0 {
+			groups[kind] = selected
 		}
 	}
 	return groups
 }
 
-func normalizeRelayCreationGroup(value any) string {
-	group := util.Clean(value)
-	// Older settings responses could persist fmt.Sprint(nil) as a group name.
-	if group == "<nil>" {
-		return ""
+func normalizeRelayCreationGroups(value any) []string {
+	var values []string
+	switch typed := value.(type) {
+	case []string:
+		values = typed
+	case []any:
+		for _, item := range typed {
+			values = append(values, util.Clean(item))
+		}
+	case string:
+		if json.Unmarshal([]byte(typed), &values) != nil {
+			values = []string{typed}
+		}
 	}
-	return group
+	result := []string{}
+	seen := map[string]bool{}
+	for _, value := range values {
+		group := strings.TrimSpace(value)
+		if group != "" && group != "<nil>" && !seen[group] {
+			seen[group] = true
+			result = append(result, group)
+		}
+	}
+	return result
 }
 
 func (s *Store) RelayDatabaseURL() string {
@@ -678,6 +696,44 @@ func (s *Store) ModelCapabilities() map[string]string {
 	return normalizeModelCapabilities(s.settingValue("model_capabilities", nil))
 }
 
+type ModelGroups struct {
+	Overrides map[string]string `json:"overrides"`
+	Order     []string          `json:"order"`
+}
+
+func normalizeModelGroups(value any) ModelGroups {
+	result := ModelGroups{Overrides: map[string]string{}, Order: []string{}}
+	var data []byte
+	if raw, ok := value.(string); ok {
+		data = []byte(raw)
+	} else {
+		data, _ = json.Marshal(value)
+	}
+	var input ModelGroups
+	if json.Unmarshal(data, &input) != nil {
+		return result
+	}
+	for model, group := range input.Overrides {
+		model, group = strings.TrimSpace(model), strings.TrimSpace(group)
+		if model != "" && group != "" && len(model) <= 256 && len(group) <= 128 {
+			result.Overrides[model] = group
+		}
+	}
+	seen := map[string]bool{}
+	for _, group := range input.Order {
+		group = strings.TrimSpace(group)
+		if group != "" && len(group) <= 128 && !seen[group] {
+			result.Order = append(result.Order, group)
+			seen[group] = true
+		}
+	}
+	return result
+}
+
+func (s *Store) ModelGroups() ModelGroups {
+	return normalizeModelGroups(s.settingValue("model_groups", nil))
+}
+
 func (s *Store) VideoModels() []string {
 	return normalizeModelList(s.settingValue("video_models", defaultVideoModels), defaultVideoModels)
 }
@@ -731,6 +787,7 @@ func (s *Store) Get() map[string]any {
 	data["image_models"] = snapshot.ImageModels()
 	data["image_model_definitions"] = snapshot.ImageModelDefinitions()
 	data["model_capabilities"] = snapshot.ModelCapabilities()
+	data["model_groups"] = snapshot.ModelGroups()
 	data["video_models"] = snapshot.VideoModels()
 	data["text_models"] = snapshot.TextModels()
 	data["audio_models"] = snapshot.AudioModels()
@@ -764,7 +821,7 @@ func (s *Store) Get() map[string]any {
 	data["relay_database_type"] = snapshot.RelayDatabaseType()
 	for _, kind := range []string{"text", "image", "video", "audio"} {
 		key := "relay_" + kind + "_group"
-		data[key] = normalizeRelayCreationGroup(snapshot.data[key])
+		data[key] = normalizeRelayCreationGroups(snapshot.data[key])
 	}
 	driver, host, port, name, user := relayDatabasePublicFields(snapshot.RelayDatabaseConnectionURL(), snapshot.RelayDatabaseDriver())
 	data["relay_database_driver"] = driver
@@ -825,7 +882,7 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	for _, kind := range []string{"text", "image", "video", "audio"} {
 		key := "relay_" + kind + "_group"
 		if value, exists := next[key]; exists {
-			next[key] = normalizeRelayCreationGroup(value)
+			next[key] = normalizeRelayCreationGroups(value)
 		}
 	}
 	if value, ok := next["login_page_image_mode"]; ok {
@@ -857,6 +914,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["model_capabilities"]; ok {
 		next["model_capabilities"] = normalizeModelCapabilities(value)
+	}
+	if value, ok := next["model_groups"]; ok {
+		next["model_groups"] = normalizeModelGroups(value)
 	}
 	if value, ok := next["video_models"]; ok {
 		next["video_models"] = normalizeModelList(value, defaultVideoModels)
@@ -1501,6 +1561,10 @@ func stringifySettingEnvValue(settingKey string, value any) string {
 		value = normalizeStorageSetting(value)
 	case "image_model_definitions":
 		value, _ = decodeImageModelDefinitions(value)
+	case "model_groups":
+		value = normalizeModelGroups(value)
+	case "relay_text_group", "relay_image_group", "relay_video_group", "relay_audio_group":
+		value = normalizeRelayCreationGroups(value)
 	default:
 		return stringifyEnvValue(value)
 	}

@@ -38,7 +38,7 @@ export function CanvasNodeToolbar({ node, viewport, expanded, editor, children }
   const visible = size.width > 0;
   const left = nodeLeft + nodeWidth / 2 - size.toolbarWidth / 2;
   const top = nodeTop - 36 * viewport.zoom - size.toolbarHeight - 12;
-  const editorHeight = 200;
+  const editorHeight = 280;
   const editorLeft = nodeLeft + nodeWidth / 2 - size.editorWidth / 2;
   const editorTop = nodeBottom + 12;
 

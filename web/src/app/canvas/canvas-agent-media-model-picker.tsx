@@ -1,7 +1,9 @@
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ModelPicker } from "@/components/model-picker";
 import { TooltipHint } from "@/components/ui/tooltip";
 
 export type CanvasAgentMediaModels = Record<"image" | "video", {
@@ -13,23 +15,20 @@ export type CanvasAgentMediaModels = Record<"image" | "video", {
 export function CanvasAgentMediaModelPicker({ models, disabled }: { models: CanvasAgentMediaModels; disabled: boolean }) {
   return <Popover>
     <TooltipHint content="图片 / 视频模型">
-      <PopoverTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="图片和视频模型" className="size-8 shrink-0 rounded-xl text-muted-foreground hover:text-foreground @max-[320px]/agent:size-7"><Box className="size-[18px]" /></Button></PopoverTrigger>
+      <span className="inline-flex shrink-0"><PopoverTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="图片和视频模型" className="shrink-0"><Box className="size-[18px]" /></Button></PopoverTrigger></span>
     </TooltipHint>
-    <PopoverContent side="top" align="center" aria-label="媒体模型设置" className="w-[min(320px,calc(100vw-2rem))] p-4">
+    <PopoverContent side="top" align="center" aria-label="媒体模型设置" className="w-[min(320px,calc(100vw-2rem))]"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
       <div className="space-y-4">
         <div><h3 className="text-sm font-semibold">图片 / 视频模型</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">用于 Agent 接下来创建的图片和视频节点。</p></div>
         {(["image", "video"] as const).map((kind) => {
           const config = models[kind];
           const label = kind === "image" ? "图片模型" : "视频模型";
           return <div key={kind} className="space-y-1.5">
-            <label htmlFor={`canvas-agent-${kind}-model`} className="text-xs font-medium">{label}</label>
-            <Select value={config.options.includes(config.value) ? config.value : ""} onValueChange={config.onChange} disabled={disabled || !config.options.length}>
-              <SelectTrigger id={`canvas-agent-${kind}-model`} className="h-9 text-xs"><SelectValue placeholder={config.options.length ? "选择模型" : `暂无可用${label}`} /></SelectTrigger>
-              <SelectContent>{config.options.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
-            </Select>
+            <Label htmlFor={`canvas-agent-${kind}-model`} className="text-xs font-medium">{label}</Label>
+            <ModelPicker id={`canvas-agent-${kind}-model`} label={label} value={config.value} options={config.options} onValueChange={config.onChange} disabled={disabled} placeholder={`暂无可用${label}`} />
           </div>;
         })}
       </div>
-    </PopoverContent>
+    </ScrollArea></PopoverContent>
   </Popover>;
 }

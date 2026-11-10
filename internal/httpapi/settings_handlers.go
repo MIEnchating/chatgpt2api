@@ -28,6 +28,10 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if identity.Role != service.AuthRoleAdmin {
 			for key := range body {
+				if isRelayCreationGroupKey(key) {
+					util.WriteError(w, http.StatusForbidden, "仅管理员可以配置默认密钥分组")
+					return
+				}
 				if key == "allow_user_custom_relay_config" {
 					delete(body, key)
 					continue
@@ -79,7 +83,7 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if identity.Role != service.AuthRoleAdmin {
-			delete(updated, "relay_parameter_translation")
+			updated = a.settingsConfig(false)
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
@@ -137,12 +141,20 @@ func isObjectStorageCredentialKey(key string) bool {
 	return key == "storage"
 }
 
+func isRelayCreationGroupKey(key string) bool {
+	switch key {
+	case "relay_text_group", "relay_image_group", "relay_video_group", "relay_audio_group":
+		return true
+	}
+	return false
+}
+
 func (a *App) settingsConfig(includeDatabaseCredentials bool) map[string]any {
 	config := a.config.Get()
 	if !includeDatabaseCredentials {
 		delete(config, "relay_parameter_translation")
 		for key := range config {
-			if strings.HasPrefix(key, "relay_database_") && key != "relay_database_configured" {
+			if isRelayCreationGroupKey(key) || strings.HasPrefix(key, "relay_database_") && key != "relay_database_configured" {
 				delete(config, key)
 			}
 		}
@@ -179,6 +191,7 @@ func (a *App) modelConfig() map[string]any {
 		"image_models":            imageModels,
 		"image_model_definitions": a.config.ImageModelDefinitions(),
 		"model_capabilities":      a.config.ModelCapabilities(),
+		"model_groups":            a.config.ModelGroups(),
 		"default_image_model":     defaultConfiguredImageModel(imageModels),
 		"video_models":            videoModels,
 		"default_video_model":     defaultConfiguredVideoModel(videoModels, videoContracts),

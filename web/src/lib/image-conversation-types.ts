@@ -72,6 +72,8 @@ export type ImageTurn = {
   workflowInputs?: Record<string, string>;
   workflowTaskId?: string;
   prompt: string;
+  studioAgent?: import("./studio-agent").StudioAgent;
+  promptContext?: import("./studio-prompt-context").StudioPromptContext;
   model: ImageModel;
   mode: ImageConversationMode;
   referenceImages: StoredReferenceImage[];
@@ -117,6 +119,7 @@ export type ImageConversationHistorySummary = {
 };
 
 export type ImageConversation = {
+  composerMode?: "image" | "video";
   id: string;
   revision?: number;
   title: string;

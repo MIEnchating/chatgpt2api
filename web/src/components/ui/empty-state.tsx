@@ -1,14 +1,16 @@
 import type { ComponentProps, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "./empty";
 import { cn } from "@/lib/utils";
 
 type EmptyStateProps = ComponentProps<"div"> & {
   title: string;
-  description?: string;
+  description?: ReactNode;
   icon?: LucideIcon;
   action?: ReactNode;
   compact?: boolean;
+  headingLevel?: 1 | 2 | 3 | 4 | 5 | 6;
 };
 
 export function EmptyState({
@@ -17,29 +19,16 @@ export function EmptyState({
   icon: Icon,
   action,
   compact = false,
+  headingLevel,
   className,
   ...props
 }: EmptyStateProps) {
-  return (
-    <div
-      data-empty-state
-      className={cn(
-        "flex min-w-0 flex-col items-center justify-center px-4 sm:px-6 text-center",
-        compact ? "min-h-32 py-6" : "min-h-48 py-10 sm:py-12",
-        className,
-      )}
-      {...props}
-    >
-      {Icon ? (
-        <span className="mb-4 grid size-12 shrink-0 place-items-center rounded-2xl border border-border/70 bg-muted/40 text-muted-foreground shadow-xs">
-          <Icon className="size-5" aria-hidden="true" />
-        </span>
-      ) : null}
-      <p className="max-w-full text-sm leading-6 font-semibold text-foreground [overflow-wrap:anywhere]">{title}</p>
-      {description ? (
-        <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{description}</p>
-      ) : null}
-      {action ? <div className="mt-5 flex w-full max-w-full flex-wrap justify-center gap-2 [&>[data-slot=button]]:max-w-full [&>[data-slot=button]]:whitespace-normal">{action}</div> : null}
-    </div>
-  );
+  return <Empty data-empty-state className={cn(compact ? "min-h-32" : "min-h-48", className)} {...props}>
+    <EmptyHeader>
+      {Icon ? <EmptyMedia variant="icon"><Icon aria-hidden="true" /></EmptyMedia> : null}
+      <EmptyTitle role={headingLevel ? "heading" : undefined} aria-level={headingLevel}>{title}</EmptyTitle>
+      {description ? <EmptyDescription>{description}</EmptyDescription> : null}
+    </EmptyHeader>
+    {action ? <EmptyContent>{action}</EmptyContent> : null}
+  </Empty>;
 }

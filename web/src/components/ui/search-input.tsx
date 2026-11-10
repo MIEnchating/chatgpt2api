@@ -1,7 +1,7 @@
 import { useRef, type ComponentProps } from "react";
 import { Search, X } from "lucide-react";
 
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
 type SearchInputProps = Omit<ComponentProps<"input">, "value" | "defaultValue" | "onChange" | "type"> & {
@@ -18,15 +18,15 @@ export function SearchInput({ value, onValueChange, containerClassName, classNam
   };
 
   return (
-    <div className={cn("relative min-w-0", containerClassName)} data-search-input>
-      <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
+    <InputGroup className={cn("min-w-0", containerClassName)} data-search-input>
+      <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+      <InputGroupInput
         {...props}
         ref={inputRef}
         type="search"
         value={value}
         aria-label={props["aria-label"] || props.placeholder || "搜索"}
-        className={cn("pl-9 pr-10 [&::-webkit-search-cancel-button]:appearance-none", className)}
+        className={cn("[&::-webkit-search-cancel-button]:appearance-none", className)}
         onChange={(event) => onValueChange(event.target.value)}
         onKeyDown={(event) => {
           onKeyDown?.(event);
@@ -38,10 +38,10 @@ export function SearchInput({ value, onValueChange, containerClassName, classNam
         }}
       />
       {value ? (
-        <button type="button" disabled={props.disabled || props.readOnly} aria-label="清除搜索" onClick={clear} className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50">
-          <X className="size-3.5" aria-hidden="true" />
-        </button>
+        <InputGroupAddon align="inline-end"><InputGroupButton size="icon-sm" type="button" disabled={props.disabled || props.readOnly} aria-label="清除搜索" onClick={clear}>
+          <X  aria-hidden="true" />
+        </InputGroupButton></InputGroupAddon>
       ) : null}
-    </div>
+    </InputGroup>
   );
 }

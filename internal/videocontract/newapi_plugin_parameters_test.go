@@ -67,6 +67,22 @@ func TestGeneratedPluginExtendedParameterRuntime(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("channel-configured URL runtime: %v\n%s", err, out)
 	}
+	for _, format := range []string{"data_url", "raw"} {
+		c.Transport.LocalMaterial = "base64"
+		c.Transport.Base64Format = format
+		result, err = GenerateNewAPIVideoPlugin(c, pluginOptionsFixture())
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ = json.Marshal(result)
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		cmd = exec.Command(node, "testdata/newapi_plugin_parameters.mjs", path)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("base64 %s runtime: %v\n%s", format, err, out)
+		}
+	}
 	c.Transport.LocalMaterial = "multipart"
 	c.Transport.MultipartFields = map[string]string{"reference_image": "input_reference", "reference_video": "input_reference"}
 	c.Transport.MultipartFileField = ""

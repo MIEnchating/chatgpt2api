@@ -1,0 +1,38 @@
+{
+  "checked_at": "2026-11-07",
+  "contract_models": 23,
+  "contract_modes": 46,
+  "node_tests": {
+    "passed": 50,
+    "total": 50
+  },
+  "newapi_host": {
+    "source_revision": "73f1a565963f457f49b7d00004c7a1dbf111327f",
+    "lint_passed": true,
+    "passed": 437,
+    "total": 437
+  },
+  "live_provider_generation_verified": false,
+  "go_checks": [
+    {
+      "command": "go test ./internal/httpapi -run '^Test(XZAPI|NewAPIVideoContract|Dramaya)' -count=1",
+      "result": "passed"
+    },
+    {
+      "command": "go test ./internal/protocol ./internal/videocontract ./integrations/newapi/xzapi",
+      "result": "passed; protocol reused Go test cache"
+    }
+  ],
+  "current_service_import": {
+    "created": 3,
+    "preserved": 1,
+    "total": 4,
+    "enabled": true,
+    "persisted_contracts_verified": true,
+    "registered_models_verified": 23,
+    "health_http_status": 200,
+    "recent_refresh_errors": 0
+  },
+  "reproducible_build": true,
+  "plugin_sha256": "1a1abe72a0de545d9e1968ae92f8612e7e7043a5bae2c7924ad6e25d550a1d0e"
+}

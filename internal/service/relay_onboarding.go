@@ -62,7 +62,7 @@ func createWithTimeout(ctx context.Context, create func(context.Context, string)
 
 // EnsureCreationGroupTokens matches groups against token membership, never names.
 // create is called only after a successful database read found no usable token.
-func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, identity Identity, mappings map[string]string, create func(context.Context, string) error) (map[string][]string, []string) {
+func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, identity Identity, mappings map[string][]string, create func(context.Context, string) error) (map[string][]string, []string) {
 	result := map[string][]string{}
 	if len(mappings) == 0 {
 		return result, nil
@@ -86,39 +86,50 @@ func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, ident
 	warnings := []string{}
 	resolved := map[string][]string{}
 	for _, kind := range []string{"text", "image", "video", "audio"} {
-		group := strings.TrimSpace(mappings[kind])
-		if group == "" {
-			continue
-		}
-		if names, done := resolved[group]; done {
-			if len(names) > 0 {
-				result[kind] = names
+		var selected []string
+		failed := false
+		for _, rawGroup := range mappings[kind] {
+			group := strings.TrimSpace(rawGroup)
+			if group == "" {
+				continue
 			}
-			continue
-		}
-		// Mark failed groups too, so one login never repeats a failed creation.
-		resolved[group] = nil
-		if !r.IsSub2API() && group == "auto" {
-			warnings = append(warnings, "默认 Key 必须选择具体分组，不能使用 auto")
-			continue
-		}
-		names, err := r.relayGroupTokenNames(ctx, userID, group)
-		if err == nil && len(names) == 0 {
-			if create == nil {
-				err = fmt.Errorf("分组“%s”没有可用 Key，请在平台创建后重试", group)
-			} else if err = createWithTimeout(ctx, create, group); err == nil {
-				names, err = r.relayGroupTokenNames(ctx, userID, group)
-				if err == nil && len(names) == 0 {
-					err = fmt.Errorf("分组“%s”的 Key 创建后尚未在数据库中可用，请稍后重新登录", group)
+			if names, done := resolved[group]; done {
+				if len(names) == 0 {
+					failed = true
+				} else {
+					selected = append(selected, names...)
+				}
+				continue
+			}
+			// Mark failed groups too, so one login never repeats a failed creation.
+			resolved[group] = nil
+			if !r.IsSub2API() && group == "auto" {
+				warnings = append(warnings, "默认 Key 必须选择具体分组，不能使用 auto")
+				failed = true
+				continue
+			}
+			names, err := r.relayGroupTokenNames(ctx, userID, group)
+			if err == nil && len(names) == 0 {
+				if create == nil {
+					err = fmt.Errorf("分组“%s”没有可用 Key，请在平台创建后重试", group)
+				} else if err = createWithTimeout(ctx, create, group); err == nil {
+					names, err = r.relayGroupTokenNames(ctx, userID, group)
+					if err == nil && len(names) == 0 {
+						err = fmt.Errorf("分组“%s”的 Key 创建后尚未在数据库中可用，请稍后重新登录", group)
+					}
 				}
 			}
+			if err != nil {
+				warnings = append(warnings, err.Error())
+				failed = true
+				continue
+			}
+			resolved[group] = names
+			selected = append(selected, names...)
 		}
-		if err != nil {
-			warnings = append(warnings, err.Error())
-			continue
+		if !failed && len(selected) > 0 {
+			result[kind] = selected
 		}
-		resolved[group] = names
-		result[kind] = names
 	}
 	return result, warnings
 }

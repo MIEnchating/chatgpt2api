@@ -145,38 +145,23 @@ func (a *App) handleWorkflowAgentDraft(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
 		return
 	}
-	payload := workflowAgentPayload(input, model)
+	input.Model = model
 	if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, "", strings.TrimSpace(input.ChannelID)); err != nil {
 		a.writeCreationTaskSubmitError(w, err)
 		return
 	}
-	result, err := a.runLoggedChatTaskWithContext(r.Context(), identity, payload, "/api/workflows/agent-draft", "工作流 Agent")
+	if r.Context().Err() != nil {
+		return
+	}
+	run, err := a.agentExecutions.Start(identity, requestAgentExecutionID(r), "workflow", input)
 	if err != nil {
 		a.writeCreationTaskSubmitError(w, err)
 		return
 	}
-	content := ""
-	for _, item := range util.AsMapSlice(result["data"]) {
-		if content = strings.TrimSpace(util.Clean(item["text_response"])); content != "" {
-			break
-		}
-	}
-	draft, warnings, err := service.NormalizeWorkflowAgentDraft(content, input.Scope)
+	result, err := a.waitAgentExecution(r.Context(), identity, run.ID, nil)
 	if err != nil {
-		util.WriteError(w, http.StatusBadGateway, err.Error())
+		a.writeCreationTaskSubmitError(w, err)
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, service.WorkflowAgentDraftResponse{Draft: draft, Warnings: warnings, Model: model})
-}
-
-func workflowAgentPayload(input service.WorkflowAgentDraftRequest, model string) map[string]any {
-	payload := map[string]any{
-		"model":       model,
-		"messages":    service.WorkflowAgentMessages(input.Prompt, input.References),
-		"temperature": 0.2,
-	}
-	if channelID := strings.TrimSpace(input.ChannelID); channelID != "" {
-		payload["token_name"] = channelID
-	}
-	return payload
+	util.WriteJSON(w, http.StatusOK, result.Result)
 }

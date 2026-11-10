@@ -86,8 +86,9 @@ export async function resumeCanvasAgentMedia(input: RunCanvasAgentInput) {
   return { initialState: results.state, protocolMessages, mediaGenerationChoice };
 }
 
-export function canvasAgentWaitingReason(state: CanvasAgentState, messages: readonly CanvasAgentProtocolMessage[], nodes?: readonly { id: string; status?: string }[]) {
+export function canvasAgentWaitingReason(state: CanvasAgentState, messages: readonly CanvasAgentProtocolMessage[], nodes?: readonly { id: string; status?: string }[], taskStatus?: CanvasAssistantMessageStatus) {
   if (state.pendingQuestion) return "等待回答";
+  if (taskStatus === "success") return "";
   const latest = new Map<string, { submitted?: boolean; status?: string }>();
   for (const message of messages) {
     if (message.role !== "tool") continue;

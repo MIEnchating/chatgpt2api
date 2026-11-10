@@ -38,6 +38,8 @@ import {
 } from "@/lib/image-conversation-history";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { normalizeImageConversationAssetReference } from "@/lib/image-conversation-assets";
+import { normalizeStudioPromptContext } from "@/lib/studio-prompt-context";
+import { normalizeStudioAgent } from "@/lib/studio-agent";
 import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import type {
   ImageConversation,
@@ -731,6 +733,8 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     workflowInputs: normalizeStringRecord(turn.workflowInputs),
     workflowTaskId: typeof turn.workflowTaskId === "string" && turn.workflowTaskId.trim() ? turn.workflowTaskId.trim() : undefined,
     prompt: String(turn.prompt || ""),
+    promptContext: normalizeStudioPromptContext(turn.promptContext),
+    studioAgent: normalizeStudioAgent(turn.studioAgent),
     model,
     mode,
     referenceImages,
@@ -795,6 +799,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
         ? Number(conversation.revision)
         : undefined,
     title: String(conversation.title || ""),
+    composerMode: conversation.composerMode === "video" ? "video" : conversation.composerMode === "image" ? "image" : undefined,
     createdAt: String(conversation.createdAt || lastTurn?.createdAt || new Date().toISOString()),
     updatedAt: String(conversation.updatedAt || lastTurn?.createdAt || new Date().toISOString()),
     turns,

@@ -1,6 +1,6 @@
 "use client";
 
-import { OverlaySurface } from "@/components/ui/overlay-layer";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -146,13 +146,17 @@ export function CanvasDirector({
   }, [panoramas, postToDirector, ready]);
 
   return (
-    <OverlaySurface data-canvas-director-workspace className="fixed inset-0 bg-black">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DialogContent data-canvas-director-workspace showCloseButton={false} className="h-dvh max-h-none w-screen max-w-none gap-0 p-0 sm:max-w-none">
+      <DialogTitle className="sr-only">3D 导演台</DialogTitle>
+      <DialogDescription className="sr-only">编辑场景、相机和镜头，将截图或视频发送到画布。</DialogDescription>
       <iframe
         ref={iframeRef}
         title="3D导演台"
         src="/director/index.html"
-        className="block size-full border-0"
+        className="block min-h-0 w-full flex-1 border-0"
       />
-    </OverlaySurface>
+    </DialogContent>
+    </Dialog>
   );
 }

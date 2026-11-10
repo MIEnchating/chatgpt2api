@@ -18,7 +18,7 @@ export const GEMINI_TTS_VOICE_OPTIONS = [
 
 const GROK_TTS_MODELS = new Set(["grok-voice-latest", "grok-voice-think-fast-2.0", "grok-voice-think-fast-1.0"]);
 
-export type CanvasAudioProvider = "openai" | "glm" | "grok" | "mimo-preset" | "mimo-design" | "mimo-clone" | "gemini";
+export type CanvasAudioProvider = "openai" | "minimax" | "glm" | "grok" | "mimo-preset" | "mimo-design" | "mimo-clone" | "gemini";
 export type CanvasAudioPreferenceDefaults = { format?: string; speed?: number };
 export type CanvasAudioReference = { nodeID: string; title: string; url: string; mimeType?: string };
 export type CanvasAudioGenerationRequest = Record<string, unknown> & { model: string; input: string; audio_protocol: CanvasAudioProvider };
@@ -45,6 +45,9 @@ export function canvasAgentAudioNodeParameters(
   const requestedVoice = voice.trim();
   const requestedInstructions = instructions.trim();
   const requestedFormat = String(defaults.format || "").trim().toLowerCase();
+  if (provider === "minimax") {
+    return { generation_audio_voice: requestedVoice || "female-yujie", generation_audio_format: includes(["mp3", "wav", "flac"] as const, requestedFormat) ? requestedFormat : "mp3", generation_audio_speed: normalizeAudioSpeed(defaults.speed, 0.5, 2) };
+  }
   if (provider === "gemini") {
     return { generation_audio_gemini_voice: includes(GEMINI_TTS_VOICE_OPTIONS, requestedVoice) ? requestedVoice : "Kore" };
   }
@@ -94,6 +97,7 @@ export function canvasAgentAudioNodeParameters(
 export function canvasAudioProvider(model: string): CanvasAudioProvider {
   const normalized = model.trim().toLowerCase();
   const name = normalized.split("/").pop() || "";
+  if (name.startsWith("speech-")) return "minimax";
   if (normalized === "glm-tts") return "glm";
   if (GROK_TTS_MODELS.has(name)) return "grok";
   if (normalized === "mimo-v2.5-tts") return "mimo-preset";
@@ -119,6 +123,9 @@ export function buildCanvasAudioGenerationRequest(node: CanvasNode, prompt: stri
   const input = prompt.trim();
   if (!input) throw new Error("音频文本不能为空");
 
+  if (provider === "minimax") {
+    return { model, input, audio_protocol: provider, voice: node.generation_audio_voice?.trim() || "female-yujie", response_format: includes(["mp3", "wav", "flac"] as const, node.generation_audio_format) ? node.generation_audio_format : "mp3", speed: normalizeAudioSpeed(node.generation_audio_speed, 0.5, 2) };
+  }
   if (provider === "gemini") {
     const voiceName = includes(GEMINI_TTS_VOICE_OPTIONS, node.generation_audio_gemini_voice) ? node.generation_audio_gemini_voice! : "Kore";
     return {

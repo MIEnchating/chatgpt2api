@@ -42,6 +42,20 @@ func validateAudioGenerationPayload(payload map[string]any) error {
 	payload["audio_protocol"] = protocolName
 
 	switch protocolName {
+	case "minimax":
+		voice := firstNonEmpty(util.Clean(payload["voice"]), "female-yujie")
+		if len(voice) > 256 {
+			return fmt.Errorf("MiniMax 音色 ID 不能超过 256 字节")
+		}
+		format := strings.ToLower(firstNonEmpty(util.Clean(payload["response_format"]), "mp3"))
+		if !audioStringIn(format, "mp3", "wav", "flac") {
+			return fmt.Errorf("MiniMax TTS 格式必须是 mp3、wav 或 flac")
+		}
+		speed, err := normalizedAudioRequestSpeed(payload["speed"], 1, 0.5, 2)
+		if err != nil {
+			return fmt.Errorf("MiniMax TTS 语速必须在 0.5 到 2 之间")
+		}
+		payload["voice"], payload["response_format"], payload["speed"] = voice, format, speed
 	case "glm":
 		if len([]rune(input)) > 1024 {
 			return fmt.Errorf("GLM-TTS 文本不能超过 1024 个字符")
@@ -146,6 +160,8 @@ func audioProtocolForModel(model string) string {
 		name = name[index+1:]
 	}
 	switch {
+	case strings.HasPrefix(name, "speech-"):
+		return "minimax"
 	case normalized == "glm-tts":
 		return "glm"
 	case audioStringIn(name, "grok-voice-latest", "grok-voice-think-fast-2.0", "grok-voice-think-fast-1.0"):
@@ -223,8 +239,13 @@ func audioStringIn(value string, options ...string) bool {
 	return false
 }
 
-func (a *App) fetchGrokTTSVoicesAt(ctx context.Context, baseURL, apiKey, model string) ([]map[string]any, error) {
-	req, err := protocol.NewRelayJSONRequest(ctx, baseURL, http.MethodGet, "/v1/tts/voices?"+url.Values{"model": []string{model}}.Encode(), apiKey, "application/json", nil)
+func (a *App) fetchAudioVoicesAt(ctx context.Context, baseURL, apiKey, model string) ([]map[string]any, error) {
+	method, path := http.MethodGet, "/v1/tts/voices?"+url.Values{"model": []string{model}}.Encode()
+	var body []byte
+	if audioProtocolForModel(model) == "minimax" {
+		method, path, body = http.MethodPost, "/v1/get_voice", []byte(`{"voice_type":"system"}`)
+	}
+	req, err := protocol.NewRelayJSONRequest(ctx, baseURL, method, path, apiKey, "application/json", body)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +257,17 @@ func (a *App) fetchGrokTTSVoicesAt(ctx context.Context, baseURL, apiKey, model s
 	payload, err := relayDecodeJSONResponse(resp)
 	if err != nil {
 		return nil, err
+	}
+	if audioProtocolForModel(model) == "minimax" {
+		base := util.StringMap(payload["base_resp"])
+		if util.Clean(base["status_code"]) != "0" {
+			return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: firstNonEmpty(util.Clean(base["status_msg"]), "MiniMax 音色读取失败")}
+		}
+		voices := util.AsMapSlice(payload["system_voice"])
+		for _, voice := range voices {
+			voice["name"] = voice["voice_name"]
+		}
+		payload = map[string]any{"voices": voices}
 	}
 	return normalizeGrokTTSVoices(payload), nil
 }
@@ -341,6 +373,13 @@ func audioUpstreamBody(payload map[string]any) (map[string]any, string, string) 
 	input := firstNonEmpty(util.Clean(payload["input"]), util.Clean(payload["prompt"]))
 	protocolName := audioProtocolForModel(model)
 	switch protocolName {
+	case "minimax":
+		format := firstNonEmpty(util.Clean(payload["response_format"]), "mp3")
+		return map[string]any{
+			"model": model, "text": input, "stream": false, "output_format": "hex",
+			"voice_setting": map[string]any{"voice_id": payload["voice"], "speed": payload["speed"], "vol": 1, "pitch": 0},
+			"audio_setting": map[string]any{"sample_rate": 32000, "bitrate": 128000, "format": format, "channel": 1},
+		}, format, protocolName
 	case "grok":
 		outputFormat := util.StringMap(payload["output_format"])
 		format := firstNonEmpty(util.Clean(outputFormat["codec"]), "mp3")
@@ -383,6 +422,9 @@ func audioUpstreamBody(payload map[string]any) (map[string]any, string, string) 
 
 func audioUpstreamPath(model string) string {
 	protocolName := audioProtocolForModel(model)
+	if protocolName == "minimax" {
+		return "/v1/t2a_v2"
+	}
 	if protocolName == "mimo-preset" || protocolName == "mimo-design" || protocolName == "mimo-clone" {
 		return "/v1/chat/completions"
 	}
@@ -404,6 +446,27 @@ func (a *App) storeGeneratedAudioJSON(reader io.Reader, protocolName, format str
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: "上游音频响应不是有效 JSON"}
+	}
+	if protocolName == "minimax" {
+		base := util.StringMap(payload["base_resp"])
+		if code := util.Clean(base["status_code"]); code != "0" {
+			return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: firstNonEmpty(util.Clean(base["status_msg"]), "MiniMax TTS 响应状态无效")}
+		}
+		encoded := strings.TrimSpace(util.Clean(util.StringMap(payload["data"])["audio"]))
+		if encoded == "" || len(encoded) > 2*maxGeneratedAudioBytes {
+			return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: "MiniMax TTS 音频为空或过大"}
+		}
+		audio, err := hex.DecodeString(encoded)
+		if err != nil {
+			return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: "MiniMax TTS 音频编码无效"}
+		}
+		if returned := util.Clean(util.StringMap(payload["extra_info"])["audio_format"]); returned != "" {
+			if !audioStringIn(returned, "mp3", "wav", "flac") {
+				return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: "MiniMax TTS 音频格式无效"}
+			}
+			format = returned
+		}
+		return a.generatedAudioResult(audio, format)
 	}
 	var encoded string
 	switch protocolName {

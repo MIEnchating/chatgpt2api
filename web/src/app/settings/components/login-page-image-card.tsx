@@ -1,7 +1,13 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { Badge } from "@/components/ui/badge";
+
 import { useEffect, useRef, useState } from "react";
-import { ImageIcon, LoaderCircle, RotateCcw, Save, Upload } from "lucide-react";
+import { RotateCcw, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { LoginPageImageEditor } from "@/components/login-page-image-editor";
@@ -24,7 +30,7 @@ import {
 } from "@/lib/login-page-image-layout";
 
 import { useSettingsStore } from "../store";
-import { SettingsCard, settingsInputClassName } from "./settings-ui";
+import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
 
 const maxLoginPageImageSize = 10 * 1024 * 1024;
 const modeLabels: Record<LoginPageImageMode, string> = {
@@ -61,16 +67,12 @@ export function LoginPageImageCard() {
 
   if (isLoadingConfig || !config) {
     return (
-      <SettingsCard
-        icon={ImageIcon}
-        title="登录页图片"
+      <SettingsPanel
+        title="登录页展示"
         description="配置登录页右侧展示图。"
-        tone="violet"
       >
-        <div className="flex items-center justify-center py-10">
-          <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      </SettingsCard>
+        <LoadingState className="h-auto" label="正在加载展示设置" />
+      </SettingsPanel>
     );
   }
 
@@ -92,11 +94,9 @@ export function LoginPageImageCard() {
   };
 
   return (
-    <SettingsCard
-      icon={ImageIcon}
-      title="登录页图片"
+    <SettingsPanel
+      title="登录页展示"
       description="配置登录页右侧展示图。"
-      tone="violet"
       action={
         <Button
           size="lg"
@@ -113,7 +113,7 @@ export function LoginPageImageCard() {
           disabled={isSavingConfig}
         >
           {isSavingConfig ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+            <Spinner data-icon="inline-start" className="animate-spin" />
           ) : (
             <Save data-icon="inline-start" />
           )}
@@ -121,9 +121,10 @@ export function LoginPageImageCard() {
         </Button>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="grid gap-8">
+        <SettingsSection title="展示设置">
         <section className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
-          <Field className="gap-1.5">
+          <Field >
             <FieldLabel htmlFor="settings-login-image-url">图片地址</FieldLabel>
             <Input
               id="settings-login-image-url"
@@ -133,10 +134,10 @@ export function LoginPageImageCard() {
                 setLoginPageImageUrl(event.target.value);
               }}
               placeholder="/login-page-images/example.png 或 https://example.com/image.png"
-              className={settingsInputClassName}
+
             />
           </Field>
-          <Field className="gap-1.5">
+          <Field >
             <FieldLabel htmlFor="settings-login-image-mode">展示模式</FieldLabel>
             <Select value={mode} onValueChange={(value) => setLoginPageImageMode(normalizeLoginPageImageMode(value))}>
               <SelectTrigger id="settings-login-image-mode">
@@ -201,12 +202,14 @@ export function LoginPageImageCard() {
             恢复默认
           </Button>
           {pendingFile ? (
-            <span className="inline-flex min-h-9 items-center rounded-full bg-muted px-3 text-xs font-medium text-muted-foreground">
+            <Badge variant="secondary" className="inline-flex min-h-9 items-center">
               待保存：{pendingFile.name}
-            </span>
+            </Badge>
           ) : null}
         </div>
 
+        </SettingsSection>
+        <SettingsSection title="图片预览">
         <LoginPageImageEditor
           src={previewUrl}
           mode={mode}
@@ -215,7 +218,8 @@ export function LoginPageImageCard() {
           positionY={positionY}
           onChange={(transform) => setLoginPageImageTransform(transform)}
         />
+        </SettingsSection>
       </div>
-    </SettingsCard>
+    </SettingsPanel>
   );
 }

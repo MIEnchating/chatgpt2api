@@ -1,7 +1,9 @@
-import { ArrowUp, LoaderCircle, Square } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { TooltipHint } from "@/components/ui/tooltip";
+import { ArrowUp, Square } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { InputGroupButton } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
 type CanvasGenerationSecondaryAction = {
@@ -33,32 +35,31 @@ export function CanvasGenerationFooter({
     <div className={cn("shrink-0", className)}>
       <div className="flex items-center justify-end gap-2">
         {secondaryAction ? (
-          <Button
+          <InputGroupButton
             type="button"
             variant="outline"
-            size="lg"
-            className="h-8 min-w-0 rounded-lg px-3 text-xs"
+            size="sm"
+            className="min-w-0"
             disabled={secondaryAction.disabled || secondaryAction.loading}
             aria-busy={secondaryAction.loading}
             onClick={secondaryAction.onClick}
           >
-            {secondaryAction.loading ? <LoaderCircle className="animate-spin" /> : secondaryAction.icon}
+            {secondaryAction.loading ? <Spinner /> : secondaryAction.icon}
             {secondaryAction.label}
-          </Button>
+          </InputGroupButton>
         ) : null}
-        <Button
+        <TooltipHint content={running ? "停止生成" : "开始生成"}><InputGroupButton
           type="button"
-          size="lg"
+          size="icon-sm"
           variant={running ? "destructive" : "default"}
-          className="size-8 min-w-0 rounded-xl p-0"
-          title={running ? "停止生成" : "开始生成"}
+          className="min-w-0"
           disabled={disabled || stopping}
           aria-busy={stopping}
           aria-label={running ? "停止生成" : "开始生成"}
           onClick={running ? onStop : onGenerate}
         >
-          {stopping ? <LoaderCircle className="animate-spin" /> : running ? <Square className="size-3.5 fill-current" /> : <ArrowUp className="size-4" />}
-        </Button>
+          {stopping ? <Spinner /> : running ? <Square className="fill-current" /> : <ArrowUp  />}
+        </InputGroupButton></TooltipHint>
       </div>
     </div>
   );

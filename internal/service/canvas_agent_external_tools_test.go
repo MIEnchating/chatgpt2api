@@ -25,6 +25,20 @@ func runExternalAgentTool(t *testing.T, svc *CanvasAgentService, identity Identi
 	return done
 }
 
+func TestCanvasAgentExternalBusinessFailureIsNotReportedAsSuccess(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, nil, nil)
+	doc.Nodes = []CanvasNode{{ID: "image", Type: "image", Title: "保留", GenerationStatus: "idle", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+	var err error
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := runExternalAgentTool(t, svc, identity, doc, req, "invalid-update", "update_text_node", map[string]any{"nodeId": "image", "content": "不能把图片当作文本修改"})
+	if done.AgentRun.Status != "error" || done.AgentRun.ToolResult["ok"] != false || done.AgentRun.ToolResult["code"] != "invalid_node_type" {
+		t.Fatalf("business failure was hidden: %+v", done.AgentRun)
+	}
+}
+
 func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 	generated := []string{}
 	svc, identity, doc, req := agentFixture(t, nil, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any) (map[string]any, error) {
@@ -37,7 +51,7 @@ func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 	svc.SetWorkflowService(NewWorkflowService(newTestStorageBackend(t)))
 	req.Generation["videoModel"] = "video-test"
 	req.Generation["capabilities"].(map[string]any)["video"] = map[string]any{"sizes": []string{"1280x720"}, "audioControl": "optional"}
-	doc = runExternalAgentTool(t, svc, identity, doc, req, "save", "save_workflow", map[string]any{"name": "品牌广告", "mode": "single_image", "promptTemplate": "{{brand}} 海报", "variables": []map[string]any{{"key": "brand", "label": "品牌", "required": true}}})
+	doc = runExternalAgentTool(t, svc, identity, doc, req, "save", "save_workflow", map[string]any{"name": "品牌广告", "mode": "single_image", "promptTemplate": "{{brand}} 海报", "variables": []map[string]any{{"key": "brand", "label": "品牌", "required": true, "type": "select", "options": []string{"山野", "星河"}, "placeholder": "选择品牌"}}})
 	workflowID := util.Clean(doc.AgentRun.ToolResult["workflowId"])
 	if workflowID == "" {
 		t.Fatalf("save failed: %v", doc.AgentRun.ToolResult)
@@ -49,6 +63,10 @@ func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 	doc = runExternalAgentTool(t, svc, identity, doc, req, "get", "get_workflow", map[string]any{"workflowId": workflowID})
 	if doc.AgentRun.ToolResult["ok"] != true {
 		t.Fatal(doc.AgentRun.ToolResult)
+	}
+	variables := util.AsMapSlice(agentMap(doc.AgentRun.ToolResult["workflow"])["variables"])
+	if len(variables) != 1 || variables[0]["type"] != "select" || util.Clean(variables[0]["placeholder"]) != "选择品牌" || len(agentStrings(variables[0]["options"])) != 2 {
+		t.Fatalf("workflow variable contract lost through external tools: %v", variables)
 	}
 	req.MediaChoice = "defer"
 	doc = runExternalAgentTool(t, svc, identity, doc, req, "apply", "run_saved_workflow", map[string]any{"workflowId": workflowID, "items": []map[string]any{{"values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{}, "attachmentIds": []string{}}}})
@@ -62,6 +80,9 @@ func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 	}})
 	if len(doc.Nodes) != 3 || len(doc.Connections) != 1 {
 		t.Fatalf("graph creation: %v", doc.AgentRun.ToolResult)
+	}
+	if doc.Nodes[2].Width/doc.Nodes[2].Height != 16.0/9.0 {
+		t.Fatalf("video frame does not match workflow ratio: %+v", doc.Nodes[2])
 	}
 	doc = runExternalAgentTool(t, svc, identity, doc, req, "execute", "run_canvas_workflow", map[string]any{"nodeIds": []string{doc.Nodes[2].ID}})
 	if doc.AgentRun.ToolResult["ok"] != true || !slices.Equal(generated, []string{"image", "video"}) {
@@ -144,5 +165,28 @@ func TestCanvasAgentExternalToolRejectsInvalidCallsAndNativeInterruptions(t *tes
 	}
 	if _, err = svc.StartTool(Identity{ID: "other"}, doc.ID, input); err == nil {
 		t.Fatal("cross-owner tool accepted")
+	}
+}
+
+func TestCanvasAgentExternalArrangeRequiresDirectRequest(t *testing.T) {
+	for _, text := range []string{"不整理画布，只回答问题", "不能整理画布", "解释一下整理画布功能", "请整理画布"} {
+		t.Run(text, func(t *testing.T) {
+			svc, identity, doc, req := agentFixture(t, nil, nil)
+			req.UserText = text
+			doc.Nodes = []CanvasNode{{ID: "a", Type: "text", X: 999, Y: 888, Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+			var err error
+			doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := runExternalAgentTool(t, svc, identity, doc, req, "arrange", "arrange_nodes", map[string]any{})
+			if text == "请整理画布" {
+				if done.AgentRun.Status != "success" || done.Nodes[0].X != 0 || done.Nodes[0].Y != 0 {
+					t.Fatalf("authorized arrange failed: run=%+v position=(%v,%v)", done.AgentRun, done.Nodes[0].X, done.Nodes[0].Y)
+				}
+			} else if done.AgentRun.ToolResult["code"] != "action_not_requested" || done.Nodes[0].X != 999 || done.Nodes[0].Y != 888 {
+				t.Fatalf("unauthorized arrange persisted: run=%+v position=(%v,%v)", done.AgentRun, done.Nodes[0].X, done.Nodes[0].Y)
+			}
+		})
 	}
 }

@@ -34,5 +34,8 @@
   "create_canvas_workflow": "搭建画布工作流",
   "run_canvas_workflow": "执行画布工作流",
   "get_reference": "正在读取附件资料",
-  "list_references": "正在查找参考素材"
+  "list_references": "正在查找参考素材",
+  "finish_task": "核对任务交付",
+  "update_script_node": "整理脚本与分镜",
+  "create_script_node": "创建脚本节点"
 }

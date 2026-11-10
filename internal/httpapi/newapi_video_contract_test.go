@@ -44,6 +44,52 @@ func newAPIExampleVideoContracts(t *testing.T) map[string]protocol.VideoModelCon
 	return contracts
 }
 
+func TestXZAPIVideoContractsImportAndMapReferenceInputs(t *testing.T) {
+	data, err := os.ReadFile("../../integrations/newapi/xzapi/contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document videoModelContractTransferDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	app := newTestApp(t)
+	defer app.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	created, updated, err := app.videoContracts.Import(document.Contracts)
+	if err != nil || created != 3 || updated != 0 {
+		t.Fatalf("import: created=%d updated=%d error=%v", created, updated, err)
+	}
+	models := 0
+	for _, item := range document.Contracts {
+		for _, model := range item.Contract.Models {
+			models++
+			contract, ok := protocol.VideoContractForModel(model)
+			if !ok {
+				t.Fatalf("missing imported model %s", model)
+			}
+			payload := map[string]any{"model": model, "prompt": "A moving cloud", "seconds": 5, "reference_mode": "reference", "reference_image_urls": []string{"https://media.example.com/image.jpg"}}
+			if err := normalizeVideoContractInput(payload, contract); err != nil {
+				t.Fatalf("%s: %v", model, err)
+			}
+			request := declaredCanonicalVideoContractRequestPayload(payload, contract)
+			if request["duration"] != 5 || request["resolution"] != contract.Capability.DefaultResolution || request["seconds"] != nil || request["client_task_id"] != nil {
+				t.Fatalf("%s: invalid gateway request %#v", model, request)
+			}
+			images := util.AsStringSlice(videoJSONPathValue(request, "references.images"))
+			if len(images) != 1 || images[0] != "https://media.example.com/image.jpg" {
+				t.Fatalf("%s: reference was lost: %#v", model, request)
+			}
+			if got := videoContractErrorMessage(map[string]any{"metadata": map[string]any{"fail_reason": "provider failure"}}, contract); got != "provider failure" {
+				t.Fatalf("provider failure reason lost: %s", got)
+			}
+		}
+	}
+	if models != 23 {
+		t.Fatalf("imported %d models, want 23", models)
+	}
+}
+
 func TestNewAPIVideoContractRequestsMatchPluginFixtures(t *testing.T) {
 	contracts := newAPIExampleVideoContracts(t)
 	data, err := os.ReadFile("testdata/newapi-video-contract-cases.json")
@@ -189,7 +235,7 @@ func TestVideoContentRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *tes
 	app := newTestApp(t)
 	defer app.Close()
 	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin}
-	cfg, err := app.customRelayConfigs.Create("admin", "video", "recovery", "https://relay.example", "fixture-key", "openai")
+	cfg, err := app.customRelayConfigs.Create("admin", "video", "recovery", "https://relay.example", "fixture-key", "openai", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,8 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetsSource, /data-asset-grid/);
   assert.match(assetsSource, /data-asset-selection-toolbar/);
   assert.match(assetsSource, /<ManagementPagination/);
-  assert.match(assetsSource, /data-asset-selection-toolbar className="flex min-h-14 min-w-0 shrink-0 flex-wrap/);
+  assert.match(assetsSource, /data-asset-selection-toolbar=\{hasSelection \? true : undefined\}/);
+  assert.match(assetsSource, /<ScrollAreaViewport[^>]*ref=\{toolbarViewportRef\}/);
   assert.doesNotMatch(assetsSource, /删除\{deletableSelectedAssets\.length/);
   assert.match(assetsSource, /全选当前页/);
   assert.match(assetsSource, /downloadSelected/);
@@ -34,16 +35,12 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetDisplaySource, /data-asset-card-content/);
   assert.doesNotMatch(assetDisplaySource, /data-asset-card-content className="[^"]*flex-1/);
   assert.doesNotMatch(assetDisplaySource, /mt-auto flex items-center gap-1\.5 text-\[11px\] tabular-nums/);
-  assert.match(assetDisplaySource, /data-interaction="trigger"/);
-  assert.match(assetDisplaySource, /interactive-card-trigger block/);
-  assert.match(assetDisplaySource, /interactive-card-trigger[\s\S]*?aspect-\[16\/10\][\s\S]*?<\/button>\s*<div data-asset-card-content/);
   assert.match(assetDisplaySource, /line-clamp-2 min-h-10 break-words text-sm font-semibold/);
   assert.doesNotMatch(assetDisplaySource, /line-clamp-2 min-h-10 break-words text-xs leading-5/);
-  assert.match(assetDisplaySource, /<Eye className="size-3\.5" \/>查看/);
-  assert.match(assetDisplaySource, /interactive-card/);
-  assert.match(assetDisplaySource, /selection-control/);
+  assert.match(assetDisplaySource, /<Eye\s*\/>查看/);
+  assert.match(assetDisplaySource, /<Checkbox[\s\S]*?onCheckedChange/);
   assert.match(assetDisplaySource, /<OverflowMarqueeText[^>]+play="always"[^>]+delayMs=\{1500\}/);
-  assert.match(assetDisplaySource, /<ScrollArea data-asset-preview-scroll[^>]+ariaLabel="素材详情内容"/);
+  assert.match(assetDisplaySource, /<ScrollAreaRoot data-asset-preview-scroll[\s\S]*?aria-label="素材详情内容"/);
   assert.doesNotMatch(assetDisplaySource, /data-asset-preview-scroll[^>]+hide-scrollbar/);
   assert.doesNotMatch(assetDisplaySource, /\$\{assetKindLabel\(asset\.kind\)\} · \$\{asset\.source/);
   assert.match(assetDisplaySource, />复制提示词</);
@@ -52,13 +49,7 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetDisplaySource, /data-asset-video-thumbnail/);
   assert.match(assetDisplaySource, /asset\.kind === "video" && \(coverURL === mediaURL \|\| coverURL === asset\.url\)/);
   assert.match(assetDisplaySource, /asset\.kind === "image" && \(!fallbackCoverURL \|\| fallbackCoverURL\.startsWith\("blob:"\)\)/);
-  assert.match(globalStylesSource, /--selectable-selected-surface:/);
-  assert.match(globalStylesSource, /@layer components \{[\s\S]*?\.card-surface[\s\S]*?\n\}\n\n\.interactive-card/);
-  assert.match(globalStylesSource, /\.interactive-card\[data-selected="true"\]/);
-  assert.match(globalStylesSource, /\.interactive-card\[data-interaction="primary"\]/);
-  assert.match(globalStylesSource, /\.interactive-card\[data-interaction="trigger"\][\s\S]*?:has\(\.interactive-card-trigger/);
-  assert.match(globalStylesSource, /\.selection-trigger\[data-disabled="true"\]/);
-  assert.match(globalStylesSource, /\.selection-control\[data-state="checked"\]/);
+  assert.doesNotMatch(globalStylesSource, /\.selection-control/);
 });
 
 test("asset deletion commits the record before best-effort file cleanup", () => {
@@ -90,13 +81,13 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.doesNotMatch(workflowsSource, />新建多图</);
   assert.doesNotMatch(workflowsSource, />工作流模板</);
   assert.match(workflowsSource, /aria-label="工作流列表"/);
-  assert.match(workflowsSource, /variant=\{isSeries \? "violet" : "info"\}/);
+  assert.match(workflowsSource, /variant=\{isSeries \? "secondary" : "secondary"\}/);
   assert.match(workflowsSource, /isSeries \? "多图生成" : "单图生成"/);
   assert.doesNotMatch(workflowsSource, /文本渠道|Token 名|agentChannelID/);
   assert.match(workflowsSource, /channelID: tokenNameForModel\("text", model\)/);
   assert.match(workflowsSource, /generationSource: "workflow"/);
-  assert.match(workflowsSource, /<article data-interaction="controls" className="interactive-card/);
-  assert.match(workflowsSource, /grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
+  assert.match(workflowsSource, /@container\/workflows/);
+  assert.match(workflowsSource, /grid-cols-1 gap-3 @min-\[36rem\]\/workflows:grid-cols-2 @min-\[56rem\]\/workflows:grid-cols-3 @min-\[80rem\]\/workflows:grid-cols-4/);
   assert.match(workflowsSource, /data-workflow-toolbar/);
   assert.match(workflowsSource, /data-workflow-actions/);
   assert.doesNotMatch(workflowsSource, /<PageHeader actions=\{workflowActions\}/);
@@ -106,9 +97,8 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.doesNotMatch(workflowsSource, /<h1 className="text-base font-semibold">创意工作流|个工作流\{/);
   assert.match(workflowsSource, /<ManagementPage aria-label="工作流">/);
   assert.doesNotMatch(workflowsSource, /<ManagementPage[^>]+\btitle=/);
-  assert.match(workflowsSource, /<ManagementPanel[\s\S]*embedded && "rounded-none border-0 bg-transparent shadow-none"/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
-  assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);
+  assert.match(workflowsSource, /<Button[^>]*aria-label=\{`查看任务/);
   assert.match(workflowsSource, /<WorkflowTaskDialog task=\{selectedTask\}/);
 });
 
@@ -121,13 +111,13 @@ test("prompt filters match the reference category and tag taxonomy", () => {
   assert.doesNotMatch(promptsSource, /filterTags\.some\(\(tag\) => includesKeyword/);
   assert.doesNotMatch(promptsSource, /prompts\.filter\(\(prompt\) => !prompt\.isNsfw\)/);
   assert.doesNotMatch(promptsSource, /localizedPrompt\.category,[\s\S]*localizedPrompt\.subCategory,[\s\S]*\.\.\.localizedPrompt\.tags/);
-  assert.match(promptsSource, />分类：<\/span>/);
+  assert.match(promptsSource, /分类：/);
   assert.match(promptsSource, /sourceConfigs\.filter\(\(item\) => item\.enabled\)/);
   assert.match(promptsSource, /data-prompt-category-select/);
   assert.match(promptsSource, /placeholder="搜索分类"/);
   assert.match(promptsSource, /md:grid-cols-\[minmax\(0,1fr\)_minmax\(0,0\.8fr\)_auto\]/);
-  assert.match(promptsSource, /<DialogHeader className="block border-b border-border[^"]*pr-20/);
-  assert.match(promptsSource, /min-w-0 flex-1 break-words/);
+  assert.match(promptsSource, /<DialogHeader className="block[^"]*"/);
+  assert.match(promptsSource, /<ComboboxItem/);
   assert.doesNotMatch(promptsSource, /作者：|UserRound|selectedPrompt\?\.author/);
   assert.match(promptsSource, /\{tags\.map\(\(tag\) => \(/);
   assert.match(promptsSource, /tagsExpanded \? "收起" : "展开"/);

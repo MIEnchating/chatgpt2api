@@ -21,10 +21,10 @@ func newGenericWebDAVClient(ctx context.Context, provider model.StorageProvider)
 	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, errors.New("WebDAV endpoint is invalid")
 	}
-	if parsed.User != nil || parsed.Fragment != "" {
-		return nil, errors.New("WebDAV endpoint must not contain credentials or a fragment")
+	if parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
+		return nil, errors.New("WebDAV endpoint must not contain credentials, a query or a fragment")
 	}
-	client := gowebdav.NewClient(strings.TrimRight(parsed.String(), "/"), provider.Username, provider.Password)
+	client := gowebdav.NewClient(strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/"), provider.Username, provider.Password)
 	client.SetTimeout(5 * time.Minute)
 	if strings.TrimSpace(provider.OwnerUserID) != "" {
 		client.SetTransport(SafeOutboundTransport())

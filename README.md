@@ -451,13 +451,12 @@ bun run build
 推送 `v*` 标签，或在 Actions 中手动提供标签，会触发 `.github/workflows/release.yml`。流程只接受 `vX.Y.Z` 格式的稳定语义化版本（例如 `v1.2.3`）；预发布标签或其他格式会在构建前被拒绝：
 
 1. 校验标签格式、标签提交与检出的提交一致，并验证 `RELEASE_NOTES.md` 的版本和章节合同。
-2. 检查并测试前端，再构建 `internal/web/dist`。
+2. 安装锁定的前端和 Agent 运行时依赖，构建 `internal/web/dist`。
 3. 上传前端 artifact，并在发布任务中下载到 `internal/web/dist`。
-4. 执行 Go 格式、单元测试、vet、race test 和数据库集成测试。
-5. GoReleaser 使用 `-tags=embed` 构建 Linux `amd64` / `arm64` 二进制。
-6. 生成 GitHub Release archive 和 `checksums.txt`。
-7. 使用 `Dockerfile.release` 构建多架构 Docker 镜像。
-8. 推送 Docker Hub 镜像。
+4. GoReleaser 使用 `-tags=embed` 构建 Linux `amd64` / `arm64` 二进制。
+5. 生成 GitHub Release archive 和 `checksums.txt`，包含 Agent 运行时模块与依赖清单。
+6. 使用 `Dockerfile.release` 构建多架构 Docker 镜像。
+7. 推送 Docker Hub 镜像。发布流程不重复运行测试或等待 PR CI。
 
 首次发布前，在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中添加：
 

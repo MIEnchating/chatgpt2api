@@ -2,14 +2,69 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestMiniMaxAudioRequestResponseAndVoices(t *testing.T) {
+	payload := map[string]any{"model": "speech-2.8-hd", "input": "你好", "voice": "female-yujie", "speed": 1.25, "response_format": "flac"}
+	if err := validateAudioGenerationPayload(payload); err != nil {
+		t.Fatal(err)
+	}
+	body, format, provider := audioUpstreamBody(payload)
+	if provider != "minimax" || format != "flac" || body["text"] != "你好" || body["output_format"] != "hex" || body["stream"] != false {
+		t.Fatalf("body=%#v format=%s provider=%s", body, format, provider)
+	}
+	voice := body["voice_setting"].(map[string]any)
+	if voice["voice_id"] != "female-yujie" || voice["speed"] != 1.25 || audioUpstreamPath("speech-2.8-hd") != "/v1/t2a_v2" {
+		t.Fatalf("voice=%#v", voice)
+	}
+	app := &App{audioDir: t.TempDir()}
+	result, err := app.storeGeneratedAudioJSON(strings.NewReader(`{"base_resp":{"status_code":0},"data":{"audio":"494433"},"extra_info":{"audio_format":"mp3"}}`), "minimax", "flac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(readGeneratedAudioResult(t, app.audioDir, result)); got != "ID3" {
+		t.Fatalf("audio=%q", got)
+	}
+	for _, response := range []string{`{"base_resp":{"status_code":1008,"status_msg":"quota"},"data":{"audio":"494433"}}`, `{"base_resp":{"status_code":0},"data":{"audio":"ZZ"}}`, `{"base_resp":{"status_code":0},"data":{"audio":""}}`, `{"data":{"audio":"494433"}}`} {
+		if _, err := app.storeGeneratedAudioJSON(strings.NewReader(response), "minimax", "mp3"); err == nil {
+			t.Fatalf("accepted %s", response)
+		}
+	}
+	for key, value := range map[string]any{"speed": 2.1, "response_format": "pcm", "voice": strings.Repeat("v", 257)} {
+		bad := map[string]any{"model": "speech-2.8-hd", "input": "hello", key: value}
+		if err := validateAudioGenerationPayload(bad); err == nil {
+			t.Fatalf("accepted %s=%v", key, value)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/get_voice" || r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("request=%s %s", r.Method, r.URL.Path)
+		}
+		var data map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil || data["voice_type"] != "system" {
+			t.Errorf("voice request=%#v err=%v", data, err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"base_resp":{"status_code":0},"system_voice":[{"voice_id":"female-yujie","voice_name":"御姐"}]}`))
+	}))
+	defer server.Close()
+	app = newTestApp(t)
+	voices, err := app.fetchAudioVoicesAt(context.Background(), server.URL, "test-key", "speech-2.8-hd")
+	if err != nil || len(voices) != 1 || voices[0]["name"] != "御姐" {
+		t.Fatalf("voices=%#v err=%v", voices, err)
+	}
+}
 
 func TestValidateAudioGenerationPayloadProviderContracts(t *testing.T) {
 	tests := []struct {

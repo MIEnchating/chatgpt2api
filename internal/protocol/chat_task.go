@@ -19,6 +19,11 @@ func ChatTaskRequest(payload map[string]any) (string, map[string]any, error) {
 	effort := "none"
 	if payload["reasoning_enabled"] == true {
 		effort = "medium"
+	} else {
+		switch util.Clean(payload["model"]) {
+		case "gpt-6-astra", "gpt-6.1-sol":
+			effort = "low"
+		}
 	}
 	if mode != "responses" {
 		messages := make([]map[string]any, 0)

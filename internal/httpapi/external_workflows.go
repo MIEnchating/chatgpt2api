@@ -137,8 +137,15 @@ func (a *App) handleRunningHubWorkflows(w http.ResponseWriter, r *http.Request) 
 
 func arkVideoRequest(payload map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
+	return arkVideoRequestFromCanonical(payload, request, contract)
+}
+
+func arkVideoRequestFromCanonical(payload, request map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
 	kind, _ := videoContractGenerationKind(payload, contract)
 	refs := videoContractArkReferences(request, contract, kind)
+	if contract.Transport.LocalMaterial == "base64" {
+		refs.Base64Format = contract.Transport.Base64Format
+	}
 	content, err := protocol.ArkVideoContent(util.Clean(payload["prompt"]), refs)
 	if err != nil {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}

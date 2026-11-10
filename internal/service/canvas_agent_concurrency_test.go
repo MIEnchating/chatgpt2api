@@ -17,7 +17,7 @@ func TestCanvasAgentReplansAfterConcurrentModelEdit(t *testing.T) {
 			var doc CanvasDocument
 			var req CanvasAgentRequest
 			var turns atomic.Int32
-			svc, identity, doc, req = agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+			svc, identity, doc, req = agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 				if turns.Add(1) == 1 {
 					current, err := svc.canvas.Project(identity.ID, doc.ID)
 					if err != nil {
@@ -88,7 +88,7 @@ func TestCanvasAgentGenerationPreservesConcurrentUserChanges(t *testing.T) {
 			var doc CanvasDocument
 			var req CanvasAgentRequest
 			var turns, submissions atomic.Int32
-			svc, identity, doc, req = agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+			svc, identity, doc, req = agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 				if turns.Add(1) == 1 {
 					return agentTurn(agentCall("generate", "generate_node", map[string]any{"nodeId": "target"}), agentCall("later", "create_text_node", map[string]any{"title": "later", "content": "next step"})), nil
 				}
@@ -212,7 +212,7 @@ func TestCanvasAgentMergeRejectsLateGenerationConflict(t *testing.T) {
 
 func TestCanvasAgentDeleteApprovalExpiresWhenNodeChanges(t *testing.T) {
 	var turns atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		if turns.Add(1) == 1 {
 			return agentTurn(agentCall("delete", "delete_node", map[string]any{"nodeId": "target"})), nil
 		}

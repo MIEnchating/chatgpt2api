@@ -1,4 +1,5 @@
 import type { ModelCapability as ConfiguredModelCapability } from "./api";
+import { videoModelContract } from "./video-model-contracts";
 
 export type ModelCapability = ConfiguredModelCapability;
 
@@ -38,6 +39,7 @@ function isImageModelName(model: string) {
 function modelMatchesCapability(model: string, capability: ModelCapability, explicit?: Record<string, ModelCapability>) {
   const configured = explicit?.[model] || explicit?.[model.trim()];
   if (configured) return configured === capability;
+  if (videoModelContract(model)) return capability === "video";
   if (capability === "audio") return isAudioModelName(model);
   if (capability === "video") return isVideoModelName(model);
   if (capability === "image") return isImageModelName(model);

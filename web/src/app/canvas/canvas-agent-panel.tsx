@@ -1,32 +1,39 @@
+import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { LoadingState } from "@/components/ui/loading-state";
+import { CanvasAgentConversation } from "./canvas-agent-conversation";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ItemMedia , Item } from "@/components/ui/item";
+import { Card } from "@/components/ui/card";
+import { Toggle } from "@/components/ui/toggle";
+import { Input } from "@/components/ui/input";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { isCanvasAgentConversation } from "./agent/canvas-agent-conversation";
-import { CanvasAgentResumeNotice } from "./canvas-agent-resume-notice";
-import { CanvasAgentTaskProcess } from "./canvas-agent-task-process";
+import { CanvasAgentQueuedMessages } from "./canvas-agent-message-queue";
+import { Context } from "@/components/ai-elements/context";
+import { CONTEXT_COMPACTION_RATIO, contextTokenBudget, DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS, estimateCanvasAgentTokens } from "./agent/canvas-agent-memory";
+import { canvasAgentCanResume, canvasAgentComposerAction, canvasAgentNextQueuedMessage, canvasAgentConsumeQueuedMessage, MAX_AGENT_QUEUED_MESSAGES, mergeCanvasAgentMessageQueues } from "./agent/canvas-agent-message-queue";
 import { canvasAgentTaskGroups } from "./agent/canvas-agent-task-groups";
-import { canvasAgentTaskTimings } from "./agent/canvas-agent-timing";
 import { setCanvasAgentProcessing } from "./agent/canvas-agent-timing";
 import { isCanvasAgentSession } from "./agent/canvas-agent-sessions";
-import { answerBackendWorkflowReview, runBackendCanvasAgent, runBackendCanvasTool, stopCanvasAgentRun } from "./agent/canvas-agent-backend";
-import { copyClipboardText } from "@/lib/clipboard-text";
+import { answerBackendWorkflowReview, CanvasAgentStopError, runBackendCanvasAgent, runBackendCanvasTool, stopCanvasAgentRun } from "./agent/canvas-agent-backend";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useContentStableNodes } from "@/app/canvas/use-content-stable-nodes";
-import { CanvasAgentMessageEditor } from "./canvas-agent-message-editor";
-import { useCanvasAgentScroll } from "./use-canvas-agent-scroll";
-import { CanvasAgentAssetMenu, CanvasAgentComposer, CanvasAgentComposerToolbar, CanvasAgentSendButton } from "./canvas-agent-composer";
-import { CanvasAgentPlanProgress, CanvasAgentQuestionCard } from "./canvas-agent-interaction";
+import { Conversation } from "@/components/ai-elements/conversation";
+import { Confirmation } from "@/components/ai-elements/confirmation";
+import { PromptInput, PromptInputFooter, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
+import { CanvasAgentAssetMenu } from "./canvas-agent-composer";
+import { CanvasAgentQuestionCard } from "./canvas-agent-interaction";
 import { canvasAgentMediaGenerationQuestion, canvasAgentQuestionMediaChoice, resolveCanvasAgentQuestion } from "./agent/canvas-agent-interaction";
-import { canvasAgentToolKind, updateCanvasAgentQuestionTrace, upsertCanvasAgentOperationTrace, upsertCanvasAgentTrace } from "./agent/canvas-agent-trace";
-import { canvasAgentEditBranch, canvasAgentReplyTarget } from "./agent/canvas-agent-message-links";
+import { updateCanvasAgentQuestionTrace, upsertCanvasAgentOperationTrace, upsertCanvasAgentTrace } from "./agent/canvas-agent-trace";
+import { canvasAgentEditBranch, canvasAgentReplyTarget, canvasAgentProtocolUserMessageIndex } from "./agent/canvas-agent-message-links";
 import { pendingCanvasAgentReferences } from "./agent/canvas-agent-reference";
-import { CanvasAgentAttachments } from "./canvas-agent-attachments";
 import { useCanvasAgentPanelDrag } from "./use-canvas-agent-panel-drag";
 import { useCanvasAgentAttachments } from "./use-canvas-agent-attachments";
 import { canvasAgentSessionAttachments, canvasAgentImageURL, hydrateCanvasAgentAttachment } from "./agent/canvas-agent-attachments";
 import { canCreateCanvasAgentSession, MAX_CANVAS_AGENT_SESSIONS } from "./agent/canvas-agent-sessions";
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import { ArrowDown, ArrowUp, Bot, Copy, Pencil, History, Clock, Minus, LoaderCircle, MessageCirclePlus, PanelRight, PanelsTopLeft, Plug, RotateCcw, Sparkles, Square, Terminal, Trash2 } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { ArrowUp, Bot, Pencil, History, Clock, Minus, MessageCirclePlus, PanelRight, PanelsTopLeft, Plug, Sparkles, Pause, Play, Terminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { buildAllCanvasResourceReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
@@ -50,16 +57,13 @@ import {
 } from "@/app/canvas/agent/canvas-agent-run-gate";
 import type { CanvasAgentContext } from "@/app/canvas/agent/canvas-agent-context";
 import type { CanvasAgentAction, CanvasAgentToolResult } from "@/app/canvas/agent/canvas-agent-tools";
-import type { CanvasAgentConfig, CanvasAgentProtocolMessage, CanvasAssistantMessage, CanvasAssistantReference, CanvasAssistantSession } from "@/app/canvas/agent/canvas-agent-types";
+import type { CanvasAgentConfig, CanvasAgentMessageQueue, CanvasAssistantMessage, CanvasAssistantReference, CanvasAssistantSession } from "@/app/canvas/agent/canvas-agent-types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { CANVAS_AGENT_WIDTH } from "./canvas-workspace-layout";
 import { CanvasAgentMediaModelPicker, type CanvasAgentMediaModels } from "./canvas-agent-media-model-picker";
-import { CanvasAgentExecutionTrace } from "./canvas-agent-execution-trace";
-import { CanvasAgentNodeChip } from "./canvas-agent-node-chip";
 import { CanvasAgentModelPicker } from "./canvas-agent-model-picker";
 import { CanvasAgentEnginePicker } from "./canvas-agent-engine-picker";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
@@ -79,6 +83,8 @@ type PendingDeleteConfirmation = { title: string; resolve: (confirmed: boolean) 
 type CanvasAgentSubmitResult = "started" | "empty" | "busy" | "missing-model" | "missing-key";
 type CanvasAgentSubmitOptions = {
   retryAssistantID?: string;
+  queuedMessageID?: string;
+  preserveDraft?: boolean;
   editUserMessageID?: string;
   mediaGenerationChoice?: "generate" | "defer";
   notifyMissingConfiguration?: boolean;
@@ -94,6 +100,7 @@ const CanvasAgentAssetPicker = lazy(() => import("./canvas-asset-picker").then((
 
 type CanvasAgentPanelProps = {
   backendRun?: CanvasDocument["agent_run"];
+  onLocalObservationChange: (observing: boolean) => void;
   onBackendDocument: (document: CanvasDocument) => void;
   open: boolean;
   nodes: CanvasNode[];
@@ -145,9 +152,21 @@ export function CanvasAgentPanel(props: CanvasAgentPanelProps) {
     onBackendDocument={onBackendDocument} onModelChange={onModelChange} onDisplayModeChange={onDisplayModeChange} getAgentContext={getAgentContext} onSessionsChange={onSessionsChange} onPersist={onPersist} onAgentConfigChange={onAgentConfigChange} onExecuteAction={onExecuteAction} onInitialRequestConsumed={props.onInitialRequestConsumed ? onInitialRequestConsumed : undefined} onFocusNode={props.onFocusNode ? onFocusNode : undefined} onClose={onClose} />;
 }
 
-const MemoizedCanvasAgentPanel = memo(CanvasAgentPanelContent);
+function areCanvasAgentPanelPropsEqual(previous: CanvasAgentPanelProps, next: CanvasAgentPanelProps) {
+  const previousRunning = previous.backendRun?.status === "running";
+  const nextRunning = next.backendRun?.status === "running";
+  if (previous.open !== next.open || previous.displayMode !== next.displayMode || previous.model !== next.model || previous.models !== next.models || previous.initialSessions !== next.initialSessions || previous.initialActiveSessionID !== next.initialActiveSessionID || previous.initialRequest !== next.initialRequest || previous.agentConfig !== next.agentConfig || previous.configuredSystemPrompt !== next.configuredSystemPrompt || previous.mediaModels.image.value !== next.mediaModels.image.value || previous.mediaModels.image.options !== next.mediaModels.image.options || previous.mediaModels.video.value !== next.mediaModels.video.value || previous.mediaModels.video.options !== next.mediaModels.video.options || previousRunning !== nextRunning) return false;
+  if (previousRunning || nextRunning) {
+    if (previous.backendRun?.updatedAt !== next.backendRun?.updatedAt || previous.backendRun?.sessionId !== next.backendRun?.sessionId) return false;
+  }
+  // Geometry and selection change every drag frame; a hidden idle panel keeps its draft locally.
+  if (!next.open && !previousRunning && !nextRunning) return true;
+  return previous.nodes === next.nodes && previous.selectedNodeIDs === next.selectedNodeIDs && previous.referenceNodeClick === next.referenceNodeClick && previous.backendRun === next.backendRun;
+}
 
-function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: liveNodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: CanvasAgentPanelProps) {
+const MemoizedCanvasAgentPanel = memo(CanvasAgentPanelContent, areCanvasAgentPanelPropsEqual);
+
+function CanvasAgentPanelContent({ backendRun, onLocalObservationChange, onBackendDocument, open, nodes: liveNodes, selectedNodeIDs, referenceNodeClick, model, models, onModelChange, mediaModels, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, displayMode, onDisplayModeChange, getAgentContext, onSessionsChange, onPersist, onAgentConfigChange, onExecuteAction, onInitialRequestConsumed, onFocusNode, onClose }: CanvasAgentPanelProps) {
   const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
   const relayTokenName = model ? tokenNameForModel("text", model) : "";
   const [initialSession] = useState(createSession);
@@ -160,7 +179,9 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
   const [attachmentPickerOpen, setAttachmentPickerOpen] = useState(false);
   const authSession = getCachedAuthSession();
   const [localBusy, setBusy] = useState(false);
-  const busy = localBusy || backendRun?.status === "running";
+  useEffect(() => { onLocalObservationChange(localBusy); return () => onLocalObservationChange(false); }, [localBusy, onLocalObservationChange]);
+  const [pausing, setPausing] = useState(false);
+  const busy = localBusy || backendRun?.status === "running" || pausing;
   const [agentMode, setAgentMode] = useState<"native" | "codex">(() => sessions.find((item) => item.id === activeSessionID)?.engine || "native");
   const [codexSettingsOpen, setCodexSettingsOpen] = useState(false);
   const [view, setView] = useState<"chat" | "history">("chat");
@@ -169,7 +190,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteConfirmation | null>(null);
   const [composerReferenceNodeIDs, setComposerReferenceNodeIDs] = useState<string[]>([]);
   const [removedReferenceNodeIDs, setRemovedReferenceNodeIDs] = useState<Set<string>>(new Set());
-  const panelRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const panelDrag = useCanvasAgentPanelDrag(panelRef, open && displayMode === "floating");
   const abortRef = useRef<AbortController | null>(null);
   const runLifecycleRef = useRef(createCanvasAgentRunLifecycle());
@@ -180,8 +201,6 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
   const initialRequestBlockerNoticeRef = useRef<InitialRequestBlockerNotice | null>(null);
   const onInitialRequestConsumedRef = useRef(onInitialRequestConsumed);
   const submitInitialRequestRef = useRef<(prompt: string, references: CanvasAssistantReference[], onUserMessageCommitted: () => void) => CanvasAgentSubmitResult>(() => "empty");
-  const recoverRunRef = useRef<() => void>(() => {});
-  const recoveryAttemptsRef = useRef(new Set<string>());
   const sessionsRef = useRef(sessions);
   const activeSessionIDRef = useRef(activeSessionID);
   // Node geometry changes every drag frame; derived data below only needs node content.
@@ -193,14 +212,39 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
   initialRequestRef.current = initialRequest;
   onInitialRequestConsumedRef.current = onInitialRequestConsumed;
   const activeSession = sessions.find((item) => item.id === activeSessionID) || sessions[0];
-  const messageScroll = useCanvasAgentScroll(activeSession.id, open && view === "chat");
-  const waitingReason = canvasAgentWaitingReason(activeSession.agentState, activeSession.protocolMessages, nodes.map((node) => ({ id: node.id, status: node.generation_status })));
-  const mediaWaitingReason = canvasAgentWaitingReason({ ...activeSession.agentState, mediaGenerationDeferred: false }, activeSession.protocolMessages, nodes.map((node) => ({ id: node.id, status: node.generation_status })));
+  const latestAssistantMessage = activeSession.messages.findLast((message) => message.role === "assistant");
+  const activeRun = backendRun?.sessionId === activeSession.id ? backendRun : undefined;
+  const currentTaskProtocol = useMemo(() => {
+    const request = canvasAgentTaskGroups(activeSession.messages).at(-1)?.request;
+    if (!request) return [];
+    const start = canvasAgentProtocolUserMessageIndex(activeSession.protocolMessages, request, activeSession.messages);
+    return start >= 0 ? activeSession.protocolMessages.slice(start) : [];
+  }, [activeSession.messages, activeSession.protocolMessages]);
+  const mediaWaitingReason = canvasAgentWaitingReason({ ...activeSession.agentState, mediaGenerationDeferred: false }, currentTaskProtocol, nodes.map((node) => ({ id: node.id, status: node.generation_status })), latestAssistantMessage?.status);
   const conversationReply = activeSession.messages.findLast((message) => message.role === "assistant")?.interactionMode === "conversation";
   const needsMediaChoice = !conversationReply && !busy && !activeSession.agentState.pendingQuestion && !activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成");
+  const resumable = canvasAgentCanResume(activeSession, backendRun);
+  const hasDraft = Boolean(input.trim() || draftAttachments.attachments.length);
+  const composerAction = canvasAgentComposerAction({ busy, hasDraft, resumable, queued: Boolean(activeSession.messageQueue?.messages.length) });
+  const queueDispatchRef = useRef<() => void>(() => {});
   const [canvasId] = useState(() => getAgentContext(activeSession.agentState).project.id);
   const codexApproval = useCanvasCodexApproval();
-  const codex = useCanvasCodexAgent({ canvasId, onDisconnect: (reason) => { abortCanvasAgentRun(abortRef, reason); settleDeleteConfirmation(false); }, executeAction: executeExternalAction, ask: codexApproval.ask });
+  const codex = useCanvasCodexAgent({ canvasId, savedModel: agentConfig.codexModel, savedEffort: agentConfig.codexEffort, onSettingsChange: onAgentConfigChange, onDisconnect: (reason) => { abortCanvasAgentRun(abortRef, reason); settleDeleteConfirmation(false); }, executeAction: executeExternalAction, ask: codexApproval.ask });
+  const contextInfo = useMemo(() => {
+    const context = getAgentContext(activeSession.agentState);
+    const currentModel = agentMode === "codex" ? codex.model : model;
+    const usage = agentMode === "native" && activeSession.contextUsage?.model === currentModel ? activeSession.contextUsage : undefined;
+    const estimate = estimateCanvasAgentTokens({ messages: activeSession.protocolMessages, summary: activeSession.contextCheckpoint, context, draft: input });
+    const limit = agentConfig.contextWindowTokens && Number.isSafeInteger(agentConfig.contextWindowTokens) && agentConfig.contextWindowTokens > 1 ? agentConfig.contextWindowTokens : DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS;
+    return { tokens: usage?.inputTokens ?? usage?.usedTokens ?? estimate, measured: usage?.inputTokens !== undefined, limit, compacting: Boolean(usage?.compacting && busy), reported: Boolean(usage), rows: [
+      { label: "统计来源", value: usage?.inputTokens !== undefined ? "上游实际用量" : "本地输入估算" },
+      { label: "上限来源", value: "配置值" },
+      ...(agentMode === "native" ? [{ label: "自动压缩阈值", value: `${CONTEXT_COMPACTION_RATIO * 100}% · ${contextTokenBudget(limit).toLocaleString()} tokens` }, { label: "压缩状态", value: usage?.compacting && busy ? "正在压缩" : activeSession.contextCheckpoint ? "已有摘要" : "尚未压缩" }] : []),
+      { label: "模型", value: (agentMode === "codex" ? codex.model : model) || "未选择" }, { label: "对话记录", value: `${activeSession.messages.length} 条` },
+      { label: "画布节点", value: `${context.project.nodeCount ?? nodes.length} 个` }, { label: "引用素材", value: `${composerReferenceNodeIDs.length + draftAttachments.attachments.length} 个` },
+      { label: "上下文摘要", value: activeSession.contextCheckpoint ? "已保留" : "暂无" },
+    ] };
+  }, [activeSession.agentState, activeSession.protocolMessages, activeSession.contextCheckpoint, activeSession.messages.length, activeSession.contextUsage, agentConfig.contextWindowTokens, busy, getAgentContext, input, model, agentMode, codex.model, nodes.length, composerReferenceNodeIDs.length, draftAttachments.attachments.length]);
   const historySessions = sessions.filter((item) => item.messages.length > 0);
   const selectedNodeKey = useMemo(() => [...selectedNodeIDs].sort().join(","), [selectedNodeIDs]);
   const resourceReferences = useMemo(() => buildAllCanvasResourceReferences(nodes), [nodes]);
@@ -214,6 +258,19 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
     sessionsRef.current = sessions;
     activeSessionIDRef.current = activeSessionID;
   }, [activeSessionID, sessions]);
+
+  useEffect(() => {
+    if (!editingUserMessageID) return;
+    const timer = window.setTimeout(() => {
+      const panel = panelRef.current;
+      const target = [...(panel?.querySelectorAll<HTMLElement>("[data-agent-message]") || [])]
+        .find((element) => element.dataset.agentMessage === editingUserMessageID);
+      if (!target) return;
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      target.querySelector<HTMLElement>("[data-agent-message-editor] textarea")?.focus({ preventScroll: true });
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [editingUserMessageID]);
 
   useEffect(() => {
     setRemovedReferenceNodeIDs(new Set());
@@ -239,7 +296,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
 
   async function executeExternalAction(action: CanvasAgentAction, signal: AbortSignal) {
     if (abortRef.current || busy || activeSession.agentState.pendingQuestion) return { ok: false, code: "agent_busy", message: "请先完成当前对话或待回答问题，再执行 MCP 操作" };
-    if (!["list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow"].includes(action.name)) return onExecuteAction(action, [], { waitForMedia: false });
+    if (!["list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow", "create_primary_script_node", "create_script_node", "update_script_node"].includes(action.name)) return onExecuteAction(action, [], { waitForMedia: false });
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
@@ -255,7 +312,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
     }));
     const acceptDocument = (document: CanvasDocument) => {
       if (controller.signal.reason === "canvas-detached") return;
-      sessionsRef.current = (document.agent_sessions || []).filter(isCanvasAgentSession);
+      sessionsRef.current = mergeCanvasAgentMessageQueues([], sessionsRef.current, document.agent_sessions || []).filter(isCanvasAgentSession);
       onBackendDocument(document);
     };
     try {
@@ -355,7 +412,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
   }
 
   function submit(nextText = input, savedReferences?: CanvasAssistantReference[], referenceNodeIDs = composerReferenceNodeIDs, options: CanvasAgentSubmitOptions = {}): CanvasAgentSubmitResult {
-    if (draftAttachments.uploading) return "busy";
+    if (draftAttachments.uploading || busy || abortRef.current) return "busy";
     const attached = savedReferences ? [] : draftAttachments.attachments;
     const text = nextText.trim() || (attached.length ? "请查看这些附件" : "");
     if (!text || !activeSession) return "empty";
@@ -393,15 +450,14 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
     const editedProtocolMessages = editBranch?.protocolMessages || activeSession.protocolMessages;
     const accountKey = getCachedAuthSession()?.key;
     setBusy(true);
-    messageScroll.scrollToLatest();
     const assistantID = options.retryAssistantID || nanoid();
     const submittedUserID = editedUserMessage?.id || nanoid();
     const replyTarget = retryAssistantMessage ? canvasAgentReplyTarget(activeSession.messages, retryAssistantMessage) : undefined;
     const answeredQuestion = activeSession.agentState.pendingQuestion;
     const userMessage: CanvasAssistantMessage = { id: submittedUserID, role: "user", text, ...(answeredQuestion ? { questionAnswerFor: answeredQuestion.id } : {}), ...(!answeredQuestion ? { agentStateBefore: editBranch?.agentState || structuredClone(activeSession.agentState), contextCheckpointBefore: editBranch ? editBranch.contextCheckpoint : activeSession.contextCheckpoint } : {}), status: "success" };
     const conversationOnly = isCanvasAgentConversation(text) && !activeSession.agentState.pendingQuestion && !referenceNodeIDs.length && !attached.length && !savedReferences?.length && !(activeSession.activeSkillIds ?? agentConfig.activeSkillIds ?? []).length && !options.mediaGenerationChoice;
-    const preparingMessage: CanvasAssistantMessage = { id: assistantID, role: "assistant", replyToMessageID: replyTarget?.id || submittedUserID, text: "", ...(conversationOnly ? { interactionMode: "conversation" as const } : {}), trace: retryAssistantMessage?.trace || [], elapsedMs: retryAssistantMessage?.elapsedMs || 0, processingStartedAt: Date.now(), status: "thinking", activity: options.retryAssistantID ? "正在恢复原对话" : attached.length || referenceNodeIDs.length || savedReferences?.length ? "正在读取引用素材" : "正在发送" };
-    updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, engine: agentMode, resumeAssistantMessageId: undefined, messages: options.retryAssistantID ? current.messages.map((message) => message.id === assistantID ? preparingMessage : message) : [...current.messages, ...(options.editUserMessageID ? [] : [userMessage]), preparingMessage] }));
+    const preparingMessage: CanvasAssistantMessage = { id: assistantID, role: "assistant", replyToMessageID: replyTarget?.id || submittedUserID, text: "", ...(conversationOnly ? { interactionMode: "conversation" as const } : {}), trace: retryAssistantMessage?.trace || [], elapsedMs: retryAssistantMessage?.elapsedMs || 0, processingStartedAt: Date.now(), status: "thinking", activity: options.retryAssistantID ? "正在恢复原对话" : attached.length || referenceNodeIDs.length || savedReferences?.length ? "正在读取引用素材" : undefined };
+    updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, engine: agentMode, resumeAssistantMessageId: undefined, messages: options.retryAssistantID ? current.messages.map((message) => message.id === assistantID ? preparingMessage : message) : [...current.messages.map((message) => answeredQuestion ? { ...message, trace: updateCanvasAgentQuestionTrace(message.trace, answeredQuestion.id, { answer: text, cancelled: false }) } : message), ...(options.editUserMessageID ? [] : [userMessage]), preparingMessage] }));
     void (async () => {
       try {
         const selectedSkillIDs = activeSession.activeSkillIds ?? agentConfig.activeSkillIds ?? [];
@@ -426,18 +482,19 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
           const messages = options.retryAssistantID ? current.messages
             : editIndex >= 0 ? [...current.messages.slice(0, editIndex), committedUserMessage, preparingMessage]
               : [...current.messages.filter((message) => message.id !== assistantID && message.id !== submittedUserID).map((message) => answeredQuestion ? { ...message, trace: updateCanvasAgentQuestionTrace(message.trace, answeredQuestion.id, { answer: text, cancelled: false }) } : message), committedUserMessage, preparingMessage];
-          return { ...current, ...(options.editUserMessageID || agentMode === "native" ? { codexThreadId: undefined, codexServiceId: undefined } : {}), title: current.messages.some((message) => message.role === "user" && message.id !== submittedUserID) ? current.title : text.slice(0, 18) || "新对话", messages, protocolMessages: options.editUserMessageID ? editedProtocolMessages : current.protocolMessages, agentState: options.editUserMessageID ? editBranch!.agentState : current.agentState, contextCheckpoint: options.editUserMessageID ? editBranch!.contextCheckpoint : current.contextCheckpoint, updatedAt: now };
+          return { ...current, ...(options.queuedMessageID ? { messageQueue: canvasAgentConsumeQueuedMessage(current.messageQueue, options.queuedMessageID) } : current.messageQueue ? { messageQueue: { ...current.messageQueue, paused: false } } : {}), ...(options.editUserMessageID || agentMode === "native" ? { codexThreadId: undefined, codexServiceId: undefined } : {}), title: current.messages.some((message) => message.role === "user" && message.id !== submittedUserID) ? current.title : text.slice(0, 18) || "新对话", messages, protocolMessages: options.editUserMessageID ? editedProtocolMessages : current.protocolMessages, agentState: options.editUserMessageID ? editBranch!.agentState : current.agentState, contextCheckpoint: options.editUserMessageID ? editBranch!.contextCheckpoint : current.contextCheckpoint, updatedAt: now };
         })) throw new DOMException("请求已取消", "AbortError");
-        if (!options.editUserMessageID) {
-          setInput("");
+        if (!options.editUserMessageID && !options.preserveDraft) {
+          setInput(current => current === nextText ? "" : current);
           draftAttachments.remove(attached.map((item) => item.id));
-          setComposerReferenceNodeIDs([]);
-          setRemovedReferenceNodeIDs(new Set(selectedNodeIDsRef.current));
+          setComposerReferenceNodeIDs(current => current.filter(id => !referenceNodeIDs.includes(id)));
+          setRemovedReferenceNodeIDs(current => new Set([...current, ...referenceNodeIDs]));
         }
         setEditingUserMessageID("");
         options.onUserMessageCommitted?.();
         if (agentMode === "native") {
           await onPersist();
+          controller.signal.throwIfAborted();
           const context = getAgentContext(activeSession.agentState);
           await runBackendCanvasAgent(context.project.id, {
             id: nanoid(), sessionId: sessionID, assistantId: assistantID, userMessageId: submittedUserID,
@@ -449,7 +506,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
             resume: Boolean(options.retryAssistantID), editPreviousRequest: Boolean(options.editUserMessageID), mediaGenerationChoice: options.mediaGenerationChoice,
           }, (document) => {
             if (!isCurrentCanvasAgentRun(runLifecycleRef.current, runEpoch)) return;
-            sessionsRef.current = (document.agent_sessions || []).filter(isCanvasAgentSession);
+            sessionsRef.current = mergeCanvasAgentMessageQueues([], sessionsRef.current, document.agent_sessions || []).filter(isCanvasAgentSession);
             onBackendDocument(document);
           }, controller.signal);
           return;
@@ -458,7 +515,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
         const acceptToolDocument = (document: CanvasDocument) => {
           if (!isCurrentCanvasAgentRun(runLifecycleRef.current, runEpoch)) return;
           lastToolDocument = document;
-          sessionsRef.current = (document.agent_sessions || []).filter(isCanvasAgentSession);
+          sessionsRef.current = mergeCanvasAgentMessageQueues([], sessionsRef.current, document.agent_sessions || []).filter(isCanvasAgentSession);
           onBackendDocument(document);
         };
         const runInput: RunCanvasAgentInput = {
@@ -516,16 +573,18 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
               const updatedSession = (document.agent_sessions || []).filter(isCanvasAgentSession).find((item) => item.id === sessionID);
               return { ...result, ...(updatedSession ? { agentState: updatedSession.agentState } : {}) };
             }
-            const nodeID = typeof action.arguments.nodeId === "string" ? action.arguments.nodeId : "";
-            const node = nodesRef.current.find((item) => item.id === nodeID);
+            const nodeIDs = Array.isArray(action.arguments.nodeIds) ? action.arguments.nodeIds as string[] : [typeof action.arguments.nodeId === "string" ? action.arguments.nodeId : ""];
+            const deletionSnapshot = JSON.stringify(nodesRef.current);
+            const deletionTitle = nodeIDs.map(id => nodesRef.current.find(node => node.id === id)?.title || "未命名节点").join("、");
             updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, messages: current.messages.map((message) => message.id === assistantID ? setCanvasAgentProcessing(message, false) : message) }));
             const confirmed = await new Promise<boolean>((resolve) => {
-              const pending = { title: node?.title || "未命名节点", resolve };
+              const pending = { title: deletionTitle, resolve };
               pendingDeleteRef.current = pending;
               setPendingDelete(pending);
             });
             if (controller.signal.aborted || !isCurrentCanvasAgentRun(runLifecycleRef.current, runEpoch)) return { ok: false, code: "run_stale", message: "画布已切换，当前执行已停止" };
             updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, messages: current.messages.map((message) => message.id === assistantID ? setCanvasAgentProcessing(message, true) : message) }));
+            if (confirmed && JSON.stringify(nodesRef.current) !== deletionSnapshot) return { ok: false, code: "canvas_changed", message: "画布已变化，请重新核对整批删除范围" };
             return confirmed ? onExecuteAction(action, messageReferenceNodeIDs) : { ok: false, code: "delete_cancelled", message: "用户取消删除，原节点已保留" };
           },
           signal: controller.signal,
@@ -536,19 +595,95 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
         const result = await codex.run({ ...runInput, codexThreadId: options.editUserMessageID ? undefined : activeSession.codexThreadId, codexServiceId: options.editUserMessageID ? undefined : activeSession.codexServiceId, onThread: (codexThreadId, codexServiceId) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, codexThreadId, codexServiceId })) });
         updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, agentState: result.state, protocolMessages: result.protocolMessages, contextCheckpoint: result.contextCheckpoint, activeSkillIds: selectedSkillIDs, messages: current.messages.map((message) => message.id === assistantID ? { ...setCanvasAgentProcessing(message, false), text: result.reply, status: result.state.pendingQuestion || canvasAgentWaitingReason(result.state, result.protocolMessages, nodesRef.current.map((node) => ({ id: node.id, status: node.generation_status }))) || ("waiting" in result && result.waiting) ? "waiting" : "success", activity: undefined } : message), updatedAt: new Date().toISOString() }));
       } catch (error) {
+        if (error instanceof CanvasAgentStopError) {
+          setPausing(false);
+          toast.error(error.message);
+          return;
+        }
         const stopped = controller.signal.aborted || (error instanceof Error && error.name === "AbortError");
         const currentRun = isCurrentCanvasAgentRun(runLifecycleRef.current, runEpoch);
-        if (assistantID && currentRun && controller.signal.reason !== "canvas-detached") updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, agentState: stopped ? { ...current.agentState, pendingModelTaskId: undefined } : current.agentState, messages: current.messages.map((message) => message.id === assistantID ? { ...setCanvasAgentProcessing(message, false), text: stopped ? "已停止继续执行。已经创建的节点和已经提交的媒体任务会保留。" : error instanceof Error ? error.message : "Agent 执行失败", status: stopped ? "waiting" : "error", activity: undefined } : message), updatedAt: new Date().toISOString() }));
+        if (assistantID && currentRun && controller.signal.reason !== "canvas-detached") updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, agentState: stopped ? { ...current.agentState, pendingModelTaskId: undefined } : current.agentState, messages: current.messages.map((message) => message.id === assistantID ? { ...setCanvasAgentProcessing(message, false), text: stopped ? "已停止继续执行。已经创建的节点和已经提交的媒体任务会保留。" : error instanceof Error ? error.message : "Agent 执行失败", status: stopped ? "waiting" : "error", activity: undefined } : answeredQuestion && current.agentState.pendingQuestion?.id === answeredQuestion.id ? { ...message, trace: updateCanvasAgentQuestionTrace(message.trace, answeredQuestion.id, { answer: undefined }) } : message), updatedAt: new Date().toISOString() }));
         if (!stopped && currentRun) toast.error(error instanceof Error ? error.message : "Agent 执行失败");
       } finally {
         if (agentMode === "codex" && isCurrentCanvasAgentRun(runLifecycleRef.current, runEpoch) && controller.signal.reason !== "canvas-detached") {
-          await onPersist().catch((error) => toast.error(error instanceof Error ? error.message : "执行记录保存失败"));
+          const saving = onPersist();
+          if (releaseCanvasAgentRun(abortRef, controller)) setBusy(false);
+          await saving.catch((error) => toast.error(error instanceof Error ? error.message : "执行记录保存失败"));
+        } else {
+          if (releaseCanvasAgentRun(abortRef, controller)) setBusy(false);
         }
-        if (releaseCanvasAgentRun(abortRef, controller)) setBusy(false);
       }
     })();
     return "started";
   }
+
+  function updateMessageQueue(update: (queue: CanvasAgentMessageQueue) => CanvasAgentMessageQueue) {
+    commit(sessionsRef.current.map(session => session.id === activeSessionIDRef.current ? { ...session, messageQueue: update(session.messageQueue || { paused: false, messages: [] }) } : session));
+  }
+
+  function pauseExecution(steering = false) {
+    if (pausing) return;
+    if (!steering) updateMessageQueue(queue => ({ ...queue, paused: true, steeringId: undefined }));
+    setPausing(true);
+    settleDeleteConfirmation(false);
+    const aborted = abortCanvasAgentRun(abortRef);
+    if (!aborted && backendRun?.status === "running") void stopCanvasAgentRun(canvasId, backendRun.id).then(({ document }) => onBackendDocument(document)).catch(error => { setPausing(false); toast.error(error.message); });
+    void onPersist().catch(error => toast.error(error instanceof Error ? error.message : "队列保存失败"));
+  }
+
+  function sendDraft(prompt = input, referenceIDs = composerReferenceNodeIDs) {
+    if (!busy) return submit(prompt, undefined, referenceIDs, {});
+    if (pausing || draftAttachments.uploading) return "busy";
+    const text = prompt.trim() || (draftAttachments.attachments.length ? "请查看这些附件" : "");
+    if (!text) return "empty";
+    const current = sessionsRef.current.find(session => session.id === activeSessionIDRef.current);
+    if ((current?.messageQueue?.messages.length || 0) >= MAX_AGENT_QUEUED_MESSAGES) { toast.info(`最多排队 ${MAX_AGENT_QUEUED_MESSAGES} 条消息`); return "busy"; }
+    const referenceMap = new Map(referenceIDs.flatMap(id => { const node = nodesRef.current.find(item => item.id === id); return node ? [[id, { id, type: node.type, title: node.title || node.type, url: node.url, storageKey: node.storage_key, mimeType: node.mime_type, text: node.prompt } as CanvasAssistantReference] as const] : []; }));
+    const queued = { id: nanoid(), text, createdAt: new Date().toISOString(), references: [...referenceMap.values(), ...draftAttachments.attachments.map(item => ({ ...item, dataUrl: undefined }))] };
+    updateMessageQueue(queue => ({ ...queue, messages: [...queue.messages, queued] }));
+    setInput(""); draftAttachments.clear(); setComposerReferenceNodeIDs([]); setRemovedReferenceNodeIDs(new Set(selectedNodeIDsRef.current));
+    void onPersist().catch(error => toast.error(error instanceof Error ? error.message : "队列保存失败，消息仍保留在当前页面"));
+    return "queued";
+  }
+
+  function steerQueuedMessage(id: string) {
+    if (activeSession.agentState.pendingQuestion) { toast.info("请先回答或取消当前问题，再引导对话"); return; }
+    updateMessageQueue(queue => {
+      const message = queue.messages.find(item => item.id === id);
+      return message ? { paused: false, steeringId: id, messages: [message, ...queue.messages.filter(item => item.id !== id)] } : queue;
+    });
+    if (busy) pauseExecution(true);
+  }
+
+  function handleComposerAction() {
+    if (composerAction === "pause") return pauseExecution();
+    if (composerAction === "send" || composerAction === "enqueue") return void sendDraft();
+    updateMessageQueue(queue => ({ ...queue, paused: false }));
+    if (resumable) {
+      const latest = activeSession.messages.findLast(message => message.role === "assistant");
+      if (latest) retryMessage(latest);
+    } else {
+      const next = activeSession.messageQueue?.messages[0];
+      if (next) submit(next.text, next.references, [], { queuedMessageID: next.id, preserveDraft: true });
+    }
+  }
+
+  queueDispatchRef.current = () => {
+    if (busy || abortRef.current || draftAttachments.uploading || agentMode === "native" && !relayPreferencesReady || agentMode === "codex" && !codex.connected) return;
+    const next = canvasAgentNextQueuedMessage(activeSession, activeRun);
+    if (!next) return;
+    const result = submit(next.text, next.references, [], { queuedMessageID: next.id, preserveDraft: true, notifyMissingConfiguration: false });
+    if (result === "missing-model" || result === "missing-key") {
+      updateMessageQueue(queue => ({ ...queue, paused: true, steeringId: undefined }));
+      toast.error(result === "missing-key" ? "请先选择文本生成密钥，再继续消息队列" : "请先配置模型，再继续消息队列");
+    }
+  };
+  useEffect(() => { if (pausing && !localBusy && backendRun?.status !== "running") setPausing(false); }, [pausing, localBusy, backendRun?.status]);
+  useEffect(() => {
+    let disposed = false;
+    queueMicrotask(() => { if (!disposed) queueDispatchRef.current(); });
+    return () => { disposed = true; };
+  }, [activeSession.id, activeSession.messageQueue, activeSession.messages, activeSession.agentState.pendingQuestion, activeRun?.status, activeRun?.assistantId, busy, agentMode, relayPreferencesReady, model, relayTokenName, codex.connected, codex.model, draftAttachments.uploading]);
 
   function cancelQuestion() {
     if (backendRun?.status === "waiting" && backendRun.sessionId === activeSession.id) {
@@ -563,16 +698,17 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
     } : session));
   }
 
-  function retryMessage(message: CanvasAssistantMessage, mediaGenerationChoice?: "generate" | "defer") {
+  function retryMessage(message: CanvasAssistantMessage, mediaGenerationChoice?: "generate" | "defer", preserveDraft = false) {
     if (activeSession.agentState.pendingQuestion) { toast.info("请先回答当前问题，或取消本次请求"); return false; }
     const index = activeSession.messages.findIndex((item) => item.id === message.id);
     const userMessage = canvasAgentReplyTarget(activeSession.messages, message) || activeSession.messages.slice(0, index).findLast((item) => item.role === "user");
-    return userMessage ? submit(userMessage.text, userMessage.references, [], { retryAssistantID: message.id, mediaGenerationChoice }) === "started" : false;
+    return userMessage ? submit(userMessage.text, userMessage.references, [], { retryAssistantID: message.id, mediaGenerationChoice, preserveDraft }) === "started" : false;
   }
 
   function editUserMessage(message: CanvasAssistantMessage) {
-    if (busy || activeSession.agentState.pendingQuestion || message.role !== "user" || message.questionAnswerFor) return;
-    messageScroll.pause();
+    if (message.role !== "user" || message.questionAnswerFor) return;
+    if (busy) { toast.info("当前任务仍在运行，请等待停止后再编辑"); return; }
+    if (activeSession.agentState.pendingQuestion) { toast.info("请先回答或取消当前问题，再编辑并继续"); return; }
     setEditingUserMessageID(message.id);
   }
 
@@ -590,30 +726,6 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
       return submit(answer, references, [], { mediaGenerationChoice }) === "started";
     }
   }
-
-  recoverRunRef.current = () => {
-    if (activeSession.engine !== "codex") return;
-    const messageID = activeSession.resumeAssistantMessageId;
-    if (!messageID || busy || abortRef.current || activeSession.agentState.pendingQuestion) return;
-    if (activeSession.engine && activeSession.engine !== agentMode) return;
-    if (agentMode === "native" && (!relayPreferencesReady || !model || !relayTokenName)) return;
-    if (agentMode === "codex" && (!codex.connected || !codex.model)) return;
-    const key = `${activeSession.id}:${messageID}`;
-    if (recoveryAttemptsRef.current.has(key)) return;
-    const index = activeSession.messages.findIndex((message) => message.id === messageID);
-    const recoveringMessage = activeSession.messages.find((message) => message.id === messageID && message.role === "assistant");
-    const previous = recoveringMessage ? canvasAgentReplyTarget(activeSession.messages, recoveringMessage) : activeSession.messages.slice(0, index).findLast((message) => message.role === "user");
-    if (!previous) return;
-    const result = submit(previous.text, previous.references, [], { retryAssistantID: messageID, notifyMissingConfiguration: false });
-    if (result === "started") recoveryAttemptsRef.current.add(key);
-  };
-  useEffect(() => {
-    // Start after mount effects settle so StrictMode cleanup cannot interrupt
-    // recovery after it has already consumed the saved resume marker.
-    let disposed = false;
-    queueMicrotask(() => { if (!disposed) recoverRunRef.current(); });
-    return () => { disposed = true; };
-  }, [activeSession.id, activeSession.resumeAssistantMessageId, agentMode, busy, codex.connected, codex.model, model, relayPreferencesReady, relayTokenName]);
 
   submitInitialRequestRef.current = (prompt, references, onUserMessageCommitted) => {
     return submit(prompt, references, [], { notifyMissingConfiguration: false, onUserMessageCommitted });
@@ -646,7 +758,7 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
       aria-label="关闭 Agent"
       onClick={onClose}
     /> : null}
-    <aside
+    <Card role="complementary"
     ref={panelRef}
     aria-label="Agent 对话面板"
     aria-hidden={!open}
@@ -654,9 +766,8 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
     data-canvas-agent-panel
     data-display-mode={displayMode}
     data-state={open ? "open" : "closed"}
-    className={cn("absolute z-40 flex min-h-0 flex-col overflow-hidden bg-card [container-name:agent] [container-type:size] motion-reduce:!transition-none", displayMode === "docked"
-      ? "top-0 bottom-[var(--canvas-agent-docked-bottom)] right-0 border-l border-border/60"
-      : "bottom-[var(--canvas-agent-bottom)] right-3 max-w-[calc(100%-1.5rem)] h-[min(calc(100%-var(--canvas-agent-bottom)-1rem),calc((min(780px,86dvh)+100%-var(--canvas-agent-bottom)-1rem)/2))] rounded-2xl border border-border/80 shadow-[var(--shadow-dialog)] sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:h-[min(780px,86dvh,calc(100dvh-var(--canvas-dock-clearance)-2rem))] [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]") }
+    className={cn("absolute z-40 flex min-h-0 flex-col overflow-hidden [container-name:agent] [container-type:size] motion-reduce:!transition-none p-0 gap-0", displayMode === "docked"
+    ? "top-0 bottom-[var(--canvas-agent-docked-bottom)] right-0" : "bottom-[var(--canvas-agent-bottom)] right-3 max-w-[calc(100%-1.5rem)] h-[min(880px,calc(100%-var(--canvas-agent-bottom)-1rem))] sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:h-[min(880px,calc(100dvh-var(--canvas-dock-clearance)-2rem))] [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]")}
     style={{
       width: displayMode === "docked" ? "var(--canvas-agent-width)" : `min(${CANVAS_AGENT_WIDTH}px, calc(100% - 12px))`,
       transform: open ? "translateX(0)" : "translateX(calc(100% + 16px))",
@@ -680,12 +791,12 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
         event.stopPropagation();
         panelDrag.moveBy(direction[0], direction[1]);
       }}
-      className={cn("flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", displayMode === "floating" && "touch-none select-none cursor-grab", panelDrag.dragging && "cursor-grabbing")}>
-      <Bot className="size-5 shrink-0 text-brand" />
-      <span title={view === "history" ? "历史对话" : activeSession.title || "Agent"} className="min-w-0 flex-1 truncate text-sm font-semibold">{view === "history" ? "历史对话" : activeSession.title || "Agent"}</span>
+      className={cn("flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-3", displayMode === "floating" && "touch-none select-none cursor-grab", panelDrag.dragging && "cursor-grabbing")}>
+      <ItemMedia variant="icon" className="grid size-8 shrink-0 place-items-center"><Bot className="size-4" /></ItemMedia>
+      <div className="min-w-0 flex-1"><span title={view === "history" ? "历史对话" : activeSession.title || "Agent"} className="block truncate text-sm font-semibold">{view === "history" ? "历史对话" : activeSession.title || "Agent"}</span><span className="block truncate text-[10px] leading-4 text-muted-foreground">{view === "history" ? "回顾你的创作过程" : "画布创作助手"}</span></div>
       <div data-canvas-agent-toolbar role="group" aria-label="Agent 工具栏" className="ml-auto flex shrink-0 items-center gap-0.5 @max-[320px]/agent:[&_button]:size-7">
-        <Button size="icon" className="size-8 rounded-full" variant="ghost" title="新对话" aria-label="新对话" disabled={busy} onClick={newSession}><MessageCirclePlus /></Button>
-        <Button size="icon" className="size-8 rounded-full" variant={view === "history" ? "secondary" : "ghost"} title={view === "history" ? "返回对话" : "历史记录"} aria-label={view === "history" ? "返回对话" : "历史记录"} onClick={() => setView((current) => current === "history" ? "chat" : "history")}><Clock /></Button>
+        <TooltipHint content={"新对话"}><Button size="icon"  variant="ghost" aria-label="新对话" disabled={busy} onClick={newSession}><MessageCirclePlus /></Button></TooltipHint>
+        <TooltipHint content={view === "history" ? "返回对话" : "历史记录"}><Button size="icon"  variant={view === "history" ? "secondary" : "ghost"} aria-label={view === "history" ? "返回对话" : "历史记录"} onClick={() => setView((current) => current === "history" ? "chat" : "history")}><Clock /></Button></TooltipHint>
         <CanvasAgentRunSettings config={agentConfig} mode={agentMode} busy={busy} onChange={(patch) => {
           if (typeof patch.autoGenerateMedia === "boolean") commit(sessionsRef.current.map((session) => session.id === activeSession.id ? { ...session, agentState: { ...session.agentState, mediaGenerationDeferred: undefined } } : session));
           onAgentConfigChange(patch);
@@ -699,26 +810,44 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
           onModeChange={setAgentMode}
           onConfigure={() => setCodexSettingsOpen(true)}
         />
-        <Button size="icon" className="size-8 rounded-full" variant="ghost" title={displayMode === "docked" ? "切换为悬浮" : "切换为停靠"} aria-label={displayMode === "docked" ? "切换为悬浮" : "切换为停靠"} aria-pressed={displayMode === "docked"} onMouseDown={(event) => event.preventDefault()} onClick={() => onDisplayModeChange(displayMode === "docked" ? "floating" : "docked")}>{displayMode === "docked" ? <PanelsTopLeft /> : <PanelRight />}</Button>
-        <Button size="icon" className="size-8 rounded-full" variant="ghost" title="收起对话" aria-label="收起 Agent" onClick={onClose}><Minus /></Button>
+        <TooltipHint content={displayMode === "docked" ? "切换为悬浮" : "切换为停靠"}><span className="inline-flex shrink-0"><Toggle size="sm"   aria-label={displayMode === "docked" ? "切换为悬浮" : "切换为停靠"} pressed={displayMode === "docked"} onMouseDown={(event) => event.preventDefault()} onClick={() => onDisplayModeChange(displayMode === "docked" ? "floating" : "docked")}>{displayMode === "docked" ? <PanelsTopLeft /> : <PanelRight />}</Toggle></span></TooltipHint>
+        <TooltipHint content={"收起对话"}><Button size="icon"  variant="ghost" aria-label="收起 Agent" onClick={onClose}><Minus /></Button></TooltipHint>
       </div>
     </header>
     {agentMode === "codex" ? <CanvasCodexConnect agent={codex} busy={busy} open={open && codexSettingsOpen} onOpenChange={setCodexSettingsOpen} /> : null}
     {view === "history" ? <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-2">
       <span className="min-w-0 flex-1 text-[11px] tabular-nums text-muted-foreground">{checkedSessionIDs.length ? `已选 ${checkedSessionIDs.length} 条` : `共 ${historySessions.length} 条对话`}</span>
-      <Button size="sm" className="h-7 gap-1 px-2 text-[11px]" variant="ghost" aria-label="删除所选对话" disabled={busy || !checkedSessionIDs.length} onClick={() => setDeleteSessionIDs(checkedSessionIDs)}><Trash2 className="size-3" />删除所选</Button>
-      <Button size="sm" className="h-7 px-2 text-[11px]" variant="ghost" aria-label="删除全部对话" disabled={busy || !historySessions.length} onClick={() => setDeleteSessionIDs(historySessions.map((item) => item.id))}>清空</Button>
+      <Button size="sm"  variant="ghost" aria-label="删除所选对话" disabled={busy || !checkedSessionIDs.length} onClick={() => setDeleteSessionIDs(checkedSessionIDs)}><Trash2  />删除所选</Button>
+      <Button size="sm"  variant="ghost" aria-label="删除全部对话" disabled={busy || !historySessions.length} onClick={() => setDeleteSessionIDs(historySessions.map((item) => item.id))}>清空</Button>
     </div> : null}
-    <div className="relative flex min-h-0 flex-1 flex-col"><ScrollArea data-agent-message-scroll tabindex={0} viewportRef={messageScroll.viewportRef} className="mx-1 min-h-0 flex-1 w-auto" viewportClassName="overscroll-contain p-2 pr-3"><div ref={messageScroll.contentRef} className="space-y-3">{view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { if (busy || abortRef.current) return; if (id !== activeSessionIDRef.current) { setInput(""); setEditingUserMessageID(""); draftAttachments.clear(); setComposerReferenceNodeIDs([]); setRemovedReferenceNodeIDs(new Set()); } commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <AssistantMessages protocolMessages={activeSession.protocolMessages} messages={activeSession.messages} nodes={nodes} onFocusNode={onFocusNode} onRetry={retryMessage} onEdit={editUserMessage} editingMessageID={editingUserMessageID} onCancelEdit={cancelMessageEdit} onSaveEdit={(message, text) => { void submit(text, message.references || [], [], { editUserMessageID: message.id }); }} editDisabled={busy || Boolean(activeSession.agentState.pendingQuestion)} busy={busy} pendingQuestion={activeSession.agentState.pendingQuestion?.question} /> : <div className={cn("flex flex-col items-center justify-center px-4 text-center", agentMode === "codex" && !codex.connected ? "py-3" : "min-h-[min(18rem,46cqh)] py-5")}><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">{agentMode === "codex" ? <Terminal className="size-5" /> : <Sparkles className="size-5" />}</div><div className="mt-3 text-sm font-medium">{agentMode === "codex" && !codex.connected ? "与 Codex 一起创作" : "从一个想法开始"}</div><div className="mt-1.5 max-w-[260px] text-xs leading-5 text-muted-foreground">{agentMode === "codex" && !codex.connected ? "连接本地 Codex，让想法变成画布上的内容。你也可以先写下创作目标。" : "描述创作目标，Agent 会与你沟通并直接操作当前画布"}</div>{agentMode === "codex" && !codex.connected ? <Button type="button" size="sm" variant="outline" className="mt-4 gap-1.5 text-xs" onClick={() => setCodexSettingsOpen(true)}><Plug className="size-3.5" />{codex.connecting ? "查看连接进度" : "连接 Codex"}</Button> : null}{!input.trim() && (agentMode !== "codex" || codex.connected) ? <div className="mt-4 grid w-full gap-2 text-left">{["帮我整理当前画布的创作思路", "规划一组风格统一的品牌海报", "把当前创意拆解成分镜方案"].map((suggestion) => <button key={suggestion} type="button" className="rounded-lg bg-muted/30 px-3 py-2.5 text-xs leading-5 text-muted-foreground transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setInput(suggestion); requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]')?.focus()); }}>{suggestion}</button>)}</div> : null}</div>}</div></ScrollArea>
-      {view === "chat" && messageScroll.showLatest ? <Button type="button" size="sm" variant="outline" className="absolute bottom-3 left-1/2 z-20 h-8 -translate-x-1/2 gap-1.5 rounded-full bg-card shadow-md" onClick={messageScroll.scrollToLatest}><ArrowDown className="size-3.5" />回到最新</Button> : null}
-    </div>
-    {view === "chat" ? <div data-agent-input-area className="flex min-h-0 max-h-[70%] shrink-0 flex-col p-3 pt-1">
-      <CanvasAgentResumeNotice session={activeSession} run={backendRun} busy={busy} onResume={() => { const latest = activeSession.messages.findLast((message) => message.role === "assistant"); if (latest) retryMessage(latest); }} />
-      <CanvasAgentPlanProgress key={activeSession.id} running={busy && !pendingDelete} plan={conversationReply ? undefined : activeSession.agentState.plan} />
-      {!conversationReply && !busy && !activeSession.agentState.pendingQuestion && (waitingReason || (activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成"))) && !needsMediaChoice ? <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status" className="flex items-center gap-1.5"><Clock className="size-3.5" />{waitingReason || mediaWaitingReason.replace("待手动生成", "已暂缓生成")}</p>{activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成") ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => chooseMediaGeneration("立即生成")}>生成待处理节点</Button> : null}</div> : null}
-      {pendingDelete ? <div className="mb-2 overflow-hidden rounded-lg border"><div className="px-3 py-2"><p className="truncate text-xs font-medium">删除“{pendingDelete.title}”？</p><p className="mt-1 text-[11px] text-muted-foreground">相关连线和任务记录将按现有逻辑清理</p></div><div className="grid grid-cols-2 border-t"><button type="button" className="h-8 text-xs hover:bg-muted" onClick={() => settleDeleteConfirmation(false)}>取消</button><button type="button" className="h-8 border-l text-xs font-medium text-destructive hover:bg-muted" onClick={() => settleDeleteConfirmation(true)}>确认删除</button></div></div> : null}
-      {activeSession.agentState.pendingQuestion ? <CanvasAgentQuestionCard key={`${activeSession.id}:${activeSession.agentState.pendingQuestion.id}`} question={activeSession.agentState.pendingQuestion} busy={busy} active={open && view === "chat"} onAnswer={(answer) => submit(answer, undefined, composerReferenceNodeIDs, { mediaGenerationChoice: canvasAgentQuestionMediaChoice(activeSession.agentState.pendingQuestion!, answer) }) === "started"} onCancel={cancelQuestion} /> : needsMediaChoice && !editingUserMessageID ? <CanvasAgentQuestionCard key={`${activeSession.id}:media-generation`} question={canvasAgentMediaGenerationQuestion(`${activeSession.id}:media-generation`, Number(mediaWaitingReason.match(/(\d+) 个节点/)?.[1] || 1))} busy={busy} active={open && view === "chat" && !editingUserMessageID} onAnswer={chooseMediaGeneration} /> : <CanvasAgentComposer onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); if (!busy) void draftAttachments.upload(Array.from(event.dataTransfer.files)); }}>
-        <ScrollArea data-agent-composer-scroll className="min-h-0 max-h-[min(220px,24cqh)]" viewportClassName="overscroll-contain pr-2">
+    <Conversation key={activeSession.id} showScrollButton={view === "chat"} onWheel={(event) => event.stopPropagation()}>
+      {view === "history" ? <AssistantHistory sessions={historySessions} activeSession={activeSession} checkedIDs={checkedSessionIDs} deleteDisabled={busy} onToggleChecked={(id, checked) => setCheckedSessionIDs((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id))} onOpen={(id) => { if (busy || abortRef.current) return; if (id !== activeSessionIDRef.current) { setInput(""); setEditingUserMessageID(""); draftAttachments.clear(); setComposerReferenceNodeIDs([]); setRemovedReferenceNodeIDs(new Set()); } commit(sessionsRef.current, id); setView("chat"); }} onDelete={(id) => setDeleteSessionIDs([id])} onRename={(id, nextTitle) => commit(sessionsRef.current.map((item) => item.id === id ? { ...item, title: nextTitle, updatedAt: new Date().toISOString() } : item))} /> : activeSession.messages.length ? <CanvasAgentConversation
+        run={activeRun}
+        resumable={resumable}
+        onResume={() => { if (latestAssistantMessage) retryMessage(latestAssistantMessage, undefined, true); }}
+        onChooseMedia={() => chooseMediaGeneration("立即生成")}
+        protocolMessages={activeSession.protocolMessages}
+        messages={activeSession.messages}
+        nodes={nodes}
+        onFocusNode={onFocusNode}
+        onRetry={(message) => { retryMessage(message, undefined, true); }}
+        onEdit={editUserMessage}
+        editingMessageID={editingUserMessageID}
+        onCancelEdit={cancelMessageEdit}
+        onSaveEdit={(message, text) => { void submit(text, message.references || [], [], { editUserMessageID: message.id }); }}
+        editDisabled={busy || Boolean(activeSession.agentState.pendingQuestion)}
+        busy={busy}
+        pendingQuestion={activeSession.agentState.pendingQuestion?.question}
+      /> : <EmptyState icon={agentMode === "codex" ? Terminal : Sparkles} title={agentMode === "codex" && !codex.connected ? "与 Codex 一起创作" : "从一个想法开始"} description="描述创作目标，Agent 会与你沟通并直接操作当前画布" action={<div className="grid w-full gap-3">{agentMode === "codex" && !codex.connected ? <Button type="button" size="sm" variant="outline" onClick={() => setCodexSettingsOpen(true)}><Plug />{codex.connecting ? "查看连接进度" : "连接 Codex"}</Button> : null}{!input.trim() && (agentMode !== "codex" || codex.connected) ? <Suggestions className="mt-5 grid w-full gap-2 text-left">{["帮我整理当前画布的创作思路", "规划一组风格统一的品牌海报", "把当前创意拆解成分镜方案"].map((suggestion) => <Suggestion key={suggestion} suggestion={suggestion} className="text-left justify-start h-auto min-h-8 whitespace-normal py-2" onClick={(prompt) => { setInput(prompt); requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]')?.focus()); }} />)}</Suggestions> : null}</div>} />}
+    </Conversation>
+    {view === "chat" ? <div data-agent-input-area className="flex min-h-0 max-h-[70%] shrink-0 flex-col border-t border-border/40 bg-card p-3">
+      <ScrollArea data-agent-controls-scroll className="min-h-0 max-h-[min(8rem,18cqh)] shrink" contentClassName="space-y-2">
+      <CanvasAgentQueuedMessages queue={activeSession.messageQueue} disabled={pausing} onSteer={steerQueuedMessage} onRemove={id => { updateMessageQueue(queue => ({ ...queue, steeringId: queue.steeringId === id ? undefined : queue.steeringId, messages: queue.messages.filter(item => item.id !== id) })); void onPersist().catch(error => toast.error(error.message)); }} />
+      </ScrollArea>
+      {pendingDelete ? <Confirmation title={`删除“${pendingDelete.title}”？`} description="相关连线和任务记录将按现有逻辑清理" confirmation><div className="flex justify-end gap-2"><Button variant="outline" type="button" onClick={() => settleDeleteConfirmation(false)}>取消</Button><Button variant="destructive" type="button" onClick={() => settleDeleteConfirmation(true)}>确认删除</Button></div></Confirmation> : null}
+      {activeSession.agentState.pendingQuestion && !(busy && activeSession.messages.some((message) => message.questionAnswerFor === activeSession.agentState.pendingQuestion?.id)) ? <CanvasAgentQuestionCard key={`${activeSession.id}:${activeSession.agentState.pendingQuestion.id}`} question={activeSession.agentState.pendingQuestion} busy={busy} active={open && view === "chat"} onAnswer={(answer) => submit(answer, undefined, composerReferenceNodeIDs, { mediaGenerationChoice: canvasAgentQuestionMediaChoice(activeSession.agentState.pendingQuestion!, answer) }) === "started"} onCancel={cancelQuestion} /> : needsMediaChoice && !editingUserMessageID ? <CanvasAgentQuestionCard key={`${activeSession.id}:media-generation`} question={canvasAgentMediaGenerationQuestion(`${activeSession.id}:media-generation`, Number(mediaWaitingReason.match(/(\d+) 个节点/)?.[1] || 1))} busy={busy} active={open && view === "chat" && !editingUserMessageID} onAnswer={chooseMediaGeneration} /> : null}
+      <PromptInput className="shrink-0" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); void draftAttachments.upload(Array.from(event.dataTransfer.files)); }}>
+        <ScrollAreaRoot data-agent-composer-scroll data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(220px,24cqh)]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
         <CanvasAgentPromptChipInput
           value={input}
           references={resourceReferences}
@@ -732,110 +861,36 @@ function CanvasAgentPanelContent({ backendRun, onBackendDocument, open, nodes: l
             if (removedSelectedIDs.length) setRemovedReferenceNodeIDs((current) => new Set([...current, ...removedSelectedIDs]));
             setComposerReferenceNodeIDs(ids);
           }}
-          onPasteImage={(file) => { if (!busy) void draftAttachments.upload([file]); }}
-          onSubmit={(prompt, referenceIDs) => void submit(prompt, undefined, referenceIDs, {})}
-          className="min-h-[min(6rem,18cqh)] w-full px-1 py-1 text-sm leading-6"
+          onPasteImage={(file) => { void draftAttachments.upload([file]); }}
+          onSubmit={(prompt, referenceIDs) => void sendDraft(prompt, referenceIDs)}
+          className="min-h-[min(6rem,18cqh)] w-full px-2.5 py-2 text-base md:text-sm"
           placeholder={activeSession.agentState.pendingQuestion ? "回答上方问题，或补充新的要求" : "开始你的创作，或 @ 引用资源"}
-          placeholderClassName="!left-1 !top-1"
         />
-        </ScrollArea>
-        {draftAttachments.uploading ? <span role="status" className="mt-1 flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground"><LoaderCircle className="size-3 animate-spin" />附件上传中…</span> : null}
-        <CanvasAgentComposerToolbar data-canvas-agent-composer-toolbar>
-          <CanvasAgentAssetMenu disabled={busy} uploading={draftAttachments.uploading} onUpload={() => attachmentInputRef.current?.click()} onOpenAssets={() => setAttachmentPickerOpen(true)} />
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        {draftAttachments.uploading ? <LoadingState compact className="mt-1 shrink-0" label="附件上传中…" /> : null}
+        <PromptInputFooter data-canvas-agent-composer-toolbar>
+          <CanvasAgentAssetMenu disabled={pausing} uploading={draftAttachments.uploading} onUpload={() => attachmentInputRef.current?.click()} onOpenAssets={() => setAttachmentPickerOpen(true)} />
           <CanvasAgentModelPicker model={agentMode === "codex" ? codex.model : model} models={agentMode === "codex" ? (codex.connected ? codex.models.map((item) => ({ value: item.model, label: item.displayName })) : []) : models.map((value) => ({ value, label: value }))} codex={agentMode === "codex"} disabled={busy || Boolean(activeSession.agentState.pendingQuestion)} onChange={agentMode === "codex" ? codex.setModel : onModelChange} />
           <CanvasAgentMediaModelPicker models={mediaModels} disabled={busy || Boolean(activeSession.agentState.pendingQuestion)} />
           <CanvasAgentSkillPicker compact selectedIds={activeSession.activeSkillIds ?? agentConfig.activeSkillIds ?? []} onChange={(activeSkillIds) => commit(sessionsRef.current.map((item) => item.id === activeSessionID ? { ...item, activeSkillIds, updatedAt: new Date().toISOString() } : item))} disabled={busy} />
-          <CanvasAgentSendButton disabled={!busy && (draftAttachments.uploading || (!input.trim() && !draftAttachments.attachments.length))} aria-label={busy ? "停止" : "发送"} onClick={() => busy ? (settleDeleteConfirmation(false), (!abortCanvasAgentRun(abortRef) && backendRun?.status === "running" ? void stopCanvasAgentRun(canvasId, backendRun.id).catch((error) => toast.error(error.message)) : undefined)) : void submit(input, undefined, composerReferenceNodeIDs, {})}>{busy ? <Square className="fill-current" /> : <ArrowUp />}</CanvasAgentSendButton>
-        </CanvasAgentComposerToolbar>
-      </CanvasAgentComposer>}
+          <Context tokens={contextInfo.tokens} limit={contextInfo.limit} compacting={contextInfo.compacting} reported={contextInfo.reported} measured={contextInfo.measured} rows={contextInfo.rows} />
+          {busy && hasDraft ? <TooltipHint content="暂停执行"><Button type="button" size="icon-sm" variant="ghost" aria-label="暂停执行" disabled={pausing} onClick={() => pauseExecution()}><Pause /></Button></TooltipHint> : null}
+          <PromptInputSubmit disabled={pausing || (composerAction !== "pause" && draftAttachments.uploading) || (composerAction === "send" && !hasDraft)} aria-busy={pausing} aria-label={{ send: "发送", enqueue: "加入消息队列", pause: "暂停执行", resume: resumable ? "继续未完成任务" : "继续消息队列" }[composerAction]} onClick={handleComposerAction}>{composerAction === "pause" ? <Pause /> : composerAction === "resume" ? <Play /> : <ArrowUp />}</PromptInputSubmit>
+        </PromptInputFooter>
+      </PromptInput>
     </div> : null}
-    <Dialog open={deleteSessionIDs.length > 0} onOpenChange={(open) => !open && setDeleteSessionIDs([])}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除对话记录？</DialogTitle><DialogDescription>将删除 {deleteSessionIDs.length} 条对话记录，此操作不可撤销。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setDeleteSessionIDs([])}>取消</Button><Button type="button" variant="destructive" disabled={busy} onClick={() => { if (busy) return; removeSessions(deleteSessionIDs); setDeleteSessionIDs([]); }}>删除</Button></DialogFooter></DialogContent></Dialog>
-    <input ref={attachmentInputRef} type="file" multiple accept="image/*,video/mp4,video/quicktime,audio/mpeg,audio/wav,audio/x-wav" aria-label="上传 Agent 附件" className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (!busy) void draftAttachments.upload(files); }} />
-    {attachmentPickerOpen && authSession ? <Suspense fallback={<span role="status" className="sr-only">正在加载素材库</span>}><CanvasAgentAssetPicker open session={authSession} onInsert={(payload) => { if (!busy) draftAttachments.add(payload); setAttachmentPickerOpen(false); }} onClose={() => setAttachmentPickerOpen(false)} /></Suspense> : null}
+    <ConfirmDialog open={deleteSessionIDs.length > 0} onOpenChange={(open) => !open && setDeleteSessionIDs([])} title="删除对话记录？" description={`将删除 ${deleteSessionIDs.length} 条对话记录，此操作不可撤销。`} confirmLabel="删除" destructive busy={busy} onConfirm={() => { if (busy) return; removeSessions(deleteSessionIDs); setDeleteSessionIDs([]); }} />
+    <input ref={attachmentInputRef} type="file" multiple accept="image/*,video/mp4,video/quicktime,audio/mpeg,audio/wav,audio/x-wav" aria-label="上传 Agent 附件" className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void draftAttachments.upload(files); }} />
+    {attachmentPickerOpen && authSession ? <Suspense fallback={<span role="status" className="sr-only">正在加载素材库</span>}><CanvasAgentAssetPicker open session={authSession} onInsert={(payload) => { draftAttachments.add(payload); setAttachmentPickerOpen(false); }} onClose={() => setAttachmentPickerOpen(false)} /></Suspense> : null}
     {codexApproval.dialog}
-    </aside>
+    </Card>
   </>;
-}
-
-const ASSISTANT_MARKDOWN_COMPONENTS: Components = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4" />,
-  pre: ({ node: _node, ...props }) => <ScrollArea className="my-2 rounded-lg bg-muted" viewClass="w-max min-w-full"><pre {...props} /></ScrollArea>,
-  table: ({ node: _node, ...props }) => <ScrollArea className="my-2" viewClass="w-max min-w-full"><table {...props} /></ScrollArea>,
-};
-
-const AssistantMarkdown = memo(function AssistantMarkdown({ children, components = ASSISTANT_MARKDOWN_COMPONENTS }: { children: string; components?: Components }) {
-  return <div className={cn("min-w-0 whitespace-normal break-words", "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0", "[&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h1:first-child]:mt-0", "[&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-base [&_h2]:font-semibold [&_h2:first-child]:mt-0", "[&_h3]:mb-1.5 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3:first-child]:mt-0", "[&_h4]:my-2 [&_h4]:font-semibold", "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1", "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-[color:var(--agent-markdown-border)] [&_blockquote]:pl-3 [&_blockquote]:opacity-80", "[&_hr]:my-3 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-[color:var(--agent-markdown-border)]", "[&_code]:rounded [&_code]:bg-[var(--agent-markdown-surface)] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]", "[&_pre]:m-0 [&_pre]:rounded-lg [&_pre]:bg-[var(--agent-markdown-surface)] [&_pre]:p-3", "[&_pre_code]:bg-transparent [&_pre_code]:p-0", "[&_table]:m-0 [&_table]:w-full [&_table]:border-collapse [&_th]:border-b [&_th]:border-[color:var(--agent-markdown-border)] [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_td]:border-b [&_td]:border-[color:var(--agent-markdown-border)] [&_td]:px-2 [&_td]:py-1.5")} style={{ "--agent-markdown-surface": "var(--muted)", "--agent-markdown-border": "var(--border)" } as CSSProperties}><ReactMarkdown remarkPlugins={[remarkGfm]} components={components} skipHtml>{children}</ReactMarkdown></div>;
-});
-
-export function AssistantMessages({ messages, protocolMessages, nodes, onFocusNode, onRetry, onEdit, editDisabled, busy, pendingQuestion, editingMessageID, onSaveEdit, onCancelEdit }: { protocolMessages?: CanvasAgentProtocolMessage[]; editingMessageID?: string; onSaveEdit?: (message: CanvasAssistantMessage, text: string) => void; onCancelEdit?: () => void; onEdit: (message: CanvasAssistantMessage) => void; editDisabled: boolean; pendingQuestion?: string; busy: boolean; messages: CanvasAssistantMessage[]; nodes: CanvasNode[]; onFocusNode?: (nodeID: string) => void; onRetry: (message: CanvasAssistantMessage) => void }) {
-  const focusNodeRef = useRef(onFocusNode);
-  useLayoutEffect(() => { focusNodeRef.current = onFocusNode; }, [onFocusNode]);
-  // Keep history renderers stable while canvas viewport callbacks change.
-  const focusNode = useCallback((nodeID: string) => focusNodeRef.current?.(nodeID), []);
-  const handleFocusNode = onFocusNode ? focusNode : undefined;
-  const components = useMemo<Components>(() => ({ ...ASSISTANT_MARKDOWN_COMPONENTS, code: ({ children, className, node: markdownNode, ...props }) => {
-    const node = nodes.find((item) => item.id === String(children).trim());
-    if (!node || className || !handleFocusNode || markdownNode?.position?.start.line !== markdownNode?.position?.end.line) return <code className={className} {...props}>{children}</code>;
-    return <CanvasAgentNodeChip node={node} onFocus={handleFocusNode} />;
-  } }), [nodes, handleFocusNode]);
-  const renderTraceText = useCallback((text: string) => <AssistantMarkdown components={components}>{text}</AssistantMarkdown>, [components]);
-  const displayTraces = useMemo(() => {
-    const commands = new Map((protocolMessages || []).flatMap((message) => message.role === "assistant" ? (message.toolCalls || []).map((call) => [call.id, call.name] as const) : []));
-    return new Map(messages.map((message) => [message.id, (message.trace || []).map((entry) => {
-      if (entry.type !== "operation") return entry;
-      const name = commands.get(entry.id.replace(/^tool:/, ""));
-      return name ? { ...entry, kind: canvasAgentToolKind(name) } : entry;
-    })]));
-  }, [messages, protocolMessages]);
-  function renderMessage(message: CanvasAssistantMessage) {
-    if (message.questionAnswerFor) return null;
-    const running = message.status === "thinking" || message.status === "running";
-    const isAssistant = message.role === "assistant";
-    const hideReply = isAssistant && (message.trace?.some((entry) => entry.type === "question" && entry.question === message.text) || pendingQuestion === message.text && message.id === messages.findLast((item) => item.role === "assistant")?.id);
-    const editing = message.id === editingMessageID && onSaveEdit && onCancelEdit;
-    return <div key={message.id} data-agent-message={message.id} className={cn("flex min-w-0 flex-col gap-2", isAssistant ? "items-start py-1" : "items-end")}>
-      {editing ? <div className="w-full min-w-0"><UserMessageContent message={message} showText={false} /><CanvasAgentMessageEditor key={message.id} text={message.text} disabled={busy} onSave={(text) => onSaveEdit(message, text)} onCancel={onCancelEdit} /></div> : null}
-      {!editing && (message.text && !hideReply && !message.questionAnswerFor) ? <div className={cn("min-w-0 whitespace-pre-wrap break-words text-sm leading-6", isAssistant ? "w-full" : "max-w-[88%] rounded-xl bg-brand-soft px-3 py-2")}>
-        {isAssistant ? <AssistantMarkdown components={components}>{message.text}</AssistantMarkdown> : <UserMessageContent message={message} showText={true} />}
-      </div> : null}
-      {!editing && !running && message.text && !hideReply ? <div className="flex gap-1"><Button size="icon" variant="ghost" className="size-7" title="复制消息" aria-label="复制消息" onClick={() => { void Promise.resolve().then(() => copyClipboardText(message.text)).then(() => toast.success("已复制")).catch((error: Error) => toast.error(error.message)); }}><Copy className="size-3.5" /></Button>{!isAssistant && !message.questionAnswerFor ? <Button size="icon" variant="ghost" className="size-7" aria-label="编辑消息" title="编辑消息" disabled={editDisabled} onClick={() => onEdit(message)}><Pencil className="size-3.5" /></Button> : null}{isAssistant && message.id === messages.findLast((item) => item.role === "assistant")?.id ? <Button size="icon" variant="outline" className="size-7 rounded-full" title="重试" aria-label="重试" disabled={busy} onClick={() => onRetry(message)}><RotateCcw className="size-3.5" /></Button> : null}</div> : null}
-    </div>;
-  }
-  const timings = canvasAgentTaskTimings(messages);
-  return <>{canvasAgentTaskGroups(messages).map((task) => {
-    const latest = task.replies.at(-1);
-    const running = latest?.status === "thinking" || latest?.status === "running";
-    const isLatest = latest?.id === messages.findLast((message) => message.role === "assistant")?.id;
-    const complete = latest?.status === "success" && !(isLatest && pendingQuestion);
-    const conclusion = latest && !running && !task.replies.some((message) => message.trace?.some((entry) => entry.type === "question" && entry.question === latest.text)) && !(isLatest && pendingQuestion === latest.text) ? latest : undefined;
-    return <div key={task.id} data-agent-task={task.id} className="min-w-0 space-y-3">
-      {task.request ? renderMessage(task.request) : null}
-      {latest ? <CanvasAgentTaskProcess complete={complete} running={running} timing={timings.get(latest.id) || {}}>
-        {task.replies.map((message) => <div key={message.id} data-agent-process-message={message.id} className="min-w-0 space-y-2">
-          <CanvasAgentExecutionTrace entries={(displayTraces.get(message.id) || []).filter((entry) => !(message === conclusion && entry.type === "text" && entry.text === message.text))} pendingQuestion={pendingQuestion} nodes={nodes} running={message === latest && running} activity={message.activity} onFocusNode={handleFocusNode} renderText={renderTraceText} />
-          {message !== conclusion && message.text && !message.trace?.some((entry) => entry.type === "text" && entry.text === message.text || entry.type === "question" && entry.question === message.text) && !(isLatest && pendingQuestion === message.text) ? <div className="text-sm leading-6">{renderTraceText(message.text)}</div> : null}
-        </div>)}
-      </CanvasAgentTaskProcess> : null}
-      {conclusion ? <div data-agent-conclusion className="min-w-0">{renderMessage({ ...conclusion, trace: [] })}</div> : null}
-    </div>;
-  })}</>;
-
 }
 
 function AssistantHistory({ sessions, activeSession, checkedIDs, deleteDisabled, onToggleChecked, onOpen, onDelete, onRename }: { sessions: CanvasAssistantSession[]; activeSession: CanvasAssistantSession; checkedIDs: string[]; deleteDisabled: boolean; onToggleChecked: (id: string, checked: boolean) => void; onOpen: (id: string) => void; onDelete: (id: string) => void; onRename: (id: string, title: string) => void }) {
   const [editingID, setEditingID] = useState("");
   if (!sessions.length) return <EmptyState icon={History} title="暂无历史对话" compact />;
-  return <div className="space-y-1">{sessions.map((item) => <div key={item.id} className={cn("group flex items-center gap-2 rounded-lg px-2 py-1.5", item.id === activeSession.id && "bg-muted")}><Checkbox className="shrink-0" aria-label={`选择对话 ${item.title}`} checked={checkedIDs.includes(item.id)} onCheckedChange={(checked) => onToggleChecked(item.id, checked === true)} /><div className="min-w-0 flex-1">{editingID === item.id ? <input aria-label="对话名称" className="w-full rounded border bg-background px-1 text-sm" defaultValue={item.title} onKeyDown={(event) => { if (event.nativeEvent.isComposing || event.keyCode === 229) return; if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = item.title; setEditingID(""); } }} onBlur={(event) => { const nextTitle = event.target.value.trim(); if (nextTitle) onRename(item.id, nextTitle); setEditingID(""); }} /> : <button type="button" className="w-full text-left text-sm disabled:opacity-50" disabled={deleteDisabled} onClick={() => onOpen(item.id)}><span className="block truncate">{item.title}</span><span className="text-xs text-muted-foreground">{item.messages.length} 条消息</span></button>}</div><Button size="icon" variant="ghost" className="size-7" title="重命名" aria-label={`重命名对话 ${item.title}`} disabled={deleteDisabled} onClick={() => setEditingID(item.id)}><Pencil className="size-3.5" /></Button><Button size="icon" variant="ghost" className="size-7 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="删除" aria-label={`删除对话 ${item.title}`} disabled={deleteDisabled} onClick={() => onDelete(item.id)}><Trash2 className="size-3.5" /></Button></div>)}</div>;
-}
-
-const UserMessageContent = memo(function UserMessageContent({ message, showText = true }: { message: CanvasAssistantMessage; showText?: boolean }) {
-  const references = useMemo(() => message.references?.filter((item) => item.source !== "attachment").map(assistantToPromptReference) || [], [message.references]);
-  return <><CanvasAgentAttachments attachments={message.references?.filter((item) => item.source === "attachment") || []} />{showText ? <CanvasAgentPromptChipInput value={message.text} references={references} onChange={() => undefined} readOnly /> : null}</>;
-});
-
-function assistantToPromptReference(reference: CanvasAssistantReference): CanvasResourceReference {
-  const kind = reference.type === "video" ? "video" : reference.type === "audio" ? "audio" : reference.type === "text" ? "text" : "image";
-  return { id: reference.id, nodeID: reference.id, kind, label: reference.label || reference.title, title: reference.title, previewURL: reference.dataUrl || reference.url, text: reference.text, active: true };
+  return <div className="space-y-1">{sessions.map((item) => <Item variant={item.id === activeSession.id ? "muted" : "default"} key={item.id} className="group flex items-center gap-2 px-2 py-1.5"><Checkbox className="shrink-0" aria-label={`选择对话 ${item.title}`} checked={checkedIDs.includes(item.id)} onCheckedChange={(checked) => onToggleChecked(item.id, checked === true)} /><div className="min-w-0 flex-1">{editingID === item.id ? <Input aria-label="对话名称" className="w-full px-1" defaultValue={item.title} onKeyDown={(event) => { if (event.nativeEvent.isComposing || event.keyCode === 229) return; if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = item.title; setEditingID(""); } }} onBlur={(event) => { const nextTitle = event.target.value.trim(); if (nextTitle) onRename(item.id, nextTitle); setEditingID(""); }} /> : <Button variant="ghost" type="button" className="w-full flex-col items-start text-left h-auto min-h-8 whitespace-normal py-2" disabled={deleteDisabled} onClick={() => onOpen(item.id)}><span className="block truncate">{item.title}</span><span className="text-xs text-muted-foreground">{item.messages.length} 条消息</span></Button>}</div><TooltipHint content={"重命名"}><Button size="icon" variant="ghost"  aria-label={`重命名对话 ${item.title}`} disabled={deleteDisabled} onClick={() => setEditingID(item.id)}><Pencil  /></Button></TooltipHint><TooltipHint content={"删除"}><Button size="icon" variant="ghost" className="sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`删除对话 ${item.title}`} disabled={deleteDisabled} onClick={() => onDelete(item.id)}><Trash2  /></Button></TooltipHint></Item>)}</div>;
 }
 
 async function referencesForNodeIDs(nodes: CanvasNode[], nodeIDs: readonly string[], referenceByID: ReadonlyMap<string, CanvasResourceReference>, signal?: AbortSignal): Promise<CanvasAssistantReference[]> {

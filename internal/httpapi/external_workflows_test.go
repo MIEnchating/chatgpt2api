@@ -106,7 +106,7 @@ func TestAutoDLRuntimeUsesSelectedProtocolForAudioAndVideo(t *testing.T) {
 			defer server.Close()
 			externalWorkflowTestClient(app, server)
 			identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-			status, err := app.customRelayConfigs.Create(identityScope(identity), kind, "AutoDL", "http://autodl.example", "autodl-key", "autodl")
+			status, err := app.customRelayConfigs.Create(identityScope(identity), kind, "AutoDL", "http://autodl.example", "autodl-key", "autodl", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -147,7 +147,7 @@ func TestAutoDLMetadataRouteRequiresAuthenticationAndUsesSavedEndpoint(t *testin
 	defer server.Close()
 	externalWorkflowTestClient(app, server)
 	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-	status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "AutoDL", "http://autodl.example", "hidden-secret", "autodl")
+	status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "AutoDL", "http://autodl.example", "hidden-secret", "autodl", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestAutoDLMetadataRouteRequiresAuthenticationAndUsesSavedEndpoint(t *testin
 	if res.Code != 200 || !strings.Contains(res.Body.String(), `"uuid":"flow"`) || strings.Contains(res.Body.String(), "hidden-secret") {
 		t.Fatalf("metadata = %d %s", res.Code, res.Body.String())
 	}
-	other, err := app.customRelayConfigs.Create(identityScope(identity), "video", "普通线路", "http://autodl.example", "key", "openai")
+	other, err := app.customRelayConfigs.Create(identityScope(identity), "video", "普通线路", "http://autodl.example", "key", "openai", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestRunningHubWorkflowMetadataRouteUsesSavedCredentialAndRedactsKey(t *test
 	defer server.Close()
 	externalWorkflowTestClient(app, server)
 	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-	status, err := app.customRelayConfigs.Create(identityScope(identity), "image", "RunningHub", "http://runninghub.example", "runninghub-secret", "runninghub")
+	status, err := app.customRelayConfigs.Create(identityScope(identity), "image", "RunningHub", "http://runninghub.example", "runninghub-secret", "runninghub", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestRunningHubWorkflowMetadataRouteUsesSavedCredentialAndRedactsKey(t *test
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"workflowId":"flow"`) || strings.Contains(res.Body.String(), "runninghub-secret") {
 		t.Fatalf("metadata = %d %s", res.Code, res.Body.String())
 	}
-	other, err := app.customRelayConfigs.Create(identityScope(identity), "image", "OpenAI", "http://runninghub.example", "ordinary-key", "openai")
+	other, err := app.customRelayConfigs.Create(identityScope(identity), "image", "OpenAI", "http://runninghub.example", "ordinary-key", "openai", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestArkAgentPlanModelCandidatesDoNotQueryModels(t *testing.T) {
 			defer server.Close()
 			externalWorkflowTestClient(app, server)
 			identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-			status, err := app.customRelayConfigs.Create(identityScope(identity), tc.kind, "方舟", "http://ark.example/api/plan/v3"+tc.suffix, "key", tc.protocol)
+			status, err := app.customRelayConfigs.Create(identityScope(identity), tc.kind, "方舟", "http://ark.example/api/plan/v3"+tc.suffix, "key", tc.protocol, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -276,7 +276,7 @@ func TestArkStandardModelListKeepsUpstreamResult(t *testing.T) {
 		defer server.Close()
 		externalWorkflowTestClient(app, server)
 		identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-		status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "方舟", "http://ark.example/api/v3", "key", "ark")
+		status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "方舟", "http://ark.example/api/v3", "key", "ark", "")
 		if err != nil {
 			t.Fatal(err)
 		}

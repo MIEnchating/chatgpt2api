@@ -28,7 +28,7 @@ func TestCanvasAgentTimingExcludesWaitingAndFreezesAtCompletion(t *testing.T) {
 }
 
 func TestCanvasAgentTimingSavedOnNativeCompletionAndToolHandoff(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(), nil
 	}, nil)
 	started, err := svc.Start(identity, doc.ID, req)

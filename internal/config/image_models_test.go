@@ -73,3 +73,26 @@ func TestImageModelDefinitionsAcceptExtendedQuality(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestModelGroupsPersist(t *testing.T) {
+	t.Setenv("ROOT_DIR", t.TempDir())
+	unsetEnv(t, "MODEL_GROUPS")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ModelGroups{Overrides: map[string]string{"video-01": "MiniMax"}, Order: []string{"MiniMax", "即梦"}}
+	if _, err := store.Update(map[string]any{"model_groups": want}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("MODEL_GROUPS"); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.ModelGroups(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("groups = %#v, want %#v", got, want)
+	}
+}

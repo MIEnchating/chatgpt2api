@@ -1,14 +1,22 @@
 "use client";
 
+import { Spinner } from "@/components/ui/spinner";
+
+import { RunStatus } from "@/components/ai-elements/run-status";
+import { GenerationProgress } from "@/components/generation/generation-progress";
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
+
+import { TooltipHint } from "@/components/ui/tooltip";
+
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { CheckCircle2, Clock3, ClipboardList, Image as ImageIcon, LoaderCircle, Map as MapIcon, Music, Type, Video } from "lucide-react";
+import { CheckCircle2, ClipboardList, Clock3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { statusToneClasses } from "@/components/ui/status-tone";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/lib/image-options";
 import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import { cn, formatElapsedClock } from "@/lib/utils";
@@ -118,16 +126,6 @@ function getStatusLabel(status: ImageTurnStatus) {
   return "失败";
 }
 
-function getStatusClass(status: ImageTurnStatus) {
-  if (status === "queued") {
-    return statusToneClasses.warning.chip;
-  }
-  if (status === "generating") {
-    return statusToneClasses.info.chip;
-  }
-  return "bg-muted text-muted-foreground ring-border";
-}
-
 function getQueueSizeLabel(turn: ImageTurn) {
   if (turn.mode === "video") {
     const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
@@ -158,31 +156,6 @@ function getQueueLoadingDetail(item: TaskQueueItem, loadingPhase: ImageTurnLoadi
     return `还有 ${item.runningCount} ${unit}处理中`;
   }
   return "";
-}
-
-function getCompletionTone(status: ImageTurnStatus) {
-  if (status === "success" || status === "message") {
-    return {
-      iconClass: statusToneClasses.success.chip,
-      badgeClass: statusToneClasses.success.chip,
-      barClass: statusToneClasses.success.bar,
-      message: "任务已完成",
-    };
-  }
-  if (status === "cancelled") {
-    return {
-      iconClass: statusToneClasses.warning.chip,
-      badgeClass: statusToneClasses.warning.chip,
-      barClass: statusToneClasses.warning.bar,
-      message: "任务已终止",
-    };
-  }
-  return {
-    iconClass: statusToneClasses.danger.chip,
-    badgeClass: statusToneClasses.danger.chip,
-    barClass: statusToneClasses.danger.bar,
-    message: "任务失败",
-  };
 }
 
 function getQueueItem(conversation: ImageConversation, turn: ImageTurn): TaskQueueItem {
@@ -310,63 +283,44 @@ function QueueItem({
   const longTaskHint = getQueueLongTaskHint(item.turn);
 
   return (
-    <button
+    <Button variant="outline"
       type="button"
-      className="w-full border-b border-border/70 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
+      className="block h-auto w-full whitespace-normal p-0 text-left"
       onClick={() => onOpenConversation(item.conversationId)}
     >
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1",
-            isQueued ? statusToneClasses.warning.chip : statusToneClasses.info.chip,
-          )}
-        >
-          {isQueued ? <Clock3 className="size-4" /> : <LoaderCircle className="size-4 animate-spin" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {item.conversationTitle || item.turn.prompt || "未命名任务"}
-            </p>
-            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", getStatusClass(effectiveStatus))}>
-              {getStatusLabel(effectiveStatus)}
-            </span>
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-            {item.turn.prompt || "无提示词内容"}
-          </p>
+      <RunStatus
+        status={isQueued ? "waiting" : "running"}
+        title={item.conversationTitle || item.turn.prompt || "未命名任务"}
+        description={getStatusLabel(effectiveStatus)}
+      />
+      <div className="min-w-0 space-y-3 px-3 py-3">
+        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          {item.turn.prompt || "无提示词内容"}
+        </p>
 
-          <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="min-w-0 truncate">{[...detailParts, `${item.completedCount + item.failedCount + item.cancelledCount}/${item.totalCount}`].join(" · ")}</span>
-            {item.queuedCount > 0 ? (
-              <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-mono tabular-nums", statusToneClasses.warning.chip)}>
-                排队 {item.queuedCount}
-              </span>
-            ) : null}
-            {item.runningCount > 0 ? (
-              <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-mono tabular-nums", statusToneClasses.info.chip)}>
-                处理中 {item.runningCount}
-              </span>
-            ) : null}
-          </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="min-w-0 truncate">{[...detailParts, `${item.completedCount + item.failedCount + item.cancelledCount}/${item.totalCount}`].join(" · ")}</span>
+          {item.queuedCount > 0 ? (
+            <Badge variant="secondary" className="shrink-0 font-mono tabular-nums">
+              排队 {item.queuedCount}
+            </Badge>
+          ) : null}
+          {item.runningCount > 0 ? (
+            <Badge variant="secondary" className="shrink-0 font-mono tabular-nums">
+              处理中 {item.runningCount}
+            </Badge>
+          ) : null}
+        </div>
 
-          <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate font-medium text-foreground">{progressMessage}</span>
-              <span className="shrink-0 font-mono tabular-nums">{progressPercent}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-brand transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
-            </div>
-            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate">{longTaskHint || progressDetail || formatQueueTime(item.turn.createdAt)}</span>
-              {elapsed ? <span className="shrink-0 font-mono tabular-nums">已运行 {elapsed}</span> : null}
-            </div>
+        <div className="space-y-2">
+          <GenerationProgress progress={progressPercent} label={progressMessage} />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <span className="truncate">{longTaskHint || progressDetail || formatQueueTime(item.turn.createdAt)}</span>
+            {elapsed ? <span className="shrink-0 font-mono tabular-nums">已运行 {elapsed}</span> : null}
           </div>
         </div>
       </div>
-    </button>
+    </Button>
   );
 }
 
@@ -377,7 +331,7 @@ function CompletionItem({
   item: RecentQueueCompletion;
   onOpenConversation: (conversationId: string) => void;
 }) {
-  const tone = getCompletionTone(item.finalStatus);
+  const completionMessage = item.finalStatus === "success" || item.finalStatus === "message" ? "任务已完成" : item.finalStatus === "cancelled" ? "任务已终止" : "任务失败";
   const settledCount = item.completedCount + item.failedCount + item.cancelledCount;
   const resultText =
     item.finalStatus === "success" || item.finalStatus === "message"
@@ -385,100 +339,62 @@ function CompletionItem({
       : item.turn.error || getStatusLabel(item.finalStatus);
 
   return (
-    <button
+    <Button variant="outline"
       type="button"
-      className="animate-in fade-in slide-in-from-top-1 w-full border-b border-border/70 px-4 py-3 text-left duration-300 last:border-b-0 hover:bg-muted/40"
+      className="block h-auto w-full whitespace-normal p-0 text-left"
       onClick={() => onOpenConversation(item.conversationId)}
     >
-      <div className="flex items-start gap-3">
-        <span className={cn("relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1", tone.iconClass)}>
-          <CheckCircle2 className="relative size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {item.conversationTitle || item.turn.prompt || "未命名任务"}
-            </p>
-            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", tone.badgeClass)}>
-              {getStatusLabel(item.finalStatus)}
-            </span>
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-            {item.turn.prompt || "无提示词内容"}
-          </p>
-          <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate font-medium text-foreground">{tone.message}</span>
-              <span className="shrink-0 font-mono tabular-nums">{resultText}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className={cn("h-full animate-pulse rounded-full", tone.barClass)} style={{ width: "100%" }} />
-            </div>
-          </div>
-        </div>
+      <RunStatus
+        status={item.finalStatus === "error" ? "error" : item.finalStatus === "cancelled" ? "cancelled" : "success"}
+        title={item.conversationTitle || item.turn.prompt || "未命名任务"}
+        description={getStatusLabel(item.finalStatus)}
+      />
+      <div className="min-w-0 space-y-3 px-3 py-3">
+        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          {item.turn.prompt || "无提示词内容"}
+        </p>
+        <GenerationProgress progress={100} label={completionMessage} />
+        <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{resultText}</p>
       </div>
-    </button>
+    </Button>
   );
-}
-
-function getCanvasTaskTypeMeta(type: CanvasTaskQueueItem["type"]) {
-  if (type === "video") return { label: "视频", icon: Video };
-  if (type === "audio") return { label: "音频", icon: Music };
-  if (type === "panorama") return { label: "全景图", icon: MapIcon };
-  if (type === "text") return { label: "文本", icon: Type };
-  return { label: "图片", icon: ImageIcon };
 }
 
 function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueItem; now: number; onOpenCanvas: (canvasID: string) => void }) {
   const terminal = item.status !== "generating";
   const successful = item.status === "success";
-  const meta = getCanvasTaskTypeMeta(item.type);
-  const Icon = meta.icon;
+  const typeLabel = { video: "视频", audio: "音频", panorama: "全景图", text: "文本", image: "图片" }[item.type];
   const elapsed = formatElapsedClock(Math.max(0, Math.floor(((item.completedAt || now) - item.startedAt) / 1000)));
   const statusLabel = item.status === "generating" ? "处理中" : successful ? "已完成" : item.status === "cancelled" ? "已终止" : "失败";
-  const toneKey = item.status === "generating" ? "info" : successful ? "success" : item.status === "cancelled" ? "warning" : "danger";
-  const tone = statusToneClasses[toneKey].chip;
 
   return (
-    <button
+    <Button variant="outline"
       type="button"
-      className={cn(
-        "w-full border-b border-border/70 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40",
-        terminal && "animate-in fade-in slide-in-from-top-1",
-      )}
+      className="block h-auto w-full whitespace-normal p-0 text-left"
       onClick={() => onOpenCanvas(item.canvasID)}
     >
-      <div className="flex items-start gap-3">
-        <span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1", tone)}>
-          {item.status === "generating" ? <LoaderCircle className="size-4 animate-spin" /> : successful ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-foreground">{item.title || `${meta.label}任务`}</p>
-            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", tone)}>{statusLabel}</span>
-          </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.prompt || "无提示词内容"}</p>
-          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">{["无限画布", meta.label, item.model, `${item.completedCount + item.failedCount}/${item.totalCount}`].filter(Boolean).join(" · ")}</p>
-          <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate font-medium text-foreground">{item.error || `${item.canvasTitle} · ${statusLabel}`}</span>
-              <span className="shrink-0 font-mono tabular-nums">{item.progress}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className={cn("h-full rounded-full transition-[width] duration-300", statusToneClasses[toneKey].bar)} style={{ width: `${item.progress}%` }} />
-            </div>
-            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate">{item.canvasTitle}</span>
-              <span className="shrink-0 font-mono tabular-nums">{terminal ? "耗时" : "已运行"} {elapsed}</span>
-            </div>
+      <RunStatus
+        status={item.status === "generating" ? "running" : item.status}
+        title={item.title || `${typeLabel}任务`}
+        description={statusLabel}
+      />
+      <div className="min-w-0 space-y-3 px-3 py-3">
+        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{item.prompt || "无提示词内容"}</p>
+        <p className="truncate text-[11px] text-muted-foreground">{["无限画布", typeLabel, item.model, `${item.completedCount + item.failedCount}/${item.totalCount}`].filter(Boolean).join(" · ")}</p>
+        <div className="space-y-2">
+          <GenerationProgress progress={item.progress} label="画布任务进度" />
+          {item.error ? <p className="text-xs text-destructive [overflow-wrap:anywhere]">{item.error}</p> : null}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <span className="truncate">{item.canvasTitle}</span>
+            <span className="shrink-0 font-mono tabular-nums">{terminal ? "耗时" : "已运行"} {elapsed}</span>
           </div>
         </div>
       </div>
-    </button>
+    </Button>
   );
 }
 
-export function ImageTaskQueue({ className }: { className?: string }) {
+export function ImageTaskQueue({ className, side }: { className?: string; side: "right" | "bottom" }) {
   const navigate = useNavigate();
   const conversations = useImageConversationsForQueue();
   const progressByTurnKey = useSyncExternalStore(
@@ -491,6 +407,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
   const activeCanvasTasks = useMemo(() => canvasTasks.filter((item) => item.status === "generating"), [canvasTasks]);
   const completedCanvasTasks = useMemo(() => canvasTasks.filter((item) => item.status !== "generating"), [canvasTasks]);
   const activeCount = queueItems.length + activeCanvasTasks.length;
+  const hasRunningTasks = activeCanvasTasks.length > 0 || queueItems.some((item) => getEffectiveImageTurnStatus(item.turn) === "generating");
   const [recentCompletions, setRecentCompletions] = useState<RecentQueueCompletion[]>([]);
   const [open, setOpen] = useState(false);
   const previousQueueItemsRef = useRef<Map<string, TaskQueueItem>>(new Map());
@@ -569,77 +486,58 @@ export function ImageTaskQueue({ className }: { className?: string }) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
+      <TooltipHint content={"任务队列"}><span className="inline-flex shrink-0"><PopoverTrigger asChild><Button
           type="button"
-          variant="outline"
-          className={cn(
-            "h-9 rounded-lg px-2.5 shadow-none",
-            activeCount > 0
-              ? statusToneClasses.info.trigger
-              : hasRecentCompletion
-                ? statusToneClasses.success.trigger
-              : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-            className,
-          )}
-          aria-label={activeCount > 0 ? `查看 ${activeCount} 个处理中任务` : hasRecentCompletion ? "查看刚完成的任务" : "查看任务队列"}
-          title="任务队列"
+          variant="ghost"
+          size="icon-lg"
+          className={cn("relative", className)}
+          aria-label={activeCount > 0 ? `查看 ${activeCount} 个排队或处理中任务` : hasRecentCompletion ? "查看刚结束的任务" : "查看任务队列"}
         >
           {activeCount > 0 ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : hasRecentCompletion ? (
-            <CheckCircle2 className="size-4 animate-in zoom-in-50 duration-300" />
+            hasRunningTasks ? <Spinner className="size-5" /> : <Clock3 className="size-5" />
           ) : (
-            <ClipboardList className="size-4" />
+            <ClipboardList className="size-5" />
           )}
-          <span className="hidden text-xs font-medium xl:inline">任务队列</span>
           {activeCount > 0 ? (
-            <span className="inline-flex min-w-5 items-center justify-center rounded-md bg-brand px-1.5 text-[10px] font-semibold leading-5 text-white dark:bg-sky-400 dark:text-sky-950">
+            <Badge variant="default" className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center">
               {activeCount}
-            </span>
+            </Badge>
           ) : null}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent scrollable={false} align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),420px)] overflow-hidden rounded-2xl p-0">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand dark:bg-sky-950/30 dark:text-sky-300">
-              <ClipboardList className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-foreground">任务队列</div>
-              <div className="text-xs leading-5 text-muted-foreground">
-                {activeCount > 0
-                  ? `${activeCount} 个任务正在排队或处理`
-                  : hasRecentCompletion
-                    ? "最近完成的任务"
-                    : "查看任务状态与处理进度"}
-              </div>
-            </div>
-          </div>
-        </div>
+        </Button></PopoverTrigger></span></TooltipHint>
+      <PopoverContent side={side} align="end" sideOffset={8} collisionPadding={8} className="max-h-[var(--radix-popover-content-available-height)] w-[min(calc(100vw-2rem),420px)] overflow-hidden">
+        <Item size="sm" className="shrink-0">
+          <ItemMedia variant="icon"><ClipboardList /></ItemMedia>
+          <ItemContent className="min-w-0">
+            <ItemTitle>任务队列</ItemTitle>
+            <ItemDescription>
+              {activeCount > 0
+                ? `${activeCount} 个任务正在排队或处理`
+                : hasRecentCompletion
+                  ? "最近结束的任务"
+                  : "查看任务状态与处理进度"}
+            </ItemDescription>
+          </ItemContent>
+        </Item>
 
         {queueItems.length > 0 || recentCompletions.length > 0 || canvasTasks.length > 0 ? (
-          <ScrollArea aria-live="polite" className="min-h-0 max-h-[min(68dvh,520px)] flex-1 bg-background">
-            <div className="flex flex-col">
-              {queueItems.map((item) => (
-                <QueueItem
-                  key={`${item.conversationId}:${item.turn.id}`}
-                  item={item}
-                  now={now}
-                  onOpenConversation={handleOpenConversation}
-                />
-              ))}
-              {activeCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
-              {recentCompletions.map((item) => (
-                <CompletionItem
-                  key={`${item.key}:${item.completedAt}`}
-                  item={item}
-                  onOpenConversation={handleOpenConversation}
-                />
-              ))}
-              {completedCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
-            </div>
+          <ScrollArea aria-live="polite" className="max-h-[min(68dvh,520px)] flex-1" contentClassName="flex flex-col gap-2 py-1" onWheel={(event) => { event.stopPropagation(); }}>
+            {queueItems.map((item) => (
+              <QueueItem
+                key={`${item.conversationId}:${item.turn.id}`}
+                item={item}
+                now={now}
+                onOpenConversation={handleOpenConversation}
+              />
+            ))}
+            {activeCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
+            {recentCompletions.map((item) => (
+              <CompletionItem
+                key={`${item.key}:${item.completedAt}`}
+                item={item}
+                onOpenConversation={handleOpenConversation}
+              />
+            ))}
+            {completedCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
           </ScrollArea>
         ) : (
           <EmptyState compact icon={CheckCircle2} title="暂无处理中的任务" description="新任务开始后，状态与进度会显示在这里" />

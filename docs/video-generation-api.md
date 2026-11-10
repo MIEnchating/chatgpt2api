@@ -94,8 +94,13 @@ NewAPI 的 `/v1/videos` 对外状态为 `unknown`、`queued`、`in_progress`、`
 
 契约可以把本地参考素材声明为：
 
-- `url`：参考素材必须是上游可访问的 HTTP 或 HTTPS URL。
 - `multipart`：本地素材使用契约声明的文件字段上传；可配置字段是否可重复，以及是否允许和外部 URL 混用。
+- `base64`：在构造上游请求时读取平台暂存素材，按 `base64_format` 编码为 `data_url`（含 MIME 前缀，默认）或 `raw`（纯 Base64）。任务记录保留文件引用，不保存编码正文。
+- `url`：参考素材必须是上游可访问的 HTTP 或 HTTPS URL。
+
+`transport.material_transports` 可记录接口明确支持的多种提交方式。服务端按 **上传文件（multipart）> Base64 > 公网 URL** 排序，并将 `local_material` 设为第一项；两种方式同样按此顺序选择，只有一种直接使用。没有声明多种方式时，`local_material` 表示唯一提交方式。文档解析和手动编辑均只声明接口实际支持的方式；这个顺序用于提交前选择，提交失败不会自动切换方式重试。
+
+浏览器向平台上传文件使用 multipart，不代表对应上游也支持 multipart。URL-only 模型使用平台本地素材时，必须配置上游可访问的素材基础地址 `IMAGE_BASE_URL`，相对地址不能发送给上游。Agent 将运行时生成的素材传给后续视频模型时遵循契约的选择结果；使用 multipart 或 Base64 时，暂存素材保留为本地文件引用，不因配置了公网基础地址或素材已有公网 URL 而改发 URL。素材数量和组合限制始终以当前模型的生成模式为准。
 
 请求体只包含 `model`、`prompt` 和契约明确映射出的字段。客户端提交的厂家、渠道或其他未声明字段不会透传。
 

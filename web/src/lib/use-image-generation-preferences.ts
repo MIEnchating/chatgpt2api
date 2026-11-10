@@ -21,6 +21,8 @@ import {
 
 export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreferences = {
   composer_mode: "image",
+  smart_context_enabled: false,
+  context_text_model: "",
   video_task_count: 1,
   video_parameters: {},
   image_model: "",
@@ -106,6 +108,8 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
       ...DEFAULT_CREATION_WORKBENCH_PREFERENCES,
       ...value?.workbench,
       composer_mode: value?.workbench?.composer_mode === "video" ? "video" : "image",
+      smart_context_enabled: value?.workbench?.smart_context_enabled === true,
+      context_text_model: String(value?.workbench?.context_text_model || "").trim(),
       video_task_count: Math.max(1, Math.min(6, Math.round(Number(value?.workbench?.video_task_count) || 1))),
       video_parameters: value?.workbench?.video_parameters || {},
       image_model: String(value?.workbench?.image_model || "").trim(),

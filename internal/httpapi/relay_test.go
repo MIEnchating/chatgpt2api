@@ -67,7 +67,7 @@ func TestCustomRelaySelectionRejectsPrivateEndpointWithoutForwardingInternals(t 
 	}))
 	defer upstream.Close()
 	privateHostnameURL := strings.Replace(upstream.URL, "127.0.0.1", "localhost", 1)
-	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", privateHostnameURL, "sk-custom", "openai")
+	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", privateHostnameURL, "sk-custom", "openai", "")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -319,6 +319,35 @@ func TestDownloadRelayVideoAllowsAuthenticatedSameOriginRedirect(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(videoDir, strings.TrimPrefix(localURL, "/videos/")))
 	if err != nil || string(data) != "video" {
 		t.Fatalf("saved video = %q, error = %v", data, err)
+	}
+}
+
+func TestDownloadRelayVideoRetriesTransientContentGatewayFailure(t *testing.T) {
+	var attempts atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fixture-key" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		if attempts.Add(1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer upstream.Close()
+
+	app := &App{videoDir: t.TempDir()}
+	localURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "fixture-key", "owner", "local-task", "provider-task", upstream.URL, nil)
+	if err != nil {
+		t.Fatalf("downloadRelayVideo() error = %v", err)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("content attempts = %d, want 3", attempts.Load())
+	}
+	saved, err := os.ReadFile(filepath.Join(app.videoDir, strings.TrimPrefix(localURL, "/videos/")))
+	if err != nil || string(saved) != "video" {
+		t.Fatalf("saved video = %q, error = %v", saved, err)
 	}
 }
 
@@ -970,6 +999,16 @@ func TestRelayGrokImageGenerationUsesNewAPIImageRouteAndAllowlist(t *testing.T) 
 	}
 	if !reflect.DeepEqual(received, want) {
 		t.Fatalf("Grok upstream payload = %#v, want %#v", received, want)
+	}
+}
+
+func TestAgnes25ImageResolutionAndRatio(t *testing.T) {
+	for _, model := range []string{"agnes-image-2.5-flash", "agnes-image-2.5", "agnes-image-2.1-flash"} {
+		payload := map[string]any{"model": model, "size": "16:9", "image_resolution": "4k", "quality": "low"}
+		sanitizeRelayImagePayload(payload)
+		if payload["size"] != "4K" || payload["ratio"] != "16:9" {
+			t.Fatalf("%s parameters=%#v", model, payload)
+		}
 	}
 }
 

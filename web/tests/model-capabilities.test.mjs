@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { filterModelsByCapability } from "../src/lib/model-capabilities.ts";
+import { activeVideoModelContracts, installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
 
 const models = ["gpt-5.5", "gpt-image-2", "sora-2", "gpt-4o-mini-tts"];
 
@@ -40,4 +42,28 @@ test("keeps MiniMax H3 video models in fetched video candidates", () => {
 
 test("classifies Seedance short names without treating SDXL as video", () => {
   assert.deepEqual(filterModelsByCapability(["sd2.5 720p", "vendor/sd2-0", "seedance2-5", "sdxl"], "video"), ["sd2.5 720p", "vendor/sd2-0", "seedance2-5"]);
+});
+
+test("recognizes all 24 imported video models when filtering fetched IDs", () => {
+  const previous = activeVideoModelContracts();
+  const contracts = ["xzapi", "dramaya-wan-3"].flatMap((name) => {
+    const document = JSON.parse(readFileSync(new URL(`../../integrations/newapi/${name}/contract.json`, import.meta.url)));
+    return document.contracts.filter((item) => item.enabled).map((item) => item.contract);
+  });
+  const videos = contracts.flatMap((contract) => contract.models);
+  try {
+    installVideoModelContracts(contracts);
+    assert.equal(videos.length, 24);
+    const fetched = [...videos, "gpt-5.5", "sdxl", "gpt-4o-mini-tts"];
+    assert.deepEqual(filterModelsByCapability(fetched, "video"), videos);
+    assert.deepEqual(filterModelsByCapability(fetched, "text"), ["gpt-5.5"]);
+    assert.deepEqual(filterModelsByCapability(fetched, "image"), ["sdxl"]);
+    assert.deepEqual(filterModelsByCapability(fetched, "audio"), ["gpt-4o-mini-tts"]);
+    assert.deepEqual(filterModelsByCapability([videos[0]], "video", { [videos[0]]: "text" }), []);
+    assert.deepEqual(filterModelsByCapability([videos[0]], "text", { [videos[0]]: "text" }), [videos[0]]);
+    installVideoModelContracts([]);
+    assert.deepEqual(filterModelsByCapability(["ch0101-sd-2.0-480p"], "video"), []);
+  } finally {
+    installVideoModelContracts(previous);
+  }
 });

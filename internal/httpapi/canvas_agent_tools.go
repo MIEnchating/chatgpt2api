@@ -16,6 +16,9 @@ func (a *App) handleCanvasAgentTool(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !requireAgentJSON(w, r) {
+		return
+	}
 	if !a.identityCanAccessAPI(identity, http.MethodPut, "/api/canvas") || !a.identityCanAccessAPI(identity, http.MethodPost, "/api/creation-tasks") {
 		util.WriteError(w, 403, "当前账号没有画布写入或生成权限")
 		return

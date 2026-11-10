@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
 
 import { toast } from "sonner";
 
@@ -26,6 +25,7 @@ import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preferenc
 import {
   createRelayTokenModelLoader,
   EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT,
+  RELAY_MODEL_CONFIG_CHANGED_EVENT,
 } from "@/lib/relay-token-models";
 import {
   dismissImageGenerationPreferencesLoadError,
@@ -34,14 +34,14 @@ import {
 } from "@/lib/image-generation-preferences-retry";
 
 export function RelayTokenPreferencesProvider({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
   const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
   const sessionKey = session?.key || "";
   const [tokenNames, setSelectedTokenNames] = useState<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const lastTokenByModelRef = useRef(new Map<string, string>());
   const tokenNamesRef = useRef<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const [preferencesReady, setPreferencesReady] = useState(false);
-  const modelScope = JSON.stringify([sessionKey, preferencesReady, tokenNames, pathname]);
+  const modelTokenNamesKey = JSON.stringify(Array.from(new Set(Object.values(tokenNames).flat())).sort());
+  const modelScope = JSON.stringify([sessionKey, preferencesReady, modelTokenNamesKey]);
   const [modelState, setModelState] = useState({ scope: "", snapshot: EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT });
   const modelLoaderRef = useRef<ReturnType<typeof createRelayTokenModelLoader> | null>(null);
   const modelSnapshot = modelState.scope === modelScope ? modelState.snapshot : EMPTY_RELAY_TOKEN_MODEL_SNAPSHOT;
@@ -108,19 +108,30 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
 
   useEffect(() => {
     if (!preferencesReady || !sessionKey) return;
-    const names = Array.from(new Set(Object.values(tokenNames).flat()));
-    const loader = createRelayTokenModelLoader({
-      tokenNames: names,
-      load: fetchRelayModels,
-      onChange: (snapshot) => setModelState({ scope: modelScope, snapshot }),
-    });
-    modelLoaderRef.current = loader;
-    void loader.refresh();
+    const names = JSON.parse(modelTokenNamesKey) as string[];
+    let loader: ReturnType<typeof createRelayTokenModelLoader>;
+    const reloadModels = () => {
+      loader?.dispose();
+      loader = createRelayTokenModelLoader({
+        tokenNames: names,
+        load: fetchRelayModels,
+        onChange: (snapshot) => setModelState({ scope: modelScope, snapshot }),
+      });
+      modelLoaderRef.current = loader;
+      void loader.refresh();
+    };
+    const handleConfigChange = (event: Event) => {
+      const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
+      if (!tokenName || names.includes(tokenName)) reloadModels();
+    };
+    reloadModels();
+    window.addEventListener(RELAY_MODEL_CONFIG_CHANGED_EVENT, handleConfigChange);
     return () => {
+      window.removeEventListener(RELAY_MODEL_CONFIG_CHANGED_EVENT, handleConfigChange);
       loader.dispose();
       if (modelLoaderRef.current === loader) modelLoaderRef.current = null;
     };
-  }, [modelScope, preferencesReady, sessionKey, tokenNames]);
+  }, [modelScope, modelTokenNamesKey, preferencesReady, sessionKey]);
 
   const setTokenNames = useCallback(async (kind: RelayTokenKind, names: string[]) => {
     mutationTracker.activateSession(sessionKey);

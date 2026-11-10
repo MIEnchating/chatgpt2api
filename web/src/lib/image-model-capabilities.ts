@@ -176,7 +176,7 @@ function isAgnesImageModelName(value: string) {
 }
 
 function isAgnesImage21Model(model: string) {
-  return model.trim().toLowerCase().replace(/[\s_]+/g, "-") === "agnes-image-2.1-flash";
+  return /^agnes-image-2\.[15](?:-|$)/.test(model.trim().toLowerCase().replace(/[\s_]+/g, "-"));
 }
 
 function isOfficialGPTImageModelName(value: string) {

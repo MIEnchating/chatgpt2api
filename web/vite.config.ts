@@ -24,7 +24,8 @@ const backendProxyPaths = [
   "/health",
 ] as const;
 const backendProxy = Object.fromEntries(
-  backendProxyPaths.map((path) => [path, { target: backendTarget, changeOrigin: true }]),
+  // Preserve the browser-facing host for the backend's origin validation.
+  backendProxyPaths.map((path) => [path, { target: backendTarget, changeOrigin: false }]),
 );
 
 function compressDevelopmentAssets(): Plugin {
@@ -69,10 +70,19 @@ export default defineConfig({
       "@": path.resolve(webRoot, "src"),
     },
   },
+  optimizeDeps: {
+    include: ["@videojs/react/i18n", "@videojs/react/video"],
+  },
   server: {
     host: "0.0.0.0",
     port: 8002,
     strictPort: true,
+    watch: {
+      ignored: (filePath) => {
+        const relative = path.relative(webRoot, filePath);
+        return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+      },
+    },
     warmup: {
       clientFiles: ["./src/main.tsx", "./src/app/image/page.tsx", "./src/app/profile/page.tsx"],
     },
@@ -87,19 +97,5 @@ export default defineConfig({
   build: {
     outDir: "../internal/web/dist",
     emptyOutDir: true,
-    rolldownOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            {
-              name: "media-vendor",
-              test: /node_modules[\\/]xgplayer[\\/]/,
-              priority: 10,
-              minSize: 0,
-            },
-          ],
-        },
-      },
-    },
   },
 });

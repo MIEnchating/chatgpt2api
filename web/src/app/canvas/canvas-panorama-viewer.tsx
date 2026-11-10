@@ -8,6 +8,9 @@ import "@photo-sphere-viewer/core/index.css";
 
 import { panoramaProxyURL } from "@/app/canvas/canvas-panorama";
 import { TooltipButton } from "@/components/ui/tooltip";
+import { Card } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type CanvasPanoramaViewerProps = {
   src: string;
@@ -92,38 +95,43 @@ function PanoramaSurface({ src, alt, proxyGeneratedPanorama, viewerEntry }: { sr
       destroyAndReleaseViewer();
     }
 
-    try {
-      SYSTEM.load();
-      viewer = new Viewer({
-        container,
-        panorama: panoramaSrc,
-        navbar: false,
-        mousewheel: true,
-        mousemove: true,
-        touchmoveTwoFingers: false,
-        moveInertia: false,
-        defaultZoomLvl: 50,
-        minFov: 25,
-        maxFov: 110,
-      });
-      viewer.addEventListener("ready", handleReady);
-      viewer.addEventListener("panorama-error", handleError);
-    } catch {
-      destroyAndReleaseViewer();
-      container.replaceChildren();
-      setStatus("error");
-      return;
-    }
+    // Let discarded mounts clean up before starting WebGL and image requests.
+    const frame = requestAnimationFrame(() => {
+      try {
+        SYSTEM.load();
+        viewer = new Viewer({
+          container,
+          panorama: panoramaSrc,
+          navbar: false,
+          mousewheel: true,
+          mousemove: true,
+          touchmoveTwoFingers: false,
+          moveInertia: false,
+          defaultZoomLvl: 50,
+          minFov: 25,
+          maxFov: 110,
+        });
+        viewer.addEventListener("ready", handleReady);
+        viewer.addEventListener("panorama-error", handleError);
+      } catch {
+        destroyAndReleaseViewer();
+        container.replaceChildren();
+        setStatus("error");
+      }
+    });
 
-    return destroyViewer;
+    return () => {
+      cancelAnimationFrame(frame);
+      destroyViewer();
+    };
   }, [panoramaSrc, viewerEntry]);
 
   return (
     <div className="relative size-full overflow-hidden">
       {status === "error" ? <img src={src} alt={alt} draggable={false} className="pointer-events-none absolute inset-0 size-full select-none object-contain" /> : null}
       <div ref={containerRef} className="absolute inset-0 transition-opacity duration-200" style={{ opacity: status === "ready" ? 1 : 0 }} />
-      {status === "loading" ? <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 text-xs text-white/80">正在加载全景图...</div> : null}
-      {status === "error" ? <div className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-xs text-white/80">全景图加载失败</div> : null}
+      {status === "loading" ? <Card className="pointer-events-none absolute left-1/2 top-1/2 max-w-full -translate-x-1/2 -translate-y-1/2 p-3"><LoadingState compact label="正在加载全景图…" /></Card> : null}
+      {status === "error" ? <Alert variant="destructive" className="pointer-events-none absolute inset-x-3 bottom-3 w-auto"><AlertDescription>全景图加载失败</AlertDescription></Alert> : null}
     </div>
   );
 }
@@ -163,8 +171,8 @@ export function CanvasPanoramaViewer({ src, alt, proxyGeneratedPanorama = false,
   return (
     <div className="relative size-full overflow-hidden" data-canvas-no-pan data-canvas-no-zoom onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onPointerEnter={activate} onPointerDown={(event) => { activate(); event.stopPropagation(); }} onWheel={(event) => event.stopPropagation()} onDoubleClick={(event) => { if (!expandOnDoubleClick || !onOpen) return; event.stopPropagation(); onOpen(); }}>
       {surface}
-      {onMoveStart ? <TooltipButton type="button" tooltip="拖动节点" aria-label="拖动节点" className="absolute left-2 top-2 z-20 flex size-7 cursor-grab items-center justify-center rounded-md bg-card/85 text-foreground opacity-70 shadow backdrop-blur transition-opacity hover:opacity-100 active:cursor-grabbing" onMouseDown={(event) => { event.preventDefault(); onMoveStart(event); }} onDoubleClick={(event) => event.stopPropagation()}><Move className="size-3.5" /></TooltipButton> : null}
-      {onOpen ? <TooltipButton type="button" tooltip="沉浸式查看" aria-label="沉浸式查看" className="absolute bottom-2 left-2 z-20 flex size-7 items-center justify-center rounded-md bg-card/85 text-foreground opacity-70 shadow backdrop-blur transition-opacity hover:opacity-100" onClick={(event) => { event.stopPropagation(); onOpen(); }} onMouseDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Maximize2 className="size-3.5" /></TooltipButton> : null}
+      {onMoveStart ? <TooltipButton type="button" tooltip="拖动节点" aria-label="拖动节点" className="absolute left-2 top-2 z-20 flex cursor-grab items-center justify-center opacity-70 hover:opacity-100 active:cursor-grabbing" onMouseDown={(event) => { event.preventDefault(); onMoveStart(event); }} onDoubleClick={(event) => event.stopPropagation()}><Move  /></TooltipButton> : null}
+      {onOpen ? <TooltipButton type="button" tooltip="沉浸式查看" aria-label="沉浸式查看" className="absolute bottom-2 left-2 z-20 flex items-center justify-center opacity-70 hover:opacity-100" onClick={(event) => { event.stopPropagation(); onOpen(); }} onMouseDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Maximize2  /></TooltipButton> : null}
     </div>
   );
 }

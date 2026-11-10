@@ -127,12 +127,12 @@ func (a *App) canvasAgentImage(ctx context.Context, identity service.Identity, r
 	return protocol.UploadedImage{Data: data, Filename: "reference.png", ContentType: contentType}, nil
 }
 
-func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Identity, raw, kind string) (string, error) {
+func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Identity, raw, kind string, contract protocol.VideoModelContract) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", err
 	}
-	if isPublicReferenceURL(raw) && !strings.HasPrefix(parsed.Path, "/api/files/") && !strings.HasPrefix(parsed.Path, "/images/") && !strings.HasPrefix(parsed.Path, "/videos/") && !strings.HasPrefix(parsed.Path, "/audios/") {
+	if contract.Transport.LocalMaterial == "url" && isPublicReferenceURL(raw) && !strings.HasPrefix(parsed.Path, "/api/files/") && !strings.HasPrefix(parsed.Path, "/images/") && !strings.HasPrefix(parsed.Path, "/videos/") && !strings.HasPrefix(parsed.Path, "/audios/") {
 		return raw, nil
 	}
 	var data []byte
@@ -154,6 +154,20 @@ func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Id
 				return "", e
 			}
 			reader = object.Stream
+		} else if !strings.HasPrefix(parsed.Path, "/videos/") && !strings.HasPrefix(parsed.Path, "/audios/") && isPublicReferenceURL(raw) {
+			req, e := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+			if e != nil {
+				return "", e
+			}
+			response, e := service.SafeOutboundHTTPClient(30 * time.Second).Do(req)
+			if e != nil {
+				return "", e
+			}
+			if response.StatusCode != http.StatusOK {
+				response.Body.Close()
+				return "", fmt.Errorf("媒体引用读取失败: %d", response.StatusCode)
+			}
+			reader = response.Body
 		} else {
 			prefix, dir := "/videos/", a.videoDir
 			if kind == "audio" {
@@ -210,9 +224,21 @@ func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Id
 			return "", fmt.Errorf("无效媒体内容")
 		}
 	}
+	if contract.Transport.LocalMaterial == "url" && !isPublicReferenceURL(a.resolveImageBaseURL()) {
+		return "", fmt.Errorf("当前视频模型契约只支持公网 HTTP/HTTPS 素材 URL；使用本地素材前请配置公网可访问的素材基础地址 IMAGE_BASE_URL")
+	}
 	result, err := a.storeReferenceUpload(ctx, referenceUpload{data: data, filename: "agent-reference" + ext}, ext, contentType, kind, pathPrefix)
 	if err != nil {
 		return "", err
 	}
-	return util.Clean(result["url"]), nil
+	reference := util.Clean(result["url"])
+	if contract.Transport.LocalMaterial == "multipart" || contract.Transport.LocalMaterial == "base64" {
+		stored, parseErr := url.Parse(reference)
+		if parseErr != nil {
+			return "", parseErr
+		}
+		stored.Path, stored.RawPath = referenceCapabilityPath(stored.Path), ""
+		return stored.RequestURI(), nil
+	}
+	return reference, nil
 }

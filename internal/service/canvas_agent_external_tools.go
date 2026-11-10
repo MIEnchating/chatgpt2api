@@ -68,6 +68,9 @@ func (w *canvasAgentWorker) runTool(call map[string]any) {
 		result = agentError("tool_error", err.Error())
 		status = "error"
 	}
+	if agentMap(result)["ok"] != true {
+		status = "error"
+	}
 	if w.ctx.Err() != nil {
 		result = agentError("execution_interrupted", "工具执行已停止，已提交任务和节点已保留；继续前请读取真实状态")
 		status = "cancelled"

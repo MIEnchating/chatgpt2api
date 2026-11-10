@@ -54,6 +54,7 @@ type App struct {
 	myAssets                *service.MyAssetService
 	history                 *service.ImageConversationHistoryService
 	canvasAgent             *service.CanvasAgentService
+	agentExecutions         *service.AgentExecutionService
 	canvas                  *service.CanvasDocumentService
 	agentSkills             *service.AgentSkillService
 	autoDL                  *service.AutoDLService
@@ -80,6 +81,7 @@ type App struct {
 	loginLimiter            *loginRateLimiter
 	ssoSessions             ssoSessionCache
 	settingsMu              sync.Mutex
+	modelPricingCache       *service.RelayModelPricingCache
 	backgroundWorkers       sync.WaitGroup
 	storageBackendCloser    io.Closer
 	storageBackendCloseOnce sync.Once
@@ -311,6 +313,7 @@ func NewApp() (*App, error) {
 	}
 	myAssets := service.NewMyAssetService(storageBackend, storageFiles, canvas, workflows, fileLifecycle)
 	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, agentSkills: service.NewAgentSkillService(storageBackend), autoDL: service.NewAutoDLService(), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: workflows, storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, newSafeRelayHTTPClient: service.SafeOutboundHTTPClient, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), storageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
+	app.modelPricingCache = service.NewRelayModelPricingCache(storageBackend)
 	app.fileLifecycle = fileLifecycle
 	canvas.SetFileReferenceProtector(fileLifecycle)
 	workflows.SetFileReferenceProtector(fileLifecycle)
@@ -350,7 +353,11 @@ func NewApp() (*App, error) {
 		cfg.UserDefaultConcurrentLimit,
 		cfg.UserDefaultRPMLimit,
 	)
-	app.canvasAgent = service.NewCanvasAgentService(ctx, canvas, app.agentSkills, app.runCanvasAgentModel, app.runCanvasAgentMedia)
+	app.agentExecutions = service.NewAgentExecutionService(ctx, storageBackend)
+	app.agentExecutions.Register("workflow", app.executeWorkflowAgent)
+	app.agentExecutions.Register("video_contract", app.executeVideoContractAgent)
+	app.agentExecutions.Register("studio", app.executeStudioAgent)
+	app.canvasAgent = service.NewCanvasAgentService(ctx, app.agentExecutions, canvas, app.agentSkills, app.runAgentModel, app.runCanvasAgentMedia)
 	app.canvasAgent.SetWorkflowService(workflows)
 	app.tasks.SetFileReferenceProtector(fileLifecycle)
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
@@ -483,6 +490,9 @@ func (a *App) Close() {
 	if a.canvasAgent != nil {
 		a.canvasAgent.Close()
 	}
+	if a.agentExecutions != nil {
+		a.agentExecutions.Close()
+	}
 	imageCleanupDrained := a.closeImageStorageCleaner()
 	conversationCleanupDrained := a.closeImageConversationAssetCleaner()
 	a.backgroundWorkers.Wait()
@@ -556,6 +566,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 	}
 	started := time.Now()
 	relayAPIKey := ""
+	pricingGroup := ""
 	relayBaseURL := a.relayBaseURL()
 	group := strings.TrimSpace(r.URL.Query().Get("group"))
 	tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
@@ -566,6 +577,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		relayAPIKey = credential.APIKey
+		pricingGroup = credential.PricingGroup
 		relayBaseURL = credential.BaseURL
 		if credential.Custom {
 			r = r.WithContext(withCustomRelayContext(r.Context()))
@@ -577,23 +589,23 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 	newAPIKeys, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()
 	if relayAPIKey == "" && newAPIKeys != nil {
-		if group != "" || tokenName != "" {
-			var err error
-			relayAPIKey, err = newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
-			if err != nil {
-				a.writeUpstreamModelsResponse(w, r, nil, a.relayTokenSelectionHTTPError(err), started, identity)
-				return
-			}
-		} else {
-			var err error
-			relayAPIKey, err = newAPIKeys.KeyForIdentity(r.Context(), identity)
-			if err != nil {
-				a.writeUpstreamModelsResponse(w, r, nil, a.relayTokenSelectionHTTPError(err), started, identity)
-				return
-			}
+		selection, err := newAPIKeys.TokenForIdentityGroupAndName(r.Context(), identity, group, tokenName)
+		if err != nil {
+			a.writeUpstreamModelsResponse(w, r, nil, a.relayTokenSelectionHTTPError(err), started, identity)
+			return
 		}
+		relayAPIKey = selection.Key
+		pricingGroup = selection.Group
 	}
-	result, err := a.relayListModelsAt(r.Context(), relayBaseURL, relayAPIKey)
+	var result map[string]any
+	var err error
+	if r.URL.Query().Get("include_pricing") == "cached" {
+		result, err = a.cachedRelayModelPricing(relayBaseURL, pricingGroup)
+	} else if r.URL.Query().Get("include_pricing") == "true" {
+		result, err = a.relayListModelsWithPricing(r.Context(), relayBaseURL, relayAPIKey, pricingGroup)
+	} else {
+		result, err = a.relayListModelsAt(r.Context(), relayBaseURL, relayAPIKey)
+	}
 	a.writeUpstreamModelsResponse(w, r, result, err, started, identity)
 }
 

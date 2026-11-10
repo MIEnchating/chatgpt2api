@@ -1,7 +1,9 @@
+import { Spinner } from "@/components/ui/spinner";
 import * as React from "react";
-import { LoaderCircle, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type ConfirmDialogProps = {
@@ -12,6 +14,8 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   destructive?: boolean;
   busy?: boolean;
+  confirmDisabled?: boolean;
+  children?: React.ReactNode;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 };
@@ -24,6 +28,8 @@ function ConfirmDialog({
   cancelLabel = "取消",
   destructive = false,
   busy = false,
+  confirmDisabled = false,
+  children,
   onOpenChange,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -35,17 +41,20 @@ function ConfirmDialog({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent className="w-[min(92vw,440px)]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
+      <DialogContent className="w-[min(92vw,440px)] sm:max-w-none">
+        <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1 [overflow-wrap:anywhere]">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          {children}
+        </ScrollArea>
+        <DialogFooter className="shrink-0">
           <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
             {cancelLabel}
           </Button>
-          <Button type="button" variant={destructive ? "destructive" : "default"} disabled={busy} onClick={onConfirm}>
-            {busy ? <LoaderCircle className="animate-spin" /> : destructive ? <Trash2 /> : null}
+          <Button type="button" variant={destructive ? "destructive" : "default"} disabled={busy || confirmDisabled} onClick={onConfirm}>
+            {busy ? <Spinner /> : destructive ? <Trash2 /> : null}
             {confirmLabel}
           </Button>
         </DialogFooter>

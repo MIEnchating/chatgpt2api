@@ -832,6 +832,91 @@ func TestImageTaskServicePropagatesCancellationAcrossDatabaseInstances(t *testin
 	waitForTaskStatus(t, serviceA, identity, "cancel-across-instances", TaskStatusCancelled)
 }
 
+type pausedImageTaskSnapshotStore struct {
+	storage.JSONDocumentBackend
+	mu       sync.Mutex
+	pause    bool
+	follow   bool
+	captured chan struct{}
+	resume   chan struct{}
+	nextRead chan struct{}
+}
+
+func (s *pausedImageTaskSnapshotStore) LoadJSONDocument(name string) (any, error) {
+	raw, err := s.JSONDocumentBackend.LoadJSONDocument(name)
+	s.mu.Lock()
+	pause, follow := s.pause, s.follow
+	if pause {
+		s.pause = false
+	} else if follow {
+		s.follow = false
+	}
+	s.mu.Unlock()
+	if pause {
+		close(s.captured)
+		<-s.resume
+	} else if follow {
+		close(s.nextRead)
+	}
+	return raw, err
+}
+
+func TestImageTaskMonitorDoesNotCancelTaskCreatedAfterSnapshotRead(t *testing.T) {
+	store := &pausedImageTaskSnapshotStore{JSONDocumentBackend: jsonDocumentStoreFromBackend(newTestStorageBackend(t)), captured: make(chan struct{}), resume: make(chan struct{}), nextRead: make(chan struct{})}
+	started, cancelled, finish := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	handler := func(ctx context.Context, _ Identity, _ map[string]any) (map[string]any, error) {
+		close(started)
+		select {
+		case <-ctx.Done():
+			close(cancelled)
+			return nil, ctx.Err()
+		case <-finish:
+			return map[string]any{"data": []map[string]any{{"text_response": "completed"}}}, nil
+		}
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
+	t.Cleanup(func() { _ = svc.Close() })
+	identity := Identity{ID: "snapshot-owner", Role: AuthRoleUser}
+	subscription, err := svc.SubscribeTasks(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	var resumed sync.Once
+	resume := func() { resumed.Do(func() { close(store.resume) }) }
+	defer resume()
+	store.mu.Lock()
+	store.pause = true
+	store.mu.Unlock()
+	select {
+	case <-store.captured:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitor did not read its initial empty snapshot")
+	}
+	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "new-model-turn", "continue", "test-model", []map[string]any{{"role": "user", "content": "continue"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("new task handler did not start")
+	}
+	svc.waitForPersistence(time.Second)
+	store.mu.Lock()
+	store.follow = true
+	store.mu.Unlock()
+	resume()
+	select {
+	case <-cancelled:
+		t.Fatal("stale monitor snapshot cancelled the newly submitted task")
+	case <-store.nextRead:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitor did not advance past the stale snapshot")
+	}
+	close(finish)
+	waitForTaskStatus(t, svc, identity, "new-model-turn", TaskStatusSuccess)
+}
+
 func TestImageTaskServiceActivationFailsClosedWhenRefreshCannotObserveRemoteCancellation(t *testing.T) {
 	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "activation-refresh-failure.db"))
 	backendA, err := storage.NewDatabaseBackend(databaseURL)
@@ -3052,4 +3137,23 @@ func TestImageTaskServiceGPTImage26Options(t *testing.T) {
 		t.Fatal("timed out waiting for image handler")
 	}
 	waitForTaskStatus(t, svc, identity, "animation", TaskStatusSuccess)
+}
+
+func TestDirectModelRequestSharesCreationRPMLimitWithoutQueueEntry(t *testing.T) {
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) {
+		t.Error("rate check must not execute a queued task")
+		return nil, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 }, nil, func() int { return 1 })
+	identity := Identity{ID: "direct-model-owner", Role: AuthRoleUser}
+	if err := svc.CheckCreationRequestLimit(identity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "paid-task", "poster", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err == nil {
+		t.Fatal("direct model call bypassed shared RPM limit")
+	}
+	tasks, err := svc.ListTasksWithError(identity, nil)
+	if err != nil || len(util.AsMapSlice(tasks["items"])) != 0 {
+		t.Fatalf("rate check created task: %v %v", tasks, err)
+	}
 }

@@ -17,6 +17,7 @@ import {
   videoDefaultResolution,
   videoDefaultSeconds,
   videoDefaultSize,
+  videoModelRequiresHTTPSReferences,
   videoReferenceImageLimit,
   videoRequiresMultimodalReferenceMode,
   videoRequiresReferenceAudio,
@@ -26,6 +27,7 @@ import {
   videoSecondsOptions,
   videoSizeOptions,
   videoWorkbenchMaterialSections,
+  videoWorkbenchDisplayResolution,
   videoWorkbenchReferenceLimits,
 } from "../src/lib/video-model-capabilities.ts";
 
@@ -78,6 +80,41 @@ test("reads every creator capability from the matching contract", () => {
   assert.equal(videoRequiresReferenceVideo(model), false);
   assert.equal(videoRequiresReferenceAudio(model), false);
   assert.equal(videoRequiresMultimodalReferenceMode(model), false);
+});
+
+test("requires HTTPS references only for MiniMax URL transport", () => {
+  const urlContract = structuredClone(contractDocument.contracts[0]);
+  urlContract.transport.local_material = "url";
+  assert.equal(videoModelRequiresHTTPSReferences(urlContract), true);
+  assert.equal(videoModelRequiresHTTPSReferences(contractDocument.contracts[0]), false);
+  const openAIFitContract = structuredClone(contractDocument.contracts[0]);
+  openAIFitContract.driver = "custom-video";
+  openAIFitContract.provider = { base_url: "https://openai.fit", auth_mode: "bearer", auth_header: "" };
+  openAIFitContract.transport.local_material = "url";
+  assert.equal(videoModelRequiresHTTPSReferences(openAIFitContract), true);
+});
+
+test("canonicalizes resolution casing to the contract spelling", () => {
+  const chovyContract = structuredClone(contractDocument.contracts[0]);
+  chovyContract.models = ["minimax-h3-chovy"];
+  chovyContract.capability.resolutions = ["480P", "768P", "1088P", "1440P"];
+  chovyContract.capability.default_resolution = "480P";
+  assert.equal(videoWorkbenchDisplayResolution(chovyContract, "480p"), "480P");
+  assert.equal(videoWorkbenchDisplayResolution(chovyContract, "1088p"), "1088P");
+});
+
+test("does not expose reference uploads for frame-only image mode", () => {
+  const frameOnlyContract = structuredClone(contractDocument.contracts[0]);
+  frameOnlyContract.models = ["frame-only-model"];
+  frameOnlyContract.capability.references = { image: 0, video: 0, audio: 0, total: 0 };
+  frameOnlyContract.generation.modes = frameOnlyContract.generation.modes.filter((mode) => mode.kind !== "reference");
+
+  assert.deepEqual(videoWorkbenchMaterialSections(frameOnlyContract), {
+    image: false,
+    video: false,
+    audio: false,
+    imageLabel: "首尾帧",
+  });
 });
 
 test("reads an explicit preview contract without mutating the runtime registry", () => {

@@ -25,10 +25,12 @@ PORT=8090 go run ./internal
 # web/，独立终端；仅在没有现有前端时启动
 VITE_BACKEND_URL=http://127.0.0.1:8090 npm run dev -- --host 0.0.0.0 --port 8002
 
-# desktop/
+# desktop/（先安装 web/ 依赖，用于构建共享连接设置页）
 npm ci
 npm run dev
 ```
+
+连接设置源码位于 `web/src/desktop/`，直接复用 Web 的 shadcn/ui、字段、密码输入、加载与提示组件。`desktop/` 的 `dev`、`build:win` 和 `pack:win` 会先使用 `web/` 的现有依赖构建设置页到 `desktop/renderer/`；设置页本身不启动 Vite 服务，也不通过网络读取配置，仍只经受控 preload 调用 IPC。修改连接页源码后重新运行 `npm run dev`。
 
 未打包的 Electron 只验证并复用 `http://127.0.0.1:8002/@vite/client` 和 `http://127.0.0.1:8090/health`。它不会启动 Go、Vite、Docker、预览服务或本地编译二进制。开发会话使用独立的 `chatgpt2api-desktop-development` 配置目录。
 
@@ -44,9 +46,9 @@ npm test
 npm run build:win
 ```
 
-`build:win` 先使用 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags=embed` 生成内置后端，再由 electron-builder 生成 NSIS 安装包。输出位于 `desktop/dist/chatgpt2api-<version>-windows-x64-setup.exe`；只需要解包目录时运行 `npm run pack:win`。建议在 Windows 上构建；Linux 交叉构建完整 NSIS 安装包还需要可运行 32 位 Windows 程序的 Wine。`desktop/bin`、`desktop/dist` 和依赖目录不提交 Git。
+`build:win` 先构建共享连接设置页，再使用 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags=embed` 生成内置后端，再由 electron-builder 生成 NSIS 安装包。输出位于 `desktop/dist/chatgpt2api-<version>-windows-x64-setup.exe`；只需要解包目录时运行 `npm run pack:win`。建议在 Windows 上构建；Linux 交叉构建完整 NSIS 安装包还需要可运行 32 位 Windows 程序的 Wine。`desktop/bin`、`desktop/dist`、`desktop/renderer` 和依赖目录不提交 Git。
 
-Windows 构建工作流 `.github/workflows/windows-desktop.yml` 仅支持手动触发。它构建前端、运行桌面测试、生成安装包与 SHA-256 校验文件，并上传临时 artifact；不会创建 GitHub Release、推送标签或发布更新。安装包当前未签名，Windows 无法据此验证发布者；正式分发前需接入项目自己的代码签名。
+Windows 构建工作流 `.github/workflows/windows-desktop.yml` 仅支持手动触发。它构建前端及桌面连接设置页，生成安装包与 SHA-256 校验文件，并上传临时 artifact；不会创建 GitHub Release、推送标签或发布更新。安装包当前未签名，Windows 无法据此验证发布者；正式分发前需接入项目自己的代码签名。
 
 ## 权限边界与验证
 

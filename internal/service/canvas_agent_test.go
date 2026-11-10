@@ -16,7 +16,7 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-func agentFixture(t *testing.T, model CanvasAgentModel, media CanvasAgentMedia) (*CanvasAgentService, Identity, CanvasDocument, CanvasAgentRequest) {
+func agentFixture(t *testing.T, model AgentModel, media CanvasAgentMedia) (*CanvasAgentService, Identity, CanvasDocument, CanvasAgentRequest) {
 	t.Helper()
 	runtimePath, err := filepath.Abs("../../agent-runtime/worker.mjs")
 	if err != nil {
@@ -37,19 +37,31 @@ func agentFixture(t *testing.T, model CanvasAgentModel, media CanvasAgentMedia) 
 		t.Fatal(err)
 	}
 	req := CanvasAgentRequest{ID: "run", SessionID: "session", AssistantID: "a", UserMessageID: "u", UserText: "制作海报", Model: "test", RelayTokenName: "test", APIMode: "responses", Generation: map[string]any{"imageModel": "image-test", "autoGenerateMedia": true, "capabilities": map[string]any{"image": map[string]any{"maxCount": 15.0}}}}
-	svc := NewCanvasAgentService(context.Background(), canvas, NewAgentSkillService(backend), model, media)
+	execution := NewAgentExecutionService(context.Background(), backend)
+	t.Cleanup(execution.Close)
+	svc := NewCanvasAgentService(context.Background(), execution, canvas, NewAgentSkillService(backend), model, media)
 	t.Cleanup(svc.Close)
 	return svc, identity, doc, req
 }
+
+var agentFinishSerial atomic.Int64
+
 func agentTurn(calls ...map[string]any) map[string]any {
+	if len(calls) == 0 {
+		calls = []map[string]any{agentCall(fmt.Sprintf("finish-%d", agentFinishSerial.Add(1)), "finish_task", map[string]any{"text": "完成"})}
+	}
 	return map[string]any{"text_response": "完成", "tool_calls": calls}
 }
 func agentCall(id, name string, args map[string]any) map[string]any {
 	return map[string]any{"id": id, "type": "function", "function": map[string]any{"name": name, "arguments": agentJSON(args)}}
 }
-func agentWait(t *testing.T, svc *CanvasAgentService, identity Identity, project string) CanvasDocument {
+func agentWait(t *testing.T, svc *CanvasAgentService, identity Identity, project string, limits ...time.Duration) CanvasDocument {
 	t.Helper()
-	deadline := time.Now().Add(45 * time.Second)
+	wait := 45 * time.Second
+	if len(limits) > 0 {
+		wait = limits[0]
+	}
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		doc, err := svc.Snapshot(identity, project)
 		if err != nil {
@@ -68,10 +80,32 @@ func agentWait(t *testing.T, svc *CanvasAgentService, identity Identity, project
 	t.Fatal("agent did not finish")
 	return CanvasDocument{}
 }
+func TestCanvasAgentPlanWithoutExplanationContinuesAndPersists(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		if turns.Add(1) == 1 {
+			return agentTurn(agentCall("plan", "update_plan", map[string]any{"steps": []any{map[string]any{"id": "brief", "title": "确认需求", "status": "completed"}}})), nil
+		}
+		return agentTurn(), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := agentMap(agentMap(session["agentState"])["plan"])
+	if done.AgentRun.Status != "success" || turns.Load() != 2 || plan["explanation"] != "" || len(util.AsMapSlice(plan["steps"])) != 1 {
+		t.Fatalf("run=%+v, turns=%d, plan=%v", done.AgentRun, turns.Load(), plan)
+	}
+}
+
 func TestCanvasAgentRunsWithoutBrowserAndMergesConcurrentEdits(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var turns atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, _ CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, _ AgentModelRequest) (map[string]any, error) {
 		if turns.Add(1) == 1 {
 			close(entered)
 			select {
@@ -118,7 +152,7 @@ func TestCanvasAgentRunsWithoutBrowserAndMergesConcurrentEdits(t *testing.T) {
 }
 func TestCanvasAgentQuestionPausesWholeBatchAndResumes(t *testing.T) {
 	var turns atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 		if turns.Add(1) == 1 {
 			return agentTurn(agentCall("q", "ask_user_question", map[string]any{"question": "什么比例？", "reason": "确定交付规格", "kind": "clarification", "options": []string{"竖版", "横版"}}), agentCall("ignored", "create_text_node", map[string]any{"title": "不应创建", "content": "no"})), nil
 		}
@@ -156,7 +190,7 @@ func TestCanvasAgentQuestionPausesWholeBatchAndResumes(t *testing.T) {
 func TestCanvasAgentCancellationPreservesSubmittedMedia(t *testing.T) {
 	entered := make(chan struct{})
 	var submissions atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(agentCall("image", "generate_image", map[string]any{"prompt": "海报", "sourceNodeIds": []string{}, "size": "1:1", "count": 1})), nil
 	}, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
 		if n.TaskID == "" {
@@ -184,7 +218,7 @@ func TestCanvasAgentCancellationPreservesSubmittedMedia(t *testing.T) {
 	}
 }
 func TestCanvasAgentRejectsMissingMediaParametersBeforeAnyMutation(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(agentCall("text", "create_text_node", map[string]any{"title": "不创建", "content": "no"}), agentCall("bad", "generate_image", map[string]any{"prompt": "海报", "sourceNodeIds": []string{}})), nil
 	}, nil)
 	if _, err := svc.Start(identity, doc.ID, req); err != nil {
@@ -196,7 +230,7 @@ func TestCanvasAgentRejectsMissingMediaParametersBeforeAnyMutation(t *testing.T)
 	}
 }
 func TestCanvasAgentPersistedQuestionSurvivesServiceRestart(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(agentCall("q", "ask_user_question", map[string]any{"question": "品牌名称？", "reason": "需要文案", "kind": "clarification", "options": []string{}})), nil
 	}, nil)
 	if _, err := svc.Start(identity, doc.ID, req); err != nil {
@@ -204,7 +238,7 @@ func TestCanvasAgentPersistedQuestionSurvivesServiceRestart(t *testing.T) {
 	}
 	agentWait(t, svc, identity, doc.ID)
 	svc.Close()
-	restarted := NewCanvasAgentService(context.Background(), svc.canvas, svc.skills, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	restarted := NewCanvasAgentService(context.Background(), svc.execution, svc.canvas, svc.skills, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(), nil
 	}, nil)
 	defer restarted.Close()
@@ -220,13 +254,15 @@ func TestCanvasAgentPersistedQuestionSurvivesServiceRestart(t *testing.T) {
 }
 func TestCanvasAgentHistorySummaryPreservesLatestTurn(t *testing.T) {
 	var calls atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 		calls.Add(1)
 		if r.Metadata["max_output_tokens"] != nil {
 			return map[string]any{"text_response": "已确认品牌与比例；旧节点已创建，不能重复。"}, nil
 		}
 		return agentTurn(), nil
 	}, nil)
+	// Exercise compaction with a deterministic budget, independent of model defaults.
+	doc.AgentConfig = json.RawMessage(`{"contextWindowTokens":64000}`)
 	sessions, session, _ := agentSession(doc, "session")
 	session["protocolMessages"] = []map[string]any{{"role": "user", "content": strings.Repeat("历史", 60000)}, {"role": "assistant", "content": "收到"}}
 	doc.AgentSessions, _ = json.Marshal(sessions)
@@ -249,7 +285,7 @@ func TestCanvasAgentDeleteRequiresExactConfirmationAndCancellationSurvivesReload
 	for _, answer := range []string{"确认删除", "保留"} {
 		t.Run(answer, func(t *testing.T) {
 			var calls atomic.Int32
-			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 				if calls.Add(1) == 1 {
 					return agentTurn(agentCall("delete", "delete_node", map[string]any{"nodeId": "existing"})), nil
 				}
@@ -285,14 +321,20 @@ func TestCanvasAgentDeleteRequiresExactConfirmationAndCancellationSurvivesReload
 }
 func TestCanvasAgentCancelQuestionDoesNotRunModel(t *testing.T) {
 	var calls atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		calls.Add(1)
 		return agentTurn(agentCall("q", "ask_user_question", map[string]any{"question": "继续吗？", "reason": "确认", "kind": "confirmation", "options": []string{}})), nil
 	}, nil)
 	if _, err := svc.Start(identity, doc.ID, req); err != nil {
 		t.Fatal(err)
 	}
-	agentWait(t, svc, identity, doc.ID)
+	waiting := agentWait(t, svc, identity, doc.ID)
+	sessions, session, _ := agentSession(waiting, req.SessionID)
+	session["protocolMessages"] = append(util.AsMapSlice(session["protocolMessages"]), map[string]any{"role": "system", "content": "恢复时发现原素材已移除"})
+	waiting.AgentSessions, _ = json.Marshal(sessions)
+	if _, err := svc.canvas.saveAgent(identity.ID, waiting); err != nil {
+		t.Fatal(err)
+	}
 	if err := svc.Stop(identity, doc.ID, req.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -300,14 +342,18 @@ func TestCanvasAgentCancelQuestionDoesNotRunModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, session, _ := agentSession(done, "session")
+	_, session, _ = agentSession(done, "session")
 	if done.AgentRun.Status != "cancelled" || len(agentMap(agentMap(session["agentState"])["pendingQuestion"])) > 0 || calls.Load() != 1 {
 		t.Fatal("question cancellation failed")
+	}
+	protocol := util.AsMapSlice(session["protocolMessages"])
+	if len(protocol) < 2 || protocol[len(protocol)-1]["role"] != "system" || protocol[len(protocol)-2]["toolCallId"] != "q" {
+		t.Fatalf("cancelled question result was separated from its tool call: %v", protocol)
 	}
 }
 func TestCanvasAgentMissingNodeStopsDependentWrites(t *testing.T) {
 	var calls atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		if calls.Add(1) == 1 {
 			return agentTurn(agentCall("missing", "update_node", map[string]any{"nodeId": "missing", "title": "no"}), agentCall("skip", "create_text_node", map[string]any{"title": "skip", "content": "skip"})), nil
 		}
@@ -325,7 +371,7 @@ func TestCanvasAgentProtocolReplaysReasoningAndToolPairs(t *testing.T) {
 	for _, mode := range []string{"chat", "responses"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32
-			svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+			svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 				if calls.Add(1) == 1 {
 					turn := agentTurn(agentCall("read", "get_canvas_summary", map[string]any{}))
 					turn["reasoning_content"] = "reasoning"
@@ -352,8 +398,8 @@ func TestCanvasAgentProtocolReplaysReasoningAndToolPairs(t *testing.T) {
 
 func TestCanvasAgentImageInputIsNotPersistedAsBase64(t *testing.T) {
 	var sawImage bool
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
-		sawImage = strings.Contains(agentJSON(r.Messages), `"image_url":{"url":"/api/files/image/content"}`)
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		sawImage = strings.Contains(agentJSON(r.Messages), "/api/files/image/content") && strings.Contains(agentJSON(r.Messages), "image_url")
 		return agentTurn(), nil
 	}, nil)
 	req.References = []map[string]any{{"id": "attachment", "type": "image", "source": "attachment", "title": "参考图", "url": "/api/files/image/content"}}
@@ -368,10 +414,17 @@ func TestCanvasAgentImageInputIsNotPersistedAsBase64(t *testing.T) {
 }
 func TestCanvasAgentOversizedCurrentRequestIsPreservedWithoutSummarizing(t *testing.T) {
 	var calls atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		calls.Add(1)
 		return agentTurn(), nil
 	}, nil)
+	// Keep the overflow case independent of the default model context window.
+	doc.AgentConfig = json.RawMessage(`{"contextWindowTokens":64000}`)
+	var err error
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.UserText = strings.Repeat("创作资料", 16000) + "最终品牌约束"
 	if _, err := svc.Start(identity, doc.ID, req); err != nil {
 		t.Fatal(err)
@@ -388,7 +441,7 @@ func TestCanvasAgentResumeReusesSavedMediaNodeAndTask(t *testing.T) {
 	var media atomic.Int32
 	entered := make(chan struct{})
 	var originalTask string
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		if turns.Add(1) == 1 {
 			return agentTurn(agentCall("create", "generate_image", map[string]any{"prompt": "poster", "sourceNodeIds": []string{}, "size": "1:1", "count": 1})), nil
 		}
@@ -420,12 +473,60 @@ func TestCanvasAgentResumeReusesSavedMediaNodeAndTask(t *testing.T) {
 	}
 	done := agentWait(t, svc, identity, doc.ID)
 	if len(done.Nodes) != 1 || done.Nodes[0].TaskID != originalTask || done.Nodes[0].GenerationStatus != "success" {
-		t.Fatal("resume duplicated or lost media")
+		t.Fatalf("resume duplicated or lost media: run=%+v nodes=%+v", done.AgentRun, done.Nodes)
+	}
+}
+
+func TestCanvasAgentResumeReconcilesMediaFinishedWhileStopped(t *testing.T) {
+	for _, status := range []string{"success", "error", "deleted"} {
+		t.Run(status, func(t *testing.T) {
+			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+				return agentTurn(), nil
+			}, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+				t.Error("an already settled task must not be submitted again")
+				return nil, errors.New("unexpected generation")
+			})
+			if status != "deleted" {
+				doc.Nodes = []CanvasNode{{ID: "existing-result", Type: "image", Title: "已有结果", TaskID: "saved-task", GenerationStatus: status, GenerationError: "", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+				if status == "success" {
+					doc.Nodes[0].URL = "https://example.test/completed.png"
+				} else {
+					doc.Nodes[0].GenerationError = "上游任务失败"
+				}
+			}
+			sessions, session, _ := agentSession(doc, req.SessionID)
+			agentMap(session["agentState"])["pendingTaskIds"] = []string{"saved-task"}
+			session["protocolMessages"] = []map[string]any{
+				{"role": "user", "content": "生成海报"},
+				{"role": "assistant", "toolCalls": []map[string]any{{"id": "generate", "name": "generate_image", "arguments": map[string]any{}}}},
+				{"role": "tool", "toolCallId": "generate", "name": "generate_image", "content": agentJSON(map[string]any{"ok": true, "nodeId": "existing-result", "taskId": "saved-task", "status": "loading", "submitted": true})},
+			}
+			doc.AgentSessions, _ = json.Marshal(sessions)
+			var err error
+			doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Resume = true
+			if _, err = svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			done := agentWait(t, svc, identity, doc.ID)
+			_, session, _ = agentSession(done, req.SessionID)
+			state := agentMap(session["agentState"])
+			want := "success"
+			if status == "error" {
+				want = "waiting"
+			}
+			if done.AgentRun.Status != want || len(agentStrings(state["pendingTaskIds"])) != 0 || (status == "success" && !slices.Contains(agentStrings(state["completedTaskIds"]), "saved-task")) || (status == "deleted" && len(done.Nodes) != 0) {
+				t.Fatalf("settled media still blocks recovery: run=%+v, state=%v, nodes=%d", done.AgentRun, state, len(done.Nodes))
+			}
+		})
 	}
 }
 func TestCanvasAgentBackgroundRunDoesNotSwitchActiveProject(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
-	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, _ CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, _ AgentModelRequest) (map[string]any, error) {
 		close(entered)
 		select {
 		case <-release:
@@ -479,7 +580,7 @@ func TestCanvasAgentRejectsMalformedRuntimeState(t *testing.T) {
 func TestCanvasAgentWorkflowIsAtomicAndExecutesDependencies(t *testing.T) {
 	var turn atomic.Int32
 	generated := []string{}
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		switch turn.Add(1) {
 		case 1:
 			return agentTurn(agentCall("graph", "create_canvas_workflow", map[string]any{"steps": []map[string]any{
@@ -512,7 +613,7 @@ func TestCanvasAgentWorkflowIsAtomicAndExecutesDependencies(t *testing.T) {
 		t.Fatalf("graph should only be planned: %+v", done.AgentRun)
 	}
 	target := done.Nodes[2].ID
-	svc.model = func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc.model = func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		if turn.Add(1) == 4 {
 			return agentTurn(agentCall("run-graph", "run_canvas_workflow", map[string]any{"nodeIds": []string{target}})), nil
 		}
@@ -533,7 +634,7 @@ func TestCanvasAgentWorkflowIsAtomicAndExecutesDependencies(t *testing.T) {
 func TestCanvasAgentWorkflowRejectsCyclesAndMissingParametersWithoutMutation(t *testing.T) {
 	for _, cycle := range []bool{true, false} {
 		t.Run(fmt.Sprint(cycle), func(t *testing.T) {
-			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 				return agentTurn(), nil
 			}, nil)
 			_, session, _ := agentSession(doc, "session")
@@ -555,7 +656,7 @@ func TestCanvasAgentWorkflowRejectsCyclesAndMissingParametersWithoutMutation(t *
 }
 
 func TestCanvasAgentWorkflowTemplateOwnershipAndRequiredVariables(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(), nil
 	}, nil)
 	workflows := NewWorkflowService(newTestStorageBackend(t))
@@ -576,12 +677,358 @@ func TestCanvasAgentWorkflowTemplateOwnershipAndRequiredVariables(t *testing.T) 
 	}
 }
 
+func TestCanvasAgentContinuesAfterPrematureFinalReply(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		turn := turns.Add(1)
+		switch turn {
+		case 1:
+			return agentTurn(agentCall("plan", "update_plan", map[string]any{"steps": []any{map[string]any{"id": "write", "title": "完成制作方案", "status": "in_progress"}}})), nil
+		case 3, 5, 7:
+			if !strings.Contains(agentJSON(r.Messages), "未完成") {
+				t.Error("remaining plan was not returned to the model")
+			}
+			status := "in_progress"
+			if turn == 7 {
+				status = "completed"
+			}
+			return agentTurn(agentCall(fmt.Sprint("complete-plan-", turn), "update_plan", map[string]any{"explanation": fmt.Sprint("已完成阶段 ", turn), "steps": []any{map[string]any{"id": "write", "title": "完成制作方案", "status": status}}})), nil
+		default:
+			return agentTurn(), nil
+		}
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turns.Load() != 8 {
+		t.Fatalf("prematurely stopped: run=%+v, turns=%d", done.AgentRun, turns.Load())
+	}
+}
+
+func TestCanvasAgentUnrelatedLoadingMediaDoesNotBlockCompletion(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		return agentTurn(), nil
+	}, nil)
+	doc.Nodes = []CanvasNode{{ID: "unrelated", Type: "image", Title: "其他任务", GenerationStatus: "loading", TaskID: "unrelated-task", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+	var err error
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || done.Nodes[0].TaskID != "unrelated-task" {
+		t.Fatalf("unrelated work blocked the current request: %+v", done.AgentRun)
+	}
+}
+
+func TestCanvasAgentUpstreamCancellationIsNotReportedAsUserStop(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		return nil, context.Canceled
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "error" || !strings.Contains(done.AgentRun.Error, "context canceled") {
+		t.Fatalf("upstream cancellation was attributed to a user stop: %+v", done.AgentRun)
+	}
+}
+
+func TestCanvasAgentFinalReplyDoesNotHideToolFailure(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		if turns.Add(1) == 1 {
+			return agentTurn(agentCall("bad-connection", "create_connection", map[string]any{"fromNodeId": "script", "toNodeId": "script"})), nil
+		}
+		return map[string]any{"text_response": "全部完成"}, nil
+	}, nil)
+	doc.Nodes = []CanvasNode{{ID: "script", Type: "text", Title: "剧本", Prompt: "保留", GenerationStatus: "success", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+	var err error
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, _ := agentSession(done, req.SessionID)
+	if done.AgentRun.Status != "waiting" || util.AsMapSlice(session["messages"])[1]["text"] == "全部完成" || turns.Load() != 2 {
+		t.Fatalf("failed operation was reported as complete: run=%+v, turns=%d", done.AgentRun, turns.Load())
+	}
+}
+
+func TestCanvasAgentPrematureCompletionIsBoundedAndResumable(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		if turns.Add(1) == 1 {
+			return agentTurn(agentCall("plan", "update_plan", map[string]any{"steps": []any{map[string]any{"id": "work", "title": "仍待处理", "status": "pending"}}})), nil
+		}
+		return map[string]any{"text_response": "全部完成"}, nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, _ := agentSession(done, req.SessionID)
+	message := util.AsMapSlice(session["messages"])[1]
+	if done.AgentRun.Status != "waiting" || turns.Load() != 2 || message["status"] != "waiting" || message["text"] == "全部完成" {
+		t.Fatalf("run=%+v, turns=%d, message=%v", done.AgentRun, turns.Load(), message)
+	}
+}
+
+func TestCanvasAgentQuestionWithoutSDKCheckpointCanResume(t *testing.T) {
+	for _, resumeWithoutAnswer := range []bool{false, true} {
+		t.Run(fmt.Sprint("resumeWithoutAnswer=", resumeWithoutAnswer), func(t *testing.T) {
+			var turns atomic.Int32
+			svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+				if turns.Add(1) == 1 {
+					return agentTurn(agentCall("question", "ask_user_question", map[string]any{"question": "品牌名称？", "reason": "需要确认文案", "kind": "clarification", "options": []string{}})), nil
+				}
+				if !strings.Contains(agentJSON(r.Messages), "用户真实品牌") {
+					t.Error("real answer missing after checkpoint recovery")
+				}
+				return agentTurn(), nil
+			}, nil)
+			if _, err := svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			waiting := agentWait(t, svc, identity, doc.ID)
+			waiting.AgentRun.SDKState = ""
+			if _, err := svc.canvas.saveAgent(identity.ID, waiting); err != nil {
+				t.Fatal(err)
+			}
+			if resumeWithoutAnswer {
+				req.ID, req.Resume = "restore-question", true
+				if _, err := svc.Start(identity, doc.ID, req); err != nil {
+					t.Fatal(err)
+				}
+				waiting = agentWait(t, svc, identity, doc.ID)
+				if waiting.AgentRun.Status != "waiting" || waiting.AgentRun.SDKState == "" || turns.Load() != 1 {
+					t.Fatalf("question was not restored: run=%+v, turns=%d", waiting.AgentRun, turns.Load())
+				}
+				req.ID = "resume-without-answer"
+				if _, err := svc.Start(identity, doc.ID, req); err != nil {
+					t.Fatal(err)
+				}
+				waiting = agentWait(t, svc, identity, doc.ID)
+				_, restoredSession, _ := agentSession(waiting, req.SessionID)
+				if waiting.AgentRun.Status != "waiting" || waiting.AgentRun.SDKState == "" || turns.Load() != 1 || len(agentMap(agentMap(restoredSession["agentState"])["pendingQuestion"])) == 0 {
+					t.Fatalf("resume consumed an unanswered question: run=%+v, turns=%d", waiting.AgentRun, turns.Load())
+				}
+			}
+			req.ID, req.Resume, req.UserText = "answer-restored-question", false, "用户真实品牌"
+			if _, err := svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			done := agentWait(t, svc, identity, doc.ID)
+			if done.AgentRun.Status != "success" || turns.Load() != 2 {
+				t.Fatalf("question recovery failed: run=%+v, turns=%d", done.AgentRun, turns.Load())
+			}
+		})
+	}
+}
+
+func TestCanvasAgentResumeSkipsDeletedReferences(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		if !strings.Contains(agentJSON(r.Messages), "移除") {
+			t.Error("model was not told that the original reference is missing")
+		}
+		return agentTurn(), nil
+	}, nil)
+	req.Resume = true
+	req.References = []map[string]any{{"id": "deleted-photo", "source": "node"}}
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatalf("deleted reference permanently blocked resume: %v", err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || len(done.Nodes) != 0 {
+		t.Fatalf("deleted reference was recreated: %+v", done.AgentRun)
+	}
+}
+
+func TestCanvasAgentInvalidToolArgumentsCanBeCorrected(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		switch turns.Add(1) {
+		case 1:
+			return agentTurn(agentCall("blocked", "create_text_node", map[string]any{"title": "不得执行", "content": "依赖无效批次"}), agentCall("bad", "generate_image", map[string]any{"prompt": "缺少必要参数"})), nil
+		case 2:
+			return agentTurn(agentCall("read", "get_canvas_summary", map[string]any{})), nil
+		case 3:
+			calls := []map[string]any{}
+			for i := range 13 {
+				calls = append(calls, agentCall(fmt.Sprintf("over-limit-%d", i), "create_text_node", map[string]any{"title": "不得执行", "content": "超限批次"}))
+			}
+			return agentTurn(calls...), nil
+		case 4:
+			return agentTurn(agentCall("corrected", "create_text_node", map[string]any{"title": "修正后创建", "content": "有效分批操作"})), nil
+		}
+		if !strings.Contains(agentJSON(r.Messages), "校验") {
+			t.Error("validation failure was not returned to the model")
+		}
+		return agentTurn(), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turns.Load() != 5 || len(done.Nodes) != 1 || done.Nodes[0].Title != "修正后创建" {
+		t.Fatalf("invalid batch did not recover safely: run=%+v, turns=%d, nodes=%d", done.AgentRun, turns.Load(), len(done.Nodes))
+	}
+}
+
+func TestCanvasAgentResumeReusesWorkflowNodes(t *testing.T) {
+	for _, sameCallID := range []bool{false, true} {
+		t.Run(fmt.Sprint("sameCallID=", sameCallID), func(t *testing.T) {
+			var turns atomic.Int32
+			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+				turn := turns.Add(1)
+				if turn == 1 || turn == 3 {
+					id := "workflow"
+					if turn == 3 && !sameCallID {
+						id = "retry-workflow"
+					}
+					return agentTurn(agentCall(id, "create_canvas_workflow", map[string]any{"steps": []any{map[string]any{"key": "script", "type": "text", "title": "剧本", "prompt": "已有内容", "dependsOn": []string{}, "sourceNodeIds": []string{}, "attachmentIds": []string{}}}})), nil
+				}
+				return agentTurn(), nil
+			}, nil)
+			if _, err := svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			first := agentWait(t, svc, identity, doc.ID)
+			if len(first.Nodes) != 1 {
+				t.Fatal("workflow fixture was not created")
+			}
+			req.ID, req.Resume = "resume-workflow", true
+			if _, err := svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			done := agentWait(t, svc, identity, doc.ID)
+			if done.AgentRun.Status != "success" || len(done.Nodes) != 1 || done.Nodes[0].ID != first.Nodes[0].ID {
+				t.Fatalf("workflow duplicated on resume: run=%+v, nodes=%d", done.AgentRun, len(done.Nodes))
+			}
+		})
+	}
+}
+
+func TestCanvasAgentInvalidWorkflowReviewQuestionIsCorrected(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		turn := turns.Add(1)
+		if turn == 1 {
+			return agentTurn(
+				agentCall("bad-review", "ask_user_question", map[string]any{"question": "继续当前短剧？", "reason": "确认执行范围", "options": []string{"继续", "暂缓"}, "kind": "clarification", "purpose": "workflow_review"}),
+				agentCall("blocked-write", "create_text_node", map[string]any{"title": "不要创建", "content": "依赖回答"}),
+			), nil
+		}
+		encoded := agentJSON(r.Messages)
+		if !strings.Contains(encoded, "workflow_review_unavailable") || !strings.Contains(encoded, "dependency_failed") {
+			t.Error("model did not receive the rejected question and unexecuted batch results")
+		}
+		if turn == 3 {
+			if !strings.Contains(encoded, "继续制作已有短剧") {
+				t.Error("real answer was not delivered")
+			}
+			return agentTurn(), nil
+		}
+		return agentTurn(agentCall("clarify", "ask_user_question", map[string]any{"question": "继续当前短剧？", "reason": "确认执行范围", "options": []string{"继续", "暂缓"}, "kind": "clarification"})), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := agentMap(session["agentState"])
+	question := agentMap(state["pendingQuestion"])
+	if done.AgentRun.Status != "waiting" || turns.Load() != 2 || len(done.Nodes) != 0 || question["id"] != "clarify" || question["purpose"] != nil || done.AgentRun.SDKState == "" {
+		t.Fatalf("run=%+v, turns=%d, nodes=%d, question=%v", done.AgentRun, turns.Load(), len(done.Nodes), question)
+	}
+	if !strings.Contains(string(done.AgentSessions), "workflow_review_unavailable") {
+		t.Fatal("failed question result was not persisted")
+	}
+	req.ID = "answer-corrected-question"
+	req.UserText = "继续制作已有短剧"
+	if _, err = svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done = agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turns.Load() != 3 || len(done.Nodes) != 0 {
+		t.Fatalf("corrected question could not resume: run=%+v, turns=%d", done.AgentRun, turns.Load())
+	}
+}
+
+func TestCanvasAgentRepeatedInvalidWorkflowReviewQuestionIsBounded(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		return agentTurn(agentCall(fmt.Sprint("bad-review-", turns.Add(1)), "ask_user_question", map[string]any{"question": "审核？", "reason": "无待审核系列", "options": []string{}, "kind": "confirmation", "purpose": "workflow_review"})), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.AgentRun.Status != "error" || turns.Load() != 2 || !canvasAgentCompleteToolRounds(util.AsMapSlice(session["protocolMessages"])) || len(agentMap(agentMap(session["agentState"])["pendingQuestion"])) != 0 {
+		t.Fatalf("run=%+v, turns=%d", done.AgentRun, turns.Load())
+	}
+}
+
+func TestCanvasAgentResumeRepairsUnansweredToolCallWithoutRepeatingWrites(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		var result map[string]any
+		for _, message := range r.Messages {
+			if message["role"] == "tool" && message["tool_call_id"] == "interrupted-create" {
+				_ = json.Unmarshal([]byte(util.Clean(message["content"])), &result)
+			}
+		}
+		if result["code"] != "execution_unknown" || result["ok"] != false {
+			t.Error("interrupted tool call was not repaired as an unknown result")
+		}
+		return agentTurn(), nil
+	}, nil)
+	sessions, session, err := agentSession(doc, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session["protocolMessages"] = []map[string]any{
+		{"role": "user", "content": "制作短剧"},
+		{"role": "assistant", "content": "", "toolCalls": []map[string]any{{"id": "interrupted-create", "name": "create_text_node", "arguments": map[string]any{"title": "已有剧本", "content": "保留"}}}},
+		{"role": "user", "content": "继续已有结果"},
+	}
+	doc.AgentSessions, _ = json.Marshal(sessions)
+	doc.Nodes = append(doc.Nodes, CanvasNode{ID: "existing-script", Type: "text", Title: "已有剧本", Prompt: "保留", GenerationStatus: "success", Width: 360, Height: 280, ScaleX: 1, ScaleY: 1})
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Resume = true
+	if _, err = svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, _ = agentSession(done, req.SessionID)
+	messages := util.AsMapSlice(session["protocolMessages"])
+	if done.AgentRun.Status != "success" || len(done.Nodes) != 1 || done.Nodes[0].ID != "existing-script" || len(messages) < 4 || messages[2]["role"] != "tool" || messages[3]["role"] != "user" || !canvasAgentCompleteToolRounds(messages) {
+		t.Fatalf("run=%+v, nodes=%d, messages=%v", done.AgentRun, len(done.Nodes), messages)
+	}
+}
+
 func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *testing.T) {
 	var turns atomic.Int32
 	var generated []string
 	var generatedMu sync.Mutex
 	var targetIDs []string
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, _ CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, _ AgentModelRequest) (map[string]any, error) {
 		switch turns.Add(1) {
 		case 1:
 			return agentTurn(agentCall("apply", "run_saved_workflow", map[string]any{
@@ -696,8 +1143,8 @@ func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *te
 	}
 
 	req.ID = "approve-series"
-	req.UserText = "确认审核并生成"
-	req.Resume = true
+	req.UserText = agentStrings(question["options"])[0]
+	req.Resume = false
 	if _, err = svc.Start(identity, doc.ID, req); err != nil {
 		t.Fatal(err)
 	}
@@ -712,7 +1159,7 @@ func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *te
 }
 
 func TestCanvasAgentSeriesWorkflowDeclineAndPromptEditKeepReviewRequired(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(), nil
 	}, nil)
 	node := CanvasNode{ID: "series-draft", Type: "image", Width: 360, Height: 360, ScaleX: 1, ScaleY: 1, Title: "草稿", Prompt: "原始提示词", GenerationModel: "image-test", GenerationSize: "1:1", GenerationCount: 1, GenerationStatus: "idle"}
@@ -730,7 +1177,7 @@ func TestCanvasAgentSeriesWorkflowDeclineAndPromptEditKeepReviewRequired(t *test
 	state := agentMap(session["agentState"])
 	state["pendingWorkflowReview"] = map[string]any{"nodeIds": []string{node.ID}}
 	state["pendingQuestion"] = map[string]any{"id": "review", "purpose": "workflow_review", "nodeIds": []string{node.ID}}
-	worker := &canvasAgentWorker{persisted: cloneCanvasAgentDocument(doc), service: svc, ctx: context.Background(), identity: identity, doc: doc, req: req, session: session, state: state}
+	worker := &canvasAgentWorker{persisted: cloneCanvasAgentDocument(doc), service: svc, ctx: context.Background(), identity: identity, doc: doc, req: req, session: session, state: state, answerCallID: "review", answerText: "暂不生成，保留提示词"}
 
 	result, err := worker.sdkTool(map[string]any{"id": "review", "name": "ask_user_question", "arguments": map[string]any{}})
 	if err != nil || result.(map[string]any)["ok"] != false {
@@ -739,12 +1186,23 @@ func TestCanvasAgentSeriesWorkflowDeclineAndPromptEditKeepReviewRequired(t *test
 	if len(agentStrings(agentMap(state["pendingWorkflowReview"])["nodeIds"])) != 1 || len(agentMap(state["approvedWorkflowReviewPrompts"])) != 0 {
 		t.Fatalf("declining review changed approval state: %#v", state)
 	}
+	if state["mediaGenerationDeferred"] != true {
+		t.Fatal("declining review did not preserve the user's deferral")
+	}
 	blocked, err := worker.generateNode(node.ID)
 	if err != nil || blocked["ok"] != false || blocked["requiresUserReview"] != true {
 		t.Fatalf("declined workflow generated: %#v, %v", blocked, err)
 	}
 
-	worker.approveWorkflowReview([]string{node.ID})
+	state["pendingQuestion"] = map[string]any{"id": "review-again", "purpose": "workflow_review", "nodeIds": []string{node.ID}}
+	worker.doc.AgentRun.SDKState = "saved-run-state"
+	worker.req.UserText = "确认审核并生成"
+	worker.answerCallID = "review-again"
+	worker.answerText = worker.req.UserText
+	result, err = worker.sdkTool(map[string]any{"id": "review-again", "name": "ask_user_question", "arguments": map[string]any{}})
+	if err != nil || result.(map[string]any)["ok"] != true || state["mediaGenerationDeferred"] != false {
+		t.Fatalf("explicit approval did not release the earlier deferral: result=%v, error=%v, state=%v", result, err, state)
+	}
 	worker.node(node.ID).Prompt = "用户修改后的提示词"
 	if worker.workflowReviewApproved(node.ID) {
 		t.Fatal("editing a reviewed prompt retained its old approval")
@@ -756,7 +1214,7 @@ func TestCanvasAgentSeriesWorkflowDeclineAndPromptEditKeepReviewRequired(t *test
 }
 
 func TestCanvasAgentImageReferencesRespectModelLimit(t *testing.T) {
-	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(), nil
 	}, nil)
 	capabilities := agentMap(req.Generation["capabilities"])
@@ -776,5 +1234,88 @@ func TestCanvasAgentImageReferencesRespectModelLimit(t *testing.T) {
 	worker := &canvasAgentWorker{persisted: cloneCanvasAgentDocument(doc), service: svc, ctx: context.Background(), identity: identity, doc: doc, req: req, session: session, state: agentMap(session["agentState"])}
 	if err = worker.validateMedia(node); err == nil || !strings.Contains(err.Error(), "参考图") {
 		t.Fatalf("image reference overflow accepted: %v", err)
+	}
+}
+
+func TestCanvasAgentBatchDeletionUsesOneScopedConfirmation(t *testing.T) {
+	for _, scenario := range []string{"confirm", "cancel", "changed"} {
+		t.Run(scenario, func(t *testing.T) {
+			var turns atomic.Int32
+			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+				if turns.Add(1) == 1 {
+					return agentTurn(agentCall("delete-batch", "delete_node", map[string]any{"nodeIds": []string{"audio-one", "audio-two"}})), nil
+				}
+				return agentTurn(), nil
+			}, nil)
+			for _, id := range []string{"audio-one", "audio-two", "keep-video"} {
+				doc.Nodes = append(doc.Nodes, CanvasNode{ID: id, Type: "text", Title: id, Prompt: "original", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1})
+			}
+			doc.Connections = []CanvasConnection{{ID: "link", FromNodeID: "audio-one", ToNodeID: "keep-video"}}
+			var err error
+			doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			waiting := agentWait(t, svc, identity, doc.ID)
+			_, session, _ := agentSession(waiting, req.SessionID)
+			question := agentMap(agentMap(session["agentState"])["pendingQuestion"])
+			if waiting.AgentRun.Status != "waiting" || len(waiting.Nodes) != 3 || turns.Load() != 1 || len(agentStrings(question["nodeIds"])) != 2 {
+				t.Fatalf("batch was not held for one approval: run=%+v question=%v", waiting.AgentRun, question)
+			}
+			for _, title := range []string{"audio-one", "audio-two"} {
+				if !strings.Contains(util.Clean(question["question"]), title) {
+					t.Fatalf("confirmation omitted %s", title)
+				}
+			}
+			if scenario == "changed" {
+				waiting.Nodes[1].Prompt = "user edited during confirmation"
+				if _, err = svc.canvas.SaveAtRevision(identity.ID, waiting); err != nil {
+					t.Fatal(err)
+				}
+			}
+			req.ID = "answer-batch"
+			req.UserText = "确认删除"
+			if scenario == "cancel" {
+				req.UserText = "保留全部"
+			}
+			if _, err = svc.Start(identity, doc.ID, req); err != nil {
+				t.Fatal(err)
+			}
+			done := agentWait(t, svc, identity, doc.ID)
+			want := 3
+			if scenario == "confirm" {
+				want = 1
+			}
+			if len(done.Nodes) != want {
+				t.Fatalf("batch deletion was partial or out of scope: nodes=%v", done.Nodes)
+			}
+			if scenario == "confirm" && (done.Nodes[0].ID != "keep-video" || len(done.Connections) != 0) {
+				t.Fatal("unrelated node lost or removed connections retained")
+			}
+			_, session, _ = agentSession(done, req.SessionID)
+			if len(agentMap(agentMap(session["agentState"])["pendingQuestion"])) != 0 || turns.Load() != 2 {
+				t.Fatal("batch asked again after one response")
+			}
+		})
+	}
+}
+
+func TestCanvasAgentBatchDeletionRejectsInvalidTargetsBeforeApproval(t *testing.T) {
+	for _, args := range []map[string]any{
+		{}, {"nodeId": "a", "nodeIds": []string{"b"}}, {"nodeIds": []string{"a", "a"}}, {"nodeIds": []string{"a", "missing"}},
+	} {
+		w := memoryWorker(t, nil)
+		w.doc.Nodes = []CanvasNode{{ID: "a", Type: "text", Prompt: "keep", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+		w.sdk = &AgentSDKSession{}
+		result, err := w.sdkPrepare(agentTurn(agentCall("invalid-delete", "delete_node", args)))
+		if err == nil && util.Clean(agentMap(result)["error"]) == "" {
+			t.Fatalf("invalid target accepted: %v", args)
+		}
+		if len(w.doc.Nodes) != 1 || len(agentMap(w.state["pendingQuestion"])) != 0 {
+			t.Fatal("invalid deletion changed canvas or created approval")
+		}
 	}
 }

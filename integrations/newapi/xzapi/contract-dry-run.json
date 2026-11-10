@@ -1,0 +1,35 @@
+[
+  {
+    "contract": "XZAPI CH01 视频（New API）",
+    "passed": true,
+    "models_tested": 11,
+    "modes_tested": 22,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "XZAPI CH13 视频（New API）",
+    "passed": true,
+    "models_tested": 8,
+    "modes_tested": 16,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  },
+  {
+    "contract": "XZAPI CH14 视频（New API）",
+    "passed": true,
+    "models_tested": 4,
+    "modes_tested": 8,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  }
+]

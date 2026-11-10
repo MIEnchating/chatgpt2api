@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func TestBoundedStorageHelpersReturnWhenTheDatabaseHangs(t *testing.T) {
 	if _, err := loadStoredJSONBounded(store, "tasks.json"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("load error = %v, want deadline exceeded", err)
 	}
-	if err := saveStoredJSONBounded(store, "tasks.json", map[string]any{}); !errors.Is(err, context.DeadlineExceeded) {
+	if err := saveStoredJSONBounded(store, "tasks.json", map[string]any{}); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "数据库写入超时") || !strings.Contains(err.Error(), "核对已保存进度后继续") {
 		t.Fatalf("save error = %v, want deadline exceeded", err)
 	}
 	if elapsed := time.Since(started); elapsed > 2*time.Second {

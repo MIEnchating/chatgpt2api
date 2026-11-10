@@ -111,3 +111,13 @@ test("audio references do not recurse through a config output connection", () =>
   ];
   assert.deepEqual(canvasAudioReferences("audio", nodes, connections), []);
 });
+
+test("MiniMax audio retains custom voice and uses bounded speech parameters", () => {
+  const settings = canvasAgentAudioNodeParameters("speech-2.8-hd", "custom-voice", "", "", { format: "flac", speed: 1.5 });
+  assert.equal(canvasAudioProvider("speech-2.8-hd"), "minimax");
+  assert.deepEqual(buildCanvasAudioGenerationRequest(node("speech-2.8-hd", settings), "你好"), {
+    model: "speech-2.8-hd", input: "你好", audio_protocol: "minimax", voice: "custom-voice", response_format: "flac", speed: 1.5,
+  });
+  assert.equal(buildCanvasAudioGenerationRequest(node("speech-02-turbo", { generation_audio_speed: 9 }), "Hello").speed, 2);
+  assert.equal(canvasAudioResponseFormat(node("speech-2.8-hd", settings)), "flac");
+});

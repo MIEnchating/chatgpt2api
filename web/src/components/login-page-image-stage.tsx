@@ -42,19 +42,11 @@ export function LoginPageImageStage({
 
   return (
     <div
-      className={cn(
-        "flex w-full max-w-[30rem] items-center justify-center",
-        fillParent ? "h-full max-w-none min-h-0" : undefined,
-        className,
-      )}
+      className={cn("flex w-full max-w-[30rem] items-center justify-center", fillParent ? "h-full max-w-none min-h-0" : undefined, className)}
     >
       <div
         ref={frameRef}
-        className={cn(
-          "relative flex w-full items-center justify-center overflow-hidden rounded-[1.8rem]",
-          fillParent ? "h-full w-full min-h-0 rounded-none" : "aspect-[16/10]",
-          frameClassName,
-        )}
+        className={cn("relative flex w-full items-center justify-center overflow-hidden rounded-[1.8rem]", fillParent ? "h-full w-full min-h-0 rounded-none" : "aspect-[16/10]", frameClassName)}
       >
         <img
           src={currentSrc}

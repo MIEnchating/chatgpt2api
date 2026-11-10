@@ -1,0 +1,315 @@
+{
+  "items": [
+    {
+      "role": "user",
+      "content": "Continue the saved task."
+    },
+    {
+      "type": "function_call",
+      "status": "completed",
+      "callId": "created",
+      "name": "create_text_node",
+      "arguments": "{\"text\":\"saved\"}"
+    },
+    {
+      "type": "function_call_result",
+      "name": "create_text_node",
+      "callId": "created",
+      "status": "completed",
+      "output": {
+        "type": "text",
+        "text": "{\"ok\":true,\"text\":\"saved\"}"
+      }
+    },
+    {
+      "type": "function_call",
+      "status": "completed",
+      "callId": "approval",
+      "name": "ask_user_question",
+      "arguments": "{\"text\":\"Confirm?\"}"
+    }
+  ],
+  "state": {
+    "$schemaVersion": "1.23",
+    "currentTurn": 2,
+    "currentAgent": {
+      "name": "Canvas Creative Agent"
+    },
+    "originalInput": [
+      {
+        "role": "user",
+        "content": "Continue the saved task."
+      }
+    ],
+    "modelResponses": [
+      {
+        "usage": {
+          "requests": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "totalTokens": 0,
+          "inputTokensDetails": [],
+          "outputTokensDetails": []
+        },
+        "output": [
+          {
+            "type": "function_call",
+            "callId": "created",
+            "name": "create_text_node",
+            "status": "completed",
+            "arguments": "{\"text\":\"saved\"}"
+          }
+        ]
+      },
+      {
+        "usage": {
+          "requests": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "totalTokens": 0,
+          "inputTokensDetails": [],
+          "outputTokensDetails": []
+        },
+        "output": [
+          {
+            "type": "function_call",
+            "callId": "approval",
+            "name": "ask_user_question",
+            "status": "completed",
+            "arguments": "{\"text\":\"Confirm?\"}"
+          }
+        ]
+      }
+    ],
+    "context": {
+      "usage": {
+        "requests": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "inputTokensDetails": [],
+        "outputTokensDetails": []
+      },
+      "approvals": {},
+      "approvalInvocations": [],
+      "context": {}
+    },
+    "toolUseTracker": {
+      "Canvas Creative Agent": [
+        "ask_user_question"
+      ]
+    },
+    "maxTurns": 40,
+    "noActiveAgentRun": false,
+    "inputGuardrailResults": [],
+    "initialInputGuardrailsCompleted": true,
+    "outputGuardrailResults": [],
+    "toolInputGuardrailResults": [],
+    "toolOutputGuardrailResults": [],
+    "currentTurnInProgress": true,
+    "currentStep": {
+      "type": "next_step_interruption",
+      "data": {
+        "interruptions": [
+          {
+            "type": "tool_approval_item",
+            "rawItem": {
+              "type": "function_call",
+              "status": "completed",
+              "callId": "approval",
+              "name": "ask_user_question",
+              "arguments": "{\"text\":\"Confirm?\"}"
+            },
+            "agent": {
+              "name": "Canvas Creative Agent"
+            },
+            "toolName": "ask_user_question",
+            "functionToolStateKey": "[\"bare\",\"ask_user_question\"]"
+          }
+        ]
+      }
+    },
+    "lastModelResponse": {
+      "usage": {
+        "requests": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "inputTokensDetails": [],
+        "outputTokensDetails": []
+      },
+      "output": [
+        {
+          "type": "function_call",
+          "callId": "approval",
+          "name": "ask_user_question",
+          "status": "completed",
+          "arguments": "{\"text\":\"Confirm?\"}"
+        }
+      ]
+    },
+    "generatedItems": [
+      {
+        "type": "tool_call_item",
+        "rawItem": {
+          "type": "function_call",
+          "callId": "created",
+          "name": "create_text_node",
+          "status": "completed",
+          "arguments": "{\"text\":\"saved\"}"
+        },
+        "agent": {
+          "name": "Canvas Creative Agent"
+        }
+      },
+      {
+        "type": "tool_call_output_item",
+        "rawItem": {
+          "type": "function_call_result",
+          "name": "create_text_node",
+          "callId": "created",
+          "status": "completed",
+          "output": {
+            "type": "text",
+            "text": "{\"ok\":true,\"text\":\"saved\"}"
+          }
+        },
+        "agent": {
+          "name": "Canvas Creative Agent"
+        },
+        "output": {
+          "ok": true,
+          "text": "saved"
+        },
+        "executionStatus": "executed"
+      },
+      {
+        "type": "tool_call_item",
+        "rawItem": {
+          "type": "function_call",
+          "callId": "approval",
+          "name": "ask_user_question",
+          "status": "completed",
+          "arguments": "{\"text\":\"Confirm?\"}"
+        },
+        "agent": {
+          "name": "Canvas Creative Agent"
+        }
+      },
+      {
+        "type": "tool_approval_item",
+        "rawItem": {
+          "type": "function_call",
+          "callId": "approval",
+          "name": "ask_user_question",
+          "status": "completed",
+          "arguments": "{\"text\":\"Confirm?\"}"
+        },
+        "agent": {
+          "name": "Canvas Creative Agent"
+        },
+        "toolName": "ask_user_question",
+        "functionToolStateKey": "[\"bare\",\"ask_user_question\"]"
+      }
+    ],
+    "currentResponseGeneratedItemOwnership": {
+      "generatedItemStartIndex": 2,
+      "generatedItemEndIndexExclusive": 4,
+      "interruptionGeneratedItemIndexes": [
+        3
+      ],
+      "toolOutputGuardrailResultStartIndex": 0
+    },
+    "pendingAgentToolRuns": {},
+    "pendingAgentToolRunAliases": {},
+    "lastProcessedResponse": {
+      "newItems": [
+        {
+          "type": "tool_call_item",
+          "rawItem": {
+            "type": "function_call",
+            "callId": "approval",
+            "name": "ask_user_question",
+            "status": "completed",
+            "arguments": "{\"text\":\"Confirm?\"}"
+          },
+          "agent": {
+            "name": "Canvas Creative Agent"
+          }
+        }
+      ],
+      "toolsUsed": [
+        "ask_user_question"
+      ],
+      "handoffs": [],
+      "functions": [
+        {
+          "toolCall": {
+            "type": "function_call",
+            "status": "completed",
+            "callId": "approval",
+            "name": "ask_user_question",
+            "arguments": "{\"text\":\"Confirm?\"}"
+          },
+          "tool": {
+            "type": "function",
+            "name": "ask_user_question",
+            "description": "ask_user_question",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "strict": false,
+            "deferLoading": false,
+            "timeoutBehavior": "error_as_result",
+            "inputGuardrails": [],
+            "outputGuardrails": []
+          },
+          "mcpToolBinding": null
+        }
+      ],
+      "functionToolsNotFound": [],
+      "computerActions": [],
+      "shellActions": [],
+      "applyPatchActions": [],
+      "mcpApprovalRequests": []
+    },
+    "currentTurnPersistedItemCount": 4,
+    "completedToolInvocations": [
+      {
+        "agentIdentity": "Canvas Creative Agent",
+        "invocations": {
+          "created": "{\"caller\":{\"type\":\"direct\"},\"payload\":{\"format\":\"json\",\"value\":{\"text\":\"saved\"}},\"toolName\":\"[\\\"bare\\\",\\\"create_text_node\\\"]\",\"type\":\"function_call\"}"
+        }
+      }
+    ],
+    "completedToolInvocationEvidence": [
+      {
+        "agentIdentity": "Canvas Creative Agent",
+        "invocations": {
+          "created": {
+            "fingerprint": "{\"caller\":{\"type\":\"direct\"},\"payload\":{\"format\":\"json\",\"value\":{\"text\":\"saved\"}},\"toolName\":\"[\\\"bare\\\",\\\"create_text_node\\\"]\",\"type\":\"function_call\"}",
+            "items": [
+              {
+                "generatedItemIndex": 0
+              },
+              {
+                "generatedItemIndex": 1
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "ambiguousToolInvocationCallIds": [],
+    "trace": null
+  }
+}

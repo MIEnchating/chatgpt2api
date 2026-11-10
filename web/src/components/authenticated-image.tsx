@@ -1,6 +1,8 @@
 "use client";
 
-import { ImageOff, LoaderCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+
+import { ImageOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 
 import {
@@ -124,17 +126,13 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
     return (
       <span
         ref={containerRef}
-        className={cn(
-          className,
-          "flex min-h-24 min-w-0 w-full items-center justify-center bg-muted text-muted-foreground",
-          placeholderClassName,
-        )}
+        className={cn(className, "flex min-h-24 min-w-0 w-full items-center justify-center bg-muted text-muted-foreground", placeholderClassName)}
         style={placeholderStyle}
         role={alt ? "img" : undefined}
         aria-label={typeof alt === "string" && alt ? alt : undefined}
       >
         {showPlaceholder ? (
-          <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
+          <Spinner className="size-5 animate-spin" aria-hidden="true" />
         ) : (
           <span className="flex max-w-full flex-col items-center gap-2 p-2 text-center text-xs leading-5 font-medium text-muted-foreground">
             <ImageOff className="size-4" aria-hidden="true" />

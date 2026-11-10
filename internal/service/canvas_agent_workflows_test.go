@@ -1,10 +1,55 @@
 package service
 
 import (
+	"chatgpt2api/internal/util"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestCanvasAgentSaveWorkflowPreservesVariableContracts(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.service.SetWorkflowService(NewWorkflowService(newTestStorageBackend(t)))
+	args := map[string]any{"name": "品牌模板", "mode": "single_image", "promptTemplate": "{{style}} 海报", "variables": []map[string]any{{"key": "style", "label": "风格", "required": true, "type": "select", "options": []string{"自然", "现代"}, "placeholder": "请选择", "defaultValue": "自然"}}}
+	result, err := w.workflowTool("save_workflow", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := util.Clean(result["workflowId"])
+	first, err := w.workflow(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	variable := first.Variables[0]
+	if variable.Type != "select" || !slices.Equal(variable.Options, []string{"自然", "现代"}) || variable.Placeholder != "请选择" {
+		t.Fatalf("variable contract lost: %+v", variable)
+	}
+	args["workflowId"], args["revision"] = id, first.Revision
+	args["variables"] = []map[string]any{{"key": "style", "label": "画面风格", "required": false}}
+	if _, err := w.workflowTool("save_workflow", args); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := w.workflow(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := updated.Variables[0]
+	if got.ID != variable.ID || got.Type != variable.Type || !slices.Equal(got.Options, variable.Options) || got.DefaultValue != variable.DefaultValue || got.Placeholder != variable.Placeholder || got.Label != "画面风格" || got.Required {
+		t.Fatalf("partial update lost variable fields: %+v", got)
+	}
+	args["revision"] = updated.Revision
+	args["variables"] = []map[string]any{{"key": "style", "label": "风格", "required": false, "type": "text", "options": []string{}, "placeholder": "", "defaultValue": ""}}
+	if _, err := w.workflowTool("save_workflow", args); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := w.workflow(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cleared.Variables[0]; got.Type != "text" || len(got.Options) != 0 || got.Placeholder != "" || got.DefaultValue != "" {
+		t.Fatalf("explicit clearing ignored: %+v", got)
+	}
+}
 
 func TestCanvasAgentWorkflowReviewApprovedAnswers(t *testing.T) {
 	for answer, want := range map[string]bool{

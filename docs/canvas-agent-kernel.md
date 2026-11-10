@@ -2,13 +2,13 @@
 
 ## 参考设计
 
-本轮参考 OpenAI Agents SDK 的 [Running agents](https://developers.openai.com/api/docs/guides/agents/running-agents)、[Guardrails and human review](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals) 和 Codex App Server 的 [用户输入请求](https://learn.chatgpt.com/docs/app-server#toolrequestuserinput)（2026-10-29 查阅）。内置 Agent 使用固定版本 `@openai/agents`：SDK Runner 管理模型—工具循环及用户审批暂停/恢复；Go 后端管理身份、模型中转、画布/工作流业务工具、媒体任务和持久化，继续复用现有 Chat/Responses 协议。本地 Codex 继续使用自身 App Server 引擎。
+内置 Agent 使用 LangGraph 状态图管理模型与工具循环及用户审批暂停和恢复；Go 后端管理身份、模型中转、画布/工作流业务工具、媒体任务和持久化，继续复用现有 Chat/Responses 协议。本地 Codex 继续使用自身 App Server 引擎。
 
 ## 执行位置与接口
 
-内置 Agent 的 SDK Runner 在私有 stdio 子进程中运行，不监听网络端口，也不接收 API 密钥；`internal/service/canvas_agent*.go` 通过 stdin/stdout 为 Runner 提供已认证模型响应和工具结果，并负责工具校验、画布/工作流操作、媒体任务、计划、上下文压缩和检查点持久化。问题和删除审批由 SDK 暂停后保存状态，用户回答后恢复。浏览器仅提交请求、展示快照、回答问题和发送停止指令；旧的浏览器模型请求及执行循环已删除。工具 Schema、中文标签与内置 Skill 提示词统一存放于 `internal/service/canvas_agent_assets/*.json`，Go 和 Codex 前端共用这些定义。
+内置 Agent 的 LangGraph worker 在私有 stdio 子进程中运行，不监听网络端口，也不接收 API 密钥；`internal/service/canvas_agent*.go` 通过 stdin/stdout 提供已认证模型响应和工具结果，并负责工具校验、画布/工作流操作、媒体任务、计划和检查点持久化。worker 负责上下文整理以及问题和删除审批的暂停与恢复。浏览器仅提交请求、展示快照、回答问题和发送停止指令。工具 Schema、中文标签与内置 Skill 提示词统一存放于 `internal/service/canvas_agent_assets/*.json`，Go 和 Codex 前端共用这些定义。
 
-Docker 镜像内含 Node.js 22、固定版本 Agents SDK 依赖及 worker；后端按需启动 worker，用户无需单独运行 Agent 容器、开放端口或安装 Node.js。Windows 桌面包包含同一运行时。Linux 独立压缩包提供 worker 和锁文件，首次运行前按包内说明安装依赖。
+Docker 镜像内含 Node.js 22、固定版本 LangGraph 依赖及 worker；后端按需启动 worker，用户无需单独运行 Agent 容器、开放端口或安装 Node.js。Windows 桌面包包含同一运行时。Linux 独立压缩包提供 worker 和锁文件，首次运行前按包内说明安装依赖。
 
 已认证的 `/api/canvas/agent-runs?project_id=...` 支持：
 
@@ -23,6 +23,14 @@ Codex 对话通过 `POST /api/canvas/agent-tools?project_id=...` 调用同一套
 每个用户的每个画布同时只允许一个后台运行。运行上下文独立于 HTTP 请求，关闭页面不会取消执行；画布和对话检查点保存在现有存储中。运行期间允许编辑和保存节点，版本冲突时读取最新快照并合并本地修改；清空、重命名及删除整个画布仍返回 409，需先停止运行。后台保存不切换用户当前打开的项目。
 
 这是单后端进程的执行协调，不提供多副本分布式租约或跨服务 exactly-once 保证。后端重启后，尚未完成的运行标记为 interrupted，等待用户检查后继续；不自动重放未知操作。已提交的媒体任务使用独立生命周期。
+
+## 前端执行视图
+
+前端通过现有 Go 接口消费 LangGraph 运行快照，不在浏览器创建状态图或读取私有检查点。`canvas-agent-panel.tsx` 管理提交、引用、附件与消息队列，`canvas-agent-conversation.tsx` 独立投影对话、推理、工具和来源；共享 AI Elements 组件承接 Conversation、Message、PromptInput、Task、Tool、Plan、Confirmation 与运行状态。
+
+同一会话、同一助手消息对应的 `agent_run.status` 优先于消息中的展示状态，明确区分执行中、等待、中断、停止、失败和成功；排队消息也必须等待当前服务端运行成功。待确认问题只接受真实用户选择或输入，恢复按钮不能代替批准。对话中的 Checkpoint 表示编辑并创建对话分支，不表示 LangGraph 的私有运行检查点。
+
+工作流和视频契约通过 `AgentExecutionMonitor` 与 `useAgentExecution` 共用后台恢复观察。新工作流按提交时生成的运行 ID 读取进度；恢复只操作原运行 ID。卸载、关闭和账号变化仅取消观察并丢弃过期响应，显式停止才发送 DELETE，随后重新读取服务端状态。初始读取失败提供重试入口，重复恢复或停止点击不会重复提交。
 
 ## 内置 Agent 的协作循环
 
@@ -90,7 +98,7 @@ Codex 将用户输入、提问答案、画布工具调用/结果及最终回复�
 
 ## 验证
 
-最终打包验证：`go test ./...`、Agent 服务及 HTTP 的 `-race` 测试、前端 build/lint 与 CI 触发规则测试通过。本地镜像 `chatgpt2api:agent-sdk-check` 在无外部网络、无宿主机端口映射的临时容器中通过健康检查，并通过镜像内 Node 22 完成真实 SDK Runner 的模拟模型→工具→模型→结束循环；临时容器已删除。源码开发仍复用 Vite 8002 和 `go run ./internal` 8090。真实 Codex App Server 和付费模型/媒体任务未在本次验证中调用。
+迁移前的历史打包验证：`go test ./...`、Agent 服务及 HTTP 的 `-race` 测试、前端 build/lint 与 CI 触发规则测试通过。旧 SDK 镜像曾在无外部网络、无宿主机端口映射的临时容器中通过健康检查与模拟执行循环，临时容器已删除；这些记录不代表当前 LangGraph 版本的镜像验证。当前运行时、一次性检查点迁移、缓存与工具验证入口见 [共享 Agent 执行器](../agent-runtime/README.md)。
 
 SDK 与工作流专项验证：`canvas_agent_external_tools_test.go` 实际调用六个工作流工具，验证图片→视频依赖、重复运行 ID 去重、审核拒绝、过期指纹、用户隔离和内置 SDK 暂停状态保护。HTTP 测试覆盖认证、严格 JSON 请求和快照结果。Codex 测试确认后端审核状态能保留到检查点，只有收到用户答案后才提交审核回答。前端全量 1163 项测试通过；最近交互修正后的 81 项定向测试通过。1440px、390px、320px 浏览器模拟验证选项填入后自由编辑、无超时自动提交、后台刷新恢复、单次停止及结果定位。
 

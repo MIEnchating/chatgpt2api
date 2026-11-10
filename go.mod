@@ -7,6 +7,7 @@ require (
 	github.com/dop251/goja v0.0.0-20261002085108-39f5d4011994
 	github.com/enetx/g v1.0.224
 	github.com/enetx/surf v1.0.199
+	github.com/expr-lang/expr v1.17.8
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9

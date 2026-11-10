@@ -1,4 +1,7 @@
-import { OverlaySurface } from "@/components/ui/overlay-layer";
+import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Download, Maximize, Maximize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -38,7 +41,7 @@ export function CanvasVideoNodePlayer({
     else video.pause();
   }
 
-  const controlClassName = "absolute bottom-2 z-20 flex size-7 items-center justify-center rounded-md bg-black/55 text-white opacity-80 backdrop-blur transition-opacity hover:opacity-100";
+  const controlClassName = "dark absolute bottom-2 z-20";
   const keepVideoFocus = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -79,13 +82,14 @@ export function CanvasVideoNodePlayer({
         }}
       />
       {duration > 0 ? (
-        <span className="pointer-events-none absolute left-2 top-2 z-20 flex h-7 items-center rounded-md bg-black/55 px-2 text-[11px] font-medium text-white opacity-80 backdrop-blur">
+        <Badge variant="secondary" className="pointer-events-none absolute left-2 top-2 z-20 flex h-7 items-center opacity-80">
           {formatCanvasVideoTime(duration)}
-        </span>
+        </Badge>
       ) : null}
       <TooltipButton
         type="button"
         tooltip={playing ? "暂停" : "播放"}
+        variant="secondary"
         aria-label={playing ? "暂停" : "播放"}
         className={cn(controlClassName, "left-2")}
         onMouseDown={keepVideoFocus}
@@ -95,20 +99,18 @@ export function CanvasVideoNodePlayer({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+        {playing ? <Pause  /> : <Play  />}
       </TooltipButton>
       <div className="absolute bottom-2 left-11 right-11 z-20 flex h-7 items-center" data-canvas-no-pan onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
-        <input
-          type="range"
+        <Slider
           min={0}
-          max={duration}
-          step="0.01"
-          value={Math.min(currentTime, duration)}
+          max={duration || 1}
+          step={0.01}
+          value={[Math.min(currentTime, duration)]}
           disabled={duration <= 0}
           aria-label="视频进度"
-          className="h-1 w-full cursor-pointer accent-white"
-          onChange={(event) => {
-            const time = event.currentTarget.valueAsNumber;
+          className="w-full cursor-pointer"
+          onValueChange={([time]) => {
             if (videoRef.current) videoRef.current.currentTime = time;
             setCurrentTime(time);
           }}
@@ -118,6 +120,7 @@ export function CanvasVideoNodePlayer({
       <TooltipButton
         type="button"
         tooltip="放大预览"
+        variant="secondary"
         aria-label="放大预览"
         className={cn(controlClassName, "right-2")}
         onMouseDown={keepVideoFocus}
@@ -128,13 +131,13 @@ export function CanvasVideoNodePlayer({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <Maximize2 className="size-3.5" />
+        <Maximize2  />
       </TooltipButton>
     </div>
   );
 }
 
-const previewControlClassName = "flex size-9 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80";
+const previewControlClassName = "shrink-0";
 
 export function CanvasVideoPreview({
   src,
@@ -162,18 +165,23 @@ export function CanvasVideoPreview({
   }
 
   return (
-    <OverlaySurface className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
-      <div
-        ref={playerRef}
-        className="relative flex max-h-[85vh] max-w-[85vw] items-center justify-center overflow-hidden rounded-xl bg-black shadow-2xl fullscreen:h-screen fullscreen:w-screen fullscreen:max-h-none fullscreen:max-w-none fullscreen:rounded-none [&:fullscreen>video]:h-screen [&:fullscreen>video]:w-screen [&:fullscreen>video]:max-h-none [&:fullscreen>video]:max-w-none"
-        data-canvas-no-zoom
-        onClick={(event) => event.stopPropagation()}
-        onKeyDownCapture={(event) => {
-          if (event.code !== "Space") return;
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="w-auto max-w-[85vw] gap-0 p-0 sm:max-w-[85vw]"
+        onKeyDown={(event) => {
+          if (event.code !== "Space" || (event.target !== event.currentTarget && event.target !== videoRef.current)) return;
           event.preventDefault();
           event.stopPropagation();
           togglePlayback();
         }}
+      >
+      <DialogTitle className="sr-only">{title}</DialogTitle>
+      <DialogDescription className="sr-only">视频预览，支持播放、进度调整、音量、下载和全屏。</DialogDescription>
+      <div
+        ref={playerRef}
+        className="dark relative flex max-h-[85dvh] max-w-[85vw] items-center justify-center overflow-hidden bg-black text-foreground fullscreen:h-screen fullscreen:w-screen fullscreen:max-h-none fullscreen:max-w-none [&:fullscreen>video]:h-screen [&:fullscreen>video]:w-screen [&:fullscreen>video]:max-h-none [&:fullscreen>video]:max-w-none"
+        data-canvas-no-zoom
       >
         <video
           ref={videoRef}
@@ -183,7 +191,7 @@ export function CanvasVideoPreview({
           playsInline
           disablePictureInPicture
           preload="metadata"
-          className="block max-h-[85vh] max-w-[85vw] object-contain outline-none"
+          className="block max-h-[85dvh] max-w-[85vw] object-contain outline-none"
           onLoadStart={() => {
             setDuration(0);
             setCurrentTime(0);
@@ -199,56 +207,52 @@ export function CanvasVideoPreview({
             event.stopPropagation();
           }}
         />
-        <button type="button" aria-label="关闭预览" onClick={onClose} className="absolute right-4 top-4 z-20 flex size-9 items-center justify-center rounded-lg text-white transition-colors hover:bg-black/25">
-          <X className="size-6" />
-        </button>
+        <Button variant="ghost" size="icon-sm" type="button" aria-label="关闭预览" onClick={onClose} className="absolute right-4 top-4 z-20 flex items-center justify-center">
+          <X  />
+        </Button>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-5 pb-3 pt-24">
           <div className="mb-2 flex justify-between text-xs font-medium tabular-nums text-white">
             <span>{formatCanvasVideoTime(currentTime)}</span>
             <span>{formatCanvasVideoTime(duration)}</span>
           </div>
-          <input
-            type="range"
+          <Slider
             min={0}
-            max={duration || 0}
-            step="0.01"
-            value={Math.min(currentTime, duration || 0)}
+            max={duration || 1}
+            step={0.01}
+            value={[Math.min(currentTime, duration || 0)]}
             aria-label="视频进度"
-            onChange={(event) => {
-              const time = Number(event.currentTarget.value);
+            onValueChange={([time]) => {
               if (videoRef.current) videoRef.current.currentTime = time;
               setCurrentTime(time);
             }}
             onPointerUp={() => videoRef.current?.focus({ preventScroll: true })}
-            className="pointer-events-auto block h-1 w-full cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-            style={{ background: `linear-gradient(to right, #67e8f9 ${duration ? Math.min(currentTime / duration, 1) * 100 : 0}%, rgba(255,255,255,0.35) 0)` }}
+            disabled={duration <= 0}
+            className="pointer-events-auto w-full cursor-pointer"
           />
           <div className="pointer-events-auto mt-2 flex items-center justify-between">
             <div className="flex items-center gap-1">
-              <button type="button" aria-label={playing ? "暂停" : "播放"} onPointerDown={(event) => event.preventDefault()} onClick={togglePlayback} className={previewControlClassName}>
-                {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
-              </button>
+              <Button variant="ghost" type="button" aria-label={playing ? "暂停" : "播放"} onPointerDown={(event) => event.preventDefault()} onClick={togglePlayback} size="icon" className={previewControlClassName}>
+                {playing ? <Pause  /> : <Play  />}
+              </Button>
               <div className="group/volume flex items-center">
-                <button
+                <Button variant="ghost"
                   type="button"
                   aria-label={volume === 0 ? "恢复声音" : "静音"}
                   onPointerDown={(event) => event.preventDefault()}
                   onClick={() => {
                     if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
                   }}
-                  className={previewControlClassName}
+                  size="icon" className={previewControlClassName}
                 >
-                  {volume === 0 ? <VolumeX className="size-5" /> : <Volume2 className="size-5" />}
-                </button>
-                <input
-                  type="range"
+                  {volume === 0 ? <VolumeX  /> : <Volume2  />}
+                </Button>
+                <Slider
                   min={0}
                   max={1}
-                  step="0.01"
-                  value={volume}
+                  step={0.01}
+                  value={[volume]}
                   aria-label="音量"
-                  onChange={(event) => {
-                    const nextVolume = Number(event.currentTarget.value);
+                  onValueChange={([nextVolume]) => {
                     if (!videoRef.current) return;
                     if (nextVolume === 0) videoRef.current.muted = true;
                     else {
@@ -257,16 +261,15 @@ export function CanvasVideoPreview({
                     }
                   }}
                   onPointerUp={() => videoRef.current?.focus({ preventScroll: true })}
-                  className="h-1 w-0 pointer-events-none cursor-pointer appearance-none rounded-full opacity-0 transition-[width,opacity] duration-200 group-hover/volume:mx-1 group-hover/volume:w-20 group-hover/volume:pointer-events-auto group-hover/volume:opacity-100 group-focus-within/volume:mx-1 group-focus-within/volume:w-20 group-focus-within/volume:pointer-events-auto group-focus-within/volume:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-moz-range-thumb]:size-2 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-2 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                  style={{ background: `linear-gradient(to right, white ${volume * 100}%, rgba(255,255,255,0.35) 0)` }}
+                  className="pointer-events-none w-0 cursor-pointer opacity-0 group-hover/volume:mx-1 group-hover/volume:w-20 group-hover/volume:pointer-events-auto group-hover/volume:opacity-100 group-focus-within/volume:mx-1 group-focus-within/volume:w-20 group-focus-within/volume:pointer-events-auto group-focus-within/volume:opacity-100"
                 />
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" aria-label="下载视频" onPointerDown={(event) => event.preventDefault()} onClick={onDownload} className={previewControlClassName}>
-                <Download className="size-5" />
-              </button>
-              <button
+              <Button variant="ghost" type="button" aria-label="下载视频" onPointerDown={(event) => event.preventDefault()} onClick={onDownload} size="icon" className={previewControlClassName}>
+                <Download  />
+              </Button>
+              <Button variant="ghost"
                 type="button"
                 aria-label="全屏播放"
                 onPointerDown={(event) => event.preventDefault()}
@@ -274,14 +277,15 @@ export function CanvasVideoPreview({
                   if (document.fullscreenElement) void document.exitFullscreen();
                   else void playerRef.current?.requestFullscreen();
                 }}
-                className={previewControlClassName}
+                size="icon" className={previewControlClassName}
               >
-                <Maximize className="size-5" />
-              </button>
+                <Maximize  />
+              </Button>
             </div>
           </div>
         </div>
       </div>
-    </OverlaySurface>
+      </DialogContent>
+    </Dialog>
   );
 }

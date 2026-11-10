@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,67 @@ import (
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
 )
+
+func TestDramayaWan3SendsDurationToRelay(t *testing.T) {
+	data, err := os.ReadFile("../../integrations/newapi/dramaya-wan-3/contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document videoModelContractTransferDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	contract := document.Contracts[0].Contract
+	app := newTestApp(t)
+	defer app.Close()
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/videos":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if _, present := body["seconds"]; present {
+				util.WriteError(w, http.StatusBadRequest, `unsupported published model parameter "seconds"`)
+				return
+			}
+			want := map[string]any{"model": "wan-3", "prompt": "A moving cloud", "duration": float64(10), "resolution": "480p"}
+			if !reflect.DeepEqual(body, want) {
+				t.Errorf("outbound request = %#v, want %#v", body, want)
+			}
+			util.WriteJSON(w, http.StatusAccepted, map[string]any{"id": "wan-fixture", "status": "queued"})
+		case "GET /v1/videos/wan-fixture":
+			util.WriteJSON(w, http.StatusOK, map[string]any{"id": "wan-fixture", "status": "completed"})
+		case "GET /v1/videos/wan-fixture/content":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("test-video-content"))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	payload := map[string]any{
+		"model": "wan-3", "prompt": "A moving cloud", "seconds": 10, "resolution": "480p",
+		"relay_protocol": "openai", "relay_base_url": upstream.URL, "api_key": "test-only",
+		"client_task_id": "wan-local-fixture", "owner_id": "test-owner",
+		"size": "", "generate_audio": false, "watermark": false,
+		"reference_image_urls": []string{}, "reference_video_urls": []string{}, "reference_audio_urls": []string{},
+		protocol.VideoContractSnapshotPayloadKey: contract,
+	}
+	if err := normalizeVideoContractInput(payload, contract); err != nil {
+		t.Fatal(err)
+	}
+	result, err := app.relayVideoTask(context.Background(), payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 3 || len(util.AsMapSlice(result["data"])) != 1 {
+		t.Fatalf("requests=%d result=%#v", requests, result)
+	}
+}
 
 func dramayaVideoContract(t *testing.T) protocol.VideoModelContract {
 	t.Helper()

@@ -21,7 +21,15 @@ assert.equal(out.callback_url,undefined);
 for (const bad of [{seed:0.5},{seed:'0'},{prompt_enhance:0},{callback_url:'file:///secret'},{prompt_expansion_mode:'unknown'}]) {
   assert.throws(()=>submit({prompt_expansion_mode:'quality',...bad}));
 }
-assert.equal(submit({prompt_expansion_mode:'balanced',input_reference:'https://dry-run.invalid/ref.mp4'}).input_reference,'https://dry-run.invalid/ref.mp4');
+const reference = input.contract.transport.local_material === 'base64'
+  ? input.contract.transport.base64_format === 'raw' ? 'YQ==' : 'data:image/png;base64,YQ=='
+  : 'https://dry-run.invalid/ref.mp4';
+assert.equal(submit({prompt_expansion_mode:'balanced',input_reference:reference}).input_reference,reference);
+if (input.contract.transport.local_material === 'base64') {
+  for (const bad of ['https://dry-run.invalid/ref.png', 'data:image/png;base64,@@@', '']) {
+    if (bad) assert.throws(()=>submit({prompt_expansion_mode:'balanced',input_reference:bad}));
+  }
+}
 assert.throws(()=>submit({prompt_expansion_mode:'balanced',input_reference:['https://dry-run.invalid/ref.mp4']}));
 assert.equal(submit({prompt_expansion_mode:'balanced',prompt:undefined}).prompt,undefined);
 assert.throws(()=>submit({prompt_expansion_mode:'balanced',prompt:'x'.repeat(41)}));

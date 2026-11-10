@@ -235,6 +235,9 @@ func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbench
 }
 
 func (a *App) validateCreationWorkbenchModels(workbench service.CreationWorkbenchPreferences) error {
+	if workbench.ComposerMode != "video" && workbench.SmartContextEnabled && workbench.ContextTextModel != "" && allowedPersonalModel(workbench.ContextTextModel, a.config.TextModels()) == "" {
+		return fmt.Errorf("workbench.context_text_model is not enabled by the administrator")
+	}
 	if workbench.ComposerMode != "video" && workbench.ImageModel != "" && allowedPersonalModel(workbench.ImageModel, a.config.ImageModels()) == "" {
 		return fmt.Errorf("workbench.image_model is not enabled by the administrator")
 	}

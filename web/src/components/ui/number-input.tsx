@@ -2,6 +2,7 @@ import * as React from "react";
 import { Minus, Plus } from "lucide-react";
 
 import { TooltipButton } from "@/components/ui/tooltip";
+import { InputGroup, InputGroupInput } from "./input-group";
 import { cn } from "@/lib/utils";
 
 type NumberInputProps = Omit<
@@ -87,57 +88,47 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     const decrementButton = (
       <TooltipButton
+        variant="ghost"
+        size="icon-xs"
         type="button"
         aria-label="减少数值"
         tooltip="减少"
         disabled={decrementDisabled}
         onClick={() => changeByStep(-1)}
-        className={cn(
-          "flex size-8 max-h-full shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-background enabled:hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
-          controlsLayout === "split" && "ml-1",
-        )}
+        className={cn("flex max-h-full shrink-0 items-center justify-center focus-visible:z-10 disabled:cursor-not-allowed", controlsLayout === "split" && "ml-1")}
       >
-        <Minus className="size-3.5" />
+        <Minus  />
       </TooltipButton>
     );
 
     const incrementButton = (
       <TooltipButton
+        variant="ghost"
+        size="icon-xs"
         type="button"
         aria-label="增加数值"
         tooltip="增加"
         disabled={incrementDisabled}
         onClick={() => changeByStep(1)}
-        className={cn(
-          "flex size-8 max-h-full shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-background enabled:hover:text-foreground focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-30",
-          controlsLayout === "split" && "mr-1",
-        )}
+        className={cn("flex max-h-full shrink-0 items-center justify-center focus-visible:z-10 disabled:cursor-not-allowed", controlsLayout === "split" && "mr-1")}
       >
-        <Plus className="size-3.5" />
+        <Plus  />
       </TooltipButton>
     );
 
     return (
-      <div
-        className={cn(
-          "flex h-10 w-full min-w-0 items-center rounded-lg border border-input bg-background shadow-xs hover:border-foreground/25 transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20 has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:focus-within:border-destructive has-[input[aria-invalid=true]]:focus-within:ring-destructive/20",
-          disabled && "cursor-not-allowed bg-muted/50 opacity-60 hover:border-input",
-          readOnly && "bg-muted/30",
-          className,
-        )}
+      <InputGroup
+        className={cn("flex w-full min-w-0 items-center", className)}
       >
         {controlsLayout === "split" ? decrementButton : null}
         <div
-          className={cn(
-            "flex min-w-0 flex-1 items-center",
-            controlsLayout === "split" && "justify-center gap-1",
-          )}
+          className={cn("flex h-full min-w-0 flex-1 items-center", controlsLayout === "split" && "justify-center gap-1")}
         >
-          <input
+          <InputGroupInput
             {...props}
             ref={setInputRef}
             type="number"
-            data-slot="number-input"
+            data-number-input=""
             disabled={disabled}
             readOnly={readOnly}
             min={min}
@@ -145,19 +136,12 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             step={step}
             value={value}
             onChange={(event) => onValueChange(event.target.value)}
-            className={cn(
-              "h-full min-w-0 max-w-full appearance-none bg-transparent py-2 text-base sm:text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-              controlsLayout === "split" ? "flex-none px-0 text-right" : "flex-1 px-3",
-              inputClassName,
-            )}
+            className={cn("h-full min-w-0 max-w-full appearance-none tabular-nums disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none", controlsLayout === "split" ? "flex-none px-0 text-right" : "flex-1", inputClassName)}
             style={controlsLayout === "split" ? { ...props.style, width: `${splitInputWidth + 0.5}ch` } : props.style}
           />
           {suffix ? (
             <span
-              className={cn(
-                "min-w-0 max-w-24 truncate text-xs font-medium text-muted-foreground",
-                controlsLayout === "split" ? "px-0" : "px-2",
-              )}
+              className={cn("min-w-0 max-w-24 truncate text-xs font-medium text-muted-foreground", controlsLayout === "split" ? "px-0" : "px-2")}
             >
               {suffix}
             </span>
@@ -169,7 +153,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             {incrementButton}
           </div>
         )}
-      </div>
+      </InputGroup>
     );
   },
 );

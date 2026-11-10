@@ -16,7 +16,7 @@ const workflowsSource = readSource("../src/app/workflows/creative-workflow-works
 const emptyStateSource = readSource("../src/components/ui/empty-state.tsx");
 
 test("management pages share one page and panel layout contract", () => {
-  for (const source of [assetsSource, usersSource, rbacSource, logsSource]) {
+  for (const source of [usersSource, rbacSource, logsSource]) {
     assert.match(source, /<ManagementPage/);
     assert.match(source, /<ManagementPanel/);
   }
@@ -25,9 +25,7 @@ test("management pages share one page and panel layout contract", () => {
   }
 
   assert.match(managementSource, /data-management-page/);
-  assert.match(managementSource, /gap-\[var\(--page-section-gap\)\]/);
   assert.match(managementSource, /data-management-panel/);
-  assert.match(managementSource, /card-surface[\s\S]*border border-border shadow-\[var\(--shadow-card\)\]/);
   assert.doesNotMatch(managementSource, /data-management-panel[\s\S]{0,240}bg-background/);
   assert.doesNotMatch(managementSource, /components\/ui\/card/);
   assert.match(managementSource, /data-management-toolbar/);
@@ -48,10 +46,10 @@ test("assets, users, and logs use the same responsive pagination contract", () =
   assert.doesNotMatch(logsSource, /aria-label="上一页"/);
 
   assert.match(managementSource, /data-management-pagination/);
-  assert.match(managementSource, /col-span-2 row-start-2[^"]*sm:col-span-1[^"]*sm:row-start-1/);
+  assert.doesNotMatch(managementSource, /col-span-2 row-start-2/);
   assert.match(
     managementSource,
-    /grid-cols-\[minmax\(0,1fr\)_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
+    /grid-cols-\[minmax\(0,1fr\)_auto_auto\][\s\S]*sm:grid-cols-\[1fr_auto_1fr\]/
   );
   assert.match(
     managementSource,
@@ -72,12 +70,14 @@ test("user toolbar leaves totals and empty selection state to pagination and row
 
 test("every page-level pagination stays fixed to the bottom of its full-height panel", () => {
   assert.match(managementSource, /data-management-pagination[\s\S]*className="mt-auto/);
-  for (const source of [assetsSource, usersSource, logsSource]) {
+  assert.match(assetsSource, /<LibraryWorkspace/);
+  assert.match(assetsSource, /<ManagementPagination/);
+  for (const source of [usersSource, logsSource]) {
     assert.match(source, /<ManagementPanel className="flex-1">/);
     assert.match(source, /<ManagementPagination/);
   }
   for (const source of [usersSource, logsSource]) {
-    assert.match(source, /<ScrollArea className="min-h-0 flex-1">/);
+    assert.match(source, /<ScrollAreaRoot[^>]*className="[^"]*min-h-0[^"]*flex-1"/);
   }
 });
 
@@ -150,14 +150,14 @@ test("role permission queries abort stale loads and preserve the latest selectio
 });
 
 test("log detail header reserves the global dialog close-button area", () => {
-  assert.match(logsSource, /<DialogHeader className="shrink-0 border-b border-border py-4 pl-4 pr-14 sm:py-5 sm:pl-6">/);
-  assert.match(logsSource, /className="h-9 shrink-0 self-start rounded-lg px-3"[\s\S]*?复制 JSON/);
+  assert.match(logsSource, /<DialogHeader className="shrink-0[^"]*">/);
+  assert.match(logsSource, /className="shrink-0 self-start"[\s\S]*?复制 JSON/);
   assert.doesNotMatch(logsSource, /<DialogHeader className="[^"]*px-6[^"]*">[\s\S]*?复制 JSON/);
 });
 
 test("major libraries and management pages share one page-level empty state", () => {
   assert.match(emptyStateSource, /data-empty-state/);
-  assert.match(emptyStateSource, /compact \? "min-h-32 py-6" : "min-h-48 py-10 sm:py-12"/);
+  assert.match(emptyStateSource, /compact \? "min-h-32" : "min-h-48"/);
   for (const source of [assetsSource, usersSource, rbacSource, logsSource, workflowsSource]) {
     assert.match(source, /<EmptyState/);
   }

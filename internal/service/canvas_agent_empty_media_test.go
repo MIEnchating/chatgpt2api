@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -35,5 +36,23 @@ func TestCanvasAgentFinishGenerationRejectsMissingMediaURL(t *testing.T) {
 				t.Fatalf("pending task was not released: %v", w.state["pendingTaskIds"])
 			}
 		})
+	}
+}
+
+func TestCanvasAgentFailedMediaTaskDoesNotRemainPending(t *testing.T) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+		return nil, errors.New("upstream media failed")
+	})
+	created, err := w.createGroupedCanvasWorkflow([]map[string]any{parallelImageStep("failed"), parallelImageStep("other")}, "media failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := agentStrings(created["nodeIds"])[0]
+	if _, err = w.generateNode(id); err == nil {
+		t.Fatal("media failure was lost")
+	}
+	node := w.node(id)
+	if node.GenerationStatus != "error" || slices.Contains(agentStrings(w.state["pendingTaskIds"]), node.TaskID) {
+		t.Fatalf("failed task still blocks completion: node=%+v, pending=%v", node, w.state["pendingTaskIds"])
 	}
 }

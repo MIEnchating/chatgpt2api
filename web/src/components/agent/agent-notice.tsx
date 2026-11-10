@@ -1,7 +1,6 @@
 import type { ComponentProps } from "react";
-import { cn } from "@/lib/utils";
+import { Item, ItemContent } from "@/components/ui/item";
 
-// Shared amber notice block for agent surfaces (canvas resume notice, workflow draft warnings).
-export function AgentNotice({ className, ...props }: ComponentProps<"div">) {
-  return <div role="status" className={cn("rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2.5 text-xs", className)} {...props} />;
+export function AgentNotice({ children, ...props }: ComponentProps<"div">) {
+  return <Item role="status" variant="muted" size="sm" {...props}><ItemContent>{children}</ItemContent></Item>;
 }

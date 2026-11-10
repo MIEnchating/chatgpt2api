@@ -1,11 +1,17 @@
+import { ModelPicker } from "@/components/model-picker";
+import { LabeledField } from "@/components/labeled-field";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ItemMedia } from "@/components/ui/item";
+import { Card } from "@/components/ui/card";
+import { Toggle } from "@/components/ui/toggle";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Brush, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
+import { InputGroupTextarea } from "@/components/ui/input-group";
+import { PromptInput } from "@/components/ai-elements/prompt-input";
 import { useEditableImageSource } from "@/components/use-editable-image-source";
 import { EditableImageFrame } from "@/components/editable-image-frame";
 
@@ -86,24 +92,21 @@ export function CanvasMaskDialog({ sourceURL, open, busy, model, models, onModel
   if (!sourceURL) return null;
   return (
     <Dialog open={open} onOpenChange={(value) => !value && !disabled && onClose()}>
-      <DialogContent className="w-[min(96vw,1040px)] gap-4">
+      <DialogContent className="w-[min(96vw,1040px)] sm:max-w-none">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2.5"><span className="flex size-8 items-center justify-center rounded-lg bg-brand/10 text-brand"><WandSparkles className="size-4" /></span>局部遮罩编辑</DialogTitle>
+          <DialogTitle className="flex items-center"><ItemMedia variant="icon" className="flex size-8 items-center justify-center"><WandSparkles className="size-4" /></ItemMedia>局部重绘</DialogTitle>
           <DialogDescription>涂抹选中区域，再描述你想要的变化。</DialogDescription>
-        </DialogHeader>
+        </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(360px,1fr)_280px]">
-          <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-muted/20">
+          <Card className="min-w-0 overflow-hidden gap-0 p-0">
             <div className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-card/70 p-3">
-            <div role="group" aria-label="蒙版工具" className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted/70 p-1">
-              <Button type="button" size="sm" variant="ghost" disabled={!imageReady || disabled} aria-pressed={mode === "paint"} className={mode === "paint" ? "bg-card text-brand shadow-sm ring-1 ring-border/60 hover:bg-card hover:text-brand" : ""} onClick={() => setMode("paint")}><Brush className="size-3.5" />画笔</Button>
-              <Button type="button" size="sm" variant="ghost" disabled={!imageReady || disabled} aria-pressed={mode === "erase"} className={mode === "erase" ? "bg-card text-brand shadow-sm ring-1 ring-border/60 hover:bg-card hover:text-brand" : ""} onClick={() => setMode("erase")}><Eraser className="size-3.5" />擦除</Button>
+            <div role="group" aria-label="蒙版工具" className="grid shrink-0 grid-cols-2 gap-1 p-1">
+              <Toggle type="button" size="sm"  disabled={!imageReady || disabled} pressed={mode === "paint"}  onClick={() => setMode("paint")}><Brush  />画笔</Toggle>
+              <Toggle type="button" size="sm"  disabled={!imageReady || disabled} pressed={mode === "erase"}  onClick={() => setMode("erase")}><Eraser  />擦除</Toggle>
             </div>
-            <label className="min-w-32 flex-1 space-y-1 text-sm">
-              <span className="flex justify-between text-xs"><span className="text-muted-foreground">笔刷大小</span><span className="font-medium tabular-nums">{brushSize}<span className="ml-1 text-muted-foreground">px</span></span></span>
-              <Slider min="8" max="160" step="2" value={brushSize} disabled={!imageReady || disabled} onChange={(event) => setBrushSize(Number(event.target.value))} aria-label="笔刷大小" />
-            </label>
+            <LabeledField className="min-w-32 flex-1 gap-1 text-sm" label="笔刷大小" meta={`${brushSize} px`}>{(fieldId) => <><Slider id={fieldId} min={8} max={160} step={2} value={[brushSize]} disabled={!imageReady || disabled} onValueChange={([nextValue]) => setBrushSize(Number(String(nextValue)))} aria-label="笔刷大小" /></>}</LabeledField>
             </div>
-          <EditableImageFrame source={source} className="h-[min(38dvh,320px)] rounded-none border-0 bg-muted/30 sm:h-[min(56dvh,500px)]" loadingHint="可以先填写修改要求">
+          <EditableImageFrame source={source} className="h-[min(38dvh,320px)] sm:h-[min(56dvh,500px)]" loadingHint="可以先填写修改要求">
             {preparedURL ? (
               <div className="relative inline-block max-w-full overflow-hidden rounded-lg">
                 <img
@@ -140,24 +143,15 @@ export function CanvasMaskDialog({ sourceURL, open, busy, model, models, onModel
             ) : null}
           </EditableImageFrame>
             <p className="flex items-center gap-2 border-t border-border/50 px-3 py-2 text-[11px] text-muted-foreground"><span className="size-2 rounded-full bg-blue-500/70" />蓝色仅标记需要修改的区域</p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-4 rounded-xl border border-border/60 bg-muted/20 p-4">
-            <label className="flex min-h-0 flex-1 flex-col gap-2 text-sm">
-              <span className="font-medium">修改要求</span>
-              <Textarea value={prompt} disabled={disabled} onChange={(event) => { setPrompt(event.target.value); setError(""); }} placeholder="例如：把选中区域改成金属材质，保持原图光影" className="min-h-32 flex-1 resize-none bg-background/60 text-sm leading-6 shadow-none" />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="text-xs text-muted-foreground">模型</span>
-              <Select value={modelAvailable ? model : ""} disabled={disabled || modelOptions.length === 0} onValueChange={onModelChange}>
-                <SelectTrigger className="bg-background/60 text-xs shadow-none"><SelectValue placeholder={modelOptions.length ? "选择图片模型" : "暂无可用模型"} /></SelectTrigger>
-                <SelectContent>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-              </Select>
-            </label>
+          </Card>
+          <Card className="flex min-w-0 flex-col gap-4 p-4">
+            <LabeledField className="flex min-h-0 flex-1 flex-col gap-2 text-sm" label={<span className="font-medium">修改要求</span>}>{(fieldId) => <PromptInput className="min-h-32 flex-1"><InputGroupTextarea id={fieldId} value={prompt} disabled={disabled} onChange={(event) => { setPrompt(event.target.value); setError(""); }} placeholder="例如：把选中区域改成金属材质，保持原图光影" className="min-h-32 flex-1 resize-none" /></PromptInput>}</LabeledField>
+            <LabeledField label="模型">{(fieldId) => <ModelPicker id={fieldId} label="局部重绘模型" value={model} options={modelOptions} disabled={disabled} onValueChange={onModelChange} />}</LabeledField>
             {error ? <p className="text-xs font-medium text-destructive">{error}</p> : null}
-            <Button type="button" variant="ghost" size="sm" className="self-start text-xs" disabled={disabled || !imageReady} onClick={() => { clearCanvas(maskRef.current); clearCanvas(previewRef.current); setError(""); }}><RotateCcw className="size-3.5" />重置蒙版</Button>
-          </div>
+            <Button type="button" variant="ghost" size="sm" className="self-start" disabled={disabled || !imageReady} onClick={() => { clearCanvas(maskRef.current); clearCanvas(previewRef.current); setError(""); }}><RotateCcw  />重置蒙版</Button>
+          </Card>
         </div>
-        <DialogFooter className="flex-row justify-end">
+        </ScrollArea><DialogFooter className="flex-row justify-end">
           <Button type="button" variant="outline" disabled={disabled} onClick={onClose}><X />取消</Button>
           <Button type="button" disabled={disabled || !imageReady || !modelAvailable} onClick={() => void submit()}>{disabled ? "处理中" : <><WandSparkles />AI 修改</>}</Button>
         </DialogFooter>

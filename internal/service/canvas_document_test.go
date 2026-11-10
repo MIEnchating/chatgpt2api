@@ -1736,3 +1736,65 @@ func TestCanvasDocumentRejectsInvalidWorkflowInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestCanvasDocumentServiceStoresScriptProject(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	raw := []byte(`{"id":"script-1","type":"script","width":300,"height":260,"scale_x":1,"scale_y":1,"script_project":{"step":1,"confirmed":true,"assets":[{"id":"hero","kind":"character","name":"小雨","description":"红色雨衣","image_node_id":""}],"shots":[{"id":"shot-1","seconds":5,"description":"雨中行走","framing":"全景","lighting":"冷色","dialogue":[{"id":"line-1","kind":"dialogue","asset_id":"hero","text":"快到了"}],"sound":"雨声","camera":"跟镜","asset_ids":["hero"],"image_prompt":"雨中行走","video_prompt":"五秒跟镜","color":"#ef6b68","source_node_id":"original-storyboard","image_node_id":"original-image","video_node_id":"original-video"}]},"script_operation":{"kind":"prompts","shot_ids":["shot-1"]}}`)
+	var node CanvasNode
+	if err := json.Unmarshal(raw, &node); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := saveCanvas(service, "script-owner", CanvasDocument{Nodes: []CanvasNode{node}})
+	if err != nil {
+		t.Fatalf("Save(script) error = %v", err)
+	}
+	reloaded, err := loadCanvas(service, "script-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got map[string]any
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(reloaded.Nodes[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got["script_project"], want["script_project"]) || !reflect.DeepEqual(got["script_operation"], want["script_operation"]) {
+		t.Fatalf("script state lost after save: %s", encoded)
+	}
+	if len(saved.Nodes) != 1 {
+		t.Fatal("script node lost")
+	}
+
+	for name, change := range map[string]func(map[string]any){
+		"invalid step":       func(p map[string]any) { p["step"] = 3 },
+		"negative duration":  func(p map[string]any) { p["shots"].([]any)[0].(map[string]any)["seconds"] = -1 },
+		"duplicate shot":     func(p map[string]any) { p["shots"] = append(p["shots"].([]any), p["shots"].([]any)[0]) },
+		"invalid asset kind": func(p map[string]any) { p["assets"].([]any)[0].(map[string]any)["kind"] = "unknown" },
+		"missing asset":      func(p map[string]any) { p["shots"].([]any)[0].(map[string]any)["asset_ids"] = []any{"missing"} },
+		"invalid color":      func(p map[string]any) { p["shots"].([]any)[0].(map[string]any)["color"] = "red;display:none" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var value map[string]any
+			if err := json.Unmarshal(raw, &value); err != nil {
+				t.Fatal(err)
+			}
+			change(value["script_project"].(map[string]any))
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var invalid CanvasNode
+			if err := json.Unmarshal(encoded, &invalid); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := saveCanvas(service, "invalid-script-"+name, CanvasDocument{Nodes: []CanvasNode{invalid}}); !errors.Is(err, ErrInvalidCanvasDocument) {
+				t.Fatalf("invalid script accepted: %v", err)
+			}
+		})
+	}
+}

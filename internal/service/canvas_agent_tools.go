@@ -2,13 +2,37 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 
 	"chatgpt2api/internal/util"
 )
+
+var (
+	canvasArrangeQuoted      = regexp.MustCompile("(?s)```.*?(?:```|$)|`[^`]*(?:`|$)|“[^”]*(?:”|$)|‘[^’]*(?:’|$)|「[^」]*(?:」|$)|『[^』]*(?:』|$)|\"[^\"]*(?:\"|$)")
+	canvasArrangeDenied      = regexp.MustCompile(`(?i)(不|别|勿|无需|无须|不用|禁止|保持|暂停|暂缓|\bdo\s+not\b|\bdon['’]t\b|\bcannot\b|\bnever\b|\bno\s+need\b)[^，。！？；,\n.!?;]*(整理|排列|排序|对齐|布局|排版|重新摆放|\b(?:re)?arrange\b|\balign\b)|(整理|排列|排序|对齐|布局|排版|重新摆放|\b(?:re)?arrange\b|\balign\b)[^，。！？；,\n.!?;]*(不要|无需|无须|不用|不需要|不能|不允许|不得|不变|不做|不执行|禁止|暂停|暂缓)`)
+	canvasArrangeConditional = regexp.MustCompile(`(?i)[?？]|如果|假如|假设|倘若|除非|(?:不要|不能|不许|不允许|不得|先不|不)(?:执行|操作|移动|挪动)|\b(if|unless|suppose)\b`)
+	canvasArrangeCommand     = regexp.MustCompile(`(?i)^(?:(?:请(?:你)?|帮我|帮忙|麻烦(?:你)?|现在|先|再|然后|接着|继续|给我|please)\s*)*(?:(?:(?:把|将)(?:当前|所有|全部|这些|选中(?:的)?|画布(?:上)?|节点|布局|位置|和|与|及|、|\s)+)?(?:重新)?(?:整理|排列|排序|对齐|布局|排版|摆放)(?:一下|下)?(?:当前|所有|全部|这些|选中(?:的)?|画布(?:上)?|节点|布局|位置|和|与|及|、|\s)*(?:一下|整齐|好)?|(?:(?:re)?arrange|align)(?:\s+(?:the|selected|all|current))*\s+(?:canvas|nodes?|layout))吧?$`)
+)
+
+// Only direct instructions authorize layout changes; mentions in quotes are data.
+func canvasAgentArrangeRequested(text string) bool {
+	text = canvasArrangeQuoted.ReplaceAllString(text, " ")
+	if canvasArrangeDenied.MatchString(text) || canvasArrangeConditional.MatchString(text) {
+		return false
+	}
+	for _, clause := range strings.FieldsFunc(text, func(r rune) bool { return strings.ContainsRune("，。！？；,\n.!?;", r) }) {
+		clause = strings.TrimSpace(clause)
+		if canvasArrangeCommand.MatchString(clause) {
+			return true
+		}
+	}
+	return false
+}
 
 func (w *canvasAgentWorker) node(id string) *CanvasNode {
 	for i := range w.doc.Nodes {
@@ -18,9 +42,67 @@ func (w *canvasAgentWorker) node(id string) *CanvasNode {
 	}
 	return nil
 }
+func (w *canvasAgentWorker) reusedToolResult(call map[string]any) map[string]any {
+	name := util.Clean(call["name"])
+	args := agentMap(call["arguments"])
+	if !w.req.Resume || !(strings.HasPrefix(name, "create_") || strings.HasPrefix(name, "generate_") || name == "edit_image" || name == "run_saved_workflow") {
+		return nil
+	}
+	for _, message := range w.messages {
+		if message["role"] != "assistant" {
+			continue
+		}
+		for _, old := range util.AsMapSlice(message["toolCalls"]) {
+			if old["name"] != name || agentJSON(old["arguments"]) != agentJSON(args) {
+				continue
+			}
+			for _, m := range w.messages {
+				if m["role"] != "tool" || m["toolCallId"] != old["id"] {
+					continue
+				}
+				var result map[string]any
+				if json.Unmarshal([]byte(util.Clean(m["content"])), &result) != nil {
+					continue
+				}
+				nodeIDs := agentStrings(result["nodeIds"])
+				for _, key := range []string{"nodeId", "groupId"} {
+					if id := util.Clean(result[key]); id != "" && !slices.Contains(nodeIDs, id) {
+						nodeIDs = append(nodeIDs, id)
+					}
+				}
+				if len(nodeIDs) == 0 {
+					continue
+				}
+				for _, id := range nodeIDs {
+					if w.node(id) == nil {
+						return w.canvasChangedResult("此前操作已创建的部分节点已经移除，不重复创建或恢复；请核对当前画布后重新规划")
+					}
+				}
+				if _, exists := result["requiresUserReview"]; exists {
+					result["requiresUserReview"] = len(w.workflowReviewUnapprovedIDs()) > 0
+				}
+				result["reused"] = true
+				return result
+			}
+		}
+	}
+	return nil
+}
+
 func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 	name := util.Clean(call["name"])
 	args := agentMap(call["arguments"])
+	if name == "finish_task" {
+		w.reconcilePendingMedia()
+		if w.state["mediaGenerationDeferred"] != true && (w.hasPendingPlan() || len(agentStrings(w.state["pendingTaskIds"])) > 0) {
+			return agentError("task_incomplete", "计划或媒体任务仍未完成，请核对真实状态后继续执行，需要用户回答时调用 ask_user_question"), nil
+		}
+		if w.finalBlocked || w.batchFailed {
+			return agentError("task_incomplete", "仍有未解决的操作错误，请核对已有结果后继续"), nil
+		}
+		w.accepted = true
+		return map[string]any{"ok": true, "text": util.Clean(args["text"])}, nil
+	}
 	if w.missingCanvasReferences(args) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
 	}
@@ -34,30 +116,8 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": false, "code": "workflow_review_required", "submitted": false, "requiresUserReview": true, "message": "当前系列提示词仍待审核或生成，请先完成对应审核，不能用新媒体节点绕过审核"}, nil
 		}
 	}
-	if w.req.Resume && (strings.HasPrefix(name, "create_") || strings.HasPrefix(name, "generate_") || name == "edit_image") {
-		for _, message := range w.messages {
-			if message["role"] != "assistant" {
-				continue
-			}
-			for _, old := range util.AsMapSlice(message["toolCalls"]) {
-				if old["id"] == call["id"] || old["name"] != name || agentJSON(old["arguments"]) != agentJSON(args) {
-					continue
-				}
-				for _, m := range w.messages {
-					if m["role"] != "tool" || m["toolCallId"] != old["id"] {
-						continue
-					}
-					var result map[string]any
-					if json.Unmarshal([]byte(util.Clean(m["content"])), &result) != nil {
-						continue
-					}
-					if node := w.node(util.Clean(result["nodeId"])); node != nil {
-						result["reused"] = true
-						return result, nil
-					}
-				}
-			}
-		}
+	if result := w.reusedToolResult(call); result != nil {
+		return result, nil
 	}
 	id := util.Clean(args["nodeId"])
 	ok := map[string]any{"ok": true}
@@ -65,6 +125,8 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
 	}
 	switch name {
+	case "create_primary_script_node", "create_script_node", "update_script_node":
+		return w.scriptTool(name, args)
 	case "list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow":
 		return w.workflowTool(name, args)
 	case "get_canvas_summary":
@@ -167,6 +229,7 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		if running > 1 {
 			return agentError("invalid_plan", "最多一个进行中的步骤"), nil
 		}
+		args["explanation"] = util.Clean(args["explanation"])
 		w.state["plan"] = args
 		return ok, nil
 	case "set_agent_state":
@@ -181,7 +244,9 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 			w.state[k] = v
 		}
 		return ok, nil
-	case "update_node", "update_text_node":
+	case "update_node":
+		return w.updateNode(args)
+	case "update_text_node":
 		n := w.node(id)
 		if name == "update_text_node" && n.Type != "text" {
 			return agentError("invalid_node_type", "只能修改文本节点正文"), nil
@@ -195,7 +260,7 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		}
 		ok["nodeId"] = id
 		return ok, nil
-	case "create_primary_script_node", "create_text_node":
+	case "create_text_node":
 		sources := agentStrings(args["sourceNodeIds"])
 		if err := w.sourcesExist(sources); err != nil {
 			return nil, err
@@ -203,13 +268,6 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		n := w.newNode("text", util.Clean(args["title"]), util.Clean(args["content"]))
 		n.GenerationStatus = "success"
 		n.FontSize = 14
-		if name == "create_primary_script_node" {
-			n.Width = 550
-			n.Height = 600
-			if w.doc.AgentAutoTitlePending {
-				w.doc.Title = util.Clean(args["projectTitle"])
-			}
-		}
 		w.addNode(n, sources)
 		ok["nodeId"] = n.ID
 		ok["status"] = n.GenerationStatus
@@ -273,7 +331,7 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		ok["groupId"] = g.ID
 		return ok, nil
 	case "arrange_nodes":
-		if !containsAny(w.req.UserText, "整理", "排列", "布局", "arrange") {
+		if !canvasAgentArrangeRequested(w.req.UserText) {
 			return agentError("action_not_requested", "用户没有要求整理画布"), nil
 		}
 		ids := agentStrings(args["nodeIds"])
@@ -335,6 +393,28 @@ func (w *canvasAgentWorker) addNode(n CanvasNode, sources []string) {
 	}
 	w.doc.AgentAutoTitlePending = false
 }
+func canvasAgentDeletionTargets(args map[string]any) ([]string, error) {
+	id := util.Clean(args["nodeId"])
+	ids := agentStrings(args["nodeIds"])
+	if (id == "") == (len(ids) == 0) {
+		return nil, errors.New("删除必须提供 nodeId 或 nodeIds，且只能提供其中一个")
+	}
+	if id != "" {
+		return []string{id}, nil
+	}
+	if len(ids) > 100 {
+		return nil, errors.New("一次最多删除 100 个明确节点")
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" || seen[id] {
+			return nil, errors.New("待删除节点不得为空或重复")
+		}
+		seen[id] = true
+	}
+	return ids, nil
+}
+
 func (w *canvasAgentWorker) deleteNode(id string) map[string]any {
 	if w.node(id) == nil {
 		return agentError("node_not_found", "找不到节点")
@@ -397,6 +477,7 @@ func (w *canvasAgentWorker) createMedia(name string, args map[string]any) (map[s
 			n.GenerationAudioSpeed = speed
 		}
 	}
+	canvasAgentFitEmptyMediaFrame(&n)
 	if err := w.validateMedia(n); err != nil {
 		return agentError("invalid_media_parameters", err.Error()), nil
 	}
@@ -501,6 +582,48 @@ type canvasAgentGeneration struct {
 	metadata  map[string]any
 }
 
+func (w *canvasAgentWorker) reconcilePendingMedia() {
+	pending := []string{}
+	for _, taskID := range agentStrings(w.state["pendingTaskIds"]) {
+		var node *CanvasNode
+		for i := range w.doc.Nodes {
+			if w.doc.Nodes[i].TaskID == taskID {
+				node = &w.doc.Nodes[i]
+				break
+			}
+		}
+		if node == nil {
+			continue
+		}
+		if node.GenerationStatus == "loading" {
+			pending = append(pending, taskID)
+			continue
+		}
+		success := node.GenerationStatus == "success" && node.URL != ""
+		if success && !slices.Contains(agentStrings(w.state["completedTaskIds"]), taskID) {
+			w.state["completedTaskIds"] = append(agentStrings(w.state["completedTaskIds"]), taskID)
+		}
+		if node.GenerationStatus == "error" {
+			w.batchFailed, w.finalBlocked = true, true
+		}
+		for _, message := range w.messages {
+			if message["role"] != "tool" {
+				continue
+			}
+			var result map[string]any
+			if json.Unmarshal([]byte(util.Clean(message["content"])), &result) != nil || result["taskId"] != taskID || result["nodeId"] != node.ID {
+				continue
+			}
+			result["ok"], result["status"] = success, node.GenerationStatus
+			if !success {
+				result["message"] = firstAgentString(node.GenerationError, "原任务已结束，需核对当前节点后继续")
+			}
+			message["content"] = agentJSON(result)
+		}
+	}
+	w.state["pendingTaskIds"] = pending
+}
+
 func (w *canvasAgentWorker) generateNode(id string) (map[string]any, error) {
 	job, result, err := w.prepareGeneration(id)
 	if err != nil || job == nil {
@@ -521,9 +644,13 @@ func (w *canvasAgentWorker) prepareGeneration(id string) (*canvasAgentGeneration
 		return nil, result, nil
 	}
 	if slices.Contains(agentStrings(w.state["detachedTaskIds"]), n.TaskID) {
-		result := w.canvasChangedResult("该节点的原生成任务已结束，但生成期间内容发生变化，原结果未覆盖节点。请先与用户确认如何处理，不要重复提交")
-		result["taskId"], result["submitted"] = n.TaskID, true
-		return nil, result, nil
+		if w.req.MediaChoice != "generate" && w.answerMediaChoice != "generate" {
+			result := w.canvasChangedResult("该节点的原生成任务已结束，但生成输入已变化，原结果未覆盖节点。请先让用户明确确认是否重新生成")
+			result["taskId"], result["submitted"] = n.TaskID, true
+			return nil, result, nil
+		}
+		n.TaskID = ""
+		n.GenerationStatus = "idle"
 	}
 	if !slices.Contains([]string{"image", "video", "audio"}, n.Type) {
 		return nil, agentError("invalid_media_node", "仅支持图片、视频和音频节点"), nil
@@ -537,6 +664,9 @@ func (w *canvasAgentWorker) prepareGeneration(id string) (*canvasAgentGeneration
 	}
 	if !w.autoMedia() {
 		return nil, map[string]any{"ok": true, "nodeId": id, "status": "idle", "submitted": false, "message": "节点已保存，尚未提交媒体生成。"}, nil
+	}
+	if n.TaskID != "" && n.GenerationStatus == "error" && w.req.Resume && w.req.MediaChoice != "generate" && w.answerMediaChoice != "generate" {
+		return nil, agentError("media_retry_requires_confirmation", "原媒体任务失败，已保留错误和任务 ID；请先征得用户明确同意再重新付费提交"), nil
 	}
 	previousTaskID, previousStatus := n.TaskID, n.GenerationStatus
 	if n.TaskID == "" || n.GenerationStatus == "error" {
@@ -616,6 +746,7 @@ func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task ma
 		if w.ctx.Err() == nil {
 			n.GenerationStatus = "error"
 			n.GenerationError = err.Error()
+			w.state["pendingTaskIds"] = slices.DeleteFunc(agentStrings(w.state["pendingTaskIds"]), func(id string) bool { return id == taskID })
 			_ = w.save()
 		}
 		return nil, err

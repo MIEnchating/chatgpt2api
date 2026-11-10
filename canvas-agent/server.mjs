@@ -5,22 +5,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CodexClient } from "./codex-client.mjs";
+import { canvasCodexConfig, createCodexRuntime } from "./codex-runtime.mjs";
 
 const MAX_BODY = 4 * 1024 * 1024;
 const METHODS = new Set(["account/read", "model/list", "thread/start", "thread/resume", "thread/archive", "turn/start", "turn/interrupt"]);
 const INTERNAL_TOOLS = new Set(["read_skill_file", "set_agent_state"]);
-const BROWSER_REQUESTS = new Set(["item/tool/call", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/tool/requestUserInput"]);
+const BROWSER_REQUESTS = new Set(["item/tool/call", "item/tool/requestUserInput"]);
 // Owners must outlive a closed page so a reload can resume its thread; cap them so the map cannot grow without bound.
 const MAX_THREAD_OWNERS = 256;
 
-export function createCanvasAgentServer({ token, origins, codexCommand = "codex", createClient = (input) => new CodexClient({ ...input, command: codexCommand }) }) {
+export function createCanvasAgentServer({ token, origins, codexCommand = "codex", createClient }) {
   if (typeof token !== "string" || token.length < 32) throw new Error("连接密钥至少 32 字符");
   if (!origins?.length || origins.some((origin) => new URL(origin).origin !== origin || !/^https?:/.test(origin))) throw new Error("必须指定准确的画布网页 Origin");
   const allowedOrigins = new Set(origins);
   const sessions = new Map();
+  const closingClients = new Set();
   const threadOwners = new Map();
   const serviceId = randomUUID();
   const secret = Buffer.from(token);
+  let runtime;
+  let cleanupPromise;
+  const newClient = createClient || ((input) => {
+    runtime ||= createCodexRuntime();
+    return new CodexClient({ ...input, env: runtime.env, command: codexCommand });
+  });
   const authorized = (value) => { const given = Buffer.from(value || ""); return given.length === secret.length && timingSafeEqual(given, secret); };
   function emit(session, event) {
     if (session.closed) return;
@@ -40,17 +48,26 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
     clearInterval(session.heartbeat);
     for (const request of session.pending.values()) { clearTimeout(request.timer); request.reject(new Error("画布连接已关闭")); }
     session.pending.clear();
-    session.client?.close();
+    const stopped = Promise.resolve(session.client?.close()).then(() => session.cwd && rm(session.cwd, { recursive: true, force: true }));
+    closingClients.add(stopped);
+    void stopped.then(() => closingClients.delete(stopped), () => closingClients.delete(stopped));
     session.stream?.end();
-    if (session.cwd) void rm(session.cwd, { recursive: true, force: true });
   }
   async function clientFor(session) {
     if (!session.client) {
       session.cwd = await mkdtemp(join(tmpdir(), "chatgpt2api-codex-"));
       if (session.closed) { await rm(session.cwd, { recursive: true, force: true }); throw new Error("画布连接已关闭"); }
-      session.client = createClient({ cwd: session.cwd, onMessage: (message) => {
+      session.client = newClient({ cwd: session.cwd, onMessage: (message) => {
         if (session.closed) return;
         if (message.method === "turn/completed") session.activeTurn = null;
+        if (message.id !== undefined && (message.method === "item/commandExecution/requestApproval" || message.method === "item/fileChange/requestApproval")) {
+          session.client.reply(message.id, { decision: "decline" });
+          return;
+        }
+        if (message.id !== undefined && message.method === "item/tool/call" && !session.tools.some((tool) => tool.name === message.params?.tool)) {
+          session.client.reply(message.id, { success: false, contentItems: [{ type: "inputText", text: "仅允许当前画布工具" }] });
+          return;
+        }
         if (message.id !== undefined && !BROWSER_REQUESTS.has(message.method)) {
           session.client.reply(message.id, undefined, { code: -32601, message: "画布客户端不支持此请求" });
           return;
@@ -85,7 +102,7 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
       }
       safe = { ...(method === "thread/resume" ? { threadId: params.threadId } : { dynamicTools: session.tools.map((tool) => ({ type: "function", ...tool })) }),
         model: typeof params.model === "string" ? params.model : undefined, developerInstructions: typeof params.developerInstructions === "string" ? params.developerInstructions : "只通过画布工具完成创作。",
-        cwd: session.cwd, sandbox: "read-only", approvalPolicy: "on-request" };
+        cwd: session.cwd, sandbox: "read-only", approvalPolicy: "never", config: canvasCodexConfig };
     } else {
       if (threadOwners.get(params.threadId)?.canvasId !== session.canvasId || !session.threads.has(params.threadId)) throw new Error("该任务不属于当前画布连接");
       safe = { threadId: params.threadId };
@@ -189,8 +206,16 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
       json(response, 404, { error: "资源不存在" });
     } catch (error) { if (!response.headersSent) json(response, 400, { error: error instanceof Error ? error.message : "本地连接请求失败" }); else response.end(); }
   });
-  server.on("close", () => { for (const session of sessions.values()) closeSession(session); });
-  return { server, close: async () => { for (const session of sessions.values()) closeSession(session); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }, serviceId };
+  function cleanup() {
+    cleanupPromise ||= (async () => {
+      for (const session of sessions.values()) closeSession(session);
+      try { await Promise.all([...closingClients]); }
+      finally { runtime?.close(); }
+    })();
+    return cleanupPromise;
+  }
+  server.on("close", () => { void cleanup().catch(() => process.stderr.write("清理 Codex 运行目录失败\n")); });
+  return { server, close: async () => { for (const session of sessions.values()) closeSession(session); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await cleanup(); }, serviceId };
 }
 function json(response, status, value) { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(value)); }
 async function readJSON(request) {

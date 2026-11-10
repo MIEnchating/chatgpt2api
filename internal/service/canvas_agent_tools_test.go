@@ -106,14 +106,26 @@ func TestCanvasAgentToolCreateGroupValidatesMembers(t *testing.T) {
 }
 
 func TestCanvasAgentToolArrangeRequiresUserRequest(t *testing.T) {
-	w := toolTestWorker(CanvasNode{ID: "a", Type: "text", X: 999, Y: 999}, CanvasNode{ID: "b", Type: "text", X: 5, Y: 5})
-	w.req.UserText = "随便聊聊"
-	if result := runToolTest(t, w, "arrange_nodes", map[string]any{}); util.Clean(result["code"]) != "action_not_requested" || w.node("a").X != 999 {
-		t.Fatalf("unrequested arrange result = %#v, node = %#v", result, *w.node("a"))
+	for _, text := range []string{"随便聊聊", "不整理画布，只回答问题", "整理一下文案", "请整理对白", "请整理画布，但先不要执行", "请整理画布，但不要移动节点", "先不要执行；请整理画布", "不能整理画布", "不要整理画布，只回答问题", "别重新排列", "无需调整画布布局", "不用整理", "不需要整理", "请不要整理", "Do not arrange the canvas", "don't rearrange nodes", "No need to arrange nodes", "整理画布先不要做", "先保持布局不变",
+		"解释一下整理画布功能", "把整理画布写进标题", "整理画布这几个字", "请整理画布功能", "请把整理画布写进标题", "请介绍整理画布", "整理画布是什么意思？", "请整理画布功能怎么用", "如何整理画布", "如果需要，请整理画布", "请不要移动任何节点，也不要在未经确认时自动整理画布",
+		"他说‘请整理画布’", "把‘整理画布’写进标题", "节点内容：整理画布", "`整理画布`", "```\n整理画布\n```", "```\n整理画布", "引用：‘\n整理画布", "请把画布整理一下但不要执行", "Please explain how to arrange the canvas", "Can you arrange the canvas?", "If needed, arrange the canvas", "Do not move any existing nodes or automatically arrange the canvas"} {
+		t.Run(text, func(t *testing.T) {
+			w := toolTestWorker(CanvasNode{ID: "a", Type: "text", X: 999, Y: 888})
+			w.req.UserText = text
+			result := runToolTest(t, w, "arrange_nodes", map[string]any{})
+			if util.Clean(result["code"]) != "action_not_requested" || w.node("a").X != 999 || w.node("a").Y != 888 {
+				t.Fatalf("unrequested arrangement changed canvas: result=%#v position=(%v,%v)", result, w.node("a").X, w.node("a").Y)
+			}
+		})
 	}
-	w.req.UserText = "请整理画布"
-	if result := runToolTest(t, w, "arrange_nodes", map[string]any{}); result["ok"] != true || w.node("a").X != 0 || w.node("b").X != 640 {
-		t.Fatalf("arrange result = %#v, nodes = %#v %#v", result, *w.node("a"), *w.node("b"))
+	for _, text := range []string{"请整理画布", "请对齐节点", "请重新排版", "Please ARRANGE the canvas", "整理画布", "帮我整理一下画布", "请把画布整理一下", "先读取节点，再对齐节点", "请重新摆放节点", "Rearrange the nodes", "Please align the nodes"} {
+		t.Run(text, func(t *testing.T) {
+			w := toolTestWorker(CanvasNode{ID: "a", Type: "text", X: 999, Y: 999}, CanvasNode{ID: "b", Type: "text", X: 5, Y: 5})
+			w.req.UserText = text
+			if result := runToolTest(t, w, "arrange_nodes", map[string]any{}); result["ok"] != true || w.node("a").X != 0 || w.node("b").X != 640 {
+				t.Fatalf("arrange result = %#v, nodes = %#v %#v", result, *w.node("a"), *w.node("b"))
+			}
+		})
 	}
 }
 

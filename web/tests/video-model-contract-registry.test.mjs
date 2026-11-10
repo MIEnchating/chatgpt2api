@@ -14,10 +14,31 @@ import {
 import {
   videoDefaultResolution,
   videoDefaultSeconds,
+  videoDefaultReferenceMode,
   videoResolutionOptions,
   videoSecondsOptions,
   videoSizeOptions,
 } from "../src/lib/video-model-capabilities.ts";
+
+test("defaults reference-only video contracts to multimodal reference mode", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.models = ["reference-only-video"];
+  contract.generation.modes = contract.generation.modes.filter((mode) => mode.kind !== "image");
+  contract.generation.modes.push({
+    id: "reference-to-video",
+    label: "参考素材生视频",
+    kind: "reference",
+    request_value: "reference-to-video",
+    materials: { first_frame: { min: 0, max: 0 }, last_frame: { min: 0, max: 0 }, image: { min: 0, max: 3 }, video: { min: 0, max: 0 }, audio: { min: 0, max: 0 }, total: { min: 1, max: 3 } },
+  });
+  try {
+    installVideoModelContracts([contract]);
+    assert.equal(videoDefaultReferenceMode("reference-only-video"), "reference");
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
 
 test("installs and clears runtime video model contracts", () => {
   const previous = activeVideoModelContracts();

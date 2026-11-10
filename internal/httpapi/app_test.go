@@ -1693,18 +1693,14 @@ func TestWriteWorkflowServiceErrorSeparatesValidationFromStoredDataFailure(t *te
 	}
 }
 
-func TestWorkflowAgentPayloadMatchesReferenceContract(t *testing.T) {
-	payload := workflowAgentPayload(service.WorkflowAgentDraftRequest{
-		Prompt:     "创建商品海报工作流",
-		ChannelID:  " text-token ",
-		References: []string{"data:image/png;base64,AAAA"},
-	}, "text-model")
-	if payload["model"] != "text-model" || payload["token_name"] != "text-token" || payload["temperature"] != 0.2 {
-		t.Fatalf("workflow agent payload = %#v", payload)
-	}
-	messages := util.AsMapSlice(payload["messages"])
+func TestWorkflowAgentMessagesPreserveReferenceImages(t *testing.T) {
+	messages := service.WorkflowAgentMessages("创建商品海报工作流", []string{"data:image/png;base64,AAAA"})
 	if len(messages) != 2 || util.Clean(messages[0]["content"]) != service.WorkflowAgentSystemPrompt {
-		t.Fatalf("workflow agent messages = %#v", payload["messages"])
+		t.Fatal("workflow schema prompt missing")
+	}
+	parts := util.AsMapSlice(messages[1]["content"])
+	if len(parts) != 2 || !strings.Contains(agentJSONValue(parts[1]), "data:image/png;base64,AAAA") {
+		t.Fatal("reference image lost")
 	}
 }
 
@@ -4660,6 +4656,11 @@ func TestProfileAssetsAreSyncedPerAccount(t *testing.T) {
 
 func newTestApp(t *testing.T) *App {
 	t.Helper()
+	runtimePath, pathErr := filepath.Abs("../../agent-runtime/worker.mjs")
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	t.Setenv("AGENT_RUNTIME_PATH", runtimePath)
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
 	t.Setenv("ADMIN_USERNAME", testAdminUsername)

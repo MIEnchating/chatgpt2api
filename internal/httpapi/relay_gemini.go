@@ -188,6 +188,15 @@ func googleGeminiImageItems(response map[string]any, prompt string) ([]map[strin
 	for _, choice := range util.AsMapSlice(response["choices"]) {
 		message := util.StringMap(choice["message"])
 		content := message["content"]
+		if parts := util.AsMapSlice(content); parts != nil {
+			visible := make([]map[string]any, 0, len(parts))
+			for _, part := range parts {
+				if thought, _ := part["thought"].(bool); !thought {
+					visible = append(visible, part)
+				}
+			}
+			content = visible
+		}
 		for _, image := range protocol.ExtractImagesFromMessageContent(content) {
 			if len(image.Data) == 0 {
 				continue

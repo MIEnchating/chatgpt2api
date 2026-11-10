@@ -1,4 +1,6 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Brush,
   Camera,
@@ -17,11 +19,11 @@ import {
   ZoomIn,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 import { cn } from "@/lib/utils";
 import type { CanvasNode } from "@/services/api/canvas";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export type CanvasImageOperation = "mask" | "crop" | "split" | "upscale" | "angle";
@@ -58,7 +60,6 @@ export function CanvasNodeQuickActions({
   onOpenDirector: () => void;
   onMediaOperation: (operation: CanvasMediaOperation) => void;
 }) {
-  const [moreOpen, setMoreOpen] = useState(false);
   const actionClosedRef = useRef(false);
   type QuickAction = { key: string; label: string; icon: LucideIcon; disabled?: boolean; onClick: () => void };
   const hasMedia = Boolean(node.url);
@@ -114,37 +115,38 @@ export function CanvasNodeQuickActions({
   const visibleGroups = groups.filter((group) => group.length > 0);
   if (!visibleGroups.length) return null;
   return (
-    <div data-canvas-node-quick-actions aria-label="节点快捷操作" className="flex max-w-full items-center gap-1 rounded-xl border border-border bg-card/96 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl">
-      <ScrollArea className="min-w-0 flex-1" viewClass="flex w-max min-w-full items-center gap-1" viewportClassName="overscroll-contain">
+    <Card data-canvas-node-quick-actions aria-label="节点快捷操作" className="flex max-w-full items-center gap-1 p-1.5 flex-row">
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 flex w-max min-w-full items-center gap-1">
         {visibleGroups.map((actions, index) => <div key={actions[0].key} className={cn("flex shrink-0 items-center gap-0.5", index > 0 && "border-l border-border/70 pl-1")}>
           {actions.map(({ key, label, icon: Icon, disabled, onClick }) => <Tooltip key={key}>
-            <TooltipTrigger asChild><button type="button" aria-label={label} disabled={disabled} className="flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-35" onClick={onClick}><Icon className="size-4" />{key !== "save-asset" && label}</button></TooltipTrigger>
+            <TooltipTrigger asChild><Button variant="ghost" type="button" aria-label={label} disabled={disabled} className="flex shrink-0 items-center justify-center whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-35" onClick={onClick}><Icon  />{key !== "save-asset" && label}</Button></TooltipTrigger>
             <TooltipContent side="bottom">{label}</TooltipContent>
           </Tooltip>)}
         </div>)}
-      </ScrollArea>
-      {moreActions.length ? <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-        <PopoverTrigger asChild><button type="button" aria-label="更多节点操作" title="更多操作" className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><MoreHorizontal className="size-4" /></button></PopoverTrigger>
-        <PopoverContent data-canvas-no-pan side="bottom" align="end" aria-label="节点操作" className="w-48 p-1" onCloseAutoFocus={(event) => {
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+      {moreActions.length ? <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" type="button" aria-label="更多节点操作" className="grid shrink-0 place-items-center"><MoreHorizontal /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent data-canvas-no-pan side="bottom" align="end" aria-label="节点操作" collisionPadding={8} className="w-48" onCloseAutoFocus={(event) => {
           if (!actionClosedRef.current) return;
           event.preventDefault();
           actionClosedRef.current = false;
-        }} onClick={(event) => {
-          if (!(event.target instanceof Element) || !event.target.closest("button:not(:disabled)")) return;
-          actionClosedRef.current = true;
-          setMoreOpen(false);
-        }}>{moreActions.map(({ key, label, icon: Icon, disabled, onClick }) => <button key={key} type="button" aria-label={label} disabled={disabled} onClick={onClick} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-35"><Icon className="size-4 shrink-0 text-muted-foreground" />{label}</button>)}</PopoverContent>
-      </Popover> : null}
+        }}>
+          {moreActions.map(({ key, label, icon: Icon, disabled, onClick }) => <DropdownMenuItem key={key} disabled={disabled} onSelect={() => {
+            actionClosedRef.current = true;
+            onClick();
+          }}><Icon />{label}</DropdownMenuItem>)}
+        </DropdownMenuContent>
+      </DropdownMenu> : null}
       {(imageLike || node.type === "video" || node.type === "audio" ? hasMedia : node.type === "text") ? <div className="flex shrink-0 items-center gap-0.5 border-l border-border/70 pl-1.5">
         {(imageLike || node.type === "video") && hasMedia ? <Tooltip>
-          <TooltipTrigger asChild><button type="button" aria-label="预览" onClick={onPreview} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Eye className="size-4" /></button></TooltipTrigger>
+          <TooltipTrigger asChild><Button variant="ghost" size="icon-sm" type="button" aria-label="预览" onClick={onPreview} className="grid place-items-center"><Eye  /></Button></TooltipTrigger>
           <TooltipContent side="bottom">预览</TooltipContent>
         </Tooltip> : null}
         <Tooltip>
-          <TooltipTrigger asChild><button type="button" aria-label="下载" disabled={node.type === "text" && !hasPrompt} onClick={onDownload} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-35"><Download className="size-4" /></button></TooltipTrigger>
+          <TooltipTrigger asChild><Button variant="ghost" size="icon-sm" type="button" aria-label="下载" disabled={node.type === "text" && !hasPrompt} onClick={onDownload} className="grid place-items-center disabled:cursor-not-allowed disabled:opacity-35"><Download  /></Button></TooltipTrigger>
           <TooltipContent side="bottom">{node.type === "text" ? "下载文字" : "下载"}</TooltipContent>
         </Tooltip>
       </div> : null}
-    </div>
+    </Card>
   );
 }

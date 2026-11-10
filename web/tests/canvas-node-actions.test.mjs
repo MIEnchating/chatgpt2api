@@ -26,8 +26,8 @@ test("node tools retain media operations and leave generic commands in the conte
     assert.match(actionsSource, new RegExp(label));
   }
   assert.doesNotMatch(engineSource, /id: "actions", label: "操作"/);
-  assert.match(pageSource, /onClick=\{onCopyContent\}/);
-  assert.match(pageSource, /onClick=\{onDuplicate\}>复制节点/);
+  assert.match(pageSource, /<ContextMenuItem onSelect=\{onCopyContent\}/);
+  assert.match(pageSource, /<ContextMenuItem onSelect=\{onDuplicate\}><Copy \/>复制节点/);
   assert.doesNotMatch(actionsSource, /复制节点|复制提示词|复制文字/);
   assert.match(actionsSource, /更多节点操作/);
   assert.doesNotMatch(actionsSource, /ActionSection title="生成"/);
@@ -55,7 +55,7 @@ test("the horizontal quick actions support every actionable node type", () => {
     assert.match(pageSource, new RegExp(`${callback}=\\{`));
   }
   assert.match(actionsSource, /<ScrollArea/);
-  assert.match(actionsSource, /viewClass="flex w-max min-w-full items-center gap-1"/);
+  assert.match(actionsSource, /className="[^"]*flex w-max min-w-full items-center gap-1"/);
 });
 
 test("text, video, audio, panorama, config, and director actions use real page handlers", () => {
@@ -88,7 +88,7 @@ test("optional canvas image information only shows dimensions and file size", ()
   assert.match(imageInfo, /natural_width/);
   assert.match(imageInfo, /formatImageBytes\(node\.bytes\)/);
   assert.doesNotMatch(imageInfo, /node\.title|<Info/);
-  assert.match(engineSource, /getCachedAuthenticatedImageByteSize\(node\.url\)/);
+  assert.match(engineSource, /onMetadata=\{\(width, height, bytes\) => onMediaLoad\(node\.id, width, height, bytes, node\.url\)/);
   assert.match(pageSource, /const bytesChanged =/);
   assert.match(pageSource, /const nextNodes = nodesRef\.current\.map/);
   assert.match(pageSource, /return \{ \.\.\.node, url: hydrated\.url \}/);
@@ -108,8 +108,8 @@ test("the canvas side panel animates without unmounting and uses the generation 
   assert.match(canvasSidePanelSource, /--canvas-side-panel-width/);
   assert.match(canvasSidePanelSource, /open \? width : 0/);
   assert.match(canvasSidePanelSource, /transition-\[opacity,transform,box-shadow,border-color\] duration-300 ease-in-out/);
-  assert.match(canvasSidePanelSource, />生成历史<\/SidePanelTab>/);
-  assert.doesNotMatch(canvasSidePanelSource, />资产<\/SidePanelTab>/);
+  assert.match(canvasSidePanelSource, />生成历史<\/TabsTrigger>/);
+  assert.doesNotMatch(canvasSidePanelSource, />资产<\/TabsTrigger>/);
   assert.doesNotMatch(pageSource, /aria-label=\{sidePanel.open \? "收起侧栏"/);
   assert.match(canvasSidePanelSource, /data-canvas-side-panel-footer[\s\S]*?aria-label="收起侧栏"/);
   assert.match(canvasSidePanelSource, /共 \{nodes.length\} 节点/);
@@ -196,13 +196,9 @@ test("canvas routes every generation through the key matched to its actual node 
 });
 
 test("shared tooltips include a directional arrow and comfortable trigger spacing", () => {
-  assert.match(tooltipSource, /sideOffset = 10/);
+  assert.match(tooltipSource, /sideOffset = 4/);
   assert.match(tooltipSource, /<TooltipPrimitive\.Arrow/);
-  assert.match(tooltipSource, /<svg viewBox="0 0 14 7" preserveAspectRatio="none" className="overflow-visible"/);
-  assert.match(tooltipSource, /className="fill-popover" d="M0-2H14V-.5L7 6.5 0-.5Z"/);
-  assert.match(tooltipSource, /d="M0-.5 7 6.5 14-.5"/);
-  assert.match(tooltipSource, /width=\{14\}/);
-  assert.match(tooltipSource, /vectorEffect="non-scaling-stroke"/);
+  assert.match(tooltipSource, /fill-foreground/);
 });
 
 test("shared tooltips close when their trigger performs an action", () => {
@@ -222,23 +218,22 @@ test("canvas prompt editors keep scrollable input and parameter panels", () => {
   assert.match(globalStylesSource, /\.canvas-prompt-scroll-frame \{[\s\S]*?max-height: max\(5rem, min\(40vh, calc\(100dvh - 26rem\)\)\);[\s\S]*?resize: vertical;/);
   assert.ok((pageSource.match(/<PromptTextareaFrame/g) || []).length >= 1);
   assert.ok((specialNodesSource.match(/<PromptTextareaFrame/g) || []).length >= 2);
-  assert.match(promptScrollFrameSource, /<ScrollArea className="h-full"/);
+  assert.match(promptScrollFrameSource, /<ScrollAreaRoot[^>]*className="[^"]*h-full"/);
   assert.match(promptScrollFrameSource, /querySelector\("textarea"\)/);
   assert.match(promptScrollFrameSource, /Math\.max\(frame\.clientHeight, textarea\.scrollHeight\)/);
   assert.ok((pageSource.match(/<CanvasNodeInputToolbar/g) || []).length >= 4);
   assert.ok((specialNodesSource.match(/<CanvasNodeInputToolbar/g) || []).length >= 2);
   assert.match(configComposerSource, /canvas-prompt-editor-resize relative min-h-0 flex-1/);
-  assert.match(configComposerSource, /<ScrollArea className="h-full" viewportClassName="h-full"/);
+  assert.match(configComposerSource, /<ScrollAreaRoot[\s\S]*?h-full/);
   assert.doesNotMatch(pageSource, /canvas-prompt-resize/);
   assert.doesNotMatch(specialNodesSource, /canvas-prompt-resize/);
 });
 
 test("config prompt references use a stable standalone picker and reliable deletion", () => {
-  assert.match(configComposerSource, /createPortal\(/);
-  assert.match(configComposerSource, /data-canvas-config-mention-menu/);
-  assert.match(configComposerSource, /useOverlayLayer\("popover"\)/);
-  assert.match(configComposerSource, /composerCaretRect\(editor\)/);
-  assert.match(configComposerSource, /remove\.addEventListener\("pointerdown", deleteReference\)/);
+  assert.match(configComposerSource, /<CanvasMentionMenu/);
+  assert.match(configComposerSource, /composerCaretRect\(composerEditor\)/);
+  assert.match(configComposerSource, /<CanvasAgentAttachmentChip/);
+  assert.match(configComposerSource, /removeReferenceChip\(target, editor, composerChangeRef\.current\)/);
   assert.match(configComposerSource, /onChange\(serializeEditor\(editor\), true\)/);
   assert.doesNotMatch(configComposerSource, /remove\.dataset\.tooltip/);
   assert.doesNotMatch(configComposerSource, /className="absolute top-\[calc\(100%\+6px\)\]/);
@@ -247,7 +242,7 @@ test("config prompt references use a stable standalone picker and reliable delet
 test("every canvas parameter panel uses the shared generation footer", () => {
   assert.ok((pageSource.match(/<CanvasGenerationFooter/g) || []).length >= 3);
   assert.ok((specialNodesSource.match(/<CanvasGenerationFooter/g) || []).length >= 2);
-  assert.match(generationFooterSource, /size-8 min-w-0 rounded-xl p-0/);
+  assert.match(generationFooterSource, /aria-label=\{running \? "停止生成" : "开始生成"\}/);
   assert.match(generationFooterSource, /variant=\{running \? "destructive" : "default"\}/);
 });
 
@@ -269,7 +264,8 @@ test("Agent entry names are consistent across canvas and workflows", () => {
   }
   assert.match(agentPanelSource, /"history" \? "历史对话" : activeSession.title \|\| "Agent"/);
   assert.match(canvasLibrarySource, /<Bot \/>Agent<\/Button>/);
-  assert.match(workflowSource, /<Bot \/>Agent<\/Button>/);
+  assert.match(workflowSource, /on(?:Click|Select)=\{\(\) => setAgentOpen\(true\)\}/);
+  assert.match(workflowSource, /<DialogTitle>Agent<\/DialogTitle>/);
 });
 
 test("Agent allows node settings while preserving references and idle new chat", () => {
@@ -325,6 +321,6 @@ test("Agent history deletion stays unavailable for the whole active run", () => 
   assert.match(agentPanelSource, /aria-label="删除所选对话" disabled=\{busy \|\| !checkedSessionIDs\.length\}/);
   assert.match(agentPanelSource, /aria-label="删除全部对话" disabled=\{busy \|\| !historySessions\.length\}/);
   assert.match(agentPanelSource, /deleteDisabled=\{busy\}/);
-  assert.match(agentPanelSource, /variant="destructive" disabled=\{busy\}/);
+  assert.match(agentPanelSource, /<ConfirmDialog[^\n]*destructive busy=\{busy\}/);
   assert.match(agentPanelSource, /function removeSessions\(sessionIDs: string\[\]\) \{\s*if \(busy\) return/);
 });

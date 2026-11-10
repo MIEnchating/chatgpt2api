@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +21,51 @@ import (
 
 	"golang.org/x/net/webdav"
 )
+
+func TestS3UploadsSignPayloadAndEscapeObjectPath(t *testing.T) {
+	const body = "media-payload"
+	key := "assets/素材 +%?#.png"
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		data, err := io.ReadAll(r.Body)
+		hash := sha256.Sum256([]byte(body))
+		if err != nil || string(data) != body || r.Method != "PUT" || r.URL.Path != "/bucket/"+key || r.URL.RawQuery != "" || r.Header.Get("X-Amz-Content-Sha256") != hex.EncodeToString(hash[:]) {
+			t.Errorf("S3 request=%s %s hash=%s body=%q err=%v", r.Method, r.URL, r.Header.Get("X-Amz-Content-Sha256"), data, err)
+		}
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") {
+			t.Error("missing signature")
+		}
+		w.Header().Set("ETag", `"test-etag"`)
+	}))
+	defer server.Close()
+	provider := model.StorageProvider{Type: "s3", Endpoint: server.URL, Bucket: "bucket", Region: "test-region", AccessKeyID: "test", SecretAccessKey: "secret"}
+	if err := putStorageObject(context.Background(), provider, key, "image/png", strings.NewReader(body), int64(len(body))); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls=%d", calls)
+	}
+	for _, host := range []bool{false, true} {
+		provider.Endpoint = "https://s3.example.test"
+		provider.BucketInHost = host
+		client, err := newGenericS3Client(provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signed, err := client.PresignedGetObject(context.Background(), provider.Bucket, key, time.Minute, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantHost, wantPath := "s3.example.test", "/bucket/"+key
+		if host {
+			wantHost, wantPath = "bucket.s3.example.test", "/"+key
+		}
+		if signed.Host != wantHost || signed.Path != wantPath {
+			t.Fatalf("signed=%s", signed)
+		}
+	}
+}
 
 type genericStorageTestSettings struct {
 	setting model.StorageSetting

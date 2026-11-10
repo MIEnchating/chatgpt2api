@@ -1,7 +1,20 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { Alert } from "@/components/ui/alert";
+
+import { Card } from "@/components/ui/card";
+import { ManagementHeader, ManagementPanel } from "@/components/management-page";
+import { Badge } from "@/components/ui/badge";
+
+import { Toggle } from "@/components/ui/toggle";
+
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronUp, ClipboardCopy, Images, LoaderCircle, RefreshCcw, Search, Star, Tags } from "lucide-react";
+import { ChevronDown, ChevronUp, Images, RefreshCcw, Search, Star, Tags } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -25,7 +38,6 @@ import {
   type PromptFavorite,
 } from "@/app/image/prompt-favorites";
 import { PromptFavoriteRequestLifecycle } from "@/app/image/prompt-favorite-request-lifecycle";
-import { tagVariants } from "@/components/ui/tag";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -35,12 +47,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
 import { SearchInput } from "@/components/ui/search-input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { copyWithToast } from "@/lib/clipboard-text";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { CodeBlockCopyButton } from "@/components/ui/code-block";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 
 type PromptMarketSourceFilter = "all" | PromptMarketSourceId;
@@ -128,8 +139,6 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [promptReloadKey, setPromptReloadKey] = useState(0);
   const [favoriteError, setFavoriteError] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [categoryOpen, setCategoryOpen] = useState(false);
   const [favoriteFilter, setFavoriteFilter] = useState<PromptMarketFavoriteFilter>("all");
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [tagsExpanded, setTagsExpanded] = useState(false);
@@ -320,10 +329,6 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     [sourceConfigs],
   );
   const selectedCategory = categoryOptions.find((item) => item.id === source) ?? categoryOptions[0];
-  const visibleCategoryOptions = categoryOptions.filter((item) => {
-    const query = categorySearch.trim().toLowerCase();
-    return !query || item.id.toLowerCase().includes(query) || item.label.toLowerCase().includes(query);
-  });
   const setFavoriteBusy = (id: string, busy: boolean) => {
     setFavoriteBusyIds((current) => {
       const next = new Set(current);
@@ -379,7 +384,6 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     }
   };
 
-  const copyPrompt = (prompt: BananaPrompt) => copyWithToast(prompt.prompt, "提示词已复制");
 
   const savePrompt = async (prompt: BananaPrompt) => {
     if (!onSavePrompt || saveBusyIds.has(prompt.id)) {
@@ -398,99 +402,69 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   };
 
   const renderFavoriteTabs = (className?: string) => (
-    <div className={cn("flex h-10 rounded-lg bg-muted p-1", className)} role="group" aria-label="提示词收藏筛选">
-      <button
+    <div className={cn("flex h-10 p-1", className)} role="group" aria-label="提示词收藏筛选">
+      <Toggle
         type="button"
-        className={cn(
-          "inline-flex min-w-0 flex-1 items-center justify-center rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          favoriteFilter === "all" && "bg-card text-foreground shadow-sm",
-        )}
+        className="inline-flex min-w-0 flex-1 items-center justify-center"
         onClick={() => setFavoriteFilter("all")}
-        aria-pressed={favoriteFilter === "all"}
+        pressed={favoriteFilter === "all"}
       >
         全部
-      </button>
-      <button
+      </Toggle>
+      <Toggle
         type="button"
-        className={cn(
-          "inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          favoriteFilter === "favorites" && "bg-card text-brand shadow-sm",
-        )}
+        className="inline-flex min-w-0 flex-1 items-center justify-center"
         onClick={() => setFavoriteFilter("favorites")}
-        aria-pressed={favoriteFilter === "favorites"}
+        pressed={favoriteFilter === "favorites"}
       >
         <Star className={cn("size-3.5", favoriteFilter === "favorites" && "fill-current")} />
         {visibleFavoritePrompts.length > 0 ? `收藏 ${visibleFavoritePrompts.length}` : "收藏"}
-      </button>
+      </Toggle>
     </div>
   );
 
   const renderCategoryFilters = () => (
-    <Popover open={categoryOpen} onOpenChange={(nextOpen) => {
-        setCategoryOpen(nextOpen);
-        if (!nextOpen) setCategorySearch("");
-      }}>
-        <PopoverTrigger asChild>
-          <Button
-            data-prompt-category-select
-            type="button"
-            variant="outline"
-            role="combobox"
-            aria-expanded={categoryOpen}
-            className="h-10 w-full min-w-0 justify-between px-3 font-normal"
-          >
-            <span className="min-w-0 truncate">
-              <span className="text-muted-foreground">分类：</span>
-              {selectedCategory.id === "all" ? selectedCategory.label : selectedCategory.id}
-            </span>
-            <ChevronDown className="size-4 text-muted-foreground" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" scrollable={false} className="flex max-h-[min(70dvh,30rem)] w-[min(calc(100vw-2rem),32rem)] flex-col overflow-hidden p-2">
-          <div className="sticky top-0 z-10 bg-popover pb-2">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={categorySearch}
-              onChange={(event) => setCategorySearch(event.target.value)}
-              placeholder="搜索分类"
-              className="h-9 pl-8"
-            />
-          </div>
-          <ScrollArea className="min-h-0 flex-1" viewClass="flex flex-col gap-0.5">
-            {visibleCategoryOptions.length > 0 ? visibleCategoryOptions.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="flex w-full min-w-0 items-start gap-2 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                onClick={() => {
-                  setSource(item.id);
-                  setCategoryOpen(false);
-                  setCategorySearch("");
-                }}
-              >
-                <Check className={cn("mt-0.5 size-4 shrink-0 text-primary", source !== item.id && "invisible")} />
-                <span className="min-w-0 flex-1 break-words">{item.id === "all" ? item.label : item.id}</span>
-              </button>
-            )) : (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">没有匹配的分类</p>
-            )}
-          </ScrollArea>
-        </PopoverContent>
-      </Popover>
+    <Combobox
+      items={categoryOptions}
+      value={selectedCategory}
+      itemToStringLabel={(item) => item.label}
+      isItemEqualToValue={(item, value) => item.id === value.id}
+      filter={(item, query) => `${item.id} ${item.label}`.toLowerCase().includes(query.trim().toLowerCase())}
+      onValueChange={(item) => { if (item) setSource(item.id); }}
+    >
+      <ComboboxTrigger
+        data-prompt-category-select
+        aria-label="提示词分类"
+        render={<Button type="button" variant="outline" className="w-full min-w-0 justify-between" />}
+      >
+        <span className="min-w-0 truncate">分类：{selectedCategory.label}</span>
+      </ComboboxTrigger>
+      <ComboboxContent>
+        <ComboboxInput placeholder="搜索分类" aria-label="搜索分类" showTrigger={false} />
+        <ComboboxEmpty>没有匹配的分类</ComboboxEmpty>
+        <ComboboxList>
+          {(item: (typeof categoryOptions)[number]) => (
+            <ComboboxItem key={item.id} value={item} className="items-start py-2">
+              <span className="min-w-0 break-words">{item.label}</span>
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 
   const content = (
     <>
-        {presentation === "dialog" ? <DialogHeader className="block border-b border-border px-4 pt-4 pr-20 pb-3 sm:px-6 sm:pt-5 sm:pr-20 sm:pb-4">
+        {presentation === "dialog" ? <DialogHeader className="block">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="font-display text-xl font-semibold leading-tight sm:text-2xl">提示词库</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">提示词库</h1>
               <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
                 搜索、筛选并收藏提示词，也可以保存为文本素材或套用。
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
-              <span className="rounded-full bg-muted px-2.5 py-1 sm:px-3">
+              <Badge variant="secondary">
                 {favoriteFilter === "favorites"
                   ? isLoadingFavorites
                     ? "读取收藏"
@@ -498,7 +472,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                   : prompts.length > 0
                     ? `${filteredPrompts.length} / ${sourceFilteredPrompts.length}`
                     : "远程市场"}
-              </span>
+              </Badge>
             </div>
           </div>
         </DialogHeader> : null}
@@ -524,82 +498,69 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-start">
               <span className="pt-1.5 text-xs font-medium text-muted-foreground">标签</span>
               <div className="flex min-w-0 items-start gap-2">
-                <ScrollArea className={cn("min-w-0 flex-1 transition-[max-height] duration-200", tagsExpanded ? "max-h-40" : "max-h-8 [&>div[aria-hidden]]:hidden")} viewportClassName={tagsExpanded ? undefined : "!overflow-hidden"} viewClass="flex flex-wrap items-center gap-1.5 pb-0.5">
-                  <button
+                <ScrollAreaRoot data-slot="scroll-area" className={cn("group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden", cn("min-w-0 flex-1", tagsExpanded ? "max-h-40" : "max-h-8 [&>div[aria-hidden]]:hidden"))} onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className={cn("scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain", tagsExpanded ? undefined : "!overflow-hidden")}><div className="min-w-0 flex flex-wrap items-center gap-1.5 pb-0.5">
+                  <Toggle
                     type="button"
-                    onClick={() => setTagFilters([])}
-                    aria-pressed={tagFilters.length === 0}
-                    className={cn(
-                      tagVariants({ selected: tagFilters.length === 0 }),
-                      "shrink-0 cursor-pointer",
-                    )}
-                  >
+                    onPressedChange={() => setTagFilters([])}
+
+                    className="max-w-44 shrink-0 truncate"
+                   pressed={tagFilters.length === 0}>
                     全部
-                  </button>
+                  </Toggle>
                   {tags.map((tag) => (
-                    <TooltipButton
-                      key={tag}
+                    <TooltipHint key={tag} content={tag}><span className="inline-flex shrink-0"><Toggle
                       type="button"
-                      onClick={() => setTagFilters((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])}
-                      className={cn(
-                        tagVariants({ selected: tagFilters.includes(tag) }),
-                        "max-w-44 shrink-0 cursor-pointer truncate",
-                      )}
-                      tooltip={tag}
-                      aria-pressed={tagFilters.includes(tag)}
-                    >
+                      onPressedChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])}
+                      className="max-w-44 shrink-0 truncate"
+
+
+                     pressed={tagFilters.includes(tag)}>
                       {tag}
-                    </TooltipButton>
+                    </Toggle></span></TooltipHint>
                   ))}
-                </ScrollArea>
+                </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 shrink-0 px-2 text-xs text-muted-foreground"
+                  className="shrink-0"
                   onClick={() => setTagsExpanded((current) => !current)}
                   aria-expanded={tagsExpanded}
                 >
-                  {tagsExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                  {tagsExpanded ? <ChevronUp  /> : <ChevronDown  />}
                   {tagsExpanded ? "收起" : "展开"}
                 </Button>
               </div>
             </div>
           ) : null}
           {favoriteError ? (
-            <div role="alert" className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <Alert variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 break-words">{favoriteError}</span>
-              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={loadFavoriteData}>
+              <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={loadFavoriteData}>
                 重试
               </Button>
-            </div>
+            </Alert>
           ) : null}
         </div>
 
-        <ScrollArea viewportRef={scrollAreaRef} className="min-h-0 flex-1 px-4 py-3 sm:px-6 sm:py-4">
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1 px-4 py-3 sm:px-6 sm:py-4" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className={cn("scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto", presentation === "page" ? "overscroll-x-contain" : "overscroll-contain")} ref={scrollAreaRef}><div className="min-w-0">
           {favoriteFilter !== "favorites" && isLoading ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
-              <LoaderCircle className="size-6 animate-spin text-brand" />
-              <p className="text-sm">正在读取远程提示词市场...</p>
-            </div>
+            <LoadingState className="min-h-[320px]" label="正在读取远程提示词市场..." />
           ) : favoriteFilter !== "favorites" && error ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-4 text-center">
               <div className="max-w-[420px] text-sm leading-6 text-muted-foreground">{error}</div>
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-full"
+
                 onClick={loadPromptData}
               >
-                <RefreshCcw className="size-4" />
+                <RefreshCcw  />
                 重新加载
               </Button>
             </div>
           ) : favoriteFilter === "favorites" && isLoadingFavorites && favoriteItems.length === 0 ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
-              <LoaderCircle className="size-6 animate-spin text-brand" />
-              <p className="text-sm">正在读取收藏...</p>
-            </div>
+            <LoadingState className="min-h-[320px]" label="正在读取收藏..." />
           ) : visiblePrompts.length === 0 ? (
             <EmptyState icon={favoriteFilter === "favorites" ? Star : Search} className="min-h-72" title={favoriteFilter === "favorites"
                   ? visibleFavoritePrompts.length === 0
@@ -620,13 +581,13 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                   const isFavorite = favoriteIds.has(favoriteKey);
                   const isFavoriteBusy = favoriteBusyIds.has(favoriteKey);
                   return (
-                    <article
+                    <Card
                       key={prompt.id}
-                      className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)] transition-[border-color,box-shadow] hover:border-brand/35 hover:shadow-[var(--shadow-elevated)]"
+                      className="group flex h-full min-w-0 flex-col overflow-hidden gap-0 p-0"
                     >
-                      <button type="button" className="relative block aspect-[16/10] w-full overflow-hidden bg-muted text-left" onClick={() => setSelectedPrompt(localizedPrompt)} aria-label={`查看提示词：${localizedPrompt.title}`}>
+                      <Button variant="ghost" type="button" className="h-auto p-0 relative block aspect-[16/10] w-full overflow-hidden text-left" onClick={() => setSelectedPrompt(localizedPrompt)} aria-label={`查看提示词：${localizedPrompt.title}`}>
                         <PromptPreviewImage prompt={localizedPrompt} />
-                      </button>
+                      </Button>
                       <div className="flex min-h-[196px] flex-1 flex-col gap-3 p-4">
                         <div className="flex min-w-0 items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -644,17 +605,14 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                           <div className="flex shrink-0 items-center gap-1.5">
                             <TooltipButton
                               type="button"
-                              className={cn(
-                                "inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
-                                isFavorite && "border-brand-border bg-brand-soft text-brand",
-                              )}
+                              className="inline-flex items-center justify-center transition disabled:cursor-not-allowed disabled:opacity-60"
                               onClick={() => void toggleFavorite(prompt)}
                               disabled={isFavoriteBusy}
                               aria-label={isFavorite ? "取消收藏提示词" : "收藏提示词"}
                               tooltip={isFavorite ? "取消收藏" : "收藏"}
                             >
                               {isFavoriteBusy ? (
-                                <LoaderCircle className="size-3.5 animate-spin" />
+                                <Spinner />
                               ) : (
                                 <Star className={cn("size-3.5", isFavorite && "fill-current")} />
                               )}
@@ -666,7 +624,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
                             {prompt.source ? (
                               <TooltipHint content={`分类：${prompt.source}`}><span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground/80">
-                                <Tags className="size-3.5 shrink-0 text-brand" />
+                                <Tags className="size-3.5 shrink-0 text-primary" />
                                 <span className="max-w-52 truncate">分类：{prompt.source}</span>
                               </span></TooltipHint>
                             ) : null}
@@ -677,18 +635,14 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                               </span></TooltipHint>
                             ) : null}
                             {visibleTags.map((tag) => (
-                              <TooltipButton
-                                key={tag}
+                              <TooltipHint key={tag} content={tag}><span className="inline-flex shrink-0"><Toggle
                                 type="button"
-                                onClick={() => setTagFilters((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])}
-                                className={cn(
-                                  tagVariants({ selected: tagFilters.includes(tag) }),
-                                  "max-w-40 cursor-pointer truncate",
-                                )}
-                                tooltip={tag}
-                              >
+                                onPressedChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])}
+                                className="max-w-44 shrink-0 truncate"
+
+                               pressed={tagFilters.includes(tag)}>
                                 {tag}
-                              </TooltipButton>
+                              </Toggle></span></TooltipHint>
                             ))}
                           </div>
                         ) : null}
@@ -698,34 +652,25 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="h-8 rounded-full border-border px-3 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+
                               disabled={saveBusyIds.has(localizedPrompt.id)}
                               onClick={() => void savePrompt(localizedPrompt)}
                             >
-                              {saveBusyIds.has(localizedPrompt.id) ? <><LoaderCircle className="size-3.5 animate-spin" />保存中</> : "保存到我的素材"}
+                              {saveBusyIds.has(localizedPrompt.id) ? <><Spinner />保存中</> : "保存到我的素材"}
                             </Button>
                           ) : null}
+                          <CodeBlockCopyButton size="sm" variant="outline" value={localizedPrompt.prompt}>复制提示词</CodeBlockCopyButton>
                           <Button
                             type="button"
                             size="sm"
-                            variant="outline"
-                            className="h-8 rounded-full border-border px-3 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                            onClick={() => void copyPrompt(localizedPrompt)}
-                          >
-                            <ClipboardCopy className="size-3.5" />
-                            复制提示词
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 rounded-full bg-primary px-4 text-xs text-primary-foreground shadow-sm hover:bg-primary/90"
+
                             onClick={() => void onApplyPrompt(localizedPrompt)}
                           >
                             套用
                           </Button>
                         </div>
                       </div>
-                    </article>
+                    </Card>
                   );
                 })}
               </div>
@@ -734,7 +679,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-full"
+
                     onClick={() => setVisibleCount((current) => current + VISIBLE_COUNT_STEP)}
                   >
                     加载更多 ({visiblePrompts.length}/{filteredPrompts.length})
@@ -743,24 +688,24 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
               ) : null}
             </div>
           )}
-        </ScrollArea>
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         <Dialog open={Boolean(selectedPrompt)} onOpenChange={(nextOpen) => !nextOpen && setSelectedPrompt(null)}>
-          <DialogContent scrollable={false} className="flex h-[min(90dvh,760px)] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
+          <DialogContent className={cn("sm:max-w-none", cn("h-[min(90dvh,760px)]", "flex w-[min(94vw,920px)] max-w-none flex-col overflow-hidden"))}>
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] md:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] md:grid-rows-1">
               <div className="flex min-h-0 items-center justify-center overflow-hidden bg-muted">
                 {selectedPrompt ? <img src={selectedPrompt.preview} alt={selectedPrompt.title} className="size-full object-contain" /> : null}
               </div>
               <div className="flex min-h-0 flex-col p-5 pr-6 sm:p-6 sm:pr-7">
-                <DialogTitle className="shrink-0 break-words text-xl leading-7 md:pr-20">{selectedPrompt?.title}</DialogTitle>
+                <DialogTitle className="shrink-0 break-words">{selectedPrompt?.title}</DialogTitle>
                 <DialogDescription className="mt-1.5">{selectedPrompt?.source}</DialogDescription>
-                <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
+                <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden mt-5 flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
                   <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>
-                  {selectedPrompt && promptFilterTags(selectedPrompt).length ? <div className="mt-4 flex flex-wrap gap-1.5">{promptFilterTags(selectedPrompt).map((tag) => <span key={tag} className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tag}</span>)}</div> : null}
+                  {selectedPrompt && promptFilterTags(selectedPrompt).length ? <div className="mt-4 flex flex-wrap gap-1.5">{promptFilterTags(selectedPrompt).map((tag) => <Badge variant="secondary" key={tag}>{tag}</Badge>)}</div> : null}
                   {selectedPrompt?.referenceImageUrls.length ? <p className="mt-4 text-xs text-muted-foreground">包含 {selectedPrompt.referenceImageUrls.length} 张参考图，套用时会一并载入。</p> : null}
-                </ScrollArea>
+                </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                 <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4">
-                  {selectedPrompt && onSavePrompt ? <Button type="button" variant="outline" disabled={saveBusyIds.has(selectedPrompt.id)} onClick={() => void savePrompt(selectedPrompt)}>{saveBusyIds.has(selectedPrompt.id) ? <><LoaderCircle className="size-4 animate-spin" />保存中</> : "保存到我的素材"}</Button> : null}
-                  {selectedPrompt ? <Button type="button" variant="outline" onClick={() => void copyPrompt(selectedPrompt)}><ClipboardCopy className="size-4" />复制提示词</Button> : null}
+                  {selectedPrompt && onSavePrompt ? <Button type="button" variant="outline" disabled={saveBusyIds.has(selectedPrompt.id)} onClick={() => void savePrompt(selectedPrompt)}>{saveBusyIds.has(selectedPrompt.id) ? <><Spinner />保存中</> : "保存到我的素材"}</Button> : null}
+                  {selectedPrompt ? <CodeBlockCopyButton variant="outline" size="default" value={selectedPrompt.prompt}>复制提示词</CodeBlockCopyButton> : null}
                   {selectedPrompt ? <Button type="button" onClick={() => void onApplyPrompt(selectedPrompt)}>套用</Button> : null}
                 </div>
               </div>
@@ -773,14 +718,17 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   if (presentation === "page") {
     return (
       <section data-prompt-library-layout aria-label="提示词库" className="flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)]">
-        <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</div>
+        <ManagementPanel className="flex-1">
+          <ManagementHeader title="提示词库" description="搜索、筛选并收藏提示词，保存为素材或直接套用。" />
+          {content}
+        </ManagementPanel>
       </section>
     );
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent scrollable={false} className="flex h-[min(94dvh,860px)] w-[min(96vw,1180px)] max-w-none flex-col overflow-hidden p-0 sm:h-[min(90dvh,860px)]">
+      <DialogContent className={cn("sm:max-w-none", cn("h-[min(94dvh,860px)] sm:h-[min(90dvh,860px)]", "flex w-[min(96vw,1180px)] max-w-none flex-col overflow-hidden"))}>
         <DialogTitle className="sr-only">提示词库</DialogTitle>
         <DialogDescription className="sr-only">搜索、筛选、收藏并套用提示词。</DialogDescription>
         {content}

@@ -20,13 +20,15 @@ export type CanvasCodexAnswer = { accepted: boolean; answers?: Record<string, st
 type ActiveRun = { input: RunCanvasAgentInput; protocolMessages: RunCanvasAgentInput["protocolMessages"]; state: CanvasAgentState; text: string; messageTexts: Map<string, string>; traceItems: Map<string, Record<string, unknown>>; threadId: string; turnId: string; done: (result: RunResult) => void; fail: (error: Error) => void; calls: number; cancelledQuestion: boolean; lifetime: AbortController; pendingMessages: CanvasCodexRPC[]; fileChanges: Map<string, unknown[]>; cleanup: () => void };
 const READ_TOOLS = new Set(["get_canvas_summary", "get_selected_nodes", "query_canvas_nodes", "get_node", "get_reference", "list_references", "get_upstream_nodes", "get_downstream_nodes", "get_connected_nodes", "get_generation_config", "get_generation_task", "get_media_task_status", "list_workflows", "get_workflow"]);
 
-export function useCanvasCodexAgent(input: { canvasId: string; onDisconnect: (reason?: "canvas-detached") => void; executeAction: (action: CanvasAgentAction, signal: AbortSignal) => Promise<CanvasAgentToolResult>; ask: (approval: CanvasCodexApproval, signal: AbortSignal) => Promise<CanvasCodexAnswer> }) {
+export function useCanvasCodexAgent(input: { canvasId: string; savedModel?: string; savedEffort?: string; onSettingsChange: (settings: { codexModel?: string; codexEffort?: string }) => void; onDisconnect: (reason?: "canvas-detached") => void; executeAction: (action: CanvasAgentAction, signal: AbortSignal) => Promise<CanvasAgentToolResult>; ask: (approval: CanvasCodexApproval, signal: AbortSignal) => Promise<CanvasCodexAnswer> }) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [models, setModels] = useState<CanvasCodexModel[]>([]);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
+  const settingsRef = useRef(input);
+  settingsRef.current = input;
   const [sessionId, setSessionId] = useState("");
   const linkRef = useRef<CanvasCodexLink | null>(null);
   const connectionRef = useRef<AbortController | null>(null);
@@ -113,7 +115,6 @@ export function useCanvasCodexAgent(input: { canvasId: string; onDisconnect: (re
       if (!answer.accepted) return { ok: false, code: "user_declined", message: "用户未允许此操作" };
     }
     if (signal.aborted) throw new DOMException("操作已取消", "AbortError");
-    if (source === "codex" && name === "arrange_nodes" && (!/整理|排列|排序|对齐|布局|排版|重新摆放/.test(run!.input.userText) || /(不要|别|无需|不用).{0,8}(整理|排列|排序|对齐|布局|排版|重新摆放)/.test(run!.input.userText))) return { ok: false, code: "action_not_requested", message: "用户没有要求整理画布" };
     const result = await waitForAction(source === "codex" && run?.input.resume
       ? executeCanvasAgentResumedAction(run.protocolMessages, action, (next) => run.input.executeAction(next, onProgress))
       : source === "codex" ? run!.input.executeAction(action, onProgress) : inputRef.current.executeAction(action, signal), signal);
@@ -173,7 +174,18 @@ export function useCanvasCodexAgent(input: { canvasId: string; onDisconnect: (re
     if (message.method === "item/commandExecution/outputDelta" && typeof params.itemId === "string") {
       const item = run.traceItems.get(params.itemId);
       if (item?.type === "commandExecution") {
-        item.aggregatedOutput = `${typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : ""}${String(params.delta || "")}`.slice(-1200);
+        item.aggregatedOutput = `${typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : ""}${String(params.delta || "")}`.slice(-24000);
+        const trace = canvasCodexItemTrace(item, false);
+        if (trace) run.input.onTrace?.({ ...trace, id: `${run.threadId}:${run.turnId}:${trace.id}` });
+      }
+    }
+    if (message.method === "item/reasoning/summaryTextDelta" && typeof params.itemId === "string" && typeof params.delta === "string" && Number.isInteger(params.summaryIndex) && Number(params.summaryIndex) >= 0 && Number(params.summaryIndex) < 256) {
+      const item = run.traceItems.get(params.itemId);
+      if (item?.type === "reasoning") {
+        const summary = Array.isArray(item.summary) ? [...item.summary] : [];
+        const index = Number(params.summaryIndex);
+        summary[index] = `${typeof summary[index] === "string" ? summary[index] : ""}${params.delta}`.slice(-24000);
+        item.summary = summary;
         const trace = canvasCodexItemTrace(item, false);
         if (trace) run.input.onTrace?.({ ...trace, id: `${run.threadId}:${run.turnId}:${trace.id}` });
       }
@@ -325,7 +337,11 @@ export function useCanvasCodexAgent(input: { canvasId: string; onDisconnect: (re
         if (seenCursors.size > 100 || available.length > 1000) throw new Error("Codex 模型列表过长");
       } while (cursor);
       if (controller.signal.aborted) return;
-      setModels(available); setModel(available[0]?.model || ""); setEffort(available[0]?.defaultReasoningEffort || "");
+      const selected = available.find((item) => item.model === settingsRef.current.savedModel) || available[0];
+      const savedEffort = selected?.model === settingsRef.current.savedModel ? settingsRef.current.savedEffort : undefined;
+      setModels(available);
+      setModel(selected?.model || "");
+      setEffort(savedEffort && selected?.supportedReasoningEfforts.some((item) => item.reasoningEffort === savedEffort) ? savedEffort : selected?.defaultReasoningEffort || "");
       setSessionId(link.sessionId); setConnected(true);
     } catch (reason) { if (!controller.signal.aborted) { disconnect(); setError(reason instanceof Error ? reason.message : "Codex 连接失败"); } }
     finally { if (connectionRef.current === controller) setConnecting(false); }
@@ -380,7 +396,7 @@ export function useCanvasCodexAgent(input: { canvasId: string; onDisconnect: (re
       }).catch((reason) => { if (activeRef.current === active) { activeRef.current = null; active.cleanup(); reject(reason); } });
     });
   }
-  return { connected, connecting, error, models, model, effort, sessionId, connect, disconnect: () => disconnect(), run, setModel: (name: string) => { setModel(name); setEffort(models.find((item) => item.model === name)?.defaultReasoningEffort || ""); }, setEffort };
+  return { connected, connecting, error, models, model, effort, sessionId, connect, disconnect: () => disconnect(), run, setModel: (name: string) => { const nextEffort = models.find((item) => item.model === name)?.defaultReasoningEffort || ""; setModel(name); setEffort(nextEffort); input.onSettingsChange({ codexModel: name, codexEffort: nextEffort }); }, setEffort: (value: string) => { setEffort(value); input.onSettingsChange({ codexModel: model, codexEffort: value }); } };
 }
 
 function waitForAction<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {

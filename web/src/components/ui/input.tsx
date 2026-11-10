@@ -1,49 +1,19 @@
-"use client";
-
-import * as React from "react";
-import { Eye, EyeOff } from "lucide-react";
-
-import { TooltipButton } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+// shadcn/ui (MIT). See LICENSE.shadcn.
+import * as React from "react"
+import { cn } from "@/lib/utils"
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  const [passwordVisible, setPasswordVisible] = React.useState(false);
-  const isPassword = type === "password";
-  const input = (
+  return (
     <input
-      type={isPassword && passwordVisible ? "text" : type}
+      type={type}
       data-slot="input"
       className={cn(
-        "flex h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-base sm:text-sm shadow-xs outline-none transition-[border-color,box-shadow,background-color] selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground/80 [&:enabled:read-write:not(:focus):not([aria-invalid=true]):hover]:border-foreground/25 read-only:bg-muted/30 disabled:cursor-not-allowed disabled:bg-muted/50 disabled:opacity-60 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive aria-invalid:focus-visible:border-destructive aria-invalid:focus-visible:ring-destructive/20",
-        type === "number" &&
-          "appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-        isPassword && "pr-11",
-        className,
+        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        className
       )}
       {...props}
     />
-  );
-
-  if (!isPassword) {
-    return input;
-  }
-
-  return (
-    <div data-slot="password-input" className="relative w-full min-w-0">
-      {input}
-      <TooltipButton
-        type="button"
-        className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={props.disabled}
-        aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
-        tooltip={passwordVisible ? "隐藏密码" : "显示密码"}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setPasswordVisible((visible) => !visible)}
-      >
-        {passwordVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </TooltipButton>
-    </div>
-  );
+  )
 }
 
-export { Input };
+export { Input }

@@ -33,10 +33,10 @@ export function canvasNodeSizeFromRatio(
   baseWidth: number,
   baseHeight: number,
 ) {
-  const match = size.match(/^(\d+)(?:x|:)(\d+)/);
+  const match = size.trim().match(/^(\d+(?:\.\d+)?)\s*[:xX\u00d7]\s*(\d+(?:\.\d+)?)$/);
   if (!match) return null;
-  const ratio = Number(match[1]) / Math.max(1, Number(match[2]));
-  if (ratio < 0.25 || ratio > 4) return { width: baseWidth, height: baseHeight };
+  const ratio = Number(match[1]) / Number(match[2]);
+  if (!Number.isFinite(ratio) || ratio < 0.25 || ratio > 4) return null;
   const edge = Math.max(baseWidth, baseHeight);
   return ratio >= 1
     ? { width: edge, height: edge / ratio }
@@ -57,4 +57,12 @@ export function canvasEmptyImageFrameFromSize(
     y: node.y + node.height / 2 - dimensions.height / 2,
     ...dimensions,
   };
+}
+
+export function canvasEmptyMediaNodeFrame<T extends { type: string; x: number; y: number; width: number; height: number; url?: string; free_resize?: boolean; generation_size?: string; generation_video_size?: string }>(node: T): T {
+  if (node.url || node.free_resize || (node.type !== "image" && node.type !== "video")) return node;
+  const size = node.type === "image" ? node.generation_size : node.generation_video_size;
+  const frame = size ? canvasEmptyImageFrameFromSize(node, size) : null;
+  if (!frame || Math.abs(frame.width - node.width) < 0.001 && Math.abs(frame.height - node.height) < 0.001) return node;
+  return { ...node, ...frame };
 }

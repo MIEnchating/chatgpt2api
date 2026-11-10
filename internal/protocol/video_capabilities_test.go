@@ -30,3 +30,12 @@ func TestVideoCapabilityUsesDeclaredContract(t *testing.T) {
 		t.Fatal("declared capability accepted an unsupported duration")
 	}
 }
+
+func TestVideoContractCanonicalOptionPreservesDeclaredSpelling(t *testing.T) {
+	if got := VideoContractCanonicalOption([]string{"480P", "768P"}, " 480p ", "480P"); got != "480P" {
+		t.Fatalf("canonical resolution = %q, want 480P", got)
+	}
+	if got := VideoContractCanonicalOption([]string{"480P"}, "1080p", "480P"); got != "1080p" {
+		t.Fatalf("unknown resolution = %q, want 1080p", got)
+	}
+}

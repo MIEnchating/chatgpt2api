@@ -67,6 +67,8 @@ test("registering routes does not import their page modules", async () => {
 test("authorized menu intentions preload the matching page module", async () => {
   const cases = [
     ["/assets", ["/assets"], "@/app/assets/page"],
+    ["/assets/new", ["/assets"], "@/app/assets/editor-page"],
+    ["/assets/item-one/edit", ["/assets"], "@/app/assets/editor-page"],
     ["/studio?conversation=example#latest", ["/studio"], "@/app/image/page"],
     ["/canvas", ["/canvas"], "@/app/canvas/library-route"],
     ["/canvas/editor", ["/canvas"], "@/app/canvas/route"],

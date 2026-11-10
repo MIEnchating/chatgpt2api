@@ -14,6 +14,18 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+func TestGoogleGeminiImageItemsExcludesThoughtImages(t *testing.T) {
+	parts := []map[string]any{
+		{"type": "image_url", "thought": true, "image_url": map[string]any{"url": "data:image/png;base64,dGhvdWdodA=="}},
+		{"type": "text", "thought": true, "text": "![draft](https://example.test/draft.png)"},
+		{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,ZmluYWw="}},
+	}
+	items, err := googleGeminiImageItems(map[string]any{"choices": []map[string]any{{"message": map[string]any{"content": parts}}}}, "draw")
+	if err != nil || len(items) != 1 || items[0]["b64_json"] != "ZmluYWw=" {
+		t.Fatalf("images=%#v err=%v", items, err)
+	}
+}
+
 func TestGoogleGeminiImageItemsExtractsMarkdownURLs(t *testing.T) {
 	const imageURL = "https://cdn.example.test/images/cat.png?signature=a%2Fb%3D"
 	for _, content := range []any{

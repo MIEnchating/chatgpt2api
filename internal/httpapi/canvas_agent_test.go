@@ -3,9 +3,13 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
@@ -83,7 +88,7 @@ func TestCanvasAgentHTTPContinuesAfterRequestDisconnect(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
 	app.canvasAgent.Close()
-	app.canvasAgent = service.NewCanvasAgentService(app.ctx, app.canvas, app.agentSkills, func(ctx context.Context, _ service.Identity, _ service.CanvasAgentModelRequest) (map[string]any, error) {
+	app.canvasAgent = service.NewCanvasAgentService(app.ctx, app.agentExecutions, app.canvas, app.agentSkills, func(ctx context.Context, _ service.Identity, _ service.AgentModelRequest) (map[string]any, error) {
 		calls.Add(1)
 		close(entered)
 		select {
@@ -97,6 +102,7 @@ func TestCanvasAgentHTTPContinuesAfterRequestDisconnect(t *testing.T) {
 	path := "/api/canvas/agent-runs?project_id=" + doc.ID
 
 	malformed := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(append(append([]byte{}, body...), []byte(" {}")...)))
+	malformed.Header.Set("Content-Type", "application/json")
 	setRequestAuthCookie(malformed, token)
 	rejected := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rejected, malformed)
@@ -105,6 +111,7 @@ func TestCanvasAgentHTTPContinuesAfterRequestDisconnect(t *testing.T) {
 	}
 	requestCtx, disconnect := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)).WithContext(requestCtx)
+	req.Header.Set("Content-Type", "application/json")
 	setRequestAuthCookie(req, token)
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, req)
@@ -164,8 +171,165 @@ func TestCanvasAgentImageRejectsPrivateNetworkReferences(t *testing.T) {
 func TestCanvasAgentAudioReferenceEnforcesOwnership(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	if _, err := app.canvasAgentVideoReference(context.Background(), service.Identity{ID: "user"}, "https://example.test/audios/not-owned.mp3", "audio"); err == nil {
+	if _, err := app.canvasAgentVideoReference(context.Background(), service.Identity{ID: "user"}, "https://example.test/audios/not-owned.mp3", "audio", protocol.DefaultVideoContracts()[0]); err == nil {
 		t.Fatal("protected audio reference forwarded without ownership check")
+	}
+}
+
+func TestCanvasAgentVideoReferenceHonorsContractTransport(t *testing.T) {
+	for _, transport := range []string{"url", "base64", "multipart"} {
+		for _, baseURL := range []string{"", "https://media.example.test", "https://media.example.test/base"} {
+			t.Run(transport+"/"+baseURL, func(t *testing.T) {
+				t.Setenv("IMAGE_BASE_URL", baseURL)
+				app := newTestApp(t)
+				defer app.Close()
+				owner := service.Identity{ID: "reference-owner"}
+				var pixels bytes.Buffer
+				if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+					t.Fatal(err)
+				}
+				upload, err := app.storageFiles.Upload(context.Background(), owner.ID, false, "reference.png", "image/png", pixels.Bytes(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				contract := protocol.DefaultVideoContracts()[0]
+				contract.Transport.LocalMaterial = transport
+				result, err := app.canvasAgentVideoReference(context.Background(), owner, upload.URL, "image", contract)
+				if transport == "url" && baseURL == "" {
+					if err == nil || !strings.Contains(err.Error(), "IMAGE_BASE_URL") {
+						t.Fatalf("URL-only reference did not report missing public base URL: result=%q err=%v", result, err)
+					}
+					return
+				}
+				if err != nil || transport == "url" && !isPublicReferenceURL(result) || transport != "url" && !isLocalVideoReferencePath(result) {
+					t.Fatalf("reference transport mismatch: result=%q err=%v", result, err)
+				}
+				if !app.validReferenceCapability(httptest.NewRequest(http.MethodGet, result, nil).URL, time.Now()) {
+					t.Fatal("reference signature was lost during transport conversion")
+				}
+			})
+		}
+	}
+}
+
+func TestCanvasAgentGeneratedMaterialSubmissionPriority(t *testing.T) {
+	t.Setenv("IMAGE_BASE_URL", "https://media.example.test/base")
+	app := newTestApp(t)
+	defer app.Close()
+	owner := service.Identity{ID: "generated-material-owner"}
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	upload, err := app.storageFiles.Upload(context.Background(), owner.ID, false, "generated.png", "image/png", pixels.Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, methods := range [][]string{{"url"}, {"base64"}, {"multipart"}, {"url", "base64"}, {"url", "multipart"}, {"base64", "multipart"}, {"url", "base64", "multipart"}} {
+		for _, format := range []string{"data_url", "raw"} {
+			t.Run(strings.Join(methods, "+")+"/"+format, func(t *testing.T) {
+				contract := protocol.DefaultVideoContracts()[0]
+				contract.Transport.MaterialTransports = methods
+				contract.Transport.LocalMaterial = "url"
+				contract.Transport.Base64Format = format
+				contract, err := protocol.NormalizeVideoModelContract(contract)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "url"
+				for _, method := range methods {
+					if method == "base64" {
+						want = "base64"
+					}
+				}
+				for _, method := range methods {
+					if method == "multipart" {
+						want = "multipart"
+					}
+				}
+				reference, err := app.canvasAgentVideoReference(context.Background(), owner, upload.URL, "image", contract)
+				if err != nil {
+					t.Fatal(err)
+				}
+				posts := 0
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					posts++
+					if want == "multipart" {
+						if err := r.ParseMultipartForm(1024); err != nil {
+							t.Error(err)
+							return
+						}
+						defer r.MultipartForm.RemoveAll()
+						file, _, err := r.FormFile(contract.Transport.MultipartFileField)
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						defer file.Close()
+						data, _ := io.ReadAll(file)
+						if !bytes.Equal(data, pixels.Bytes()) {
+							t.Error("uploaded material bytes changed")
+						}
+					} else {
+						var body map[string]any
+						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+							t.Error(err)
+							return
+						}
+						value := util.Clean(videoJSONPathValue(body, contract.Request.FirstFrameField))
+						expected := reference
+						if want == "base64" {
+							expected = base64.StdEncoding.EncodeToString(pixels.Bytes())
+							if format == "data_url" {
+								expected = "data:image/png;base64," + expected
+							}
+						}
+						if value != expected {
+							t.Errorf("material encoding did not follow %s", want)
+						}
+					}
+					util.WriteJSON(w, http.StatusOK, map[string]any{"status": "failed", "error": "fixture stopped after submit"})
+				}))
+				defer upstream.Close()
+				payload := map[string]any{"model": contract.Models[0], "prompt": "Animate generated material", "first_frame_url": reference, "api_key": "fixture", "relay_base_url": upstream.URL, protocol.VideoContractSnapshotPayloadKey: contract}
+				before, _ := json.Marshal(payload)
+				_, err = app.relayVideoTask(context.Background(), payload)
+				if err == nil || posts != 1 {
+					t.Fatalf("submit count = %d, err = %v", posts, err)
+				}
+				after, _ := json.Marshal(payload)
+				if !bytes.Equal(before, after) {
+					t.Fatal("upstream encoding mutated durable task data")
+				}
+			})
+		}
+	}
+}
+
+func TestCanvasAgentBase64ReferenceArrayKeepsStoredReferences(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := app.storeReferenceUpload(context.Background(), referenceUpload{data: pixels.Bytes()}, ".png", "image/png", "image", "/video-image-references/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := util.Clean(stored["url"])
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Transport.LocalMaterial = "base64"
+	contract.Request.ReferenceImagesField = "media.images"
+	refs := []string{reference, reference}
+	request := declaredCanonicalVideoContractRequestPayload(map[string]any{"reference_mode": "reference", "reference_image_urls": refs}, contract)
+	if err := app.encodeVideoContractBase64Materials(request, contract, "reference"); err != nil {
+		t.Fatal(err)
+	}
+	encoded := util.AsStringSlice(videoJSONPathValue(request, "media.images"))
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pixels.Bytes())
+	if len(encoded) != 2 || encoded[0] != want || encoded[1] != want || refs[0] != reference || refs[1] != reference {
+		t.Fatal("Base64 array conversion changed the stored material references")
 	}
 }
 
@@ -190,6 +354,7 @@ func TestCanvasAgentHTTPExternalToolsValidateAndShareRunSnapshots(t *testing.T) 
 	path := "/api/canvas/agent-tools?project_id=" + doc.ID
 	send := func(path string, body []byte, authenticated bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
 		if authenticated {
 			setRequestAuthCookie(r, token)
 		}
@@ -227,4 +392,104 @@ func TestCanvasAgentHTTPExternalToolsValidateAndShareRunSnapshots(t *testing.T) 
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("tool run did not finish")
+}
+
+func TestCanvasAgentModelForwardsDirectlyWithoutCreatingBackgroundTask(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint(stream), func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if r.URL.Path != "/v1/chat/completions" || body["stream"] != stream {
+					t.Errorf("wrong transport: %s %v", r.URL.Path, body)
+				}
+				if body["prompt_cache_key"] != "agent-test-session" {
+					t.Error("agent cache identity was lost before reaching upstream")
+				}
+				if stream && util.StringMap(body["stream_options"])["include_usage"] != true {
+					t.Error("stream did not request real upstream usage")
+				}
+				if stream {
+					w.Header().Set("Content-Type", "text/event-stream")
+					fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"SDK reply\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+				} else {
+					util.WriteJSON(w, 200, map[string]any{"choices": []map[string]any{{"finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": "SDK reply"}}}})
+				}
+			}))
+			defer upstream.Close()
+			identity := service.Identity{ID: "sdk-owner", Role: service.AuthRoleAdmin}
+			externalWorkflowTestClient(app, upstream)
+			config, err := app.customRelayConfigs.Create(identity.ID, "text", "SDK test", "http://sdk-model.example", "test-only-key", "openai", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var progress string
+			result, err := app.runAgentModel(context.Background(), identity, service.AgentModelRequest{Model: "test-model", Prompt: "SDK request", Messages: []map[string]any{{"role": "user", "content": "SDK request"}}, Metadata: map[string]any{"api_mode": "chat", "stream": stream, "relay_token_name": config.TokenName, "prompt_cache_key": "agent-test-session"}, OnText: func(text string) error { progress = text; return nil }})
+			if err != nil || result["text_response"] != "SDK reply" {
+				t.Fatalf("result=%v err=%v", result, err)
+			}
+			if stream && progress != "SDK reply" {
+				t.Fatalf("stream progress=%q", progress)
+			}
+			tasks, err := app.tasks.ListTasksWithError(identity, nil)
+			if err != nil || len(util.AsMapSlice(tasks["items"])) != 0 {
+				t.Fatalf("model entered task queue: %v %v", tasks, err)
+			}
+		})
+	}
+}
+
+func TestAgentModelCancellationClosesDirectUpstreamRequest(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	entered, closed := make(chan struct{}), make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error(err)
+			return
+		}
+		close(entered)
+		select {
+		case <-r.Context().Done():
+			close(closed)
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer upstream.Close()
+	identity := service.Identity{ID: "cancel-sdk", Role: service.AuthRoleAdmin}
+	externalWorkflowTestClient(app, upstream)
+	config, err := app.customRelayConfigs.Create(identity.ID, "text", "SDK cancel", "http://sdk-model.example", "test-only-key", "openai", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := app.runAgentModel(ctx, identity, service.AgentModelRequest{Model: "test-model", Messages: []map[string]any{{"role": "user", "content": "cancel this request"}}, Metadata: map[string]any{"api_mode": "chat", "stream": true, "relay_token_name": config.TokenName}})
+		done <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model request did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation error=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("model request ignored cancellation")
+	}
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upstream request remained active")
+	}
 }

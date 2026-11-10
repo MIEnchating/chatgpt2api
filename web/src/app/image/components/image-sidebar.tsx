@@ -1,17 +1,25 @@
 "use client";
 
-import { Clock3, Download, History, X, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Badge } from "@/components/ui/badge";
+
+import { Download, History, X, SquarePen, Search, Trash2, Pin, PinOff, MoreHorizontal, Pencil, ListChecks } from "lucide-react";
 import { useState } from "react";
+import { useAppMeta } from "@/lib/use-app-meta";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
+import { TooltipButton } from "@/components/ui/tooltip";
 
 import { useHistoryDownload } from "@/app/image/use-history-download";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/utils";
 import {
   getImageConversationStats,
-  isImageConversationHistorySummaryOnly,
   type ImageConversation,
 } from "@/store/image-conversations";
 
@@ -26,7 +34,10 @@ type ImageSidebarProps = {
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void | Promise<void>;
   onLoadMore: () => void | Promise<void>;
-  formatConversationTime: (value: string) => string;
+  pinnedIds: string[];
+  unreadIds: string[];
+  onTogglePin: (id: string) => void;
+  onRenameConversation: (id: string) => void;
   hideActionButtons?: boolean;
 };
 
@@ -41,150 +52,137 @@ export function ImageSidebar({
   onSelectConversation,
   onDeleteConversation,
   onLoadMore,
-  formatConversationTime,
+  pinnedIds,
+  unreadIds,
+  onTogglePin,
+  onRenameConversation,
   hideActionButtons = false,
 }: ImageSidebarProps) {
+  const appMeta = useAppMeta();
+  const [searchOpen, setSearchOpen] = useState(false);
   const batch = useHistoryDownload(conversations);
   const [query, setQuery] = useState("");
-  const visibleConversations = conversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const pinOrder = new Map(pinnedIds.map((id, index) => [id, index]));
+  const visibleConversations = conversations
+    .filter((conversation) => conversation.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+    .sort((a, b) => (pinOrder.get(a.id) ?? Infinity) - (pinOrder.get(b.id) ?? Infinity));
+  const selectedVisibleCount = visibleConversations.filter((conversation) => batch.selected.has(conversation.id)).length;
+  const allVisibleSelected = visibleConversations.length > 0 && selectedVisibleCount === visibleConversations.length;
   return (
-    <aside aria-label="创作会话" className="h-full min-h-0 overflow-hidden">
+    <aside aria-label="创作会话" className="h-full min-h-0">
       <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex min-h-12 items-center gap-1">
+          <span className="min-w-0 flex-1 truncate px-2 text-lg font-semibold">{appMeta.app_title}</span>
+          <TooltipButton tooltip="搜索会话" aria-label="搜索会话" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); setQuery(""); }}><Search className="size-5" /></TooltipButton>
+        </div>
         {!hideActionButtons && (
           <div className="flex items-center gap-2 pb-1">
-            <Button className="h-10 flex-1 justify-start rounded-xl px-3 shadow-none" onClick={onCreateDraft}>
-              <MessageSquarePlus className="size-4" />
+            <Button variant="ghost" className="h-10 flex-1 justify-start" onClick={onCreateDraft}>
+              <SquarePen className="size-5" />
               新建对话
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="清空会话记录"
-              className="size-10 shrink-0 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => void onClearHistory()}
-              disabled={conversations.length === 0}
-            >
-              <Trash2 className="size-4" />
             </Button>
           </div>
         )}
 
-        {conversations.length > 0 ? <SearchInput value={query} onValueChange={setQuery} placeholder="搜索已加载的会话" className="h-9 rounded-lg border-border/60 bg-background/70 text-xs shadow-none" /> : null}
-        <div className="flex min-h-7 items-center justify-between gap-2 px-1">
-          <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-            <span>最近会话</span>
-            <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] leading-4 tabular-nums">{conversations.length}</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn("h-7 shrink-0 gap-1.5 rounded-lg px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground", batch.selecting && "bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand")}
-            aria-pressed={batch.selecting}
-            disabled={conversations.length === 0 || batch.busy}
-            onClick={() => { batch.setSelecting(!batch.selecting); batch.setSelected(new Set()); }}
-          >
-            {batch.selecting ? <X className="size-3.5" /> : <Download className="size-3.5" />}
-            {batch.selecting ? "退出选择" : "批量下载"}
-          </Button>
-        </div>
+        {searchOpen ? <SearchInput containerClassName="h-10" value={query} onValueChange={setQuery} placeholder="搜索已加载的会话" /> : null}
         {batch.selecting ? (
-          <div className="space-y-2 rounded-xl border border-brand-border bg-brand-soft/40 p-2.5">
-            <div className="flex items-center justify-between gap-2 pl-0.5">
-              <span className="text-[11px] text-muted-foreground">已选 <strong className="font-semibold text-foreground tabular-nums">{batch.selected.size}</strong> 个会话</span>
-              <Button variant="ghost" size="sm" className="h-6 rounded-md px-1.5 text-[11px] text-brand" aria-label="全选已加载会话" disabled={batch.busy} onClick={() => batch.setSelected(new Set(conversations.map((item) => item.id)))}>全选</Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" className="h-8 min-w-0 flex-1 rounded-lg text-xs" disabled={batch.busy || !batch.selected.size} onClick={() => void batch.download()}>
-                {batch.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                {batch.busy ? "正在打包…" : "下载所选"}
-              </Button>
-              {batch.busy ? <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" aria-label="取消下载" onClick={batch.cancel}>取消</Button> : null}
-            </div>
+          <div role="toolbar" aria-label="会话批量操作" className="flex min-h-8 items-center gap-1 px-1">
+            <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                aria-label="全选当前列表"
+                checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
+                disabled={batch.busy || visibleConversations.length === 0}
+                onCheckedChange={() => batch.setSelected((current) => {
+                  const next = new Set(current);
+                  for (const conversation of visibleConversations) {
+                    if (allVisibleSelected) next.delete(conversation.id);
+                    else next.add(conversation.id);
+                  }
+                  return next;
+                })}
+              />
+              {batch.busy ? <Spinner aria-label="正在打包" /> : null}
+              <span aria-live="polite" className="truncate">{batch.busy ? "正在打包…" : `已选 ${batch.selected.size} 个会话`}</span>
+            </Label>
+            <TooltipButton tooltip="下载所选会话" aria-label="下载所选会话" disabled={batch.busy || batch.selected.size === 0} onClick={() => void batch.download()}><Download /></TooltipButton>
+            <TooltipButton tooltip={batch.busy ? "取消下载" : "退出选择"} aria-label={batch.busy ? "取消下载" : "退出选择"} onClick={() => {
+              if (batch.busy) { batch.cancel(); return; }
+              batch.setSelecting(false);
+              batch.setSelected(new Set());
+            }}>
+              <X />
+            </TooltipButton>
           </div>
-        ) : null}
-        <ScrollArea
-          className="min-h-0 flex-1"
-        >
-          <div className={cn("flex min-h-full flex-col gap-1.5", hideActionButtons ? "pr-0" : "pr-1")}>
+        ) : (
+          <div className="flex min-h-8 items-center justify-between gap-2 px-1">
+            <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+              <span>最近会话</span>
+              <Badge variant="secondary" className="tabular-nums">{conversations.length}</Badge>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="会话管理" disabled={conversations.length === 0}><MoreHorizontal /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="right" className="w-40">
+                <DropdownMenuItem onSelect={() => { batch.setSelecting(true); batch.setSelected(new Set()); }}><ListChecks />批量下载</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => void onClearHistory()}><Trash2 />清空会话记录</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative -mx-3 flex min-h-0 min-w-0 w-[calc(100%+1.5rem)] flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 pl-3">
+          <div className="flex min-h-full flex-col gap-0.5">
             {isLoadingHistory ? (
-              <div className="flex items-center gap-2 px-2 py-3 text-sm text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />
-                正在读取会话记录
-              </div>
+              <LoadingState compact className="justify-start px-2 py-3" label="正在读取会话记录" />
             ) : conversations.length === 0 ? (
-              <div className="flex flex-col items-center px-4 py-10 text-center">
-                <span className="mb-3 flex size-10 items-center justify-center rounded-xl border border-border/60 bg-background/80 text-muted-foreground"><History className="size-4" /></span>
-                <p className="text-xs font-medium text-foreground">还没有创作记录</p>
-                <p className="mt-1.5 text-xs leading-5 text-muted-foreground">从一个想法开始，<br />你的创作会保存在这里。</p>
-              </div>
+              <EmptyState compact icon={History} title="还没有创作记录" description="从一个想法开始，你的创作会保存在这里。" className="px-4 py-10" />
             ) : (
               <>
-              {visibleConversations.length === 0 ? <div className="px-2 py-5 text-center text-xs leading-6 text-muted-foreground">没有匹配的会话<Button variant="link" size="sm" className="mx-auto mt-1 flex text-xs" onClick={() => setQuery("")}>清除搜索</Button></div> : null}
+              {visibleConversations.length === 0 ? <EmptyState compact title="没有匹配的会话" className="min-h-0 px-2 py-5" action={<Button variant="link" size="sm" onClick={() => setQuery("")}>清除搜索</Button>} /> : null}
               {visibleConversations.map((conversation) => {
                 const active = conversation.id === selectedConversationId;
                 const stats = getImageConversationStats(conversation);
-                const turnCount = isImageConversationHistorySummaryOnly(conversation)
-                  ? conversation.historySummary?.turnCount || 0
-                  : conversation.turns.length;
-                const activityLabel = [
-                  stats.running > 0 ? `处理中 ${stats.running}` : "",
-                  stats.queued > 0 ? `排队 ${stats.queued}` : "",
-                ].filter(Boolean).join(" · ");
+                const busy = stats.running + stats.queued > 0;
+                const pinned = pinnedIds.includes(conversation.id);
+                const unread = unreadIds.includes(conversation.id) && !active;
                 return (
-                  <div key={conversation.id} className="group relative w-full">
-                    <button
+                  <div key={conversation.id} className="group relative w-full" data-conversation-id={conversation.id}>
+                    <Button variant={(batch.selecting ? batch.selected.has(conversation.id) : active) ? "secondary" : "ghost"}
                       type="button"
-                      onClick={() => onSelectConversation(conversation.id)}
+                      onClick={() => { if (batch.selecting) batch.toggle(conversation.id); else onSelectConversation(conversation.id); }}
+                      disabled={batch.busy}
                       aria-current={active ? "true" : undefined}
-                      className={cn(
-                        "block w-full cursor-pointer rounded-xl border text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                        hideActionButtons ? "px-4 py-3.5" : "px-3 py-2 pr-10 sm:py-3",
-                        batch.selecting && (hideActionButtons ? "pl-11" : "pl-10"),
-                        active
-                          ? "border-brand-border/70 bg-brand-soft text-foreground shadow-xs"
-                          : "border-transparent bg-transparent text-foreground hover:border-border/60 hover:bg-card/80",
-                      )}
+                      className={cn("h-11 w-full justify-start gap-2 px-3 text-left font-normal group-hover:pr-20 group-focus-within:pr-20 [@media(hover:none)]:pr-20", (busy || unread || pinned) && "pr-8", (busy || unread) && "group-hover:pr-24 group-focus-within:pr-24 [@media(hover:none)]:pr-24", pinned && (busy || unread) && "pr-14", batch.selecting && "pl-10")}
                     >
-                      <div className={cn("truncate font-medium", hideActionButtons ? "text-base" : "text-[13px]", active && "text-brand")}>
-                        <span className="truncate">{conversation.title}</span>
-                      </div>
-                      <div className="mt-1.5 flex h-5 min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground">
-                        <span className="shrink-0">{turnCount} 轮</span>
-                        {activityLabel ? (
-                          <span
-                            className={cn(
-                              "inline-flex h-5 min-w-0 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold tabular-nums",
-                              stats.running > 0
-                                ? "bg-blue-600 text-white dark:bg-blue-400 dark:text-slate-950"
-                                : "bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-200",
-                            )}
-                            title={`${activityLabel} · ${formatConversationTime(conversation.updatedAt)}`}
-                          >
-                            {stats.running > 0 ? <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin motion-reduce:animate-none" /> : <Clock3 aria-hidden="true" className="size-3 shrink-0" />}
-                            <span className="min-w-0 truncate">{activityLabel}</span>
-                          </span>
-                        ) : <span className="min-w-0 truncate tabular-nums">{formatConversationTime(conversation.updatedAt)}</span>}
-                      </div>
-                    </button>
+                      <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+                      <span className="absolute inset-y-0 right-3 flex items-center gap-2 group-hover:invisible group-focus-within:invisible [@media(hover:none)]:invisible">
+                        {pinned ? <Pin aria-hidden="true" className="size-3.5" /> : null}
+                      </span>
+                    </Button>
+                    {busy || unread ? <span className={cn("pointer-events-none absolute inset-y-0 right-3 flex items-center group-hover:right-[4.5rem] group-focus-within:right-[4.5rem] [@media(hover:none)]:right-[4.5rem]", pinned && "right-9")}>
+                      {busy ? <Spinner aria-label="任务处理中" className="size-3.5 motion-reduce:animate-none" /> : <span role="status" aria-label="任务已完成，未查看" className="size-2 rounded-full bg-current" />}
+                    </span> : null}
                     {batch.selecting ? <Checkbox
                       aria-label={`选择会话：${conversation.title}`}
                       checked={batch.selected.has(conversation.id)}
                       disabled={batch.busy}
                       onCheckedChange={() => batch.toggle(conversation.id)}
-                      className={cn("absolute top-3.5 z-10", hideActionButtons ? "left-4" : "left-3")}
-                    /> : null}
-                    {!hideActionButtons ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void onDeleteConversation(conversation.id)}
-                        className="absolute top-3 right-2 z-10 size-7 text-muted-foreground hover:text-destructive sm:pointer-events-none sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100"
-                        aria-label="删除会话"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    ) : null}
+                      className="absolute top-1/2 left-3 z-10 -translate-y-1/2"
+                    /> : (
+                      <div className="absolute inset-y-0 right-1 flex items-center [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100">
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`${pinned ? "取消置顶" : "置顶"}会话：${conversation.title}`} aria-pressed={pinned} onClick={() => onTogglePin(conversation.id)}>
+                          {pinned ? <PinOff /> : <Pin />}
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={`更多操作：${conversation.title}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" side="right" className="w-40">
+                            <DropdownMenuItem onSelect={() => onRenameConversation(conversation.id)}><Pencil />重命名</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => onTogglePin(conversation.id)}>{pinned ? <PinOff /> : <Pin />}{pinned ? "取消置顶" : "置顶"}</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => void onDeleteConversation(conversation.id)}><Trash2 />删除</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -192,18 +190,18 @@ export function ImageSidebar({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="mt-1 h-9 shrink-0 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="mt-1 shrink-0"
                   disabled={isLoadingMoreHistory}
                   onClick={() => void onLoadMore()}
                 >
-                  {isLoadingMoreHistory ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                  {isLoadingMoreHistory ? <Spinner /> : null}
                   {isLoadingMoreHistory ? "正在加载" : "加载更多"}
                 </Button>
               ) : null}
               </>
             )}
           </div>
-        </ScrollArea>
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </div>
     </aside>
   );

@@ -1,25 +1,18 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { LabeledField } from "@/components/labeled-field";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Card } from "@/components/ui/card";
+import { Item } from "@/components/ui/item";
+import { SearchInput } from "@/components/ui/search-input";
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AudioLines,
-  ArrowDown,
-  ArrowUp,
-  Clapperboard,
-  GripVertical,
-  Image as ImageIcon,
-  ListPlus,
-  LoaderCircle,
-  PencilLine,
-  Plus,
-  RefreshCw,
-  Search,
-  Save,
-  Settings2,
-  TextCursorInput,
-  Trash2,
-  WandSparkles,
-} from "lucide-react";
+import { SortableList, SortableItem, SortableHandle } from "@/components/sortable-list";
+import { AudioLines, ArrowDown, ArrowUp, Clapperboard, Image as ImageIcon, ListPlus, PencilLine, Plus, RefreshCw, Save, Settings2, TextCursorInput, Trash2, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,11 +28,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipHint } from "@/components/ui/tooltip";
 import {
   fetchCustomRelayConfigs,
+  fetchModelConfig,
   fetchProfileRelayKey,
   fetchRelayModels,
   normalizeModelNames,
@@ -50,15 +44,29 @@ import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { relayTokenOptions } from "@/lib/relay-token-selection";
 import { filterModelsByCapability, type ModelCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
+import { hydrateModelPriceQuotes, mergeModelPriceQuotes, modelPriceQuotesFromResponses, type ModelPriceQuotes, type ModelPriceQuote } from "@/lib/model-pricing";
 import type { StoredAuthSession } from "@/lib/auth-session";
+import { automaticModelGroup, groupModelsByFamily, renameModelGroup } from "@/lib/model-groups";
 
 import { useSettingsStore } from "../store";
-import { SettingsCard, settingsDialogInputClassName } from "./settings-ui";
+import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
 import { ImageModelDefinitionDialog } from "./image-model-definition-dialog";
 import { imageProtocolLabels, type ImageModelDefinitions } from "@/lib/image-model-definitions";
 
 type ModelKind = "text" | "image" | "video" | "audio";
 type AddMode = "automatic" | "custom";
+const modelKinds: ModelKind[] = ["text", "image", "video", "audio"];
+
+async function priceKeysByKind(preferences: Record<ModelKind, string[]>) {
+  const [status, custom] = await Promise.all([fetchProfileRelayKey(), fetchCustomRelayConfigs()]);
+  const names = normalizeTokenNames(status.token_names);
+  const fallback = String(status.token_name || "").trim();
+  return Object.fromEntries(modelKinds.map((kind) => {
+    const options = relayTokenOptions(names, custom.configs, kind);
+    const selected = preferences[kind].filter((name) => options.some((option) => option.value === name));
+    return [kind, selected.length ? selected : options.some((option) => option.value === fallback) ? [fallback] : []];
+  })) as Record<ModelKind, string[]>;
+}
 
 const modelKindMetadata = {
   text: { title: "文本模型", label: "文本", icon: TextCursorInput, placeholder: "例如：gpt-5.5" },
@@ -81,19 +89,26 @@ function moveModel(models: string[], index: number, offset: -1 | 1) {
   return next;
 }
 
-function GlobalModelList({
-  icon: Icon,
-  kind,
-  models,
-  onChange,
-  onAdd,
-  onClear,
-  onConfigure,
-  definitions,
-  capabilities,
-  onCapabilityChange,
-}: {
-  icon: typeof ImageIcon;
+function ModelPrice({ quotes }: { quotes?: ModelPriceQuote[] }) {
+  return <div className="grid min-w-0 gap-0.5 text-[11px] leading-relaxed text-muted-foreground">
+    {quotes?.length ? Array.from(new Set(quotes.map((quote) => quote.text))).map((text) => (
+      <span key={text} className="whitespace-pre-line break-words">{text}</span>
+    )) : <span>未获取价格</span>}
+  </div>;
+}
+
+function ModelGroupInput({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return <Input aria-label={label} value={draft} placeholder={placeholder} maxLength={128}
+    onChange={(event) => setDraft(event.target.value)} onBlur={() => { onChange(draft.trim()); setDraft(value); }}
+    onKeyDown={(event) => {
+      if (event.key === "Enter") event.currentTarget.blur();
+      if (event.key === "Escape") { event.stopPropagation(); setDraft(value); }
+    }} />;
+}
+
+type GlobalModelListProps = {
   kind: ModelKind;
   models: string[];
   onChange: (models: string[]) => void;
@@ -103,138 +118,101 @@ function GlobalModelList({
   definitions?: ImageModelDefinitions;
   capabilities?: Record<string, ModelCapability>;
   onCapabilityChange?: (model: string, capability: ModelCapability) => void;
-}) {
+  prices?: ModelPriceQuotes;
+};
+
+function GlobalModelRow({ model, index, kind, models, onChange, onConfigure, definitions, capabilities, onCapabilityChange, prices }: Omit<GlobalModelListProps, "icon" | "onAdd" | "onClear"> & { model: string; index: number }) {
+  return (
+    <SortableItem value={model} label={model}
+      className="relative flex min-h-12 min-w-0 flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:px-3"
+    >
+      <div className="flex min-w-0 items-center gap-1.5 sm:flex-1 sm:gap-2">
+        <SortableHandle aria-label={`拖动 ${model} 排序`} />
+        <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <TooltipHint content={model}><code className="block truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
+          <ModelPrice quotes={prices?.[model]} />
+        </div>
+        {onCapabilityChange ? <Select value={capabilities?.[model] || kind} onValueChange={(value) => onCapabilityChange(model, value as ModelCapability)}><SelectTrigger className="w-24" aria-label={`${model} 的模型能力`}><SelectValue /></SelectTrigger><SelectContent>{(["text", "image", "video", "audio"] as ModelCapability[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select> : null}
+      </div>
+      <div className="flex items-center justify-end gap-2 sm:shrink-0">
+        {index === 0 ? <Badge className="mr-auto shrink-0">全局默认</Badge> : null}
+        <div className="flex shrink-0 items-center">
+          {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
+            <Button type="button" variant="ghost" size="icon"  aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2  /></Button>
+          </TooltipHint> : null}
+          <TooltipHint content={"上移"}><Button
+            type="button"
+            variant="ghost"
+            size="icon"
+
+            onClick={() => onChange(moveModel(models, index, -1))}
+            disabled={index === 0}
+            aria-label={`上移 ${model}`}
+          >
+            <ArrowUp  />
+          </Button></TooltipHint>
+          <TooltipHint content={"下移"}><Button
+            type="button"
+            variant="ghost"
+            size="icon"
+
+            onClick={() => onChange(moveModel(models, index, 1))}
+            disabled={index === models.length - 1}
+            aria-label={`下移 ${model}`}
+          >
+            <ArrowDown  />
+          </Button></TooltipHint>
+          <TooltipHint content={"删除"}><Button
+            type="button"
+            variant="ghost"
+            size="icon"
+
+            onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
+            aria-label={`删除 ${model}`}
+          >
+            <Trash2  />
+          </Button></TooltipHint>
+        </div>
+      </div>
+    </SortableItem>
+  );
+}
+
+function GlobalModelList({
+  kind,
+  models,
+  onChange,
+  onAdd,
+  onClear,
+  onConfigure,
+  definitions,
+  capabilities,
+  onCapabilityChange,
+  prices,
+}: GlobalModelListProps) {
   const title = modelKindMetadata[kind].title;
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
-
-  function resetDragState() {
-    setDraggedIndex(null);
-    setDropIndex(null);
-  }
-
-  function handleDrop(index: number) {
-    if (draggedIndex === null || draggedIndex === index) {
-      resetDragState();
-      return;
-    }
-    const next = [...models];
-    const [moved] = next.splice(draggedIndex, 1);
-    next.splice(index, 0, moved);
-    onChange(next);
-    resetDragState();
-  }
 
   return (
-    <section className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-[1_1_10rem] items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/70">
-            <Icon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
-            <p className="text-xs text-muted-foreground">全站可用，共 {models.length} 个</p>
-          </div>
-        </div>
+    <SettingsSection title={title} description={`全站可用，共 ${models.length} 个；拖动手柄调整顺序`} contentClassName="gap-0 p-0 sm:p-0" action={
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Button type="button" variant="ghost" size="sm" className="h-9 px-2.5 text-muted-foreground hover:text-destructive" onClick={onClear} disabled={models.length === 0}>
-            <Trash2 className="size-4" />
+          <Button type="button" variant="ghost" size="sm"  onClick={onClear} disabled={models.length === 0}>
+            <Trash2  />
             清空
           </Button>
-          <Button type="button" variant="outline" size="sm" className="h-9" onClick={onAdd}>
-            <Plus className="size-4" />
+          <Button type="button" variant="outline" size="sm"  onClick={onAdd}>
+            <Plus  />
             添加
           </Button>
         </div>
-      </div>
-      <div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80 bg-background">
-        {models.map((model, index) => {
-          const isDragging = draggedIndex === index;
-          const isDropTarget = dropIndex === index && draggedIndex !== index;
-          return (
-            <div
-              key={model}
-              draggable
-              onDragStart={(event) => {
-                setDraggedIndex(index);
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", model);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                setDropIndex(index);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                handleDrop(index);
-              }}
-              onDragEnd={resetDragState}
-              aria-grabbed={isDragging}
-              className={cn(
-                "flex min-h-12 min-w-0 flex-col gap-2 px-2 py-2 transition-colors sm:flex-row sm:items-center sm:px-3",
-                isDragging && "opacity-45",
-                isDropTarget && "bg-primary/10",
-              )}
-            >
-              <div className="flex min-w-0 items-center gap-1.5 sm:flex-1 sm:gap-2">
-                <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing" aria-label="拖拽排序" />
-                <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
-                <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
-                {onCapabilityChange ? <Select value={capabilities?.[model] || kind} onValueChange={(value) => onCapabilityChange(model, value as ModelCapability)}><SelectTrigger className="h-7 w-24 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{(["text", "image", "video", "audio"] as ModelCapability[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select> : null}
-              </div>
-              <div className="flex items-center justify-end gap-2 sm:shrink-0">
-                {index === 0 ? <Badge className="mr-auto shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
-                <div className="flex shrink-0 items-center">
-                  {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
-                    <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2 className="size-3.5" /></Button>
-                  </TooltipHint> : null}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={() => onChange(moveModel(models, index, -1))}
-                    disabled={index === 0}
-                    aria-label={`上移 ${model}`}
-                    title="上移"
-                  >
-                    <ArrowUp className="size-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={() => onChange(moveModel(models, index, 1))}
-                    disabled={index === models.length - 1}
-                    aria-label={`下移 ${model}`}
-                    title="下移"
-                  >
-                    <ArrowDown className="size-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
-                    aria-label={`删除 ${model}`}
-                    title="删除"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      }>
+        <SortableList values={models} onReorder={onChange} aria-label={`${title}排序`} className="divide-y divide-border/70">
+          {(order) => order.map((model, index) => <GlobalModelRow key={model} model={model} index={index} kind={kind} models={order} onChange={onChange} onConfigure={onConfigure} definitions={definitions} capabilities={capabilities} onCapabilityChange={onCapabilityChange} prices={prices} />)}
+        </SortableList>
         {models.length === 0 ? (
-          <div className="flex min-h-20 items-center justify-center px-4 text-sm text-muted-foreground">暂无模型，点击“添加”进行配置</div>
+          <EmptyState compact title="暂无模型，点击“添加”进行配置" className="min-h-20 py-4" />
         ) : null}
-      </div>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -246,6 +224,7 @@ function AddModelDialog({
   onOpenChange,
   session,
   initialKind,
+  onPricesLoaded,
 }: {
   modelsByKind: Record<ModelKind, string[]>;
   capabilities: Record<string, ModelCapability>;
@@ -254,6 +233,7 @@ function AddModelDialog({
   onOpenChange: (open: boolean) => void;
   session: StoredAuthSession;
   initialKind: ModelKind;
+  onPricesLoaded: (kind: ModelKind, prices: ModelPriceQuotes) => void;
 }) {
   const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
   const [mode, setMode] = useState<AddMode>("automatic");
@@ -265,6 +245,8 @@ function AddModelDialog({
   const [isLoadingKeys, setIsLoadingKeys] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetchedPrices, setFetchedPrices] = useState<ModelPriceQuotes>({});
+  const [pricingNotices, setPricingNotices] = useState<string[]>([]);
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [customModels, setCustomModels] = useState("");
@@ -284,6 +266,8 @@ function AddModelDialog({
     if (!query) return fetchedModels;
     return fetchedModels.filter((model) => model.toLowerCase().includes(query));
   }, [fetchedModels, search]);
+  const selectableModels = filteredModels.filter((model) => !configuredSet.has(model));
+  const selectedVisibleCount = selectableModels.filter((model) => selectedModels.has(model)).length;
 
   function invalidateModelLoad() {
     modelLoadVersionRef.current += 1;
@@ -305,6 +289,8 @@ function AddModelDialog({
     setKind(preferredKind);
     setSelectedTokenNames(preferredTokenNames);
     setFetchedModels([]);
+    setFetchedPrices({});
+    setPricingNotices([]);
     setSelectedModels(new Set());
     setSearch("");
     setCustomModels("");
@@ -359,6 +345,8 @@ function AddModelDialog({
     invalidateModelLoad();
     setSelectedTokenNames(values);
     setFetchedModels([]);
+    setFetchedPrices({});
+    setPricingNotices([]);
     setSelectedModels(new Set());
     setSearch("");
   }
@@ -376,6 +364,8 @@ function AddModelDialog({
           : [],
     );
     setFetchedModels([]);
+    setFetchedPrices({});
+    setPricingNotices([]);
     setSelectedModels(new Set());
     setSearch("");
   }
@@ -395,9 +385,10 @@ function AddModelDialog({
     const requestSessionKey = session.key;
     setIsLoadingModels(true);
     try {
-      const responses = await Promise.all(
-        requestTokenNames.map((tokenName) => fetchRelayModels({ tokenName, signal: controller.signal })),
-      );
+      const [, responses] = await Promise.all([
+        fetchModelConfig(),
+        Promise.all(requestTokenNames.map((tokenName) => fetchRelayModels({ tokenName, includePricing: true, signal: controller.signal }))),
+      ]);
       if (
         controller.signal.aborted
         || modelLoadVersionRef.current !== requestVersion
@@ -410,6 +401,10 @@ function AddModelDialog({
         requestKind,
         capabilities,
       );
+      const prices = modelPriceQuotesFromResponses(responses.map((response, index) => ({ tokenName: requestTokenNames[index], displayName: tokenOptions.find((option) => option.value === requestTokenNames[index])?.label || "所选 Key", data: response.data, pricing_error: response.pricing_error })));
+      setFetchedPrices(prices);
+      setPricingNotices(Array.from(new Set(responses.map((response) => response.pricing_notice).filter((notice): notice is string => Boolean(notice)))));
+      onPricesLoaded(requestKind, prices);
       setFetchedModels(models);
       setSelectedModels(new Set());
       setSearch("");
@@ -432,6 +427,17 @@ function AddModelDialog({
       const next = new Set(current);
       if (next.has(model)) next.delete(model);
       else next.add(model);
+      return next;
+    });
+  }
+
+  function toggleVisibleModels(checked: boolean) {
+    setSelectedModels((current) => {
+      const next = new Set(current);
+      for (const model of selectableModels) {
+        if (checked) next.add(model);
+        else next.delete(model);
+      }
       return next;
     });
   }
@@ -460,62 +466,60 @@ function AddModelDialog({
       if (!nextOpen) invalidateModelLoad();
       onOpenChange(nextOpen);
     }}>
-      <DialogContent className="w-full max-w-[calc(100vw-2rem)] gap-5 overflow-x-hidden sm:max-w-[680px]">
+      <DialogContent className="w-full max-w-[calc(100vw-2rem)] overflow-x-hidden sm:max-w-[680px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><ListPlus className="size-5 text-primary" />添加全局模型</DialogTitle>
+          <DialogTitle className="flex items-center"><ListPlus className="size-5 text-primary" />添加全局模型</DialogTitle>
           <DialogDescription>添加后的模型会在创作台、无限画布和任务接口中统一可用。</DialogDescription>
-        </DialogHeader>
+        </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
 
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="group" aria-label="添加方式">
+        <div className="grid grid-cols-2 gap-1 p-1" role="group" aria-label="添加方式">
           <Button
             type="button"
             variant={mode === "automatic" ? "outline" : "ghost"}
-            className={cn("shadow-none", mode === "automatic" && "bg-background")}
+
             onClick={() => setMode("automatic")}
           >
-            <WandSparkles className="size-4" />自动获取
+            <WandSparkles  />自动获取
           </Button>
           <Button
             type="button"
             variant={mode === "custom" ? "outline" : "ghost"}
-            className={cn("shadow-none", mode === "custom" && "bg-background")}
+
             onClick={() => {
               invalidateModelLoad();
               setMode("custom");
             }}
           >
-            <PencilLine className="size-4" />自定义
+            <PencilLine  />自定义
           </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm font-medium">
-            模型类型
-            <Select
+          <LabeledField className="grid gap-2 text-sm font-medium" label="模型类型">{(fieldId) => <><Select
               value={kind}
               onValueChange={(value) => selectModelKind(value as ModelKind)}
               disabled={isLoadingKeys}
             >
-              <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger>
               <SelectContent>
                 {(Object.keys(modelKindMetadata) as ModelKind[]).map((modelKind) => {
                   const metadata = modelKindMetadata[modelKind];
                   const Icon = metadata.icon;
-                  return <SelectItem key={modelKind} value={modelKind}><span className="flex items-center gap-2"><Icon className="size-4" />{metadata.title}</span></SelectItem>;
+                  return <SelectItem key={modelKind} value={modelKind}><span className="flex items-center gap-2"><Icon  />{metadata.title}</span></SelectItem>;
                 })}
               </SelectContent>
-            </Select>
-          </label>
+            </Select></>}</LabeledField>
 
           {mode === "automatic" ? (
             <div className="grid gap-2 text-sm font-medium">
               <span>用于获取模型的 Key</span>
               <MultiSelect
+                aria-label="用于获取模型的 Key"
                 value={selectedTokenNames}
                 options={tokenOptions.map((option) => ({
                   value: option.value,
                   label: option.label,
-                  meta: option.custom ? <span className="text-[10px] text-muted-foreground">自定义</span> : null,
+                  meta: option.custom ? "自定义" : null,
                 }))}
                 disabled={isLoadingKeys || tokenOptions.length === 0}
                 placeholder={isLoadingKeys ? "正在读取 Key" : tokenOptions.length ? "选择 Key" : "暂无可用 Key"}
@@ -532,48 +536,56 @@ function AddModelDialog({
 
         {mode === "automatic" ? (
           <div className="grid gap-3">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+            <Card className="flex items-center justify-between gap-3 px-3 py-2.5 flex-row">
               <span>默认使用个人中心已选择的全部{modelKindMetadata[kind].label} Key；在此切换不会修改个人中心。</span>
               <Button type="button" size="sm" onClick={() => void loadModels()} disabled={selectedTokenNames.length === 0 || isLoadingModels}>
-                {isLoadingModels ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                获取模型
+                {isLoadingModels ? <Spinner /> : <RefreshCw  />}
+                获取模型并更新价格
               </Button>
-            </div>
+            </Card>
 
+            {pricingNotices.map((notice) => <p key={notice} className="text-xs leading-relaxed text-muted-foreground" role="status">{notice}</p>)}
             {fetchedModels.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border/80">
-                <div className="relative border-b border-border/70 bg-muted/25 p-2.5">
-                  <Search className="pointer-events-none absolute left-5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="筛选模型" className="h-9 bg-background pl-9" />
+              <Card className="overflow-hidden gap-0 p-0">
+                <div className="border-b p-2.5">
+                  <SearchInput value={search} onValueChange={setSearch} placeholder="筛选模型" />
+                  <Label className="mt-3 flex w-fit cursor-pointer items-center gap-2 has-disabled:cursor-not-allowed">
+                    <Checkbox
+                      checked={selectableModels.length > 0 && selectedVisibleCount === selectableModels.length ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
+                      disabled={selectableModels.length === 0}
+                      onCheckedChange={(checked) => toggleVisibleModels(checked === true)}
+                    />
+                    全选当前结果
+                  </Label>
                 </div>
-                <ScrollArea className="h-[min(34vh,260px)]">
+                <ScrollAreaRoot data-slot="scroll-area" className={cn("h-[min(34vh,260px)]", "group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden")} onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
                   <div className="divide-y divide-border/60 p-1">
                     {filteredModels.map((model) => {
                       const configured = configuredSet.has(model);
                       const checked = configured || selectedModels.has(model);
                       return (
-                        <label key={model} className={cn("flex min-h-10 items-center gap-3 rounded-md px-2.5 py-2 text-sm", configured ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer hover:bg-muted/60")}>
+                        <Item key={model} asChild size="sm">
+                        <Label className={cn("min-h-10", configured ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer")}>
                           <Checkbox checked={checked} disabled={configured} onCheckedChange={() => toggleFetchedModel(model)} />
-                          <TooltipHint content={model}><code className="min-w-0 flex-1 truncate">{model}</code></TooltipHint>
+                          <div className="min-w-0 flex-1">
+                            <TooltipHint content={model}><code className="block truncate">{model}</code></TooltipHint>
+                            <ModelPrice quotes={fetchedPrices[model]} />
+                          </div>
                           {configured ? <span className="shrink-0 text-xs">已添加</span> : null}
-                        </label>
+                        </Label>
+                        </Item>
                       );
                     })}
-                    {filteredModels.length === 0 ? <div className="px-4 py-8 text-center text-sm text-muted-foreground">没有匹配的模型</div> : null}
+                    {filteredModels.length === 0 ? <EmptyState compact title="没有匹配的模型" /> : null}
                   </div>
-                </ScrollArea>
-              </div>
+                </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+              </Card>
             ) : (
-              <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-6 text-center">
-                <WandSparkles className="size-6 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">选择一个或多个 Key 后点击“获取模型”</p>
-              </div>
+              <EmptyState compact icon={WandSparkles} title="选择 Key 获取模型" description="选择一个或多个 Key 后点击“获取模型”" />
             )}
           </div>
         ) : (
-          <label className="grid gap-2 text-sm font-medium">
-            模型 ID
-            <Input
+          <LabeledField className="grid gap-2 text-sm font-medium" label="模型 ID">{(fieldId) => <><Input id={fieldId}
               value={customModels}
               onChange={(event) => setCustomModels(event.target.value)}
               onKeyDown={(event) => {
@@ -583,19 +595,18 @@ function AddModelDialog({
                 }
               }}
               placeholder={modelKindMetadata[kind].placeholder}
-              className={settingsDialogInputClassName}
+
             />
-            <span className="font-normal text-muted-foreground">可输入一个或多个模型 ID，多个模型使用英文逗号分隔。</span>
-          </label>
+            <span className="font-normal text-muted-foreground">可输入一个或多个模型 ID，多个模型使用英文逗号分隔。</span></>}</LabeledField>
         )}
 
-        <DialogFooter>
+        </ScrollArea><DialogFooter>
           <Button type="button" variant="outline" onClick={() => {
             invalidateModelLoad();
             onOpenChange(false);
           }}>取消</Button>
           <Button type="button" onClick={submitModels} disabled={!canSubmit}>
-            <Plus className="size-4" />
+            <Plus  />
             {mode === "automatic" ? `添加已选模型${selectedModels.size ? ` (${selectedModels.size})` : ""}` : "添加模型"}
           </Button>
         </DialogFooter>
@@ -605,6 +616,7 @@ function AddModelDialog({
 }
 
 export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
+  const { tokenNames: priceTokenNames } = useRelayTokenPreferences();
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
@@ -616,8 +628,90 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const setTextModels = useSettingsStore((state) => state.setTextModels);
   const setAudioModels = useSettingsStore((state) => state.setAudioModels);
   const setModelCapabilities = useSettingsStore((state) => state.setModelCapabilities);
+  const setModelGroups = useSettingsStore((state) => state.setModelGroups);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKind, setAddDialogKind] = useState<ModelKind>("image");
+  const [priceState, setPriceState] = useState<{ sessionKey: string; byKind: Partial<Record<ModelKind, ModelPriceQuotes>> }>({ sessionKey: session.key, byKind: {} });
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
+  const priceRefreshRef = useRef<AbortController | null>(null);
+  const pricesByKind = priceState.sessionKey === session.key ? priceState.byKind : {};
+  const priceTokenNamesKey = JSON.stringify(priceTokenNames);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      const namesByKind = await priceKeysByKind(JSON.parse(priceTokenNamesKey) as Record<ModelKind, string[]>);
+      if (controller.signal.aborted) return;
+      const names = Array.from(new Set(modelKinds.flatMap((kind) => namesByKind[kind])));
+      const responses = await Promise.all(names.map(async (tokenName) => {
+        try {
+          const response = await fetchRelayModels({ tokenName, includePricing: "cached", signal: controller.signal });
+          return { tokenName, displayName: tokenName, data: response.data };
+        } catch {
+          return { tokenName, displayName: tokenName, data: [] };
+        }
+      }));
+      if (controller.signal.aborted) return;
+      setPriceState((current) => {
+        const byKind: Partial<Record<ModelKind, ModelPriceQuotes>> = {};
+        for (const kind of modelKinds) {
+          const cached = modelPriceQuotesFromResponses(responses.filter((response) => namesByKind[kind].includes(response.tokenName)));
+          byKind[kind] = hydrateModelPriceQuotes(current.sessionKey === session.key ? current.byKind[kind] || {} : {}, cached);
+        }
+        return { sessionKey: session.key, byKind };
+      });
+    })().catch(() => {});
+    return () => controller.abort();
+  }, [priceTokenNamesKey, session.key]);
+
+  useEffect(() => {
+    setIsRefreshingPrices(false);
+    return () => {
+      priceRefreshRef.current?.abort();
+      priceRefreshRef.current = null;
+    };
+  }, [session.key]);
+
+  async function refreshPrices() {
+    if (priceRefreshRef.current) return;
+    const controller = new AbortController();
+    priceRefreshRef.current = controller;
+    setIsRefreshingPrices(true);
+    try {
+      const namesByKind = await priceKeysByKind(priceTokenNames);
+      if (controller.signal.aborted) return;
+      const names = Array.from(new Set(modelKinds.flatMap((kind) => namesByKind[kind])));
+      if (!names.length) {
+        toast.error("请先配置用于获取模型价格的 Key");
+        return;
+      }
+      const results = await Promise.allSettled(names.map((tokenName) => fetchRelayModels({ tokenName, includePricing: true, signal: controller.signal })));
+      if (controller.signal.aborted) return;
+      const responses = results.flatMap((result, index) => result.status === "fulfilled" && !result.value.pricing_error
+        ? [{ tokenName: names[index], displayName: names[index], data: result.value.data }] : []);
+      if (responses.length) {
+        setPriceState((current) => {
+          const byKind = { ...(current.sessionKey === session.key ? current.byKind : {}) };
+          for (const kind of modelKinds) {
+            const selected = responses.filter((response) => namesByKind[kind].includes(response.tokenName));
+            if (selected.length) byKind[kind] = mergeModelPriceQuotes(byKind[kind] || {}, modelPriceQuotesFromResponses(selected), selected.map((response) => response.tokenName));
+          }
+          return { sessionKey: session.key, byKind };
+        });
+      }
+      const failed = names.length - responses.length;
+      if (failed) toast.error(`价格更新完成：${responses.length} 个 Key 成功，${failed} 个失败`);
+      else toast.success(`已更新 ${responses.length} 个 Key 的模型价格`);
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "更新模型价格失败");
+    } finally {
+      if (priceRefreshRef.current === controller) {
+        priceRefreshRef.current = null;
+        setIsRefreshingPrices(false);
+      }
+    }
+  }
 
   const imageModels = normalizeModelNames(config?.image_models, []);
   const videoModels = normalizeModelNames(config?.video_models, []);
@@ -625,12 +719,15 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const audioModels = normalizeModelNames(config?.audio_models, []);
   const modelsByKind: Record<ModelKind, string[]> = { text: textModels, image: imageModels, video: videoModels, audio: audioModels };
   const capabilities = config?.model_capabilities || {};
+  const modelGroups = config?.model_groups || { overrides: {}, order: [] };
+  const allModels = Array.from(new Set([...textModels, ...imageModels, ...videoModels, ...audioModels]));
+  const groups = groupModelsByFamily(allModels.map((value) => ({ value })), modelGroups);
 
   if (isLoadingConfig || !config) {
     return (
-      <SettingsCard icon={Settings2} title="全局模型配置" description="配置全站统一使用的文本、图片、视频与音频模型。">
-        <div className="flex items-center justify-center py-10"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
-      </SettingsCard>
+      <SettingsPanel className="max-w-4xl" title="模型服务" description="配置全站统一使用的文本、图片、视频与音频模型。">
+        <LoadingState className="h-auto" label="正在加载模型设置" />
+      </SettingsPanel>
     );
   }
 
@@ -655,22 +752,20 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
 
   return (
     <>
-      <SettingsCard
-        icon={Settings2}
-        title="全局模型配置"
-        description="文本、图片、视频与音频模型在全站统一生效。"
+      <SettingsPanel className="max-w-4xl"
+        title="模型服务"
+        description="文本、图片、视频与音频模型在全站统一生效。获取模型时同步更新分组价格（USD），额外账户优惠以实际结算为准。"
         action={
-          <Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
-            {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+          <div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void refreshPrices()} disabled={isRefreshingPrices}>{isRefreshingPrices ? <Spinner /> : <RefreshCw />}更新价格</Button><Button type="button" size="sm" variant="outline" onClick={() => setGroupsOpen(true)}><Settings2 />模型分组</Button><Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+            {isSavingConfig ? <Spinner /> : <Save  />}
             保存模型配置
-          </Button>
+          </Button></div>
         }
       >
-        <div className="flex flex-col gap-4">
-          <div className="grid min-w-0 gap-4">
+        <div className="grid min-w-0 gap-8">
             <GlobalModelList
-              icon={TextCursorInput}
               kind="text"
+              prices={pricesByKind.text}
               models={textModels}
               onChange={(models) => updateModels("text", models)}
               onAdd={() => openAddDialog("text")}
@@ -679,8 +774,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
-              icon={ImageIcon}
               kind="image"
+              prices={pricesByKind.image}
               models={imageModels}
               onChange={(models) => updateModels("image", models)}
               onAdd={() => openAddDialog("image")}
@@ -691,8 +786,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
-              icon={Clapperboard}
               kind="video"
+              prices={pricesByKind.video}
               models={videoModels}
               onChange={(models) => updateModels("video", models)}
               onAdd={() => openAddDialog("video")}
@@ -701,8 +796,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
             <GlobalModelList
-              icon={AudioLines}
               kind="audio"
+              prices={pricesByKind.audio}
               models={audioModels}
               onChange={(models) => updateModels("audio", models)}
               onAdd={() => openAddDialog("audio")}
@@ -710,13 +805,38 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               capabilities={capabilities}
               onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
             />
-          </div>
         </div>
-      </SettingsCard>
+      </SettingsPanel>
+      <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
+        <DialogContent className="w-[min(92vw,720px)] sm:max-w-none">
+          <DialogHeader><DialogTitle>模型分组</DialogTitle><DialogDescription>修改分组名称可整组重命名，同名分组会合并。模型所属分组留空时自动分组；拖动分组调整全站显示顺序。完成后点击“保存模型配置”生效。</DialogDescription></DialogHeader>
+          <ScrollArea className="min-h-0 max-h-[65dvh]" contentClassName="space-y-4 py-2">
+            <SortableList values={groups.map((group) => group.name)} onReorder={(order) => setModelGroups({ ...modelGroups, order })} aria-label="模型分组排序" className="space-y-4">
+              {(order) => order.map((name) => {
+                const group = groups.find((item) => item.name === name);
+                if (!group) return null;
+                return <SortableItem key={name} value={name} label={name} className="space-y-2">
+                  <div className="flex items-center gap-2"><SortableHandle aria-label={`拖动 ${name} 分组排序`} /><div className="w-48 min-w-0"><ModelGroupInput label={`${name} 分组名称`} value={name} onChange={(newName) => setModelGroups(renameModelGroup(allModels, modelGroups, name, newName))} /></div><span className="text-xs text-muted-foreground">{group.options.length}</span></div>
+                  <div className="space-y-2 pl-8">{group.options.map(({ value }) => <div key={value} className="grid min-w-0 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)]">
+                    <code className="break-all text-xs">{value}</code><ModelGroupInput label={`${value} 的分组`} value={modelGroups.overrides[value] || ""} placeholder={automaticModelGroup(value)} onChange={(groupName) => {
+                      const overrides = { ...modelGroups.overrides };
+                      if (groupName) overrides[value] = groupName;
+                      else delete overrides[value];
+                      setModelGroups({ ...modelGroups, overrides });
+                    }} />
+                  </div>)}</div>
+                </SortableItem>;
+              })}
+            </SortableList>
+          </ScrollArea>
+          <DialogFooter><Button type="button" onClick={() => setGroupsOpen(false)}>完成</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AddModelDialog
         modelsByKind={modelsByKind}
         capabilities={capabilities}
         onAdd={addModels}
+        onPricesLoaded={(kind, prices) => setPriceState((current) => ({ sessionKey: session.key, byKind: { ...(current.sessionKey === session.key ? current.byKind : {}), [kind]: prices } }))}
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         session={session}

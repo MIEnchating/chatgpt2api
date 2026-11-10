@@ -1,5 +1,12 @@
 "use client";
 
+import { FieldSet, FieldLegend, FieldError } from "@/components/ui/field";
+
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+import { Item } from "@/components/ui/item";
+
 import { useState } from "react";
 import { RotateCcw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,35 +57,35 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
         <DialogHeader>
           <DialogTitle>图片模型协议与能力</DialogTitle>
           <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{model}</p>
-        </DialogHeader>
+        </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="grid min-w-0 gap-5 py-2">
           <div className="grid gap-2">
-            <label htmlFor="image-adapter-protocol" className="text-sm font-medium">调用协议</label>
+            <Label htmlFor="image-adapter-protocol" className="text-sm font-medium">调用协议</Label>
             <Select value={draft.protocol} onValueChange={(value) => selectProtocol(value as ImageAdapterProtocol)}>
               <SelectTrigger id="image-adapter-protocol" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(imageProtocolLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="grid gap-2">
-            <label htmlFor="image-adapter-ratios" className="text-sm font-medium">画幅比例</label>
+            <Label htmlFor="image-adapter-ratios" className="text-sm font-medium">画幅比例</Label>
             <Input id="image-adapter-ratios" value={ratios} onChange={(event) => setRatios(event.target.value)} placeholder="1:1, 16:9, 9:16" />
           </div>
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">分辨率</legend>
+          <FieldSet className="grid gap-2">
+            <FieldLegend variant="label">分辨率</FieldLegend>
             <div className="flex flex-wrap gap-x-5 gap-y-3">{["512", "1k", "2k", "4k", ...(draft.protocol === "openai-image" ? ["1080p"] : [])].map((value) => (
-              <label key={value} className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 text-sm"><Checkbox checked={draft.resolutions.includes(value)} onCheckedChange={(checked) => toggleValue("resolutions", value, checked === true)} />{value.toUpperCase()}</label>
+              <Item key={value} variant="outline" asChild><Label className="flex min-h-9 cursor-pointer items-center gap-2 px-3"><Checkbox checked={draft.resolutions.includes(value)} onCheckedChange={(checked) => toggleValue("resolutions", value, checked === true)} />{value.toUpperCase()}</Label></Item>
             ))}</div>
-          </fieldset>
+          </FieldSet>
           <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2"><label htmlFor="image-adapter-references" className="text-sm font-medium">最多参考图</label><Input id="image-adapter-references" type="number" min={0} max={100} value={draft.max_reference_images} onChange={(event) => setDraft({ ...draft, max_reference_images: event.target.valueAsNumber })} /></div>
-            <div className="grid gap-2"><label htmlFor="image-adapter-count" className="text-sm font-medium">单次最多生成</label><Input id="image-adapter-count" type="number" min={1} max={15} value={draft.max_output_count} onChange={(event) => setDraft({ ...draft, max_output_count: event.target.valueAsNumber })} /></div>
+            <div className="grid gap-2"><Label htmlFor="image-adapter-references" className="text-sm font-medium">最多参考图</Label><Input id="image-adapter-references" type="number" min={0} max={100} value={draft.max_reference_images} onChange={(event) => setDraft({ ...draft, max_reference_images: event.target.valueAsNumber })} /></div>
+            <div className="grid gap-2"><Label htmlFor="image-adapter-count" className="text-sm font-medium">单次最多生成</Label><Input id="image-adapter-count" type="number" min={1} max={15} value={draft.max_output_count} onChange={(event) => setDraft({ ...draft, max_output_count: event.target.valueAsNumber })} /></div>
           </div>
-          {draft.protocol !== "google-gemini-image" ? <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">质量档位</legend>
+          {draft.protocol !== "google-gemini-image" ? <FieldSet className="grid gap-2">
+            <FieldLegend variant="label">质量档位</FieldLegend>
             <div className="flex flex-wrap gap-5">{[["low", "低"], ["medium", "中"], ["high", "高"], ...(draft.protocol === "openai-image" ? [["xhigh", "超高"], ["max", "最高"]] : [])].map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2 text-sm"><Checkbox checked={draft.quality_values.includes(value)} onCheckedChange={(checked) => toggleValue("quality_values", value, checked === true)} />{label}</label>
+              <Label key={value} className="flex items-center gap-2 text-sm"><Checkbox checked={draft.quality_values.includes(value)} onCheckedChange={(checked) => toggleValue("quality_values", value, checked === true)} />{label}</Label>
             ))}</div>
-          </fieldset> : null}
+          </FieldSet> : null}
           <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
             {([
               ["streaming", "流式输出", draft.protocol !== "google-gemini-image"],
@@ -86,14 +93,14 @@ export function ImageModelDefinitionDialog({ model, definition, onClose, onChang
               ["output_controls", "输出格式与压缩", draft.protocol === "openai-image"],
               ["exact_dimensions", "精确像素尺寸", draft.protocol === "openai-image"],
             ] as const).filter(([, , enabled]) => enabled).map(([key, label]) => (
-              <label key={key} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 text-sm"><Checkbox checked={draft[key]} onCheckedChange={(checked) => setDraft({ ...draft, [key]: checked === true })} />{label}</label>
+              <Item key={key} variant="outline" asChild><Label className="flex min-h-10 cursor-pointer items-center gap-2 px-3"><Checkbox checked={draft[key]} onCheckedChange={(checked) => setDraft({ ...draft, [key]: checked === true })} />{label}</Label></Item>
             ))}
           </div>
-          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+          {error ? <FieldError>{error}</FieldError> : null}
         </div>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="ghost" onClick={() => { onChange(undefined); onClose(); }}><RotateCcw className="size-4" />恢复内置配置</Button>
-          <Button onClick={apply}><Save className="size-4" />应用配置</Button>
+        </ScrollArea><DialogFooter className="sm:justify-between">
+          <Button variant="ghost" onClick={() => { onChange(undefined); onClose(); }}><RotateCcw  />恢复内置配置</Button>
+          <Button onClick={apply}><Save  />应用配置</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

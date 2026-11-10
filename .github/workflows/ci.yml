@@ -39,11 +39,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      - name: Install Agents SDK runtime
+      - name: Install LangGraph runtime
         working-directory: agent-runtime
         run: npm ci --ignore-scripts
 
-      - name: Test Agents SDK runtime
+      - name: Test LangGraph runtime
         working-directory: agent-runtime
         run: npm test
 
@@ -173,3 +173,17 @@ jobs:
           TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
           TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
         run: go test ./internal/storage -run '^TestDatabaseBackendIntegration$' -count=1 -v
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install LangGraph runtime for database recovery tests
+        working-directory: agent-runtime
+        run: npm ci --ignore-scripts
+
+      - name: Test Agent checkpoints across databases
+        env:
+          TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
+          TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
+        run: go test ./internal/service -run '^(TestAgentExecutionHistorySurvivesDatabaseReopen|TestCanvasAgentSDKSessionPersistsAcrossDatabaseReopen)$' -count=1 -v

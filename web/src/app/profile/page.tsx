@@ -1,44 +1,41 @@
 "use client";
+import { ModelPicker } from "@/components/model-picker";
+
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { LabeledField } from "@/components/labeled-field";
+
+import { PasswordInput } from "@/components/password-input";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  AudioLines,
-  CircleHelp,
-  Clapperboard,
-  HardDrive,
-  Image as ImageIcon,
-  KeyRound,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  Save,
-  RefreshCw,
-  Settings2,
-  TextCursorInput,
-  Trash2,
-  UserCircle2,
-  WalletCards,
-} from "lucide-react";
+import { AudioLines, Clapperboard, Image as ImageIcon, CircleHelp, Pencil, Plus, Save, RefreshCw, TextCursorInput, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { SectionNavigation } from "@/components/section-navigation";
+import { SettingsWorkspace } from "@/components/settings-workspace";
+import { personalSettingsSections } from "@/lib/settings-navigation";
+import { useLocation } from "react-router-dom";
+import { AppearanceSettings } from "./appearance-settings";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { TooltipHint } from "@/components/ui/tooltip";
+import { PromptInput } from "@/components/ai-elements/prompt-input";
+import { InputGroupTextarea } from "@/components/ui/input-group";
+import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   createCustomRelayConfig,
   fetchImageGenerationPreferences,
   fetchCustomRelayConfigs,
-  fetchGrokTTSVoices,
+  fetchAudioVoices,
   fetchModelConfig,
   fetchProfileBalance,
   fetchRelayModels,
@@ -141,11 +138,13 @@ type InfoRowProps = {
   code?: boolean;
 };
 
-function SidebarInfoRow({ label, value, code = false }: InfoRowProps) {
+function AccountInfoField({ label, value, code = false }: InfoRowProps) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/60 py-3 last:border-b-0">
-      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      {code ? <code className="min-w-0 truncate font-mono text-sm text-foreground">{value || "-"}</code> : <span className="min-w-0 truncate text-sm font-medium text-foreground">{value || "-"}</span>}
+    <div className="grid min-w-0 gap-1.5 py-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)] sm:items-baseline sm:gap-4 sm:py-2.5">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium wrap-anywhere">
+        {code ? <code className="font-mono">{value || "-"}</code> : value || "-"}
+      </dd>
     </div>
   );
 }
@@ -170,45 +169,33 @@ function RelayKeyPreference({
   tokenNameOptions: string[];
 }) {
   const metadata = {
-    text: { icon: TextCursorInput, title: "文本模型 Key", description: "用于文本模型请求" },
-    image: { icon: ImageIcon, title: "图片模型 Key", description: "用于图片生成任务" },
-    video: { icon: Clapperboard, title: "视频模型 Key", description: "用于视频生成任务" },
-    audio: { icon: AudioLines, title: "音频模型 Key", description: "用于音频模型请求" },
+    text: { icon: TextCursorInput, title: "文本模型" },
+    image: { icon: ImageIcon, title: "图片模型" },
+    video: { icon: Clapperboard, title: "视频模型" },
+    audio: { icon: AudioLines, title: "音频模型" },
   }[kind];
-  const Icon = metadata.icon;
   const options = relayTokenOptions(tokenNameOptions, customConfigs, kind);
   const selected = selectedTokenNames.filter((name) => options.some((option) => option.value === name));
 
   return (
-    <div className="grid min-w-0 gap-2">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            {metadata.title}
-            <TooltipHint content="按选择顺序匹配模型，前面的 Key 优先。">
-              <button type="button" className="inline-flex size-4 items-center justify-center text-muted-foreground hover:text-foreground" aria-label="查看 Key 匹配顺序说明">
-                <CircleHelp className="size-3.5" />
-              </button>
-            </TooltipHint>
-          </span>
-          <span className="block text-xs text-muted-foreground">{metadata.description}</span>
-        </div>
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+    <div className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+      <Label id={`profile-${kind}-key-label`} htmlFor={`profile-${kind}-key`} className="flex items-center gap-2 text-sm font-medium">
+        <metadata.icon className="size-4 text-muted-foreground" />
+        {metadata.title}
+      </Label>
+      <div className="flex min-w-0 items-start gap-2">
         <MultiSelect
+          id={`profile-${kind}-key`}
+          aria-labelledby={`profile-${kind}-key-label`}
+          className="min-w-0 flex-1"
           value={selected}
           options={options.map((option) => ({
             value: option.value,
             label: option.label,
-            meta: option.custom ? <span className="text-[10px] text-muted-foreground">自定义</span> : null,
-            action: option.custom && customConfigurable ? <div className="mr-1 flex shrink-0 items-center gap-0.5">
-              <TooltipHint content="编辑自定义 Key">
-                <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={`编辑 ${option.label}`} onClick={() => onEditCustom(option.custom)}><Pencil className="size-3.5" /></Button>
-              </TooltipHint>
-              <TooltipHint content="删除自定义 Key">
-                <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" aria-label={`删除 ${option.label}`} onClick={() => { if (option.custom) onDeleteCustom(option.custom); }}><Trash2 className="size-3.5" /></Button>
-              </TooltipHint>
+            meta: option.custom ? "自定义" : null,
+            action: option.custom && customConfigurable ? <div className="flex shrink-0 items-center gap-0.5">
+              <TooltipButton type="button" size="icon-xs" tooltip="编辑自定义 Key" aria-label={`编辑 ${option.label}`} onClick={() => onEditCustom(option.custom)}><Pencil /></TooltipButton>
+              <TooltipButton type="button" size="icon-xs" tooltip="删除自定义 Key" aria-label={`删除 ${option.label}`} onClick={() => { if (option.custom) onDeleteCustom(option.custom); }}><Trash2 /></TooltipButton>
             </div> : null,
           }))}
           disabled={options.length === 0}
@@ -218,9 +205,7 @@ function RelayKeyPreference({
           collapseTagsTooltip
           onValueChange={onChange}
         />
-        {customConfigurable ? <Button type="button" variant="outline" size="icon" className="size-9 shadow-none" title="添加自定义 API 配置" onClick={() => onEditCustom()}>
-          <Plus className="size-4" />
-        </Button> : null}
+        {customConfigurable ? <TooltipButton tooltip="添加自定义 API 配置" type="button" variant="outline" size="icon" onClick={() => onEditCustom()}><Plus /></TooltipButton> : null}
       </div>
     </div>
   );
@@ -246,6 +231,7 @@ function CustomRelayConfigDialog({
   sessionKey: string;
 }) {
   const [baseURL, setBaseURL] = useState("");
+  const [pricingGroup, setPricingGroup] = useState("");
   const [protocol, setProtocol] = useState<CustomRelayConfigStatus["protocol"]>("openai");
   const [name, setName] = useState("");
   const [apiKey, setAPIKey] = useState("");
@@ -264,9 +250,10 @@ function CustomRelayConfigDialog({
     setName(status?.name || "");
     setProtocol(status?.protocol || "openai");
     setBaseURL(status?.base_url || "");
+    setPricingGroup(status?.pricing_group || "");
     setAPIKey("");
     setConfirmDelete(deleteRequested);
-  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol]);
+  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol, status?.pricing_group]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
@@ -277,8 +264,8 @@ function CustomRelayConfigDialog({
     setIsSaving(true);
     try {
       const { item } = status
-        ? await updateCustomRelayConfig(status.id, { protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
-        : await createCustomRelayConfig({ protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
+        ? await updateCustomRelayConfig(status.id, { protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim(), pricing_group: pricingGroup.trim() })
+        : await createCustomRelayConfig({ protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim(), pricing_group: pricingGroup.trim() });
       if (!isCurrentSession()) return;
       onSaved(item);
       toast.success(`${title}自定义 API 配置已保存`);
@@ -292,14 +279,9 @@ function CustomRelayConfigDialog({
   };
 
   const remove = async () => {
-    if (isSaving || !isCurrentSession()) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
+    if (!status || isSaving || !isCurrentSession()) return;
     setIsSaving(true);
     try {
-      if (!status) return;
       await deleteCustomRelayConfig(status.id);
       if (!isCurrentSession()) return;
       onDeleted(status);
@@ -313,48 +295,49 @@ function CustomRelayConfigDialog({
     }
   };
 
+  if (confirmDelete) return <ConfirmDialog
+    open={open}
+    title="删除自定义 Key"
+    description={`确定删除“${status?.name}”？此配置将被移除，无法继续用于模型请求。`}
+    confirmLabel="确认删除"
+    destructive
+    busy={isSaving}
+    onOpenChange={onOpenChange}
+    onConfirm={() => void remove()}
+  />;
+
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!isSaving) onOpenChange(value); }}>
-      <DialogContent className="w-[min(92vw,560px)]">
+      <DialogContent className="w-[min(92vw,560px)] sm:max-w-none">
         <DialogHeader>
-          <DialogTitle>{confirmDelete ? "删除自定义 Key" : `${title}自定义 API 配置`}</DialogTitle>
-          <DialogDescription className="break-words">{confirmDelete ? `确定删除“${status?.name}”？此配置将被移除，无法继续用于模型请求。` : `仅用于${title}模型请求，保存后会作为独立选项出现在 Key 选择中。`}</DialogDescription>
-        </DialogHeader>
-        {!confirmDelete ? <div className="grid gap-4 py-1">
-          <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            <span>配置名称</span>
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={`例如 ${title}备用线路`} />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            <span>协议</span>
-            <Select value={protocol} onValueChange={(value) => setProtocol(value as CustomRelayConfigStatus["protocol"])}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+          <DialogTitle>{`${title}自定义 API 配置`}</DialogTitle>
+          <DialogDescription className="break-words">{`仅用于${title}模型请求，保存后会作为独立选项出现在 API 密钥中。`}</DialogDescription>
+        </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+        <div className="grid gap-4 py-1">
+          <LabeledField className="grid gap-1.5 text-sm font-medium text-foreground" label={<span>配置名称</span>}>{(fieldId) => <><Input id={fieldId} value={name} onChange={(event) => setName(event.target.value)} placeholder={`例如 ${title}备用线路`} /></>}</LabeledField>
+          <LabeledField className="grid gap-1.5 text-sm font-medium text-foreground" label={<span>计费分组</span>}>{(fieldId) => <><Input id={fieldId} value={pricingGroup} onChange={(event) => setPricingGroup(event.target.value)} placeholder="填写此 Key 在上游的分组，如 视频-测试" maxLength={128} />
+            <span className="text-xs font-normal text-muted-foreground">用于按分组倍率显示价格；请与上游 Key 的实际分组保持一致。</span></>}</LabeledField>
+          <LabeledField className="grid gap-1.5 text-sm font-medium text-foreground" label={<span>协议</span>}>{(fieldId) => <><Select value={protocol} onValueChange={(value) => setProtocol(value as CustomRelayConfigStatus["protocol"])}>
+              <SelectTrigger id={fieldId}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="openai">OpenAI 兼容协议</SelectItem>
                 {kind === "video" || kind === "audio" ? <SelectItem value="autodl">AutoDL ComfyUI 工作流</SelectItem> : null}
                 {kind === "image" || kind === "video" || kind === "audio" ? <SelectItem value="runninghub">RunningHub 工作流</SelectItem> : null}
                 {kind === "video" ? <SelectItem value="ark">火山方舟 Seedance 原生协议</SelectItem> : null}
               </SelectContent>
-            </Select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            <span>Base URL</span>
-            <Input type="url" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="https://api.example.com" autoComplete="url" />
-            <span className="text-xs font-normal leading-5 text-muted-foreground">{protocol === "autodl" ? "填写 AutoDL 基础地址，例如 https://autodl.art。工作流目录可在模型配置中拉取。" : protocol === "runninghub" ? "填写 RunningHub 基础地址和积分 API Key，工作流参数通过工作流 ID 拉取。" : protocol === "ark" ? "标准 API 填 https://ark.cn-beijing.volces.com/api/v3；Agent Plan 填 https://ark.cn-beijing.volces.com/api/plan/v3。" : "填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。"}</span>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            <span>API Key</span>
-            <Input type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" />
-          </label>
-        </div> : null}
-        <DialogFooter>
-          {status ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
-            <Trash2 className="size-4" />{confirmDelete ? "确认删除" : "删除配置"}
+            </Select></>}</LabeledField>
+          <LabeledField className="grid gap-1.5 text-sm font-medium text-foreground" label={<span>Base URL</span>}>{(fieldId) => <><Input id={fieldId} type="url" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="https://api.example.com" autoComplete="url" />
+            <span className="text-xs font-normal leading-5 text-muted-foreground">{protocol === "autodl" ? "填写 AutoDL 基础地址，例如 https://autodl.art。工作流目录可在模型配置中拉取。" : protocol === "runninghub" ? "填写 RunningHub 基础地址和积分 API Key，工作流参数通过工作流 ID 拉取。" : protocol === "ark" ? "标准 API 填 https://ark.cn-beijing.volces.com/api/v3；Agent Plan 填 https://ark.cn-beijing.volces.com/api/plan/v3。" : "填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。"}</span></>}</LabeledField>
+          <LabeledField className="grid gap-1.5 text-sm font-medium text-foreground" label={<span>API Key</span>}>{(fieldId) => <><PasswordInput id={fieldId} type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" /></>}</LabeledField>
+        </div>
+        </ScrollArea><DialogFooter>
+          {status ? <Button type="button" variant="outline" className="sm:mr-auto" disabled={isSaving} onClick={() => setConfirmDelete(true)}>
+            <Trash2 />删除配置
           </Button> : null}
           <Button type="button" variant="outline" disabled={isSaving} onClick={() => onOpenChange(false)}>取消</Button>
-          {!confirmDelete ? <Button type="button" disabled={!canSave || isSaving} onClick={() => void save()}>
-            {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}保存并使用
-          </Button> : null}
+          <Button type="button" disabled={!canSave || isSaving} onClick={() => void save()}>
+            {isSaving ? <Spinner /> : <Save  />}保存并使用
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -379,20 +362,11 @@ function AccountResourcesCard({
   tokenNameOptions: string[];
 }) {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
-            <KeyRound className="size-5" />
-          </div>
-          <div className="min-w-0">
-            <CardTitle className="text-lg leading-7">Key 选择</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">按模型类型设置个人默认 Key</p>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-x-5 gap-y-5 sm:grid-cols-2">
+    <SettingsPanel title="API 密钥" description="按模型类型选择默认 Key，支持多选。" meta={
+      <TooltipButton tooltip="按选择顺序匹配模型，前面的 Key 优先。" aria-label="查看 Key 匹配顺序说明"><CircleHelp /></TooltipButton>
+    }>
+      <Card className="gap-0 py-0">
+        <CardContent className="min-w-0 divide-y p-4 sm:p-5">
           {(["text", "image", "video", "audio"] as const).map((kind) => (
             <RelayKeyPreference
               key={kind}
@@ -406,9 +380,9 @@ function AccountResourcesCard({
               onDeleteCustom={(status) => onDeleteCustom(kind, status)}
             />
           ))}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </SettingsPanel>
   );
 }
 
@@ -450,6 +424,7 @@ function audioPreferenceChoices(model: string, currentVoice: string, grokVoices:
   const provider = canvasAudioProvider(model);
   if (provider === "gemini") return { voices: [...GEMINI_TTS_VOICE_OPTIONS], formats: ["wav"], minimumSpeed: 1, maximumSpeed: 1 };
   if (provider === "glm") return { voices: [...GLM_TTS_VOICE_OPTIONS], formats: [...GLM_TTS_FORMAT_OPTIONS], minimumSpeed: 0.5, maximumSpeed: 2 };
+  if (provider === "minimax") return { voices: Array.from(new Set([currentVoice, ...grokVoices, "female-yujie"].filter(Boolean))), formats: ["mp3", "wav", "flac"], minimumSpeed: 0.5, maximumSpeed: 2 };
   if (provider === "grok") return { voices: Array.from(new Set([currentVoice, ...grokVoices, "eve"].filter(Boolean))), formats: [...GROK_TTS_FORMAT_OPTIONS], minimumSpeed: 0.7, maximumSpeed: 1.5 };
   if (provider.startsWith("mimo-")) return { voices: [...MIMO_TTS_VOICE_OPTIONS], formats: [...MIMO_TTS_FORMAT_OPTIONS], minimumSpeed: 1, maximumSpeed: 1 };
   return { voices: [...AUDIO_VOICE_OPTIONS], formats: [...AUDIO_FORMAT_OPTIONS], minimumSpeed: 0.25, maximumSpeed: 4 };
@@ -460,6 +435,7 @@ function audioPreferenceDefaults(model: string) {
   const provider = canvasAudioProvider(model);
   if (provider === "gemini") return { default_audio_voice: "Kore", default_audio_format: "wav" as const, default_audio_speed: 1 };
   if (provider === "glm") return { default_audio_voice: "tongtong", default_audio_format: "wav" as const, default_audio_speed: 1 };
+  if (provider === "minimax") return { default_audio_voice: "female-yujie", default_audio_format: "mp3" as const, default_audio_speed: 1 };
   if (provider === "grok") return { default_audio_voice: "eve", default_audio_format: "mp3" as const, default_audio_speed: 1 };
   if (provider.startsWith("mimo-")) return { default_audio_voice: "冰糖", default_audio_format: "wav" as const, default_audio_speed: 1 };
   return { default_audio_voice: "alloy", default_audio_format: "mp3" as const, default_audio_speed: 1 };
@@ -591,7 +567,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   const selectedAudioModel = resolveConfiguredModel(modelConfig.audio.models, preferences.default_audio_model, modelConfig.audio.defaultModel);
 
   useEffect(() => {
-    if (canvasAudioProvider(selectedAudioModel) !== "grok" || !selectedAudioModel) {
+    if (!["grok", "minimax"].includes(canvasAudioProvider(selectedAudioModel)) || !selectedAudioModel) {
       setGrokVoices([]);
       return;
     }
@@ -601,7 +577,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       setGrokVoices([]);
       return;
     }
-    void fetchGrokTTSVoices(selectedAudioModel, tokenName)
+    void fetchAudioVoices(selectedAudioModel, tokenName)
       .then((voices) => { if (!ignore) setGrokVoices(voices.map((voice) => voice.voice_id.trim()).filter(Boolean)); })
       .catch(() => { if (!ignore) setGrokVoices([]); });
     return () => { ignore = true; };
@@ -618,7 +594,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   const pullModels = async (kind: RelayTokenKind) => {
     const tokenNames = [...relayTokenNames[kind]];
     if (tokenNames.length === 0) {
-      toast.error(`请先在 Key 选择中设置${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型 Key`);
+      toast.error(`请先在 API 密钥中设置${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型 Key`);
       return;
     }
     modelPullControllerRef.current?.abort();
@@ -700,210 +676,181 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   };
 
   return (
-    <Card data-profile-preferences-card className="h-full min-h-0 overflow-hidden lg:h-full lg:min-h-0">
-      <CardHeader
-        data-profile-preferences-header
-        className="shrink-0 border-b border-border bg-card p-4 sm:p-5"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-900/50">
-              <Settings2 className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <CardTitle className="text-lg leading-7">创作偏好</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">个人默认模型与生成参数</p>
-            </div>
-          </div>
-          <Button type="button" className="h-9 rounded-lg" onClick={() => void save()} disabled={isLoading || isSaving}>
-            {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : null}
-            保存设置
-          </Button>
+    <SettingsPanel
+      data-profile-preferences-card
+      title="创作偏好"
+      description="设置个人默认模型与生成参数，创作时仍可临时调整。"
+      contentClassName="grid gap-8 py-1 pl-1"
+      action={<Button type="button" onClick={() => void save()} disabled={isLoading || isSaving}>
+        {isSaving ? <Spinner /> : null}
+        保存设置
+      </Button>}
+    >
+      <SettingsSection title="默认模型" description="从管理员开放的模型中选择个人默认值，创作时仍可临时切换。">
+        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+          {([
+            ["text", "文本模型", "default_text_model", TextCursorInput],
+            ["image", "图片模型", "default_image_model", ImageIcon],
+            ["video", "视频模型", "default_video_model", Clapperboard],
+            ["audio", "音频模型", "default_audio_model", AudioLines],
+          ] as const).map(([kind, label, field, Icon]) => {
+            const options = pulledModels[kind] ?? modelConfig[kind].models;
+            const defaultModel = pulledModels[kind] === null ? modelConfig[kind].defaultModel : "";
+            const current = resolveConfiguredModel(options, preferences[field], defaultModel);
+            return <LabeledField key={kind} className="grid min-w-0 gap-2 text-sm font-medium" label={<span className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" />{label}</span>}>{(fieldId) => <><span className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <ModelPicker id={fieldId} label={label} value={current} options={options} disabled={isLoading} placeholder={pulledModels[kind] !== null ? "该 Key 暂无可用模型" : "暂无可用模型"} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })} />
+                <TooltipHint content={`按当前 Key 拉取${label}`}><Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+
+                  disabled={isLoading || loadingModelKind !== null || relayTokenNames[kind].length === 0}
+                  onClick={() => void pullModels(kind)}
+                  aria-label={`按当前 Key 拉取${label}`}
+                >
+                  {loadingModelKind === kind ? <Spinner /> : <RefreshCw  />}
+                </Button></TooltipHint>
+              </span></>}</LabeledField>;
+          })}
         </div>
-      </CardHeader>
-      <ScrollArea
-        data-profile-preferences-body
-        className="min-h-0 flex-1"
-      >
-        <CardContent className="space-y-6 p-4 sm:p-5">
-        <section className="space-y-4 border-t border-border/70 pt-5 first:border-t-0 first:pt-0">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">默认模型</h2>
-            <p className="mt-1 text-xs text-muted-foreground">从管理员开放的模型中选择个人默认值，创作时仍可临时切换。</p>
-          </div>
-          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-            {([
-              ["text", "文本模型", "default_text_model", TextCursorInput],
-              ["image", "图片模型", "default_image_model", ImageIcon],
-              ["video", "视频模型", "default_video_model", Clapperboard],
-              ["audio", "音频模型", "default_audio_model", AudioLines],
-            ] as const).map(([kind, label, field, Icon]) => {
-              const options = pulledModels[kind] ?? modelConfig[kind].models;
-              const defaultModel = pulledModels[kind] === null ? modelConfig[kind].defaultModel : "";
-              const current = resolveConfiguredModel(options, preferences[field], defaultModel);
-              return <label key={kind} className="grid min-w-0 gap-2 text-sm font-medium">
-                <span className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" />{label}</span>
-                <span className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  <Select value={current} disabled={isLoading || options.length === 0} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })}>
-                    <SelectTrigger className="h-9 bg-background shadow-none"><SelectValue placeholder={pulledModels[kind] !== null ? "该 Key 暂无可用模型" : "暂无可用模型"} /></SelectTrigger>
-                    <SelectContent>{options.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="size-9 shadow-none"
-                    disabled={isLoading || loadingModelKind !== null || relayTokenNames[kind].length === 0}
-                    onClick={() => void pullModels(kind)}
-                    aria-label={`按当前 Key 拉取${label}`}
-                    title={`按当前 Key 拉取${label}`}
-                  >
-                    {loadingModelKind === kind ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  </Button>
-                </span>
-              </label>;
-            })}
-          </div>
-        </section>
+      </SettingsSection>
 
-        <section className="space-y-4 border-t border-border/70 pt-5">
-          <div><h2 className="text-sm font-semibold text-foreground">画布默认参数</h2><p className="mt-1 text-xs text-muted-foreground">设置节点再生成方式，以及新建节点的默认参数。已有节点保留自身参数。</p></div>
-          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>已有内容的节点再次生成时</span><Select value={preferences.node_regenerate_behavior} disabled={isLoading || isSaving} onValueChange={(node_regenerate_behavior: ImageGenerationPreferences["node_regenerate_behavior"]) => setPreferences((current) => ({ ...current, node_regenerate_behavior }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new-node">新建衍生节点，保留原结果</SelectItem><SelectItem value="overwrite">覆盖当前节点</SelectItem></SelectContent></Select></label>
-            <label className="flex items-center justify-between gap-3 text-sm font-medium"><span>视频同步生成声音<span className="mt-1 block text-xs font-normal text-muted-foreground">与工作台声音选项同步，作为新建视频节点和 Agent 的默认值；实际以模型能力为准。</span></span><Switch checked={preferences.workbench.video_generate_audio} disabled={isLoading || isSaving} onCheckedChange={(video_generate_audio) => setPreferences((current) => ({ ...current, workbench: { ...current.workbench, video_generate_audio } }))} /></label>
-            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认生图张数</span><NumberInput min={1} max={15} step={1} value={preferences.canvas_default_image_count} controlsLayout="split" suffix="张" disabled={isLoading || isSaving} onValueChange={(value) => setPreferences((current) => ({ ...current, canvas_default_image_count: Math.max(1, Math.min(15, Math.floor(Number(value) || 1))) }))} /></label>
-            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认音频声音</span><Select value={selectedAudioVoice} disabled={isLoading || audioChoices.voices.length === 0} onValueChange={(default_audio_voice) => setPreferences((current) => ({ ...current, default_audio_voice }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent>{audioChoices.voices.map((voice) => <SelectItem key={voice} value={voice}>{voice}</SelectItem>)}</SelectContent></Select></label>
-            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认音频格式</span><Select value={selectedAudioFormat} disabled={isLoading || audioChoices.formats.length <= 1} onValueChange={(default_audio_format: ImageGenerationPreferences["default_audio_format"]) => setPreferences((current) => ({ ...current, default_audio_format }))}><SelectTrigger className="h-10 bg-background shadow-none"><SelectValue /></SelectTrigger><SelectContent>{audioChoices.formats.map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></label>
-            <label className="grid min-w-0 gap-2 text-sm font-medium"><span>默认音频语速</span><NumberInput min={audioChoices.minimumSpeed} max={audioChoices.maximumSpeed} step={0.05} value={selectedAudioSpeed} controlsLayout="split" suffix="x" disabled={isLoading || isSaving || audioChoices.minimumSpeed === audioChoices.maximumSpeed} onValueChange={(value) => setPreferences((current) => ({ ...current, default_audio_speed: Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(Number(value || 1).toFixed(2)))) }))} /></label>
-          </div>
-        </section>
+      <SettingsSection title="画布默认参数" description="设置节点再生成方式，以及新建节点的默认参数。已有节点保留自身参数。">
+        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>已有内容的节点再次生成时</span>}>{(fieldId) => <><Select value={preferences.node_regenerate_behavior} disabled={isLoading || isSaving} onValueChange={(node_regenerate_behavior: ImageGenerationPreferences["node_regenerate_behavior"]) => setPreferences((current) => ({ ...current, node_regenerate_behavior }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new-node">新建衍生节点，保留原结果</SelectItem><SelectItem value="overwrite">覆盖当前节点</SelectItem></SelectContent></Select></>}</LabeledField>
+          <Label className="flex items-center justify-between gap-3 text-sm font-medium"><span>视频同步生成声音<span className="mt-1 block text-xs font-normal text-muted-foreground">与工作台声音选项同步，作为新建视频节点和 Agent 的默认值；实际以模型能力为准。</span></span><Switch checked={preferences.workbench.video_generate_audio} disabled={isLoading || isSaving} onCheckedChange={(video_generate_audio) => setPreferences((current) => ({ ...current, workbench: { ...current.workbench, video_generate_audio } }))} /></Label>
+          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认生图张数</span>}>{(fieldId) => <><NumberInput id={fieldId} min={1} max={15} step={1} value={preferences.canvas_default_image_count} controlsLayout="split" suffix="张" disabled={isLoading || isSaving} onValueChange={(value) => setPreferences((current) => ({ ...current, canvas_default_image_count: Math.max(1, Math.min(15, Math.floor(Number(value) || 1))) }))} /></>}</LabeledField>
+          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频声音</span>}>{(fieldId) => <><Select value={selectedAudioVoice} disabled={isLoading || audioChoices.voices.length === 0} onValueChange={(default_audio_voice) => setPreferences((current) => ({ ...current, default_audio_voice }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.voices.map((voice) => <SelectItem key={voice} value={voice}>{voice}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
+          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频格式</span>}>{(fieldId) => <><Select value={selectedAudioFormat} disabled={isLoading || audioChoices.formats.length <= 1} onValueChange={(default_audio_format: ImageGenerationPreferences["default_audio_format"]) => setPreferences((current) => ({ ...current, default_audio_format }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.formats.map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
+          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频语速</span>}>{(fieldId) => <><NumberInput id={fieldId} min={audioChoices.minimumSpeed} max={audioChoices.maximumSpeed} step={0.05} value={selectedAudioSpeed} controlsLayout="split" suffix="x" disabled={isLoading || isSaving || audioChoices.minimumSpeed === audioChoices.maximumSpeed} onValueChange={(value) => setPreferences((current) => ({ ...current, default_audio_speed: Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(Number(value || 1).toFixed(2)))) }))} /></>}</LabeledField>
+        </div>
+      </SettingsSection>
 
-        <section className="space-y-4 border-t border-border/70 pt-5">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">接口行为</h2>
-            <p className="mt-1 text-xs text-muted-foreground">控制图片请求的传输和兼容方式。</p>
-          </div>
-          <div className="grid gap-x-6 md:grid-cols-2 md:divide-x md:divide-border/70">
-            <div className="divide-y divide-border/70 md:pr-6">
-              <label className="grid min-h-20 content-center gap-2 py-3 text-sm font-medium">
-                <span>默认图片接口模式</span>
-                <Select value={preferences.api_mode} disabled={isLoading} onValueChange={(api_mode: ImageGenerationPreferences["api_mode"]) => setPreferences((current) => ({ ...current, api_mode }))}>
-                  <SelectTrigger className="h-9 bg-background shadow-none"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="images">images</SelectItem><SelectItem value="responses">responses</SelectItem><SelectItem value="chat">chat</SelectItem></SelectContent>
-                </Select>
-              </label>
-              <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 py-3">
-                <div><p className="text-sm font-medium text-foreground">中间图数量</p><p className="mt-0.5 text-xs text-muted-foreground">流式传输开启时可返回 0-3 张过程图</p></div>
-                <Select value={String(preferences.partial_images)} onValueChange={(value) => setPreferences((current) => ({ ...current, partial_images: Number(value) }))} disabled={isLoading || !preferences.stream}>
-                  <SelectTrigger className="h-9 w-28 rounded-lg bg-background shadow-none"><SelectValue /></SelectTrigger>
-                  <SelectContent>{[0, 1, 2, 3].map((value) => <SelectItem key={value} value={String(value)}>{value} 张</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="divide-y divide-border/70 md:pl-6">
-              <PreferenceRow title="流式传输" description="请求中发送 stream，并接收生成过程中的中间图片。" checked={preferences.stream} disabled={isLoading} onCheckedChange={(stream) => setPreferences((current) => ({ ...current, stream }))} />
-              <PreferenceRow title="返回 Base64 图片数据" description="请求中发送 response_format=b64_json，适用于需要直接读取图片数据的接口。" checked={preferences.response_format_b64_json} disabled={isLoading} onCheckedChange={(response_format_b64_json) => setPreferences((current) => ({ ...current, response_format_b64_json }))} />
-              <PreferenceRow title="Codex CLI 兼容模式" description="省略 quality，并给提示词添加防改写前缀，减少 Codex CLI 图片接口不兼容。" checked={preferences.codex_cli_compatibility} disabled={isLoading} onCheckedChange={(codex_cli_compatibility) => setPreferences((current) => ({ ...current, codex_cli_compatibility }))} />
+      <SettingsSection title="接口行为" description="控制图片请求的传输和兼容方式。">
+        <div className="grid gap-x-6 md:grid-cols-2 md:divide-x md:divide-border/70">
+          <div className="divide-y divide-border/70 md:pr-6">
+            <LabeledField className="grid min-h-20 content-center gap-2 py-3 text-sm font-medium" label={<span>默认图片接口模式</span>}>{(fieldId) => <><Select value={preferences.api_mode} disabled={isLoading} onValueChange={(api_mode: ImageGenerationPreferences["api_mode"]) => setPreferences((current) => ({ ...current, api_mode }))}>
+                <SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="images">images</SelectItem><SelectItem value="responses">responses</SelectItem><SelectItem value="chat">chat</SelectItem></SelectContent>
+              </Select></>}</LabeledField>
+            <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 py-3">
+              <div><p className="text-sm font-medium text-foreground">中间图数量</p><p className="mt-0.5 text-xs text-muted-foreground">流式传输开启时可返回 0-3 张过程图</p></div>
+              <Select value={String(preferences.partial_images)} onValueChange={(value) => setPreferences((current) => ({ ...current, partial_images: Number(value) }))} disabled={isLoading || !preferences.stream}>
+                <SelectTrigger className="w-28" aria-label="中间图数量"><SelectValue /></SelectTrigger>
+                <SelectContent>{[0, 1, 2, 3].map((value) => <SelectItem key={value} value={String(value)}>{value} 张</SelectItem>)}</SelectContent>
+              </Select>
             </div>
           </div>
-        </section>
+          <div className="divide-y divide-border/70 md:pl-6">
+            <PreferenceRow title="流式传输" description="请求中发送 stream，并接收生成过程中的中间图片。" checked={preferences.stream} disabled={isLoading} onCheckedChange={(stream) => setPreferences((current) => ({ ...current, stream }))} />
+            <PreferenceRow title="返回 Base64 图片数据" description="请求中发送 response_format=b64_json，适用于需要直接读取图片数据的接口。" checked={preferences.response_format_b64_json} disabled={isLoading} onCheckedChange={(response_format_b64_json) => setPreferences((current) => ({ ...current, response_format_b64_json }))} />
+            <PreferenceRow title="Codex CLI 兼容模式" description="省略 quality，并给提示词添加防改写前缀，减少 Codex CLI 图片接口不兼容。" checked={preferences.codex_cli_compatibility} disabled={isLoading} onCheckedChange={(codex_cli_compatibility) => setPreferences((current) => ({ ...current, codex_cli_compatibility }))} />
+          </div>
+        </div>
+      </SettingsSection>
 
-        <section className="space-y-4 border-t border-border/70 pt-5">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">音频与系统指令</h2>
-          </div>
-          <div className="grid gap-4 xl:grid-cols-3">
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium text-foreground">默认音频指令</span>
-            <Textarea
-              value={preferences.audio_instructions}
-              disabled={isLoading || isSaving}
-              onChange={(event) => setPreferences((current) => ({ ...current, audio_instructions: event.target.value }))}
-              placeholder="例如：自然、温暖、适合旁白。"
-              className="min-h-28 resize-y"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium text-foreground">默认图片系统提示词</span>
-            <Textarea
-              value={preferences.system_prompt}
-              disabled={isLoading || isSaving}
-              onChange={(event) => setPreferences((current) => ({ ...current, system_prompt: event.target.value }))}
-              placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。"
-              className="min-h-28 resize-y"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium text-foreground">默认视频系统提示词</span>
-            <Textarea
-              value={preferences.video_system_prompt}
-              disabled={isLoading || isSaving}
-              onChange={(event) => setPreferences((current) => ({ ...current, video_system_prompt: event.target.value }))}
-              placeholder="例如：你是一位擅长镜头运动、节奏和连续性的电影导演。"
-              className="min-h-28 resize-y"
-            />
-          </label>
-          </div>
-        </section>
-        {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
-        </CardContent>
-      </ScrollArea>
-    </Card>
+      <SettingsSection title="音频与系统指令">
+        <div className="grid gap-5">
+        <LabeledField label="默认音频指令">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+            value={preferences.audio_instructions}
+            disabled={isLoading || isSaving}
+            onChange={(event) => setPreferences((current) => ({ ...current, audio_instructions: event.target.value }))}
+            placeholder="例如：自然、温暖、适合旁白。"
+            className="min-h-28 resize-y"
+          /></PromptInput>}</LabeledField>
+        <LabeledField label="默认图片系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+            value={preferences.system_prompt}
+            disabled={isLoading || isSaving}
+            onChange={(event) => setPreferences((current) => ({ ...current, system_prompt: event.target.value }))}
+            placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。"
+            className="min-h-28 resize-y"
+          /></PromptInput>}</LabeledField>
+        <LabeledField label="默认视频系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+            value={preferences.video_system_prompt}
+            disabled={isLoading || isSaving}
+            onChange={(event) => setPreferences((current) => ({ ...current, video_system_prompt: event.target.value }))}
+            placeholder="例如：你是一位擅长镜头运动、节奏和连续性的电影导演。"
+            className="min-h-28 resize-y"
+          /></PromptInput>}</LabeledField>
+        </div>
+      </SettingsSection>
+      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+    </SettingsPanel>
   );
 }
 
 function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balance: ProfileBalanceStatus | null; isLoading: boolean; onRefresh: () => void; session: StoredAuthSession }) {
-  const roleLabel = sessionRoleLabel(session);
   const subjectId = displaySubjectId(session.subjectId, session.provider);
   const showBalance = session.provider === "newapi" || session.provider === "sub2api";
+  const name = session.name || "用户";
+  const initial = Array.from(name.trim()).slice(0, 2).join("").toLocaleUpperCase();
+  const metrics = showBalance && balance?.has_balance
+    ? [
+      { label: "当前余额", value: formatYunMianQuota(balance.quota) },
+      { label: "已用额度", value: formatYunMianQuota(balance.used_quota) },
+      { label: "创作并发额度", value: creationConcurrentLimitLabel(session) },
+      { label: "每分钟请求限制", value: creationRpmLimitLabel(session) },
+    ]
+    : [
+      { label: "登录来源", value: providerLabel(session.provider) },
+      { label: "创作并发额度", value: creationConcurrentLimitLabel(session) },
+      { label: "每分钟请求限制", value: creationRpmLimitLabel(session) },
+    ];
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><UserCircle2 className="size-5" /></div>
-            <div className="min-w-0"><CardTitle className="truncate text-lg leading-7">{session.name || "用户"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{showBalance ? "账户信息与使用额度" : "账户信息"}</p></div>
+    <SettingsPanel className="max-w-4xl" title="账户信息" showHeader={false}>
+      <div className="grid min-w-0 gap-8 pb-4 sm:gap-10">
+        <header data-account-identity className="flex min-w-0 flex-col items-center gap-3 pt-6 text-center sm:pt-10">
+          <Avatar className="size-24"><AvatarFallback className="text-3xl">{initial}</AvatarFallback></Avatar>
+          <div className="grid min-w-0 max-w-full gap-1.5">
+            <h2 className="text-2xl font-semibold wrap-anywhere">{name}</h2>
+            <p className="text-sm text-muted-foreground wrap-anywhere">@{subjectId}</p>
           </div>
-          <Badge variant={session.role === "admin" ? "violet" : "secondary"} className="shrink-0 rounded-md">{roleLabel}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className={showBalance ? "grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-border/70" : "grid gap-6"}>
-          <section className={showBalance ? "min-w-0 lg:pr-6" : "min-w-0"}>
-            <h2 className="mb-2 text-sm font-semibold text-foreground">基本信息</h2>
-            <div className="border-y border-border/70 px-1">
-              <SidebarInfoRow label="用户 ID" value={subjectId} code />
-              <SidebarInfoRow label="登录来源" value={providerLabel(session.provider)} />
-              <SidebarInfoRow label="创作并发额度" value={creationConcurrentLimitLabel(session)} />
-              <SidebarInfoRow label="每分钟请求限制" value={creationRpmLimitLabel(session)} />
-            </div>
-          </section>
-          {showBalance ? <section className="min-w-0 lg:pl-6">
-            <div className="mb-2 flex h-8 items-center justify-between gap-3">
-              <div className="flex items-center gap-2"><WalletCards className="size-4 text-muted-foreground" /><h2 className="text-sm font-semibold text-foreground">账户概览</h2></div>
-              <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onRefresh} disabled={isLoading} aria-label="刷新账户概览" title="刷新账户概览">{isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}</Button>
-            </div>
-            {isLoading ? <div className="flex h-36 items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取</div> : balance?.has_balance ? (
-              <div className="border-y border-border/70 px-1"><SidebarInfoRow label="当前余额" value={formatYunMianQuota(balance.quota)} /><SidebarInfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} /><SidebarInfoRow label="邮箱" value={balance.email || "-"} /></div>
-            ) : <div className="flex min-h-36 items-center justify-center border-y border-border/70 px-4 text-center text-xs leading-5 text-muted-foreground">{balance?.database_configured === false || /数据库连接/.test(balance?.message || "") ? session.role === "admin" ? "请先配置数据库连接" : "数据库连接未配置，请联系管理员" : balance?.message || "暂时无法读取账户余额"}</div>}
-          </section> : null}
-        </div>
-      </CardContent>
-    </Card>
+          <Badge variant="secondary">{sessionRoleLabel(session)}</Badge>
+        </header>
+
+        <Card data-account-metrics className="gap-0 py-0">
+          <CardContent className="px-0">
+            <dl className={`grid min-w-0 grid-cols-1 divide-y sm:divide-x sm:divide-y-0 ${metrics.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+              {metrics.map((metric) => <div key={metric.label} className="flex min-w-0 items-center justify-between gap-3 px-4 py-3 sm:flex-col-reverse sm:justify-center sm:gap-1 sm:py-5 sm:text-center">
+                <dt className="text-xs text-muted-foreground">{metric.label}</dt>
+                <dd className="text-lg font-semibold wrap-anywhere">{metric.value}</dd>
+              </div>)}
+            </dl>
+          </CardContent>
+        </Card>
+
+        <section aria-labelledby="account-details-heading" className="grid min-w-0 gap-4">
+          <div className="flex min-h-8 items-center justify-between gap-3">
+            <h2 id="account-details-heading" className="text-base font-semibold">账号详情</h2>
+            {showBalance ? <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={isLoading} aria-label="刷新账户概览">{isLoading ? <Spinner /> : <RefreshCw />}刷新</Button> : null}
+          </div>
+          <Card className="gap-0 py-1">
+            <CardContent>
+              <dl className="min-w-0 divide-y">
+                <AccountInfoField label="用户 ID" value={subjectId} code />
+                <AccountInfoField label="登录来源" value={providerLabel(session.provider)} />
+                <AccountInfoField label="账户角色" value={sessionRoleLabel(session)} />
+                {showBalance && balance?.has_balance ? <AccountInfoField label="邮箱" value={balance.email || "-"} /> : null}
+              </dl>
+            </CardContent>
+          </Card>
+          {showBalance && isLoading ? <LoadingState label="正在读取账户概览" /> : showBalance && !balance?.has_balance ? <p className="text-sm leading-6 text-muted-foreground">{balance?.database_configured === false || /数据库连接/.test(balance?.message || "") ? session.role === "admin" ? "请先配置数据库连接" : "数据库连接未配置，请联系管理员" : balance?.message || "暂时无法读取账户余额"}</p> : null}
+        </section>
+      </div>
+    </SettingsPanel>
   );
 }
 
-type ProfileSection = "account" | "keys" | "creation" | "storage";
+type ProfileSection = "account" | "appearance" | "keys" | "creation" | "storage";
 
-function profileSectionFromHash(): ProfileSection {
-  if (typeof window === "undefined") return "account";
+function profileSectionFromHash(rawHash: string): ProfileSection {
   let hash: string;
   try {
-    hash = decodeURIComponent(window.location.hash.slice(1));
+    hash = decodeURIComponent(rawHash.slice(1));
   } catch {
     return "account";
   }
-  return (["account", "keys", "creation", "storage"] as const).includes(hash as ProfileSection) ? hash as ProfileSection : "account";
+  return (["account", "appearance", "keys", "creation", "storage"] as const).includes(hash as ProfileSection) ? hash as ProfileSection : "account";
 }
 
 function ProfileContent({ session }: { session: StoredAuthSession }) {
@@ -916,11 +863,12 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [editingCustomRelay, setEditingCustomRelay] = useState<{ kind: RelayTokenKind; status?: CustomRelayConfigStatus; deleteRequested?: boolean } | null>(null);
   const { tokenNames: selectedTokenNames, setTokenNames } = useRelayTokenPreferences();
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
-  const [activeSection, setActiveSection] = useState<ProfileSection>(profileSectionFromHash);
+  const { hash } = useLocation();
+  const activeSection = profileSectionFromHash(hash);
 
   const selectRelayTokenNames = useCallback((kind: RelayTokenKind, values: string[]) => {
     void setTokenNames(kind, values).catch((error) => {
-      toast.error(error instanceof Error ? error.message : "保存 Key 选择失败");
+      toast.error(error instanceof Error ? error.message : "保存密钥选择失败");
     });
   }, [setTokenNames]);
 
@@ -981,45 +929,17 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     void loadCustomRelayConfigs();
   }, [session.key, loadBalance, loadCustomRelayConfigs]);
 
-  useEffect(() => {
-    const handleHashChange = () => setActiveSection(profileSectionFromHash());
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
-
-  const selectSection = (section: ProfileSection) => {
-    setActiveSection(section);
-    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#${section}`);
-  };
-
-  const profileItems = [
-    { id: "account" as const, label: "账户概览", icon: UserCircle2 },
-    { id: "keys" as const, label: "Key 选择", icon: KeyRound },
-    { id: "creation" as const, label: "创作偏好", icon: Settings2 },
-    { id: "storage" as const, label: "素材存储", icon: HardDrive },
-  ];
-
   return (
-    <ScrollArea
-      className="h-full min-h-0 min-w-0"
-      viewportClassName="pr-1 lg:pr-0"
-      viewStyle={{ height: "100%", minHeight: "100%" }}
-    >
-      <div data-profile-layout className="grid h-full min-h-0 w-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-1 2xl:grid-cols-[240px_minmax(0,1fr)]">
-        <SectionNavigation
-          title="个人中心"
-          description="管理账户与创作偏好"
-          items={profileItems}
-          activeId={activeSection}
-          ariaLabel="个人设置分类"
-          onSelect={selectSection}
-        />
-        <section id={activeSection} aria-label={profileItems.find((item) => item.id === activeSection)?.label} className="h-full min-h-0 min-w-0 overflow-hidden rounded-xl">
-          <div hidden={activeSection !== "account"} className="h-full"><ScrollArea className="h-full" viewportClassName="overscroll-contain"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></ScrollArea></div>
-          <div hidden={activeSection !== "keys"} className="h-full"><ScrollArea className="h-full" viewportClassName="overscroll-contain"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></ScrollArea></div>
+    <>
+      <div data-profile-layout className="h-full min-h-0">
+        <SettingsWorkspace items={personalSettingsSections} title="个人设置" activeId={activeSection}>
+
+          <div hidden={activeSection !== "account"} className="h-full min-h-0"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
+          <div hidden={activeSection !== "keys"} className="h-full min-h-0"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
+          <div hidden={activeSection !== "appearance"} className="h-full"><AppearanceSettings /></div>
           <div hidden={activeSection !== "creation"} className="h-full min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
           <div hidden={activeSection !== "storage"} className="h-full min-h-0"><StorageProviderCard /></div>
-        </section>
+        </SettingsWorkspace>
       </div>
       <CustomRelayConfigDialog
         sessionKey={session.key}
@@ -1037,7 +957,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
           if (selectedTokenNames[status.kind].includes(status.token_name)) selectRelayTokenNames(status.kind, selectedTokenNames[status.kind].filter((name) => name !== status.token_name));
         }}
       />
-    </ScrollArea>
+    </>
   );
 }
 
@@ -1045,7 +965,7 @@ export default function ProfilePage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/profile");
   if (isCheckingAuth || !session) {
     return (
-      <LoadingState label="正在加载个人中心" />
+      <LoadingState label="正在加载个人设置" />
     );
   }
   return <ProfileContent key={session.key} session={session} />;

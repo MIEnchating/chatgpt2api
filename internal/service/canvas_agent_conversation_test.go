@@ -15,7 +15,7 @@ func TestCanvasAgentConversationIsOneSmallStreamingTurnWithoutMediaRecovery(t *t
 	var calls atomic.Int32
 	partial := make(chan struct{})
 	release := make(chan struct{})
-	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(ctx context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 		calls.Add(1)
 		if r.Metadata["tools"] != nil || r.Metadata["stream"] != true || r.Metadata["reasoning_enabled"] != false {
 			t.Errorf("heavy conversation metadata: %v", r.Metadata)
@@ -75,21 +75,47 @@ func TestCanvasAgentConversationIsOneSmallStreamingTurnWithoutMediaRecovery(t *t
 }
 
 func TestCanvasAgentConversationRoutingDoesNotSwallowTasksOrAnswers(t *testing.T) {
-	for _, text := range []string{"你好啊", "你可以干什么呢？", " Hello! "} {
+	for _, text := range []string{"你好啊", "你可以干什么呢？", " Hello! ", "引导对话", "给我一些建议", "结合刚才的内容给我一些方向"} {
 		w := canvasAgentWorker{doc: CanvasDocument{AgentRun: &CanvasAgentRun{}}, state: map[string]any{}, req: CanvasAgentRequest{UserText: text}}
 		if !w.isConversation() {
 			t.Fatalf("not recognized: %s", text)
 		}
 		w.state["pendingQuestion"] = map[string]any{"id": "question"}
 		if w.isConversation() {
-			t.Fatal("pending answer routed as greeting")
+			t.Fatal("pending answer routed as a non-actionable conversation")
 		}
 	}
-	for _, text := range []string{"你好，帮我生成海报", "你可以生成一段5秒的视频吗", "继续", "确认", "谢谢，继续生成下一张"} {
+	for _, text := range []string{"你好，帮我生成海报", "你可以生成一段5秒的视频吗", "引导对话，直接生成音频", "继续", "确认", "谢谢，继续生成下一张"} {
 		w := canvasAgentWorker{doc: CanvasDocument{AgentRun: &CanvasAgentRun{}}, state: map[string]any{}, req: CanvasAgentRequest{UserText: text}}
 		if w.isConversation() {
 			t.Fatalf("task swallowed: %s", text)
 		}
+	}
+}
+
+func TestCanvasAgentGuidanceConversationKeepsRecentDialogueContext(t *testing.T) {
+	w := canvasAgentWorker{
+		session: map[string]any{"messages": []any{
+			map[string]any{"role": "user", "text": "想做一支城市夜景短片"},
+			map[string]any{"role": "assistant", "text": "可以从霓虹街景和人物归家两个方向展开"},
+			map[string]any{"role": "user", "text": "先保留霓虹街景，音频希望开源免费"},
+			map[string]any{"role": "tool", "text": "工具执行记录，不应进入建议上下文"},
+		}},
+		req: CanvasAgentRequest{AssistantID: "assistant-current", UserText: "引导对话"},
+	}
+
+	messages := w.conversationMessages()
+	if len(messages) != 4 {
+		t.Fatalf("unexpected dialogue context: %#v", messages)
+	}
+	serialized := agentJSON(messages)
+	for _, text := range []string{"城市夜景短片", "霓虹街景和人物归家", "开源免费", "引导对话"} {
+		if !strings.Contains(serialized, text) {
+			t.Fatalf("dialogue context lost %q: %s", text, serialized)
+		}
+	}
+	if strings.Contains(serialized, "工具执行记录") {
+		t.Fatalf("tool history leaked into guidance context: %s", serialized)
 	}
 }
 

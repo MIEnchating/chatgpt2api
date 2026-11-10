@@ -26,7 +26,7 @@ const videoContractImportSystemPrompt = `# Role
 # Extraction rules
 1. name 使用文档中的厂家、产品或模型系列名称，并能区分拆分后的契约；priority 没有明确需求时为 0。
 2. driver 按下方 Protocol matching 选择，Gemini 与 Vertex、KIE 与 APIMart 必须区分。ark-seedance 的 request 素材字段填写 first_frame_url、last_frame_url、reference_image_urls、reference_video_urls、reference_audio_urls，由驱动转换为 content 数组。
-3. custom-video 必须填写 create_path 和含 {task_id} 的 query_path。文档支持 multipart/form-data 文件直传时 local_material 为 multipart 并填写文件字段；否则为 url。
+3. custom-video 必须填写 create_path 和含 {task_id} 的 query_path。素材方式按 multipart、base64、url 排序，local_material 取第一项；multipart 必须填写文件字段。
 4. capability 的非空能力必须有对应 request 字段：多个 seconds 选项必须有 duration_field；单一固定时长若由模型决定且文档要求不传时长，则 duration_field 为空；sizes/aspect_ratio_field、resolutions/resolution_field、toggle/generate_audio_field、watermark/watermark_field 均按文档字段映射。image 模式必须填写 first_frame_field，支持尾帧时还必须填写 last_frame_field；reference 模式中哪类素材上限非零，就必须填写对应的 reference_images_field、reference_videos_field 或 reference_audios_field。duration_value_type 必须按文档声明为 number 或 string；例如 JSON 示例中的 seconds 字符串值 "5" 必须选择 string，duration 数字值 5 必须选择 number。未支持的能力数量为 0、数组为空、字段为空字符串。
 5. seconds 枚举或 seconds_range 范围必须且只能配置一个；每个默认值必须属于对应选项。sizes 或 resolutions 为空时，其对应 default_size 或 default_resolution 也必须为空。audio_control 只能是 none、toggle、always。
 6. generation.selection 固定为 infer。modes 仅声明文档支持的 text、image、reference 类型且每类最多一个；默认模式必须属于已声明模式，支持 text 时优先用 text，否则使用文档唯一支持的 image 或 reference。只有文档明确把图片定义为首帧/尾帧时才用 image；可传多张约束人物、风格等普通参考图时用 reference，即使文档把功能标题写成“图生视频”。严格按以下互斥矩阵填写 materials：text 的 first_frame、last_frame、image、video、audio、total 全部为 0；image 的 first_frame.max 必须为 1，last_frame.max 最大为 1，image、video、audio 全部为 0，total 只统计首尾帧；reference 的 first_frame、last_frame 全部为 0，image 最大 50、video 最大 20、audio 最大 20，且至少一项 max 大于 0，total 最大 80 并只统计普通参考素材。每个 min 不得大于 max，total.max 不得小于任一单类 max，也不得大于各类 max 之和。
@@ -49,7 +49,7 @@ const videoContractImportSystemPrompt = `# Role
 
 # Deterministic defaults
 未声明轮询间隔和超时时使用 5 秒、900 秒，不标记待确认；响应字段默认值不能代替协议证据。
-- 文档未说明轮询：interval_seconds=5、timeout_seconds=900、task_id_fields=["id","task_id","data.id","data.task_id"]、status_fields=["status","data.status"]、progress_fields=["progress","data.progress"]、error_fields=["error.message","message","data.error.message","data.message","fail_reason","error","data.error"]、queued_statuses=["queued"]、processing_statuses=["in_progress"]、success_statuses=["completed"]、failure_statuses=["failed","cancelled"]、result_fields=["video_url","video_urls","url"]。
+- 未说明轮询时使用 interval_seconds=5、timeout_seconds=900；task_id_fields=["id","task_id","data.id","data.task_id"]、status_fields=["status","data.status"]、progress_fields=["progress","data.progress"]、error_fields=["error.message","message","data.error.message","data.message","fail_reason","error","data.error"]、queued_statuses=["queued"]、processing_statuses=["in_progress"]、success_statuses=["completed"]、failure_statuses=["failed","cancelled"]、result_fields=["video_url","video_urls","url"]。
 - 文档未说明产物接口时 artifact={mode:"response_url",content_path:"",auth:"none",allowed_hosts:[]}。
 
 # Security and output
@@ -66,6 +66,7 @@ func videoContractGenerationSystemPrompt(includeProvider bool) string {
 12. capability.parameters 显式声明附加参数：name 为调用端 parameters 中的键，field 为上游路径，label 为中文用途，type 为 string/integer/number/boolean；保留 required、enum、minimum/maximum、format、max_length、modes（text/image/reference；空数组表示全部）。没有默认值用 null，不凭空选择必填枚举默认值。seed、callback_url（format=uri）、prompt_enhance、prompt_extend、prompt_expansion_mode、独立 aspect_ratio 等按文档声明为参数；不是任意 body 透传。必填 size 用 sizes 与 aspect_ratio_field 映射，独立 aspect_ratio 用 parameters 声明，不能放入 resolutions。仅支持部分模型的参数放入对应 profile.capability.parameters。
 13. capability.prompt 表达提示词 required、min_length、max_length（0 表示未声明上限）；没有额外约束填 null。request.reference_value_type 为 array 或 scalar；单个字符串接受图片或视频时使用 scalar，图片和视频可共享字段，但 reference 模式 total.max 必须为 1。
 14. transport.multipart_fields 按素材角色映射具名表单字段（first_frame、last_frame、reference_image、reference_video、reference_audio）；使用具名映射时 multipart_file_field 留空。重复数组使用文档明确的字段或 field[]；不支持的角色留空；无具名映射时所有角色填空字符串。URL 模式无需声明文件路由。
+15. transport.material_transports 只记录文档明确支持的素材提交方式，按 multipart（文件上传）、base64、url（公网 URL）排序；支持两种也按此顺序，只有一种直接使用。local_material 为排序后的第一项，Agent 运行时将生成的素材按此方式提交给后续模型，不因素材已有公网 URL 而降低优先级。multipart 必须填写文件字段；Base64 按原文填写 base64_format=data_url（带 MIME 前缀）或 raw（纯 Base64），不支持时为空字符串。这是提交前的选择顺序，失败后不能自动切换方式重试。
 
 ` + videoContractProviderInstructions(includeProvider) + `
 
@@ -198,7 +199,9 @@ func videoContractImportJSONSchema(includeProvider bool) map[string]any {
 		"priority": integerValue(-1000, 1000),
 		"driver":   stringEnum(drivers...),
 		"transport": objectValue(map[string]any{
-			"local_material":       stringEnum("url", "multipart"),
+			"local_material":       stringEnum("multipart", "base64", "url"),
+			"material_transports":  arrayValue(stringEnum("multipart", "base64", "url"), 1, 3),
+			"base64_format":        stringEnum("", "data_url", "raw"),
 			"multipart_file_field": stringValue(),
 			"multipart_fields":     objectValue(map[string]any{"first_frame": stringValue(), "last_frame": stringValue(), "reference_image": stringValue(), "reference_video": stringValue(), "reference_audio": stringValue()}),
 			"multipart_repeatable": booleanValue(),

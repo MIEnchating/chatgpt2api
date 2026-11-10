@@ -125,14 +125,47 @@ export function canvasCodexItemTrace(item: Record<string, unknown>, completed: b
   const status = item.status === "failed" || item.status === "declined" || Boolean(item.error) || typeof item.exitCode === "number" && item.exitCode !== 0 ? "error" : completed ? "success" : "running";
   const base = { id: `codex:${item.id}`, type: "operation", status } as const;
   const detail = (...values: unknown[]) => clipTraceDetail(values.filter((value): value is string => typeof value === "string" && Boolean(value)).join("\n"));
-  if (item.type === "commandExecution") return { ...base, kind: "command", label: completed ? "运行了命令" : "正在运行命令", detail: detail(item.command, item.cwd, typeof item.exitCode === "number" ? `退出码：${item.exitCode}` : undefined, item.aggregatedOutput) };
+  if (item.type === "reasoning") {
+    // Only the published summary is presentation data; raw reasoning stays private.
+    const text = Array.isArray(item.summary) ? item.summary.filter((part): part is string => typeof part === "string").join("\n\n").slice(-24000) : "";
+    return text ? { id: base.id, type: "reasoning", text, isStreaming: !completed } : undefined;
+  }
+  if (item.type === "commandExecution") return {
+    ...base, kind: "command", label: completed ? "运行了命令" : "正在运行命令",
+    detail: detail(item.command, item.cwd, typeof item.exitCode === "number" ? `退出码：${item.exitCode}` : undefined, item.aggregatedOutput),
+    ...(typeof item.command === "string" ? { terminal: {
+      command: item.command, output: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput.slice(-24000) : "",
+      ...(typeof item.cwd === "string" ? { cwd: item.cwd } : {}), ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {}),
+    } } : {}),
+  };
+  if (item.type === "subAgentActivity" && typeof item.agentThreadId === "string") {
+    const states: Record<string, string> = { started: "running", interacted: "unknown", interrupted: "interrupted", completed: "completed" };
+    const labels: Record<string, string> = { started: "启动子代理", interacted: "与子代理交互", interrupted: "中断子代理", completed: "子代理已完成" };
+    const kind = typeof item.kind === "string" ? item.kind : "";
+    return { ...base, kind: "subagent", label: labels[kind] || "子代理活动", detail: detail(item.agentPath), subagent: {
+      ...(typeof item.model === "string" ? { model: item.model } : {}),
+      agents: [{ id: item.agentThreadId, status: states[kind] || "unknown" }],
+    } };
+  }
+  if (item.type === "collabAgentToolCall") {
+    const states = isRecord(item.agentsStates) ? item.agentsStates : {};
+    const ids = new Set([...(Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds.filter((id): id is string => typeof id === "string") : []), ...Object.keys(states)]);
+    return { ...base, kind: "subagent", label: completed ? "子代理协作记录" : "正在协调子代理", detail: detail(item.tool), subagent: {
+      ...(typeof item.prompt === "string" ? { prompt: item.prompt } : {}), ...(typeof item.model === "string" ? { model: item.model } : {}),
+      agents: [...ids].map(id => {
+        const state = isRecord(states[id]) ? states[id] : {};
+        return { id, status: typeof state.status === "string" ? state.status : "unknown", ...(typeof state.message === "string" ? { message: state.message } : {}) };
+      }),
+    } };
+  }
   if (item.type === "fileChange") {
     const changes = Array.isArray(item.changes) ? item.changes as Array<{ path?: string; diff?: string }> : [];
     return { ...base, kind: "file", label: completed ? "编辑了文件" : "正在编辑文件", detail: detail(...changes.map((change) => detail(change.path, change.diff))) };
   }
   if (item.type === "imageView") return { ...base, kind: "image", label: completed ? "查看了图片" : "正在查看图片", detail: detail(item.path) };
   if (item.type === "webSearch") return { ...base, kind: "read", label: completed ? "搜索了资料" : "正在搜索资料", detail: detail(item.query) };
-  if (item.type === "mcpToolCall") return { ...base, kind: "tool", label: completed ? "调用了工具" : "正在调用工具", detail: detail(item.server, item.tool) };
+  if (item.type === "mcpToolCall") return { ...base, kind: "tool", label: completed ? "调用了工具" : "正在调用工具", detail: detail(item.server, item.tool), tool: { name: [item.server, item.tool].filter(value => typeof value === "string").join("/"), input: item.arguments, output: item.error ?? item.result ?? undefined } };
+  if (item.type === "dynamicToolCall") return { ...base, status: item.success === false ? "error" : status, kind: "tool", label: completed ? "调用了工具" : "正在调用工具", detail: detail(item.tool), tool: { name: typeof item.tool === "string" ? item.tool : "", input: item.arguments, output: item.contentItems ?? undefined } };
 }
 
 function clipTraceDetail(text: string) {
@@ -149,3 +182,5 @@ export function canvasAgentToolKind(name: string): Extract<CanvasAgentTraceEntry
   if (/^(update_|delete_)/.test(name) || name === "arrange_nodes") return "edit";
   return "tool";
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }

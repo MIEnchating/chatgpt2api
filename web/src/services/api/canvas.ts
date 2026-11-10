@@ -1,5 +1,27 @@
 import type { ImageOutputFormat, ImageQuality } from "@/lib/api";
 import { httpRequest } from "@/lib/request";
+import type { AgentRunStatus } from "@/lib/agent-run-state";
+
+export type CanvasScriptDialogue = { id: string; kind: "dialogue" | "narration"; asset_id: string; text: string };
+export type CanvasScriptShot = {
+  id: string;
+  seconds: number;
+  description: string;
+  framing: string;
+  lighting: string;
+  dialogue: CanvasScriptDialogue[];
+  sound: string;
+  camera: string;
+  asset_ids: string[];
+  image_prompt: string;
+  video_prompt: string;
+  color: string;
+  source_node_id?: string;
+  image_node_id?: string;
+  video_node_id?: string;
+};
+export type CanvasScriptAsset = { id: string; kind: "character" | "scene" | "prop"; name: string; description: string; image_node_id: string };
+export type CanvasScriptProject = { step: number; confirmed: boolean; shots: CanvasScriptShot[]; assets: CanvasScriptAsset[] };
 
 type CanvasViewport = {
   zoom: number;
@@ -9,7 +31,7 @@ type CanvasViewport = {
 
 export type CanvasNode = {
   id: string;
-  type: "image" | "video" | "audio" | "panorama" | "director" | "group" | "text" | "config";
+  type: "image" | "video" | "audio" | "panorama" | "director" | "script" | "group" | "text" | "config";
   x: number;
   y: number;
   width: number;
@@ -92,6 +114,8 @@ export type CanvasNode = {
   panorama_final_prompt?: string;
   panorama_projection?: "equirectangular";
   director_project?: Record<string, unknown>;
+  script_project?: CanvasScriptProject;
+  script_operation?: { kind: "script" | "prompts"; shot_ids: string[] };
   camera_control?: {
     enabled: boolean;
     camera?: string;
@@ -150,7 +174,7 @@ type CanvasAgentMessage = {
 };
 
 export type CanvasDocument = {
-  agent_run?: { id: string; sessionId: string; assistantId: string; engine?: string; toolResult?: { ok: boolean; [key: string]: unknown }; status: "running" | "waiting" | "success" | "error" | "cancelled" | "interrupted"; error?: string; updatedAt: string };
+  agent_run?: { id: string; sessionId: string; assistantId: string; engine?: string; toolResult?: { ok: boolean; [key: string]: unknown }; status: AgentRunStatus; error?: string; updatedAt: string };
   retained_storage_object_ids?: string[];
   retained_storage_object_urls?: string[];
   retained_storage_objects_until?: string;

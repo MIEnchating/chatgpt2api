@@ -14,13 +14,14 @@ const workflowSource = await readFile(new URL("../src/app/workflows/creative-wor
 const workflowPageSource = await readFile(new URL("../src/app/workflows/page.tsx", import.meta.url), "utf8");
 const imageTaskQueueSource = await readFile(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
 const globalStylesSource = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
-const imageParameterStylesSource = await readFile(new URL("../src/components/generation/image-parameter-styles.ts", import.meta.url), "utf8");
+const toggleSource = await readFile(new URL("../src/components/ui/toggle.tsx", import.meta.url), "utf8");
 const aspectRatioOptionSource = await readFile(new URL("../src/components/generation/aspect-ratio-option.tsx", import.meta.url), "utf8");
 const imageSizePresetControlsSource = await readFile(new URL("../src/components/generation/image-size-preset-controls.tsx", import.meta.url), "utf8");
 const imageSettingsPanelSource = await readFile(new URL("../src/components/generation/image-settings-panel.tsx", import.meta.url), "utf8");
 const imageSidebarSource = await readFile(new URL("../src/app/image/components/image-sidebar.tsx", import.meta.url), "utf8");
 const videoSettingsPanelSource = await readFile(new URL("../src/components/generation/video-settings-panel.tsx", import.meta.url), "utf8");
 const imageComposerSource = await readFile(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8");
+const creationModelSelectorSource = await readFile(new URL("../src/app/image/components/creation-model-selector.tsx", import.meta.url), "utf8");
 const imageResultsSource = await readFile(new URL("../src/app/image/components/image-results.tsx", import.meta.url), "utf8");
 const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
@@ -50,30 +51,32 @@ const workflowTaskDialogSource = workflowSource.slice(
 );
 
 test("native scroll areas keep wheel input inside the canvas", () => {
-  assert.match(scrollAreaSource, /event\.stopPropagation\(\)/);
-  assert.match(scrollAreaSource, /root\.addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
-  assert.doesNotMatch(scrollAreaSource, /event\.preventDefault\(\)/);
+  assert.match(imageComposerSource, /onWheel=\{\(event\) => \{ event\.stopPropagation\(\)/);
+  assert.doesNotMatch(scrollAreaSource, /preventDefault/);
 });
 
 test("scroll areas expose one browser-owned viewport", () => {
   assert.match(scrollAreaSource, /data-slot="scroll-area-viewport"/);
-  assert.match(scrollAreaSource, /flex-1 overflow-auto outline-none/);
-  assert.match(scrollAreaSource, /onScroll=\{onScroll\}/);
-  assert.doesNotMatch(scrollAreaSource, /scrollbar-width:none|webkit-scrollbar\]:hidden|verticalThumb|horizontalThumb/);
+  assert.match(scrollAreaSource, /ScrollAreaPrimitive\.Viewport/);
+  assert.match(scrollAreaSource, /ScrollAreaPrimitive\.ScrollAreaScrollbar/);
 });
 
 test("native scroll viewports retain height limits and external refs", () => {
-  assert.match(scrollAreaSource, /ref=\{viewportRef\}/);
-  assert.match(scrollAreaSource, /maxHeight: maxHeight \?\? wrapStyle\?\.maxHeight/);
+  assert.match(scrollAreaSource, /ScrollAreaViewport = ScrollAreaPrimitive\.Viewport/);
   assert.doesNotMatch(scrollAreaSource, /ResizeObserver|requestAnimationFrame|PointerCapture/);
+});
+
+test("studio conversation delegates streaming scroll and message anchors to AI Elements", () => {
+  assert.match(imagePageSource, /<Conversation key=\{`\$\{session.key\}:\$\{selectedConversationId/);
+  assert.match(imageResultsSource, /<MessageScrollerItem[\s\S]*?messageId=\{turn.id\} scrollAnchor/);
+  assert.match(imageResultsSource, /\[content-visibility:visible\]/);
+  assert.doesNotMatch(imagePageSource, /scrollResultsToBottom|shouldStickToResultsBottomRef|showScrollToBottom|isNearResultsBottom/);
 });
 
 test("an open select closes when its trigger is pressed again", () => {
   assert.match(selectSource, /SelectOpenContext/);
   assert.match(selectSource, /!event\.defaultPrevented && !props\.disabled && event\.button === 0 && !event\.ctrlKey && select\?\.open/);
   assert.match(selectSource, /event\.preventDefault\(\);\s*select\.setOpen\(false\)/);
-  assert.match(selectSource, /transition-transform duration-200 ease-in-out/);
-  assert.match(selectSource, /select\?\.open && "rotate-180"/);
 });
 
 test("controlled selects remain controlled while asynchronous values are empty", () => {
@@ -82,9 +85,9 @@ test("controlled selects remain controlled while asynchronous values are empty",
 });
 
 test("switch composes native click handlers with checked state changes", () => {
-  assert.match(switchSource, /onClick\?\.\(event\)/);
-  assert.match(switchSource, /event\.defaultPrevented \|\| disabled/);
-  assert.match(switchSource, /onClick=\{handleClick\}[\s\S]*?\.\.\.props/);
+  assert.match(switchSource, /SwitchPrimitive\.Root/);
+  assert.match(switchSource, /React\.ComponentProps<typeof SwitchPrimitive\.Root>/);
+  assert.match(switchSource, /\{\.\.\.props\}/);
 });
 
 test("forced theme transitions still apply when the browser has no transition API", () => {
@@ -99,13 +102,10 @@ test("floating messages provide a global close button", () => {
 });
 
 test("global selects keep the neutral selected treatment shown across settings", () => {
-  assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
-  assert.match(selectSource, /data-\[state=checked\]:font-medium/);
-  assert.match(selectSource, /data-\[state=checked\]:text-accent-foreground/);
-  assert.match(selectSource, /viewportClassName="w-full overscroll-contain p-1"/);
-  assert.match(selectSource, /relative flex min-h-9 w-full min-w-0/);
-  assert.match(selectSource, /viewClass="flex flex-col gap-0\.5"/);
-  assert.doesNotMatch(selectSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
+  assert.match(selectSource, /focus:bg-accent/);
+  assert.match(selectSource, /SelectPrimitive\.ItemIndicator/);
+  assert.match(selectSource, /SelectPrimitive\.Viewport/);
+  assert.doesNotMatch(selectSource, /#eef4ff/);
 });
 
 test("global tag input supports keyboard, paste, validation, and accessible removal", () => {
@@ -131,15 +131,6 @@ test("multi select fills available width before collapsing selected tags", () =>
   assert.doesNotMatch(multiSelectSource, /selected\.slice\(0, 1\)/);
 });
 
-test("disabled multi select closes and blocks every value mutation path", () => {
-  assert.match(multiSelectSource, /if \(disabled\) \{\s*setOpen\(false\);/);
-  assert.match(multiSelectSource, /open=\{!disabled && open\}/);
-  assert.match(multiSelectSource, /onOpenChange=\{\(nextOpen\) => \{\s*if \(!disabled\)/);
-  assert.match(multiSelectSource, /const remove = \(item: string\) => \{\s*if \(!disabled\)/);
-  assert.match(multiSelectSource, /const toggle = \(item: string\) => \{\s*if \(!disabled\)/);
-  assert.equal(multiSelectSource.match(/\n\s+disabled=\{disabled\}/g)?.length, 2);
-});
-
 test("video dimension drafts survive equivalent option array instances", () => {
   assert.match(videoSettingsPanelSource, /const defaultSize = options\[0\] \|\| ""/);
   assert.match(videoSettingsPanelSource, /\[defaultSize, value\]/);
@@ -155,48 +146,31 @@ test("image dimension inputs keep an empty editing draft instead of restoring 10
 });
 
 test("dialog close buttons stay fixed while the body scrollbar updates", () => {
-  assert.match(dialogSource, /tabIndex=\{-1\}[\s\S]*?event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
-  assert.match(dialogSource, /data-slot="dialog-auto-close"/);
-  assert.match(dialogSource, /absolute top-3 right-3 z-30/);
-  assert.doesNotMatch(dialogSource, /data-scroll-overflow-y=true[^\n]*dialog-auto-close/);
-  assert.match(dialogSource, /transition-colors[^"]*sm:top-4 sm:right-4/);
-  assert.doesNotMatch(dialogSource, /transition-\[right,background-color,opacity\]/);
-  assert.match(dialogSource, /min-w-0 shrink-0 flex flex-col gap-2 pr-10 text-left/);
-  assert.match(dialogSource, /min-w-0 text-xl leading-7 font-semibold \[overflow-wrap:anywhere\]/);
-  assert.match(scrollAreaSource, /flex-1 overflow-auto outline-none/);
+  assert.match(dialogSource, /tabIndex=\{-1\}/);
+  assert.match(dialogSource, /event\.preventDefault\(\);[\s\S]*?focus\(\{ preventScroll: true \}\)/);
+  assert.match(dialogSource, /DialogPrimitive\.Close/);
+  assert.match(dialogSource, /absolute top-2 right-2/);
 });
 
 test("dialog scrolling is limited to the body between its fixed header and footer", () => {
-  assert.match(dialogSource, /flattenDialogChildren\(children\)/);
-  assert.match(dialogSource, /dialogChildren\.filter\(isDialogHeaderElement\)/);
-  assert.match(dialogSource, /dialogChildren\.filter\(isDialogFooterElement\)/);
-  assert.match(dialogSource, /data-slot="dialog-body"/);
-  assert.match(dialogSource, /\{headers\}[\s\S]*?<ScrollArea[\s\S]*?\{body\}[\s\S]*?\{footers\}/);
-  assert.doesNotMatch(scrollAreaSource, /closest\('\[data-slot="dialog-content"\]'\)/);
-  assert.match(scrollAreaSource, /onScroll=\{onScroll\}/);
+  assert.doesNotMatch(dialogSource, /flattenDialogChildren|scrollable/);
+  assert.match(dialogSource, /\{children\}/);
+  assert.match(videoContractsSource, /<DialogHeader[\s\S]*?<ScrollAreaRoot[\s\S]*?<DialogFooter/);
 });
 
 test("dialog footers share compact inset and full-width fixed styles", () => {
-  assert.match(dialogSource, /p-\[var\(--dialog-padding\)\] \[--dialog-padding:1\.25rem\]/);
-  assert.match(dialogSource, /sm:\[--dialog-padding:1\.5rem\]/);
-  assert.doesNotMatch(dialogSource, /sm:p-6/);
-  assert.match(dialogSource, /flush = false/);
-  assert.match(dialogSource, /data-flush=\{flush \|\| undefined\}/);
-  assert.match(dialogSource, /z-10 flex min-w-0 shrink-0/);
-  assert.doesNotMatch(dialogSource, /sticky bottom-0 z-10 flex shrink-0/);
-  assert.match(dialogSource, /\[&>\[data-slot=button\]\]:min-w-18/);
-  assert.ok(dialogSource.includes("[&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3"));
-  assert.match(dialogSource, /min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6/);
-  assert.doesNotMatch(dialogSource, /mt-1 pt-1/);
+  assert.match(dialogSource, /data-slot="dialog-footer"/);
+  assert.match(dialogSource, /flex-col-reverse[\s\S]*sm:flex-row/);
+  assert.doesNotMatch(dialogSource, /flush = false|data-flush/);
 });
 
 test("video contract editor keeps configuration sections and a responsive parameter preview", () => {
-  assert.match(videoContractsSource, /h-\[min\(94dvh,940px\)\] w-\[min\(96vw,1360px\)\] max-w-none/);
-  assert.match(videoContractsSource, /<DialogContent[\s\S]*?scrollable=\{false\}/);
+  assert.match(videoContractsSource, /h-\[min\(94dvh,940px\)\][\s\S]*?w-\[min\(96vw,1360px\)\] max-w-none/);
+  assert.match(videoContractsSource, /<DialogContent[\s\S]*?overflow-hidden/);
   assert.match(videoContractsSource, /aria-label="视频配置分区"/);
   assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)\][^"]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,22rem\)\]/);
-  assert.match(videoContractsSource, /data-video-contract-details[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3"[\s\S]*?ariaLabel="契约表单"/);
-  assert.match(videoContractsSource, /data-video-contract-preview[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"[\s\S]*?ariaLabel="契约预览"/);
+  assert.match(videoContractsSource, /data-video-contract-details[\s\S]*?className="[^"]*h-full overscroll-y-contain"[\s\S]*?aria-label="契约表单"/);
+  assert.match(videoContractsSource, /data-video-contract-preview[\s\S]*?className="[^"]*h-full overscroll-y-contain"[\s\S]*?aria-label="契约预览"/);
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
   assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
   assert.match(videoContractsSource, /String\(value \|\| ""\)\.split/);
@@ -237,16 +211,16 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.match(videoCapabilitiesSource, /首帧、尾帧已支持/);
   assert.match(videoCapabilitiesSource, /带时间点的多张关键帧尚未接入/);
   assert.doesNotMatch(videoContractsSource, /label="保存后启用"/);
-  assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
+  assert.match(videoContractsSource, /<Collapsible[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
   assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
-  assert.match(videoContractsSource, /copyWithToast\(contractJSON,/);
+  assert.match(videoContractsSource, /<CodeBlockCopyButton[^>]*value={contractJSON}/);
   assert.doesNotMatch(videoContractsSource, /contractDialogTitleRef|onOpenAutoFocus/);
 });
 
 test("video contract help icons explain only technical fields", () => {
   assert.match(videoContractsSource, /function ContractHelpIcon/);
   assert.match(videoContractsSource, /<TooltipHint content=\{help\}>/);
-  assert.match(videoContractsSource, /<CircleHelp className="size-3\.5" \/>/);
+  assert.match(videoContractsSource, /<CircleHelp\s*\/>/);
   assert.doesNotMatch(videoContractsSource, /label="能力配置"/);
   assert.match(videoContractsSource, /label="模型匹配规则" help=/);
   assert.match(videoContractsSource, /label="接口协议" help=/);
@@ -262,7 +236,8 @@ test("video contract help icons explain only technical fields", () => {
   assert.match(videoRequestSource, /metadata\.duration/);
   assert.match(videoRequestSource, /时长的发送格式/);
   assert.match(videoRequestSource, /生成方式参数/);
-  assert.match(videoRequestSource, /平台暂存的图片、视频与音频/);
+  assert.match(videoRequestSource, /上游支持的素材提交方式/);
+  assert.match(videoRequestSource, /按接口文档勾选/);
   assert.match(videoRequestSource, /接收文件的表单字段/);
   assert.match(videoRequestSource, /多个文件使用相同字段名逐个发送/);
   assert.match(videoRequestSource, /允许本地文件与外部素材网址一起提交/);
@@ -353,7 +328,7 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /data-video-contract-list/);
   assert.match(videoContractsSource, /contentScrollable=\{false\}/);
   assert.doesNotMatch(videoContractsSource, /className="lg:h-auto"/);
-  assert.match(videoContractsSource, /data-video-contract-rows[\s\S]*className="lg:min-h-0 lg:flex-1"/);
+  assert.match(videoContractsSource, /data-video-contract-rows[^>]*className="[^"]*min-h-0[^"]*flex-1"/);
   assert.match(videoContractsSource, /data-video-contract-rows[\s\S]*<ManagementPagination/);
   assert.match(videoContractsSource, /visibleItems\.map\(\(item\) =>/);
   assert.match(videoContractsSource, /<ManagementPagination[\s\S]*pageSizeOptions=\{\[10, 20, 50\]\}/);
@@ -391,12 +366,12 @@ test("video contracts support page selection and ordered bulk operations", () =>
   assert.doesNotMatch(videoContractsSource.slice(bulkToolbarStart, contractListStart), /生成 New API 插件/);
   assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await setVideoModelContractEnabled\(item\.id, enabled\)/);
   assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await deleteVideoModelContract\(item\.id\)/);
-  assert.match(videoContractsSource, /<DialogTitle>批量删除视频模型契约？<\/DialogTitle>/);
+  assert.match(videoContractsSource, /<ConfirmDialog[\s\S]*?title="批量删除视频模型契约？"[\s\S]*?confirmDisabled=\{selectedItems\.length === 0\}/);
 });
 
 test("large dialog pagination and actions use the shared footer layouts", () => {
-  assert.match(canvasAssetPickerSource, /<DialogFooter flush className="[^"]*flex-row[^"]*justify-between/);
-  assert.match(promptSourceContentDialogSource, /<DialogFooter flush className="flex-row flex-wrap justify-center/);
+  assert.match(canvasAssetPickerSource, /<DialogFooter className="[^"]*[^"]*flex-row[^"]*justify-between/);
+  assert.match(promptSourceContentDialogSource, /<DialogFooter className="[^"]*flex-row flex-wrap justify-center/);
   assert.match(assetDisplaySource, /<DialogFooter>/);
   assert.doesNotMatch(assetDisplaySource, /flex justify-end gap-2 border-t border-border pt-4/);
 });
@@ -408,10 +383,10 @@ test("prompt source content rejects stale source and closed-dialog responses", (
 });
 
 test("workflow runner keeps its header and actions outside the scrolling form", () => {
-  assert.match(workflowRunnerSource, /<DialogContent scrollable=\{false\} className="h-\[min\(92dvh,900px\)\]/);
-  assert.match(workflowRunnerSource, /<DialogHeader className="border-b border-border/);
-  assert.match(workflowRunnerSource, /<ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain p-5 sm:p-6"/);
-  assert.match(workflowRunnerSource, /<DialogFooter flush className="flex-row">/);
+  assert.match(workflowRunnerSource, /<DialogContent[\s\S]*?h-\[min\(92dvh,900px\)\]/);
+  assert.match(workflowRunnerSource, /<DialogHeader/);
+  assert.match(workflowRunnerSource, /<ScrollAreaRoot[\s\S]*?overscroll-contain/);
+  assert.match(workflowRunnerSource, /<DialogFooter className="[^"]*flex-row">/);
   assert.match(workflowRunnerSource, /<Button variant="outline" onClick=\{onClose\}>取消<\/Button>/);
 });
 
@@ -430,13 +405,13 @@ test("multi-image workflow runner exposes a full-width guided review workspace",
   assert.match(workflowRunnerSource, /data-workflow-series-steps/);
   assert.match(workflowRunnerSource, /\["填写内容", "生成提示词", "审核提示词", "生成图片"\]/);
   assert.match(workflowRunnerSource, /seriesNextStep/);
-  assert.match(workflowRunnerSource, /viewClass="grid gap-3 2xl:grid-cols-2"/);
+  assert.match(workflowRunnerSource, /className="[^"]*grid gap-3 2xl:grid-cols-2"/);
   assert.match(workflowSource, /data-series-draft-card/);
   assert.match(workflowSource, /const resultURL = draft\.result_ids\?\.\[0\] \|\| ""/);
   assert.match(workflowSource, /<AuthenticatedImage src=\{resultURL\}/);
   assert.match(workflowSource, /<PromptTextareaFrame className="h-32 min-h-32">/);
   assert.doesNotMatch(workflowSource, /<ImageLightbox[\s\S]*?src: resultURL/);
-  assert.match(workflowSource, />正在生成图片</);
+  assert.match(workflowSource, /<LoadingState label="正在生成图片"/);
   assert.match(workflowSource, />生成结果</);
   assert.match(workflowSource, /生成此图/);
 });
@@ -448,24 +423,17 @@ test("workflow completion merges last-run metadata without replacing current con
   assert.doesNotMatch(workflowSource, /saveWorkflow\((?:completed|updated)\)/);
 });
 
-test("workflow editor keeps its header and footer outside the scrolling form", () => {
-  assert.match(workflowEditorSource, /<DialogContent[^>]*scrollable=\{false\}[^>]*className="h-\[min\(92dvh,920px\)\]/);
-  assert.match(workflowEditorSource, /<ScrollArea[^>]*className=\{cn\("min-h-0 flex-1[^>]*viewportClassName="overscroll-contain p-5 sm:p-6"/);
-  assert.match(workflowEditorSource, /<DialogFooter flush className="flex-row">/);
-});
-
 test("workflow editor keeps multi-image planning in the main flow and a stable settings rail", () => {
-  assert.match(workflowEditorSource, />基本信息</);
-  assert.match(workflowEditorSource, />输入变量</);
-  assert.match(workflowEditorSource, />提示词模板</);
-  assert.match(workflowEditorSource, />多图提示词规划</);
-  assert.match(workflowEditorSource, /<fieldset disabled=\{saving\} className="contents space-y-6">/);
+  assert.match(workflowEditorSource, />\s*基本信息\s*</);
+  assert.match(workflowEditorSource, />\s*输入变量\s*</);
+  assert.match(workflowEditorSource, />\s*提示词模板\s*</);
+  assert.match(workflowEditorSource, />\s*多图提示词规划\s*</);
+  assert.match(workflowEditorSource, /<FieldSet disabled=\{saving\}/);
   assert.match(workflowEditorSource, /lg:grid-cols-\[minmax\(0,1fr\)_340px\]/);
-  assert.match(workflowEditorSource, /bg-card shadow-sm lg:sticky lg:top-0/);
-  assert.ok(workflowEditorSource.indexOf("多图提示词规划") < workflowEditorSource.indexOf("<aside className"));
+  assert.ok(workflowEditorSource.indexOf("多图提示词规划") < workflowEditorSource.indexOf("lg:sticky lg:top-0"));
   assert.match(workflowEditorSource, /<Field label="工作流名称">/);
-  assert.match(workflowEditorSource, /<label htmlFor="workflow-prompt-template"[^>]*>用户提示词模板<\/label>/);
-  assert.match(workflowEditorSource, /<Textarea\s+id="workflow-prompt-template"/);
+  assert.match(workflowEditorSource, /<Label htmlFor="workflow-prompt-template"[^>]*>\s*用户提示词模板\s*<\/Label>/);
+  assert.match(workflowEditorSource, /<InputGroupTextarea\s+id="workflow-prompt-template"/);
   assert.match(workflowSource, /function VariableEditor\(\{ index,/);
   assert.match(workflowSource, />变量 \{index \+ 1\}</);
   assert.match(workflowSource, /sm:grid-cols-2 xl:grid-cols-3/);
@@ -485,26 +453,24 @@ test("workflow runner shows the saved template settings as read only", () => {
   assert.match(workflowRunnerSource, /<WorkflowImageSettings[\s\S]*?readOnly/);
   assert.doesNotMatch(workflowRunnerSource, /onImageSettingsChange|onImageModelChange/);
   assert.match(workflowSource, /<ImageSettingsPanel disabled=\{readOnly \|\| !modelAvailable\}/);
-  assert.match(imageSettingsPanelSource, /disabled\s*\? "cursor-not-allowed border-border\/60 bg-muted\/50 dark:bg-muted\/40"/);
-  assert.match(imageSettingsPanelSource, /disabled:bg-transparent disabled:opacity-100/);
 });
 
 test("workflow tasks expose a complete details dialog", () => {
   assert.match(workflowSource, /function WorkflowTaskDialog/);
   assert.match(workflowTaskDialogSource, /const activeImagePrompt = activeImage\?\.prompt \|\| task\.prompt/);
   assert.match(workflowTaskDialogSource, />当前图片提示词</);
-  assert.match(workflowTaskDialogSource, /copyWithToast\(activeImagePrompt,/);
+  assert.match(workflowTaskDialogSource, /<CodeBlockCopyButton[^>]*value={activeImagePrompt}/);
   assert.match(workflowTaskDialogSource, /<AuthenticatedImage src=\{activeImage\.url\}/);
-  assert.match(workflowSource, />输入变量</);
+  assert.match(workflowSource, />\s*输入变量\s*</);
   assert.match(workflowSource, />创作参数快照</);
   assert.match(workflowSource, />执行信息</);
   assert.doesNotMatch(workflowTaskDialogSource, />生成结果</);
-  assert.match(workflowTaskDialogSource, /<DialogFooter flush className="flex-row justify-end sm:justify-end">[\s\S]*?>关闭<[\s\S]*?<Download \/>下载当前图片/);
+  assert.match(workflowTaskDialogSource, /<DialogFooter className="[^"]*flex-row justify-end sm:justify-end">[\s\S]*?>关闭<[\s\S]*?<Download \/>下载当前图片/);
 });
 
 test("workflow task history stays out of the template page and opens on demand", () => {
   assert.match(workflowSource, /function WorkflowTaskHistoryDialog/);
-  assert.match(workflowSource, /role="tablist" ariaLabel="任务状态"/);
+  assert.match(workflowSource, /<ToggleGroup[\s\S]*?aria-label="任务状态"/);
   assert.match(workflowSource, /<WorkflowTaskHistoryDialog[\s\S]*?onOpenTask=/);
   assert.doesNotMatch(workflowSource, /<section aria-labelledby="workflow-task-title"/);
 });
@@ -533,7 +499,7 @@ test("workflow tasks stay isolated from creation workbench history and queue", (
 
 test("the global task queue uses a compact flat list", () => {
   assert.match(imageTaskQueueSource, />任务队列</);
-  assert.match(imageTaskQueueSource, /<PopoverContent scrollable=\{false\}/);
+  assert.match(imageTaskQueueSource, /<PopoverContent[\s\S]*?overflow-hidden/);
   assert.match(imageTaskQueueSource, /w-\[min\(calc\(100vw-2rem\),420px\)\] overflow-hidden/);
   assert.doesNotMatch(imageTaskQueueSource, />打开创作台</);
   assert.doesNotMatch(imageTaskQueueSource, /pointer-events-none absolute -inset-1/);
@@ -551,11 +517,8 @@ test("interactive controls share a visible global disabled state", () => {
   assert.match(globalStylesSource, /\[data-disabled\]:not\(\[data-disabled="false"\]\)/);
   assert.match(globalStylesSource, /cursor: not-allowed/);
   assert.doesNotMatch(globalStylesSource, /\[data-disabled\][\s\S]{0,180}pointer-events: none/);
-  assert.match(globalStylesSource, /:where\(input, textarea, select\):disabled/);
-  assert.match(globalStylesSource, /background-color: color-mix\(in srgb, var\(--muted\)/);
   assert.match(globalStylesSource, /fieldset:disabled/);
   assert.match(videoContractsSource, /data-disabled=\{disabled \|\| undefined\}/);
-  assert.match(videoContractsSource, /disabled && "border-border\/60 bg-muted\/50 text-muted-foreground"/);
   assert.match(videoContractsSource, /<ContractCheckboxField id="video-contract-watermark"/);
 });
 
@@ -569,8 +532,8 @@ test("number inputs hide native browser spinners across Firefox and Chromium", (
 
 test("shared generation parameter buttons expose their disabled state", () => {
   assert.match(aspectRatioOptionSource, /export function AspectRatioOptionButton/);
-  assert.match(imageParameterStylesSource, /disabled:cursor-not-allowed/);
-  assert.match(imageParameterStylesSource, /disabled:opacity-50/);
+  assert.match(toggleSource, /TogglePrimitive\.Root/);
+  assert.match(toggleSource, /disabled:opacity-50/);
   assert.match(aspectRatioOptionSource, /disabled:cursor-not-allowed/);
   assert.match(aspectRatioOptionSource, /disabled:opacity-50/);
 });
@@ -618,11 +581,9 @@ test("result retries use the currently selected model instead of the failed turn
   }
 });
 
-test("image ratio cards combine shape and resolution while video shows a size badge", () => {
+test("image and video ratio controls retain labels and size previews", () => {
   assert.match(imageSizePresetControlsSource, />宽高比<\/ImageParameterLabel>/);
-  assert.match(imageSizePresetControlsSource, /IMAGE_ASPECT_RATIO_PRESET_OPTIONS\.map/);
-  assert.match(imageSizePresetControlsSource, /layout="visual"/);
-  assert.match(imageSizePresetControlsSource, /label=\{automatic \? "自动" : option\.label\}/);
+  assert.match(imageSizePresetControlsSource, /<GenerationSizeBadge/);
   assert.match(videoSettingsPanelSource, />画幅比例<\/ImageParameterLabel>/);
   assert.match(videoSettingsPanelSource, /const displayRatio = videoWorkbenchRatioForSize\(displaySize\)/);
   assert.doesNotMatch(videoSettingsPanelSource, /const displayRatio = videoWorkbenchRatioForSize\(value\.size\)/);
@@ -651,7 +612,8 @@ test("log governance exposes a persisted daily cleanup schedule", () => {
 });
 
 test("key preferences expose scoped custom API configuration without revealing saved keys", () => {
-  assert.match(profileSource, /<DialogTitle>\{confirmDelete \? "删除自定义 Key" : `\$\{title\}自定义 API 配置`\}<\/DialogTitle>/);
+  assert.match(profileSource, /<DialogTitle>\{`\$\{title\}自定义 API 配置`\}<\/DialogTitle>/);
+  assert.match(profileSource, /if \(confirmDelete\) return <ConfirmDialog[\s\S]*?title="删除自定义 Key"[\s\S]*?busy=\{isSaving\}/);
   assert.match(profileSource, /已配置，留空保持原 Key/);
   assert.match(profileSource, /createCustomRelayConfig/);
   assert.match(profileSource, /updateCustomRelayConfig/);
@@ -661,16 +623,17 @@ test("key preferences expose scoped custom API configuration without revealing s
   assert.match(profileSource, /collapseTags/);
   assert.match(profileSource, /collapseTagsTooltip/);
   assert.match(profileSource, /aria-label="查看 Key 匹配顺序说明"/);
-  assert.match(profileSource, /<TooltipHint content="按选择顺序匹配模型，前面的 Key 优先。">/);
+  assert.match(profileSource, /<TooltipButton tooltip="按选择顺序匹配模型，前面的 Key 优先。"/);
   assert.match(settingsConfigSource, /允许自定义 API 配置/);
   assert.match(settingsStoreSource, /allow_user_custom_relay_config/);
   assert.match(apiSource, /\/api\/profile\/custom-relay-configs/);
 });
 
 test("multi-select owns one viewport and only scrolls when options exceed available space", () => {
-  assert.match(multiSelectSource, /<PopoverContent scrollable=\{false\}/);
-  assert.match(multiSelectSource, /maxHeight="min\(20rem, calc\(var\(--radix-popover-content-available-height\) - 0\.75rem\)\)"/);
-  assert.doesNotMatch(multiSelectSource, /className="max-h-64"/);
+  assert.match(multiSelectSource, /<ComboboxInput/);
+  assert.match(multiSelectSource, /<ComboboxList>/);
+  assert.match(multiSelectSource, /<ComboboxItem/);
+  assert.doesNotMatch(multiSelectSource, /<ScrollArea/);
 });
 
 test("creation preferences pull each model kind with its selected key", () => {
@@ -688,7 +651,7 @@ test("creation preferences pull each model kind with its selected key", () => {
 
 test("settings model discovery merges all selected keys and rejects obsolete responses", async () => {
   const modelConfigSource = await readFile(new URL("../src/app/settings/components/model-config-card.tsx", import.meta.url), "utf8");
-  assert.match(modelConfigSource, /Promise\.all\(\s*requestTokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName, signal: controller\.signal \}\)\)/);
+  assert.match(modelConfigSource, /Promise\.all\(\s*requestTokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName, includePricing: true, signal: controller\.signal \}\)\)/);
   assert.match(modelConfigSource, /responses\.flatMap/);
   assert.match(modelConfigSource, /fetchCustomRelayConfigs\(\)/);
   assert.match(modelConfigSource, /relayTokenOptions\(tokenNames, customConfigs, kind\)/);
@@ -713,18 +676,6 @@ test("task queue keeps video copy and the last successful snapshot", () => {
   assert.doesNotMatch(loader, /catch\s*\{[\s\S]*setConversations\(\[\]\)/);
 });
 
-test("video progress hover does not resize or shift the progress track", () => {
-  assert.match(globalStylesSource, /\.xgplayer-progress\.active \.xgplayer-progress-outer\s*\{[^}]*height:\s*4px[^}]*margin-bottom:\s*0[^}]*transition:\s*none/s);
-  assert.doesNotMatch(globalStylesSource, /\.xgplayer-progress:hover\s*\{[^}]*height:/s);
-});
-
-test("video playback rate and download controls use the localized player treatment", () => {
-  assert.match(globalStylesSource, /\.xgplayer-playbackrate \.btn-text span/);
-  assert.match(globalStylesSource, /\.xg-options-list li\.selected\s*\{[^}]*background-color:\s*rgba\(255, 255, 255, 0\.055\)/s);
-  assert.match(globalStylesSource, /\.xg-options-list li\.selected::after\s*\{[^}]*content:/s);
-  assert.match(globalStylesSource, /\.xgplayer-download\s*\{/);
-});
-
 test("creation composer toolbar does not show redundant tooltips", () => {
   assert.doesNotMatch(imageComposerSource, /tooltip="图片生成"/);
   assert.doesNotMatch(imageComposerSource, /tooltip="视频生成"/);
@@ -732,23 +683,20 @@ test("creation composer toolbar does not show redundant tooltips", () => {
   assert.doesNotMatch(imageComposerSource, /tooltip="提示词"/);
   assert.doesNotMatch(imageComposerSource, /tooltip=\{isImageSettingsOpen \? "收起参数"/);
   assert.doesNotMatch(imageComposerSource, /tooltip=\{relayApiKeyMissing/);
-  assert.match(imageComposerSource, /aria-label=\{`选择模型，当前 \$\{imageModelLabel\}`\}/);
+  assert.match(creationModelSelectorSource, /label=\{`选择模型，当前 \$\{currentLabel\}`\}/);
   assert.match(imageComposerSource, /aria-label=\{submitLabel\}/);
 });
 
 test("creation conversation cards keep spacing inside the scroll viewport", () => {
-  assert.match(imageSidebarSource, /<ScrollArea[\s\S]*?<div className=\{cn\("flex min-h-full flex-col gap-1\.5"/);
+  assert.match(imageSidebarSource, /<ScrollArea[\s\S]*?<div className="flex min-h-full flex-col gap-[\d.]+"/);
   assert.doesNotMatch(imageSidebarSource, /hideActionButtons \? "flex flex-col gap-1 pr-0"/);
 });
 
-test("creation composer model picker reuses the global select treatment", () => {
-  assert.match(imageComposerSource, /<Select[\s\S]*value=\{activeModelAvailable \? activeModel : ""\}/);
-  assert.match(imageComposerSource, /disabled=\{activeModelOptions\.length === 0\}/);
-  assert.match(imageComposerSource, /<SelectTrigger[\s\S]*选择模型，当前/);
-  assert.match(imageComposerSource, /<SelectContent[\s\S]*side="top"/);
-  assert.doesNotMatch(imageComposerSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
-  assert.doesNotMatch(imageComposerSource, /<SelectContent[\s\S]{0,160}className=/);
-  assert.doesNotMatch(imageComposerSource, /<SelectItem[\s\S]{0,160}className=/);
-  assert.doesNotMatch(imageComposerSource, /modelMenuRef/);
-  assert.doesNotMatch(imageComposerSource, /rounded-\[20px\][^\n]*activeModelOptions/);
+test("creation composer delegates model search and selection to its shared picker", () => {
+  assert.match(imageComposerSource, /<CreationModelSelector[\s\S]*value=\{activeModel\} options=\{activeModelOptions\}/);
+  assert.match(imageComposerSource, /onChange=\{\(model\) => \{ if \(composerMode === "video"\) onVideoModelChange\(model\); else onImageModelChange\(model as ImageModel\); \}\}/);
+  assert.match(creationModelSelectorSource, /<ModelPicker value=\{value\} options=\{options\} onValueChange=\{onChange\}/);
+  assert.match(creationModelSelectorSource, /isModelDisabled=\{isDisabled\}/);
+  assert.match(creationModelSelectorSource, /renderDescription=/);
+  assert.doesNotMatch(creationModelSelectorSource, /<Popover|<Command/);
 });

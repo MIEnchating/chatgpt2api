@@ -66,7 +66,9 @@ export type VideoModelContract = {
     | "apimart-video"
     | "custom-video";
   transport: {
-    local_material: "url" | "multipart";
+    local_material: "multipart" | "base64" | "url";
+    material_transports?: ("multipart" | "base64" | "url")[];
+    base64_format?: "" | "data_url" | "raw";
     multipart_file_field: string;
     multipart_fields?: Partial<Record<"first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio", string>>;
     multipart_repeatable: boolean;
@@ -131,6 +133,11 @@ export type VideoModelContract = {
     result_fields: string[];
   };
 };
+
+export function videoMaterialTransports(transport: VideoModelContract["transport"]) {
+  const supported = transport.material_transports?.length ? transport.material_transports : [transport.local_material];
+  return (["multipart", "base64", "url"] as const).filter((method) => supported.includes(method));
+}
 
 export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "generation" | "rules"> & { model: string };
 

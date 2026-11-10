@@ -60,6 +60,8 @@ type ImageGenerationPreferences struct {
 }
 
 type CreationWorkbenchPreferences struct {
+	SmartContextEnabled    bool                         `json:"smart_context_enabled"`
+	ContextTextModel       string                       `json:"context_text_model"`
 	ImageOptions           model.ImageGenerationOptions `json:"image_options,omitempty"`
 	ComposerMode           string                       `json:"composer_mode"`
 	VideoTaskCount         int                          `json:"video_task_count"`
@@ -100,8 +102,8 @@ type ImageGenerationPreferencePatch struct {
 }
 
 // UnconfiguredRelayGroups preserves explicit choices, including an empty selection.
-func (s *ImageGenerationPreferenceService) UnconfiguredRelayGroups(ownerID string, mappings map[string]string) (map[string]string, error) {
-	result := map[string]string{}
+func (s *ImageGenerationPreferenceService) UnconfiguredRelayGroups(ownerID string, mappings map[string][]string) (map[string][]string, error) {
+	result := map[string][]string{}
 	if len(mappings) == 0 {
 		return result, nil
 	}
@@ -539,6 +541,7 @@ func normalizeRelayTokenNames(values []string) []string {
 }
 
 func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (CreationWorkbenchPreferences, error) {
+	value.ContextTextModel = strings.TrimSpace(value.ContextTextModel)
 	defaults := defaultCreationWorkbenchPreferences()
 	if value.ComposerMode == "" {
 		value.ComposerMode = "image"

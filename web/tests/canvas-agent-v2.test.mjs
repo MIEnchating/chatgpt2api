@@ -43,6 +43,27 @@ function context(state = createCanvasAgentState()) {
 
 describe("canvas agent v2 tool contract", () => {
 
+  test("updates existing media inputs without requiring a new title or exposing task fields", () => {
+    const args = { nodeId: "original-video", prompt: "原位修正镜头", generation: { size: "9:16", seconds: 5, generateAudio: false, referenceMode: "reference" }, sourceNodeIds: ["hero", "scene"], attachmentIds: [] };
+    assert.deepEqual(normalizeCanvasAgentAction("update_node", args).arguments, args);
+    assert.deepEqual(normalizeCanvasAgentAction("update_node", { nodeId: "original-video", sourceNodeIds: [] }).arguments.sourceNodeIds, []);
+    assert.throws(() => normalizeCanvasAgentAction("update_node", { nodeId: "original-video" }));
+    for (const field of ["taskId", "status", "url", "generation_status", "owner_id"]) {
+      assert.throws(() => normalizeCanvasAgentAction("update_node", { ...args, [field]: "forged" }));
+    }
+    assert.throws(() => normalizeCanvasAgentAction("update_node", { ...args, generation: { referenceMode: "invalid" } }));
+  });
+
+  test("structured scripts expose their storyboard only when read explicitly", () => {
+    const project = { step: 2, confirmed: true, assets: [], shots: [{ id: "s1", seconds: 5, description: "关门", video_node_id: "existing-video" }] };
+    const node = { id: "script-1", type: "script", prompt: "原故事", script_project: project };
+    assert.equal(summarizeCanvasAgentNode(node).scriptProject, undefined);
+    assert.deepEqual(summarizeCanvasAgentNode(node, true).scriptProject, project);
+    assert.equal(normalizeCanvasAgentAction("query_canvas_nodes", { type: "script" }).arguments.type, "script");
+    assert.deepEqual(normalizeCanvasAgentAction("update_script_node", { nodeId: "script-1", scriptProject: project }).arguments.scriptProject, project);
+    assert.throws(() => normalizeCanvasAgentAction("update_script_node", { nodeId: "script-1", scriptProject: { ...project, shots: [{ ...project.shots[0], video_node_id: ["fake"] }] } }));
+  });
+
   test("claims one panel run synchronously until its controller is released", () => {
     const slot = { current: null };
     const first = claimCanvasAgentRun(slot);
@@ -88,15 +109,28 @@ describe("canvas agent v2 tool contract", () => {
   });
 
   test("Agent configuration stores runtime preferences without fixed media parameters", () => {
-    const defaults = { autoGenerateMedia: true, textApiMode: "responses", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [] };
+    const defaults = { contextWindowTokens: 457_000, autoGenerateMedia: true, textApiMode: "responses", textReasoningEnabled: false, textStreaming: true, activeSkillIds: [] };
     assert.deepEqual(defaultCanvasAgentStarterConfig(), defaults);
+    assert.equal(normalizeCanvasAgentConfig(JSON.parse(JSON.stringify({ contextWindowTokens: 128_000 }))).contextWindowTokens, 128_000);
+    for (const contextWindowTokens of [0, 1, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1, "457000", undefined]) {
+      assert.equal(normalizeCanvasAgentConfig({ contextWindowTokens }).contextWindowTokens, 457_000);
+    }
     assert.equal(normalizeCanvasAgentConfig({ autoGenerateMedia: false }).autoGenerateMedia, false);
     assert.deepEqual(normalizeCanvasAgentConfig({ imageQuality: "high", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" }), defaults);
     for (const textStreaming of [undefined, false, true, "true"]) {
-      assert.equal(normalizeCanvasAgentConfig({ textStreaming }).textStreaming, textStreaming === true);
+      assert.equal(normalizeCanvasAgentConfig({ textStreaming }).textStreaming, textStreaming === undefined || textStreaming === true);
     }
     for (const [textApiMode, expected] of [[undefined, "responses"], ["responses", "responses"], ["chat", "chat"]]) {
       assert.equal(normalizeCanvasAgentConfig({ textApiMode }).textApiMode, expected);
+    }
+  });
+
+  test("canvas Agent settings survive document serialization independently", () => {
+    const first = { textModel: "text-a", imageModel: "image-a", videoModel: "video-a", codexModel: "codex-a", codexEffort: "high", textStreaming: false };
+    const second = { textModel: "text-b", imageModel: "image-b", videoModel: "video-b", codexModel: "codex-b", codexEffort: "low", textStreaming: true };
+    for (const settings of [first, second]) {
+      const restored = normalizeCanvasAgentConfig(JSON.parse(JSON.stringify(normalizeCanvasAgentConfig(settings))));
+      for (const [key, value] of Object.entries(settings)) assert.equal(restored[key], value);
     }
   });
 
@@ -147,6 +181,15 @@ describe("canvas agent v2 tool contract", () => {
     assert.match(generatedID, /^[\w-]{21}$/);
   });
 
+  test("plan explanation is optional while plan steps remain required", () => {
+    const steps = [{ id: "brief", title: "确认需求", status: "in_progress" }];
+    for (const args of [{ steps }, { explanation: "", steps }, { explanation: "  ", steps }]) {
+      assert.deepEqual(normalizeCanvasAgentAction("update_plan", args, "plan").arguments, { explanation: "", steps });
+    }
+    assert.throws(() => normalizeCanvasAgentAction("update_plan", {}), /steps/);
+    assert.throws(() => normalizeCanvasAgentAction("update_plan", { explanation: 42, steps }), /explanation/);
+  });
+
   test("exposes and normalizes workflow tools", () => {
     const names = new Set(CANVAS_AGENT_TOOLS.map((tool) => tool.function.name));
     for (const name of ["list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow"]) {
@@ -182,7 +225,10 @@ describe("canvas agent v2 tool contract", () => {
   });
 
   test("question instructions require explicit user submission", () => {
-    assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /点选选项只会填入回答框/);
+    assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /选项文字末尾标注“（推荐）”/);
+    assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /没有推荐时不添加标签/);
+    assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /点选选项表示用户立即提交该答案并继续/);
+    assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /输入框和“发送”按钮仅用于自定义回复/);
     assert.match(CANVAS_AGENT_INTERACTION_PROMPT, /不得因沉默、等待或超时自动选择推荐项/);
     assert.doesNotMatch(CANVAS_AGENT_INTERACTION_PROMPT, /10 秒倒计时/);
   });
@@ -422,6 +468,17 @@ test("video durations honor contract ranges instead of only the default duration
 });
 
 
+test("SDK context estimates survive session reload and reject malformed counters", () => {
+  const session = { id: "s", title: "对话", createdAt: "now", updatedAt: "now", messages: [], agentState: createCanvasAgentState(), protocolMessages: [], contextUsage: { model: "test", usedTokens: 36560, maxTokens: 365600, compacting: false, basis: "compression-budget" } };
+  const restored = JSON.parse(JSON.stringify(session));
+  assert.equal(isCanvasAgentSession(restored), true);
+  assert.deepEqual(syncCanvasAgentSessions([restored], [])[0].contextUsage, session.contextUsage);
+  for (const patch of [
+    { usedTokens: -1 }, { usedTokens: 0.5 }, { usedTokens: Infinity }, { usedTokens: Number.MAX_SAFE_INTEGER + 1 },
+    { maxTokens: 0 }, { maxTokens: "365600" }, { compacting: "false" }, { basis: "model-window" }, { model: null },
+  ]) assert.equal(isCanvasAgentSession({ ...session, contextUsage: { ...session.contextUsage, ...patch } }), false);
+});
+
 test("persisted sessions reject malformed nested values before rendering", () => {
   const session = { id: "s", title: "对话", createdAt: "now", updatedAt: "now", messages: [{ id: "u", role: "user", text: "创作" }], agentState: createCanvasAgentState(), protocolMessages: [{ role: "user", content: "创作" }] };
   assert.equal(isCanvasAgentSession(session), true);
@@ -469,4 +526,11 @@ test("only active assistant turns are marked for automatic restoration", () => {
     assert.equal(restored.resumeAssistantMessageId, ["thinking", "running"].includes(status) ? "assistant" : undefined);
     assert.ok(isCanvasAgentSession(restored));
   }
+});
+
+test("batch deletion carries the full explicit node list and rejects ambiguous scope", () => {
+ assert.deepEqual(normalizeCanvasAgentAction("delete_node", {nodeIds:["audio-one","audio-two"]}, "batch").arguments,{nodeIds:["audio-one","audio-two"]});
+ for(const args of [{},{nodeIds:[]},{nodeIds:["one","one"]},{nodeId:"one",nodeIds:["two"]}]) {
+  assert.throws(()=>normalizeCanvasAgentAction("delete_node",args,"batch"));
+ }
 });

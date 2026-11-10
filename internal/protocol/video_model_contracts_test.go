@@ -23,6 +23,49 @@ func TestVideoModelContractJSONKeepsV4Fields(t *testing.T) {
 	}
 }
 
+func TestVideoModelContractAcceptsBase64MaterialTransport(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Transport.LocalMaterial = "base64"
+	if _, err := NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("base64-only material transport rejected: %v", err)
+	}
+}
+
+func TestVideoMaterialTransportPriority(t *testing.T) {
+	for _, methods := range [][]string{
+		{"url"}, {"base64"}, {"multipart"},
+		{"url", "base64"}, {"url", "multipart"}, {"base64", "multipart"},
+		{"url", "base64", "multipart"},
+	} {
+		t.Run(strings.Join(methods, "+"), func(t *testing.T) {
+			contract := DefaultVideoContracts()[0]
+			contract.Transport.MaterialTransports = methods
+			contract.Transport.LocalMaterial = "url"
+			got, err := NormalizeVideoModelContract(contract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{}
+			for _, method := range []string{"multipart", "base64", "url"} {
+				if slices.Contains(methods, method) {
+					want = append(want, method)
+				}
+			}
+			if !slices.Equal(got.Transport.MaterialTransports, want) || got.Transport.LocalMaterial != want[0] {
+				t.Fatalf("transport selection = %#v, want %v", got.Transport, want)
+			}
+			if !slices.Equal(contract.Transport.MaterialTransports, methods) {
+				t.Fatal("normalization mutated the caller's transport list")
+			}
+		})
+	}
+	contract := DefaultVideoContracts()[0]
+	contract.Transport.MaterialTransports = []string{"url", "invalid"}
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("unknown material transport accepted")
+	}
+}
+
 func TestNormalizeVideoModelContractPreservesCaseSensitiveJSONPaths(t *testing.T) {
 	contract := DefaultVideoContracts()[0]
 	paths := []string{" data.Value ", "data.value", "data.Value", ""}
@@ -689,6 +732,12 @@ func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	contract.Request.DurationField = ""
 	if _, err := NormalizeVideoModelContract(contract); err != nil {
 		t.Fatalf("fixed duration without a request field was rejected: %v", err)
+	}
+	contract.Capability.UsageUnit = "count"
+	contract.Capability.Seconds = []int{3601}
+	contract.Capability.DefaultSeconds = 3601
+	if _, err := NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("count usage should allow a duration above the second billing limit: %v", err)
 	}
 	contract.Capability.Seconds = []int{8, 12}
 	if _, err := NormalizeVideoModelContract(contract); err == nil {

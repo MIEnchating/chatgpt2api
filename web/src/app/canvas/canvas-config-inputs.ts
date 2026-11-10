@@ -36,7 +36,7 @@ export function buildCanvasInputIndex(
       input = { nodeID: source.id, type: "image", title: source.title || "全景图", url: String(source.url).trim() };
     } else if ((source?.type === "video" || source?.type === "audio") && String(source.url || "").trim()) {
       input = { nodeID: source.id, type: source.type, title: source.title || (source.type === "video" ? "视频" : "音频"), url: String(source.url).trim() };
-    } else if (source?.type === "text" && String(source.prompt || "").trim()) {
+    } else if ((source?.type === "text" || source?.type === "script") && String(source.prompt || "").trim()) {
       input = { nodeID: source.id, type: "text", title: source.title || "文字", text: String(source.prompt).trim() };
     }
     if (!input) return;

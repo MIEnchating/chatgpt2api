@@ -132,3 +132,27 @@ test("display filtering preserves raw task IDs used to merge repeated generation
   assert.equal(merged[0].id, "first");
   assert.equal(merged[0].detail, "任务：task-123");
 });
+
+test("Codex published reasoning, terminal output and subagent states survive session persistence", () => {
+  const reasoning = canvasCodexItemTrace({ id: "reason", type: "reasoning", summary: ["先检查分镜", "再核对模型"], content: ["private raw reasoning"] }, false);
+  assert.deepEqual(reasoning, { id: "codex:reason", type: "reasoning", text: "先检查分镜\n\n再核对模型", isStreaming: true });
+  const terminal = canvasCodexItemTrace({ id: "cmd", type: "commandExecution", command: "pwd", cwd: "/workspace", aggregatedOutput: "x".repeat(25000), exitCode: 0 }, true);
+  assert.equal(terminal.terminal.output.length, 24000);
+  const subagent = canvasCodexItemTrace({ id: "delegate", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", prompt: "检查画布", model: "agent-model", receiverThreadIds: ["child"], agentsStates: { child: { status: "completed", message: "检查完成" } } }, true);
+  assert.equal(subagent.kind, "subagent");
+  assert.deepEqual(subagent.subagent.agents, [{ id: "child", status: "completed", message: "检查完成" }]);
+  const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "", trace: [reasoning, terminal, subagent] }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
+  assert.deepEqual(syncCanvasAgentSessions([JSON.parse(JSON.stringify(session))], [], true)[0].messages[0].trace, session.messages[0].trace);
+  session.messages[0].trace[1].terminal.output = 12;
+  assert.equal(isCanvasAgentSession(session), false);
+});
+
+
+test("Codex subagent activity preserves its real lifecycle without treating interaction as completion", () => {
+  const start = canvasCodexItemTrace({ id: "activity", type: "subAgentActivity", kind: "started", agentThreadId: "child", agentPath: "review", model: "agent-model" }, true);
+  assert.equal(start.subagent.agents[0].status, "running");
+  const interacted = canvasCodexItemTrace({ id: "activity", type: "subAgentActivity", kind: "interacted", agentThreadId: "child", agentPath: "review" }, true);
+  assert.equal(interacted.subagent.agents[0].status, "unknown");
+  const end = canvasCodexItemTrace({ id: "activity", type: "subAgentActivity", kind: "completed", agentThreadId: "child", agentPath: "review" }, true);
+  assert.equal(end.subagent.agents[0].status, "completed");
+});

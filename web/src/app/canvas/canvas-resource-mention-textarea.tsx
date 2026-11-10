@@ -1,18 +1,16 @@
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
+import { CanvasMentionMenu } from "./canvas-mention-menu";
+import { InputGroupTextarea } from "@/components/ui/input-group";
+import { ItemMedia } from "@/components/ui/item";
 import { FileText, Image as ImageIcon } from "lucide-react";
-import { createPortal } from "react-dom";
 import {
   forwardRef,
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
-  type PointerEvent,
   type TextareaHTMLAttributes,
 } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   filterCanvasResourceMentions,
   findCanvasResourceMention,
@@ -75,7 +73,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
 
   return (
     <div className={cn("relative w-full", containerClassName)}>
-      <textarea
+      <InputGroupTextarea
         {...props}
         ref={(node) => {
           textareaRef.current = node;
@@ -83,7 +81,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
           else if (forwardedRef) forwardedRef.current = node;
         }}
         value={value}
-        className={cn("block w-full min-w-0 outline-none focus-visible:ring-0", className)}
+        className={cn("block min-h-0 w-full min-w-0 resize-none", className)}
         style={style}
         onChange={(event) => {
           const next = event.target.value;
@@ -95,7 +93,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
             onKeyDown?.(event);
             return;
           }
-          if (mention && candidates.length) {
+          if (mention && candidates.length && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) {
+            event.stopPropagation();
             if (event.key === "ArrowDown") {
               event.preventDefault();
               setActiveIndex((index) => (index + 1) % candidates.length);
@@ -125,90 +124,33 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
           onKeyDown?.(event);
         }}
         onBlur={(event) => {
-          window.setTimeout(closeMention, 120);
+          closeMention();
           onBlur?.(event);
         }}
       />
       {mention && candidates.length && textareaRef.current ? (
-        <CanvasResourceMentionMenu
-          textarea={textareaRef.current}
-          references={candidates}
+        <CanvasMentionMenu
+          editor={textareaRef.current}
+          getAnchorRect={() => textareaRef.current!.getBoundingClientRect()}
+          items={candidates}
+          getKey={(reference) => reference.id}
           activeIndex={Math.min(activeIndex, candidates.length - 1)}
+          onActiveIndexChange={setActiveIndex}
           onSelect={selectReference}
+          onClose={closeMention}
+          renderItem={(reference) => <>
+            <ItemMedia variant="icon" className="grid size-9 shrink-0 place-items-center overflow-hidden">
+              {reference.kind === "image" && reference.previewURL
+                ? <AuthenticatedImage src={reference.previewURL} alt="" className="size-full object-cover" />
+                : reference.kind === "image" ? <ImageIcon /> : <FileText />}
+            </ItemMedia>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{reference.label} · {reference.title}</span>
+              {reference.text ? <span className="block truncate text-muted-foreground">{reference.text}</span> : null}
+            </span>
+          </>}
         />
       ) : null}
     </div>
   );
 });
-
-function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect }: {
-  textarea: HTMLTextAreaElement;
-  references: readonly CanvasResourceReference[];
-  activeIndex: number;
-  onSelect: (reference: CanvasResourceReference) => void;
-}) {
-  const layer = useOverlayLayer("popover");
-  const selectedRef = useRef(false);
-  const rect = textarea.getBoundingClientRect();
-  const boundary = textarea.closest("[role='dialog']")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
-  const width = 256;
-  const height = 224;
-  const gap = 6;
-  const left = clamp(rect.left, boundary.left + 8, boundary.right - width - 8);
-  const showAbove = rect.bottom + gap + height > boundary.bottom && rect.top - gap - height >= boundary.top;
-  const top = clamp(showAbove ? rect.top - gap - height : rect.bottom + gap, boundary.top + 8, boundary.bottom - height - 8);
-  const stop = (event: PointerEvent | MouseEvent) => event.stopPropagation();
-  const select = (reference: CanvasResourceReference) => {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
-    onSelect(reference);
-  };
-
-  return createPortal(
-    <OverlayLayerProvider value={layer}>
-    <ScrollArea data-overlay-layer={layer}
-      data-canvas-resource-mention-menu
-      className="pointer-events-auto fixed max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
-      viewportClassName="p-1"
-      style={{ left, top, zIndex: layer }}
-      onPointerDown={stop}
-      onMouseDown={stop}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {references.map((reference, index) => (
-        <button
-          key={reference.id}
-          type="button"
-          className={cn("flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs", index === activeIndex && "bg-accent text-accent-foreground")}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            select(reference);
-          }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            select(reference);
-          }}
-        >
-          <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-md bg-muted">
-            {reference.kind === "image" && reference.previewURL
-              ? <AuthenticatedImage src={reference.previewURL} alt="" className="size-full object-cover" />
-              : reference.kind === "image" ? <ImageIcon className="size-4" /> : <FileText className="size-4" />}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{reference.label} · {reference.title}</span>
-            <span className="block truncate text-muted-foreground">{reference.text || reference.title}</span>
-          </span>
-        </button>
-      ))}
-    </ScrollArea>
-    </OverlayLayerProvider>,
-    document.body,
-  );
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  if (maximum < minimum) return minimum;
-  return Math.min(Math.max(value, minimum), maximum);
-}

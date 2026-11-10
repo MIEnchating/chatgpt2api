@@ -33,3 +33,31 @@ test('active model signature ignores inactive settings but includes count and cu
  expect(workbenchPreferenceSignature({...a,video_task_count:4})).not.toBe(workbenchPreferenceSignature(a));
  expect(workbenchPreferenceSignature({...a,video_parameters:{seed:99}})).not.toBe(workbenchPreferenceSignature(a));
 });
+
+test('context changes are saved in either composer mode independently of image model settings',()=>{
+ for (const composer_mode of ['image','video']) {
+  const base={...snapshot('a'),composer_mode,smart_context_enabled:false,context_text_model:'vision-a'};
+  expect(workbenchPreferenceSignature({...base,smart_context_enabled:true})).not.toBe(workbenchPreferenceSignature(base));
+  expect(workbenchPreferenceSignature({...base,context_text_model:'vision-b'})).not.toBe(workbenchPreferenceSignature(base));
+ }
+});
+
+test('queued model settings always carry the latest global Agent switch',async()=>{
+ const calls=[];const saver=new WorkbenchPreferenceSaver(async value=>calls.push(value),()=>{});
+ saver.enqueue({...snapshot('a'),smart_context_enabled:false,context_text_model:'old'});
+ saver.enqueue({...snapshot('b'),smart_context_enabled:true,context_text_model:'new'});
+ await saver.flush();
+ expect(calls.map(value=>[value.video_model,value.smart_context_enabled,value.context_text_model])).toEqual([['a',true,'new'],['b',true,'new']]);
+ saver.stop();
+});
+
+
+test('retrying a failed in-flight save cannot restore an old global Agent switch',async()=>{
+ const gate=deferred(),calls=[];let fail=true;
+ const saver=new WorkbenchPreferenceSaver(async value=>{if(fail){await gate.promise;throw Error('offline');}calls.push(structuredClone(value));},()=>{});
+ saver.enqueue({...snapshot('a'),smart_context_enabled:false});const running=saver.flush();
+ saver.enqueue({...snapshot('b'),smart_context_enabled:true,context_text_model:'new'});
+ gate.resolve();await running;fail=false;await saver.retry();
+ expect(calls.map(v=>v.smart_context_enabled)).toEqual([true,true]);
+ expect(calls.map(v=>v.context_text_model)).toEqual(['new','new']);saver.stop();
+});

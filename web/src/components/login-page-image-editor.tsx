@@ -1,5 +1,8 @@
 "use client";
 
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
 import { useCallback, useEffect, useRef } from "react";
 import { RotateCcw } from "lucide-react";
 
@@ -150,9 +153,9 @@ export function LoginPageImageEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <div
+      <Card
         ref={frameRef}
-        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] cursor-grab active:cursor-grabbing touch-none items-stretch justify-stretch overflow-hidden rounded-2xl border bg-muted/60 shadow-inner"
+        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] cursor-grab active:cursor-grabbing touch-none items-stretch justify-stretch overflow-hidden gap-0 p-0 flex-row"
         onPointerDown={(event) => {
           if (event.button !== 0 || !imageLayout) return;
           event.preventDefault();
@@ -215,10 +218,10 @@ export function LoginPageImageEditor({
           style={imageStyle}
         />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-linear-to-b from-white/40 to-transparent dark:from-white/5" />
-        <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-full bg-background/80 px-3 py-1.5 text-center text-[11px] font-medium tracking-[0.08em] text-muted-foreground backdrop-blur">
+        <Badge variant="secondary" className="pointer-events-none absolute inset-x-4 bottom-4 h-auto w-auto whitespace-normal px-3 py-1.5 text-center">
           拖动调整位置，滚轮或滑杆缩放
-        </div>
-      </div>
+        </Badge>
+      </Card>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -226,12 +229,13 @@ export function LoginPageImageEditor({
           <span>{transform.zoom.toFixed(2)}x</span>
         </div>
         <Slider
-          min={String(LOGIN_PAGE_IMAGE_MIN_ZOOM)}
-          max={String(LOGIN_PAGE_IMAGE_MAX_ZOOM)}
-          step="0.01"
-          value={transform.zoom}
+          aria-label="登录页图片缩放"
+          min={LOGIN_PAGE_IMAGE_MIN_ZOOM}
+          max={LOGIN_PAGE_IMAGE_MAX_ZOOM}
+          step={0.01}
+          value={[transform.zoom]}
           className="w-full"
-          onChange={(event) => applyZoomAtPoint(Number(event.target.value), frameSize.width / 2, frameSize.height / 2)}
+          onValueChange={([nextValue]) => applyZoomAtPoint(nextValue, frameSize.width / 2, frameSize.height / 2)}
         />
       </div>
 
@@ -242,10 +246,10 @@ export function LoginPageImageEditor({
         <Button
           type="button"
           variant="ghost"
-          className="h-auto px-2 py-1 text-xs"
+
           onClick={() => commitTransform(LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM)}
         >
-          <RotateCcw className="size-3.5" />
+          <RotateCcw  />
           重置视图
         </Button>
       </div>

@@ -54,6 +54,15 @@ function contractFromCapabilitySource(source: VideoModelCapabilitySource) {
   return typeof source === "string" ? videoModelContract(source) : source;
 }
 
+export function videoModelRequiresHTTPSReferences(source: VideoModelCapabilitySource) {
+  const contract = contractFromCapabilitySource(source);
+  const providerBaseURL = contract?.provider?.base_url.trim().replace(/\/+$/, "").toLowerCase();
+  return Boolean(
+    contract?.transport.local_material === "url"
+      && (contract.driver === "minimax-video" || providerBaseURL === "https://openai.fit"),
+  );
+}
+
 function videoCapability(source: VideoModelCapabilitySource): SharedVideoCapability {
   const capability = contractFromCapabilitySource(source)?.capability;
   if (!capability) return emptyVideoCapability;
@@ -119,6 +128,14 @@ export function supportsVideoFrameReferences(source: VideoModelCapabilitySource)
 
 export function supportsVideoMultimodalReferences(source: VideoModelCapabilitySource) {
   return videoCapability(source).reference_mode;
+}
+
+export function videoDefaultReferenceMode(source: VideoModelCapabilitySource): "first-frame" | "reference" {
+  const contract = contractFromCapabilitySource(source);
+  if (!contract) return "first-frame";
+  const supportsFrames = contract.generation.modes.some((mode) => mode.kind === "image");
+  const supportsReferences = contract.generation.modes.some((mode) => mode.kind === "reference");
+  return !supportsFrames && supportsReferences ? "reference" : "first-frame";
 }
 
 export function videoMultimodalReferenceLimits(source: VideoModelCapabilitySource) {
@@ -201,7 +218,7 @@ export function videoWorkbenchMaterialSections(source: VideoModelCapabilitySourc
   const imageMode = contract?.generation.modes.find((mode) => mode.kind === "image");
   const referenceMode = contract?.generation.modes.find((mode) => mode.kind === "reference");
   return {
-    image: Boolean(imageMode || referenceMode?.materials.image.max),
+    image: Boolean(referenceMode?.materials.image.max),
     video: Boolean(referenceMode?.materials.video.max),
     audio: Boolean(referenceMode?.materials.audio.max),
     imageLabel: imageMode && !referenceMode ? "首尾帧" : "参考图",

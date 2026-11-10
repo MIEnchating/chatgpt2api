@@ -597,8 +597,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/audio-voices" && r.Method == http.MethodGet {
 		model := strings.TrimSpace(r.URL.Query().Get("model"))
-		if audioProtocolForModel(model) != "grok" || allowedPersonalModel(model, a.config.AudioModels()) == "" {
-			util.WriteError(w, http.StatusBadRequest, "Grok TTS 模型不可用")
+		if !audioStringIn(audioProtocolForModel(model), "grok", "minimax") || allowedPersonalModel(model, a.config.AudioModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "音频模型不可用")
 			return
 		}
 		credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, strings.TrimSpace(r.URL.Query().Get("token_group")), strings.TrimSpace(r.URL.Query().Get("token_name")))
@@ -610,7 +610,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		if credential.Custom {
 			requestContext = withCustomRelayContext(requestContext)
 		}
-		voices, err := a.fetchGrokTTSVoicesAt(requestContext, credential.BaseURL, credential.APIKey, model)
+		voices, err := a.fetchAudioVoicesAt(requestContext, credential.BaseURL, credential.APIKey, model)
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

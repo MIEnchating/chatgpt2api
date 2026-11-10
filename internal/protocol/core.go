@@ -89,6 +89,9 @@ type HTTPError struct {
 
 func (e HTTPError) Error() string { return e.Message }
 
+// HTTPStatusCode exposes transport status without requiring a protocol dependency.
+func (e HTTPError) HTTPStatusCode() int { return e.Status }
+
 type ImageOutputProgressCallback func([]map[string]any)
 type ImageOutputSlotAcquirer func(context.Context, int) (func(), error)
 

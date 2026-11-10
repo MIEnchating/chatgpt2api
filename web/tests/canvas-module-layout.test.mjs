@@ -44,18 +44,18 @@ test("the mobile Agent provides an outside target that closes the panel", () => 
 test("canvas node, asset, and prompt search share clearable, keyboard-aware search controls", () => {
   assert.equal((sidePanel.match(/<SearchInput/g) || []).length, 3);
   assert.match(sidePanel, /role="status">\{filteredNodes\.length\} 个结果/);
-  assert.match(sidePanel, /aria-pressed=\{selected\}/);
+  assert.match(sidePanel, /pressed=\{selected\}/);
   assert.match(sidePanel, /点击插入，或将素材拖到画布指定位置/);
 });
 
 test("asset picker keeps its results scrollable and distinguishes empty filters from an empty library", () => {
   assert.match(picker, /h-\[min\(760px,92dvh\)\]/);
   assert.match(picker, /<SearchInput/);
-  assert.match(picker, /aria-pressed=\{kind === item\.value\}/);
+  assert.match(picker, /pressed=\{kind === item\.value\}/);
   assert.match(picker, /role="status">\{filtered\.length\} 个结果/);
   assert.match(picker, /没有匹配的素材/);
   assert.match(picker, /暂无可用素材/);
-  assert.match(picker, /focus-visible:ring-2/);
+  assert.match(picker, /<Toggle/);
 });
 
 test("a newer pointer or keyboard action cancels delayed node title activation", () => {

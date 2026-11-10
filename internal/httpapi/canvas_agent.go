@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -13,6 +14,15 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
+
+func requireAgentJSON(w http.ResponseWriter, r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err == nil && mediaType == "application/json" {
+		return true
+	}
+	util.WriteError(w, http.StatusUnsupportedMediaType, "Agent 接口仅接受 application/json 请求")
+	return false
+}
 
 func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 	identity, ok := a.requireIdentity(w, r)
@@ -30,6 +40,9 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		doc, err = a.canvasAgent.Snapshot(identity, project)
 	case http.MethodPost:
+		if !requireAgentJSON(w, r) {
+			return
+		}
 		if !a.identityCanAccessAPI(identity, http.MethodPut, "/api/canvas") || !a.identityCanAccessAPI(identity, http.MethodPost, "/api/creation-tasks") {
 			util.WriteError(w, 403, "当前账号没有画布写入或生成权限")
 			return
@@ -70,7 +83,10 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, 200, map[string]any{"document": doc})
 }
 
-func (a *App) runCanvasAgentModel(ctx context.Context, identity service.Identity, req service.CanvasAgentModelRequest) (map[string]any, error) {
+func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req service.AgentModelRequest) (map[string]any, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	messages, err := a.canvasAgentModelImages(ctx, identity, req.Messages)
 	if err != nil {
 		return nil, err
@@ -82,14 +98,41 @@ func (a *App) runCanvasAgentModel(ctx context.Context, identity service.Identity
 	if err := a.freezeRelayCredentialForTask(ctx, identity, body); err != nil {
 		return nil, err
 	}
-	if _, err := a.tasks.SubmitChatWithMetadata(ctx, identity, req.TaskID, req.Prompt, req.Model, messages, chatTaskRequestMetadata(body)); err != nil {
+	if err := a.tasks.CheckCreationRequestLimit(identity); err != nil {
 		return nil, err
 	}
-	task, err := service.WaitCanvasAgentTask(ctx, a.tasks, identity, req.TaskID, req.OnText)
+	release, err := a.tasks.AcquireCreationUnit(ctx, identity)
 	if err != nil {
-		if ctx.Err() != nil {
-			_, _ = a.tasks.CancelTask(identity, req.TaskID)
+		return nil, err
+	}
+	defer release()
+	body["messages"] = messages
+	if body["stream"] == true && body["api_mode"] != "responses" {
+		body["stream_options"] = map[string]any{"include_usage": true}
+	}
+	modelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var progressErr error
+	if req.OnText != nil {
+		body[service.TextOutputCallbackPayloadKey] = func(text string) {
+			if progressErr != nil {
+				return
+			}
+			progressErr = req.OnText(text)
+			if progressErr != nil {
+				cancel()
+			}
 		}
+	}
+	capture := auditRequestCapture{args: map[string]any{"model": req.Model, "api_mode": body["api_mode"], "stream": body["stream"], "message_count": len(messages), "tool_count": len(util.AsMapSlice(body["tools"]))}}
+	task, err := a.runLoggedChatTaskCaptured(modelCtx, identity, body, "/api/agent-model", "Agent 模型调用", capture)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if progressErr != nil {
+		return nil, progressErr
+	}
+	if err != nil {
 		return nil, err
 	}
 	data := util.AsMapSlice(task["data"])
@@ -173,7 +216,7 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		body["reference_video_urls"] = n.GenerationVideoReferenceURLs
 		body["reference_audio_urls"] = n.GenerationVideoReferenceAudio
 		if n.GenerationVideoReferenceMode != "reference" && n.GenerationVideoLastFrameURL != "" {
-			lastFrame, referenceErr := a.canvasAgentVideoReference(ctx, identity, n.GenerationVideoLastFrameURL, "image")
+			lastFrame, referenceErr := a.canvasAgentVideoReference(ctx, identity, n.GenerationVideoLastFrameURL, "image", contract)
 			if referenceErr != nil {
 				return nil, referenceErr
 			}
@@ -182,7 +225,7 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		for field, kind := range map[string]string{"reference_image_urls": "image", "reference_video_urls": "video", "reference_audio_urls": "audio"} {
 			refs := []string{}
 			for _, raw := range util.AsStringSlice(body[field]) {
-				ref, e := a.canvasAgentVideoReference(ctx, identity, raw, kind)
+				ref, e := a.canvasAgentVideoReference(ctx, identity, raw, kind, contract)
 				if e != nil {
 					return nil, e
 				}

@@ -37,6 +37,20 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			workspace.Document = document
 			workspace.ActiveProjectID = document.ID
 		}
+		if workspace.Document.AgentRun != nil {
+			document, snapshotErr := a.canvasAgent.Snapshot(identity, workspace.Document.ID)
+			if snapshotErr != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load canvas agent state")
+				return
+			}
+			workspace.Document = document
+			for index := range workspace.Projects {
+				if workspace.Projects[index].ID == document.ID {
+					workspace.Projects[index].Revision = document.Revision
+					workspace.Projects[index].UpdatedAt = document.UpdatedAt
+				}
+			}
+		}
 		util.WriteJSON(w, http.StatusOK, workspace)
 	case http.MethodPost:
 		var input struct {

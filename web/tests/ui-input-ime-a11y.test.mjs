@@ -5,7 +5,7 @@ import test from 'node:test';
 const CR = String.fromCharCode(13);
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8').split(CR).join('');
 const inputTagSource = read('../src/components/ui/input-tag.tsx');
-const inputSource = read('../src/components/ui/input.tsx');
+const inputSource = read('../src/components/password-input.tsx');
 
 test('input tag ignores the Enter key that confirms an IME candidate in Safari', () => {
   assert.match(inputTagSource, /composingRef[.]current/);
@@ -15,5 +15,5 @@ test('input tag ignores the Enter key that confirms an IME candidate in Safari',
 
 test('password visibility toggle does not pair a changing label with aria-pressed', () => {
   assert.doesNotMatch(inputSource, /aria-pressed/);
-  assert.match(inputSource, /aria-label=[{]passwordVisible/);
+  assert.match(inputSource, /aria-label=[{]visible/);
 });

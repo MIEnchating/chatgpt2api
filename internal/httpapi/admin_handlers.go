@@ -4,11 +4,17 @@ import (
 	"errors"
 	"net/http"
 
+	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
 
 func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r); !ok {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet && identity.Role != service.AuthRoleAdmin {
+		util.WriteError(w, http.StatusForbidden, "仅管理员可以管理角色")
 		return
 	}
 	base := "/api/admin/roles"
@@ -87,7 +93,7 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	_, ok := a.requireIdentity(w, r)
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -106,6 +112,10 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			}
 			util.WriteJSON(w, http.StatusOK, response)
 		case http.MethodPost:
+			if identity.Role != service.AuthRoleAdmin {
+				util.WriteError(w, http.StatusForbidden, "仅管理员可以创建用户")
+				return
+			}
 			body, err := readJSONMap(r)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
@@ -175,6 +185,10 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			updates["enabled"] = value
 		}
 		if value, ok := body["role_id"]; ok {
+			if identity.Role != service.AuthRoleAdmin {
+				util.WriteError(w, http.StatusForbidden, "仅管理员可以分配用户角色")
+				return
+			}
 			if roleID := util.Clean(value); roleID != "" && !a.auth.RoleExists(roleID) {
 				util.WriteError(w, http.StatusBadRequest, "role not found")
 				return

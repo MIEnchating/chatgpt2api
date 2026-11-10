@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
+import { DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS } from "./canvas-agent-memory";
 import type {
   CanvasAgentConfig,
   CanvasInsertAssetPayload,
@@ -17,10 +18,16 @@ export function defaultCanvasAgentStarterConfig(): CanvasAgentConfig {
 
 export function normalizeCanvasAgentConfig(value: Partial<CanvasAgentConfig> | null | undefined): CanvasAgentConfig {
   return {
+    ...(typeof value?.textModel === "string" && value.textModel.trim() ? { textModel: value.textModel } : {}),
+    ...(typeof value?.imageModel === "string" && value.imageModel.trim() ? { imageModel: value.imageModel } : {}),
+    ...(typeof value?.videoModel === "string" && value.videoModel.trim() ? { videoModel: value.videoModel } : {}),
+    ...(typeof value?.codexModel === "string" && value.codexModel.trim() ? { codexModel: value.codexModel } : {}),
+    ...(typeof value?.codexEffort === "string" && value.codexEffort.trim() ? { codexEffort: value.codexEffort } : {}),
+    contextWindowTokens: value?.contextWindowTokens && Number.isSafeInteger(value.contextWindowTokens) && value.contextWindowTokens > 1 ? value.contextWindowTokens : DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS,
     autoGenerateMedia: value?.autoGenerateMedia !== false,
     textApiMode: value?.textApiMode === "chat" ? "chat" : "responses",
     textReasoningEnabled: value?.textReasoningEnabled === true,
-    textStreaming: value?.textStreaming === true,
+    textStreaming: value?.textStreaming === undefined || value?.textStreaming === true,
     activeSkillIds: Array.isArray(value?.activeSkillIds) ? [...new Set(value.activeSkillIds.filter((id) => typeof id === "string" && id.trim()))] : [],
   };
 }

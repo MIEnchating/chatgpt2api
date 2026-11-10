@@ -107,7 +107,7 @@ test("the workflow Agent path captures the credential scope and carries one sign
     /workspaceActiveRef\.current[\s\S]*currentSessionKeyRef\.current === requestSessionKey[\s\S]*getCachedAuthSession\(\)\?\.key === requestSessionKey/,
   );
   assert.match(workspaceSource, /workflowImageDataURLs\(agentReferences, signal\)/);
-  assert.match(workspaceSource, /draftWorkflowWithAgent\([\s\S]*\}, \{ signal \}\)/);
+  assert.match(workspaceSource, /draftWorkflowWithAgent\([\s\S]*\}, \{ signal, onStarted: \(id\) => \{ if \(isCurrent\(\)\) setAgentRunID\(id\); \} \}\)/);
   assert.match(workspaceSource, /agentDraftAbortControllerRef\.current\?\.abort\(\)/);
   assert.match(workspaceSource, /\}, \[sessionKey\]\)/);
   assert.match(workflowAPISource, /signal: options\.signal/);

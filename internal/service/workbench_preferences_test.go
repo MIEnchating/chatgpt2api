@@ -2,6 +2,7 @@ package service
 
 import (
 	"chatgpt2api/internal/storage"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -122,4 +123,72 @@ func TestWorkbenchSettingsRejectInvalidValues(t *testing.T) {
 			t.Fatalf("accepted invalid preferences: %#v", value)
 		}
 	}
+}
+
+func TestWorkbenchContextPreferencesPersistAcrossModelsAndAccounts(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "preferences.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	svc := NewImageGenerationPreferenceService(backend)
+	assertContext := func(owner string, enabled bool, textModel string) {
+		t.Helper()
+		got, err := NewImageGenerationPreferenceService(backend).Preferences(owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(got.Workbench)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if fields["smart_context_enabled"] != enabled || fields["context_text_model"] != textModel {
+			t.Fatalf("context preferences lost for %s: %s", owner, data)
+		}
+	}
+	for _, mode := range []string{"image", "video", "image"} {
+		var value CreationWorkbenchPreferences
+		if err := json.Unmarshal([]byte(`{"composer_mode":"`+mode+`","image_count":1,"image_model":"image-b","video_model":"video-a","smart_context_enabled":true,"context_text_model":"vision-model"}`), &value); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Patch("alice", ImageGenerationPreferencePatch{Workbench: &value}); err != nil {
+			t.Fatal(err)
+		}
+		assertContext("alice", true, "vision-model")
+	}
+	assertContext("bob", false, "")
+	current, err := svc.Preferences("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(current.Workbench)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["smart_context_enabled"] = false
+	data, err = json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var off CreationWorkbenchPreferences
+	if err := json.Unmarshal(data, &off); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Patch("alice", ImageGenerationPreferencePatch{Workbench: &off}); err != nil {
+		t.Fatal(err)
+	}
+	assertContext("alice", false, "vision-model")
+	enabled := true
+	if _, err := svc.Patch("alice", ImageGenerationPreferencePatch{Stream: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	assertContext("alice", false, "vision-model")
 }

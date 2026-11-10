@@ -141,6 +141,31 @@ describe("settings store session isolation", () => {
     });
   });
 
+  test("saving persists the displayed family order even before any group is dragged", async () => {
+    let savedConfig;
+    const store = createSettingsStore({
+      updateSettingsConfig: async (payload) => {
+        savedConfig = payload;
+        return { config: payload };
+      },
+      fetchImageStorageGovernance: async () => ({ governance: {} }),
+    });
+    store.getState().activateSession("session-a");
+    store.setState({ config: {
+      ...config("Model groups"),
+      text_models: ["gpt-6.1-sol"],
+      image_models: ["gemini-3-image", "grok-image", "gpt-image-2"],
+      audio_models: [],
+      model_groups: { overrides: {}, order: [] },
+    } });
+    await store.getState().saveConfig();
+    expect(savedConfig.model_groups).toEqual({ overrides: {}, order: ["GPT", "GEMINI", "GROK"] });
+
+    store.getState().setModelGroups({ overrides: { "gpt-image-2": "OpenAI" }, order: ["GROK", "OpenAI", "GPT"] });
+    await store.getState().saveConfig();
+    expect(savedConfig.model_groups).toEqual({ overrides: { "gpt-image-2": "OpenAI" }, order: ["GROK", "OpenAI", "GPT", "GEMINI"] });
+  });
+
   test("an A response completing after B cannot overwrite B or emit feedback", async () => {
     const aRequest = deferred();
     const bRequest = deferred();

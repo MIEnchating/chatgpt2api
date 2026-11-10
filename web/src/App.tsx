@@ -13,7 +13,7 @@ export default function App() {
     <TooltipProvider>
       <TooltipDomBridge />
       {createPortal(
-        <Toaster closeButton style={{ zIndex: OVERLAY_LAYER.notification }} theme={theme} position="top-center" richColors expand visibleToasts={5} gap={12} offset={56} toastOptions={{ classNames: { toast: "font-sans !rounded-xl !gap-3 !p-4 !shadow-[var(--shadow-popover)]", title: "font-semibold leading-5 [overflow-wrap:anywhere]", description: "leading-5 [overflow-wrap:anywhere]", actionButton: "!rounded-lg", cancelButton: "!rounded-lg" }, style: { pointerEvents: "auto" } }} />,
+        <Toaster closeButton style={{ zIndex: OVERLAY_LAYER.notification }} theme={theme} position="top-center" expand visibleToasts={5} gap={12} offset={56} toastOptions={{ style: { pointerEvents: "auto" } }} />,
         document.body,
       )}
       <AppShell />

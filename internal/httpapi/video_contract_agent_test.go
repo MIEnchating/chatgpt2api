@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"chatgpt2api/internal/protocol"
 )
@@ -181,29 +180,21 @@ func TestVideoContractAgentDocumentCancellation(t *testing.T) {
 	}
 }
 
-func TestVideoContractRetryBackoff(t *testing.T) {
-	if videoContractRetryDelay(1) != time.Second || videoContractRetryDelay(2) != 2*time.Second || videoContractRetryDelay(100) != 2*time.Second {
-		t.Fatal("retry delay must be bounded exponential backoff")
+func TestVideoContractAgentSnapshotKeepsEvidenceAndValidation(t *testing.T) {
+	base, _ := url.Parse("https://example.test/docs")
+	target, _ := url.Parse("https://example.test/api")
+	original := &videoContractAgentState{content: "verified evidence", read: map[int]string{1: "saved page"}, inspected: true, validations: 2, documentRevision: 1, source: videoContractImportSource{Site: &videoContractDocumentSite{baseURL: base, remainingBytes: 4096, links: []videoContractDocumentLink{{name: "API", url: target, index: 1}}}}}
+	raw, _ := json.Marshal(captureVideoContractAgentState(original))
+	var saved videoContractAgentSnapshot
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
 	}
-	start := time.Now()
-	if err := waitVideoContractRetry(context.Background(), 15*time.Millisecond); err != nil || time.Since(start) < 15*time.Millisecond {
-		t.Fatal("retry did not wait")
+	restored := &videoContractAgentState{}
+	if err := restoreVideoContractSnapshot(restored, saved); err != nil {
+		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := waitVideoContractRetry(ctx, time.Hour); err != context.Canceled {
-		t.Fatalf("error=%v", err)
-	}
-	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Millisecond)
-	defer cancel()
-	start = time.Now()
-	if err := waitVideoContractRetry(ctx, time.Hour); err != context.DeadlineExceeded || time.Since(start) > time.Second {
-		t.Fatalf("backoff was not cancellable: %v", err)
-	}
-	for _, err := range []error{context.Canceled, context.DeadlineExceeded, protocol.HTTPError{Status: 400}} {
-		if retryableVideoContractRelayError(err) {
-			t.Fatalf("unexpected retry: %v", err)
-		}
+	if restored.read[1] != "saved page" || !restored.inspected || restored.validations != 2 || restored.source.Site.links[0].url.String() != target.String() {
+		t.Fatalf("lost evidence: %+v", restored)
 	}
 }
 
@@ -255,5 +246,27 @@ func TestVideoContractAgentSchemaAndActualRequests(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVideoContractSnapshotKeepsUnfinishedDocumentPreparation(t *testing.T) {
+	original := &videoContractAgentState{source: videoContractImportSource{Type: "url", URL: "https://docs.example.test/api"}}
+	for _, ready := range []bool{false, true} {
+		original.documentPrepared = ready
+		if ready {
+			original.content = "saved document"
+		}
+		raw, _ := json.Marshal(captureVideoContractAgentState(original))
+		var stored videoContractAgentSnapshot
+		if err := json.Unmarshal(raw, &stored); err != nil {
+			t.Fatal(err)
+		}
+		restored := &videoContractAgentState{}
+		if err := restoreVideoContractSnapshot(restored, stored); err != nil {
+			t.Fatal(err)
+		}
+		if restored.documentPrepared != ready || restored.content != original.content {
+			t.Fatalf("document preparation lost: %+v", restored)
+		}
 	}
 }

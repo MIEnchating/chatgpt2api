@@ -1,8 +1,11 @@
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ItemMedia } from "@/components/ui/item";
+import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+
 
 // Toolbar button that opens one group of node parameters in a floating panel,
 // so settings no longer stack under the prompt editor.
@@ -19,44 +22,41 @@ export function CanvasParameterPopover({ icon, label, summary, width = 380, disa
     <Popover>
       <Tooltip>
         <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <button
+          <span className="inline-flex shrink-0"><PopoverTrigger asChild>
+            <Button variant={active ? "secondary" : "outline"}
               type="button"
               aria-label={label}
               disabled={disabled}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground transition hover:border-border hover:bg-background disabled:opacity-50 data-[state=open]:border-brand-border data-[state=open]:bg-brand-soft data-[state=open]:text-brand [&_svg]:size-3.5 [&_svg]:shrink-0",
-                active && "border-brand-border text-brand",
-              )}
+              className="inline-flex shrink-0 items-center whitespace-nowrap transition disabled:opacity-50 [&_svg]:shrink-0"
             >
-              <span className="text-brand">{icon}</span>
+              <span className="text-primary">{icon}</span>
               {summary ? <span className="font-semibold">{summary}</span> : <span>{label}</span>}
-            </button>
-          </PopoverTrigger>
+            </Button>
+          </PopoverTrigger></span>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
       <PopoverContent
         side="top"
         align="start"
+        collisionPadding={8}
         data-canvas-parameter-panel
         data-canvas-no-pan
         role="dialog"
         aria-label={label}
-        className="max-w-[calc(100vw-1rem)] rounded-2xl border-border/70 p-4"
+        className="max-h-(--radix-popover-content-available-height) max-w-[calc(100vw-1rem)]"
         style={{ width }}
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}
-        onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
-      >
-        <div className="mb-4 flex items-center gap-2 border-b border-border/60 pb-3">
-          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand [&_svg]:size-4">{icon}</span>
+      ><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+          <ItemMedia variant="icon" className="grid size-7 shrink-0 place-items-center [&_svg]:size-4">{icon}</ItemMedia>
           <span className="text-sm font-semibold">{label}</span>
         </div>
         <div className="min-w-0">{children}</div>
-      </PopoverContent>
+      </ScrollArea></PopoverContent>
     </Popover>
   );
 }

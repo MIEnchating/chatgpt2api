@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isPublicReferenceURL, MAX_PUBLIC_REFERENCE_URL_LENGTH } from "../src/lib/public-reference-url.ts";
+import { isPublicHTTPSReferenceURL, isPublicReferenceURL, MAX_PUBLIC_REFERENCE_URL_LENGTH } from "../src/lib/public-reference-url.ts";
 
 test("accepts public media reference URLs", () => {
   assert.equal(isPublicReferenceURL("https://cdn.example.com/video.mp4?signature=abc"), true);
   assert.equal(isPublicReferenceURL("http://8.8.8.8/audio.mp3"), true);
+});
+
+test("requires HTTPS for provider contracts that need secure references", () => {
+  assert.equal(isPublicHTTPSReferenceURL("https://cdn.example.com/video.mp4"), true);
+  assert.equal(isPublicHTTPSReferenceURL("http://cdn.example.com/video.mp4"), false);
+  assert.equal(isPublicHTTPSReferenceURL("https://127.0.0.1/video.mp4"), false);
 });
 
 test("rejects local, private, inline, and credentialed references", () => {

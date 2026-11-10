@@ -1,9 +1,56 @@
 package httpapi
 
 import (
+	"encoding/base64"
+	"fmt"
+	"slices"
+
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
 )
+
+// Encode temporary references only when constructing the upstream request.
+// Durable task payloads keep signed file references instead of Base64 bytes.
+func (a *App) encodeVideoContractBase64Materials(request map[string]any, contract protocol.VideoModelContract, kind string) error {
+	if contract.Transport.LocalMaterial != "base64" {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, field := range videoContractMaterialFields(contract, kind) {
+		if seen[field.name] {
+			continue
+		}
+		seen[field.name] = true
+		value := videoJSONPathValue(request, field.name)
+		values := slices.Clone(util.AsStringSlice(value))
+		if field.scalar && util.Clean(value) != "" {
+			values = []string{util.Clean(value)}
+		}
+		for i, value := range values {
+			file, local, err := a.localVideoReferenceFile(value)
+			if err != nil {
+				return err
+			}
+			if !local {
+				return fmt.Errorf("Base64 素材必须先暂存为平台文件")
+			}
+			encoded := base64.StdEncoding.EncodeToString(file.Data)
+			if contract.Transport.Base64Format != "raw" {
+				encoded = "data:" + file.ContentType + ";base64," + encoded
+			}
+			values[i] = encoded
+		}
+		if len(values) == 0 {
+			continue
+		}
+		if field.scalar {
+			videoSetObjectPath(request, field.name, values[0])
+		} else {
+			videoSetObjectPath(request, field.name, values)
+		}
+	}
+	return nil
+}
 
 type videoMaterialField struct {
 	name   string

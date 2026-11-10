@@ -1,3 +1,6 @@
+import { nanoid } from "nanoid";
+import { fetchAgentExecution, observeAgentExecution } from "@/lib/agent-executions";
+import type { RelayModelPricing } from "./model-pricing";
 import { type ImageGenerationOptions, imageGenerationRequestOptions, imageOutputSupportsStreaming } from "@/lib/image-generation-options";
 import { isGPTImage26 } from "@/lib/image-model-capabilities";
 import { httpRequest, httpRequestEventStream } from "@/lib/request";
@@ -28,6 +31,7 @@ import {
   type VideoModelContract,
 } from "@/lib/video-model-contracts";
 import { createExpiringRequestCache } from "@/lib/expiring-request-cache";
+import { RELAY_MODEL_CONFIG_CHANGED_EVENT, relayModelSettingsSignature } from "@/lib/relay-token-models";
 import type { VideoTaskContractReference } from "@/lib/video-task-contract";
 
 export type ImageModel = string;
@@ -95,6 +99,7 @@ export type ImageModeration = "auto" | "low";
 export type ImageVisibility = "private" | "public";
 
 export type RelayModelListItem = {
+  pricing?: RelayModelPricing;
   id?: string;
   object?: string;
   owned_by?: string;
@@ -188,10 +193,10 @@ export type SettingsConfig = {
   project_name?: string;
   site_icon_url?: string;
   relay_base_url?: string;
-  relay_text_group?: string;
-  relay_image_group?: string;
-  relay_video_group?: string;
-  relay_audio_group?: string;
+  relay_text_group?: string[];
+  relay_image_group?: string[];
+  relay_video_group?: string[];
+  relay_audio_group?: string[];
   relay_database_url?: string;
   relay_database_type?: "newapi" | "sub2api" | string;
   relay_database_driver?: "sqlite" | "postgres" | "mysql" | string;
@@ -205,6 +210,7 @@ export type SettingsConfig = {
   image_models?: string[] | string;
   image_model_definitions?: ImageModelDefinitions;
   model_capabilities?: Record<string, ModelCapability>;
+  model_groups?: import("@/lib/model-groups").ModelGroups;
   default_image_model?: string;
   video_models?: string[] | string;
   default_video_model?: string;
@@ -252,6 +258,7 @@ export type StorageProviderConfig = {
 	endpoint: string;
 	region: string;
 	bucket: string;
+	bucketInHost: boolean;
 	accessKeyId: string;
 	secretAccessKey: string;
 	publicBaseUrl: string;
@@ -280,6 +287,7 @@ export type ModelConfig = {
   image_models: ImageModel[];
   image_model_definitions?: ImageModelDefinitions;
   model_capabilities?: Record<string, ModelCapability>;
+  model_groups?: import("@/lib/model-groups").ModelGroups;
   default_image_model: ImageModel;
   video_models: string[];
   default_video_model: string;
@@ -375,6 +383,7 @@ export type VideoModelContractTransferDocument = {
 export type CustomRelayProtocol = "openai" | "autodl" | "ark" | "runninghub";
 
 export type CustomRelayConfigStatus = {
+  pricing_group?: string;
   protocol: CustomRelayProtocol;
   id: string;
   kind: "text" | "image" | "video" | "audio";
@@ -399,6 +408,8 @@ export type LoginPageImageSettings = {
 };
 
 export type CreationWorkbenchPreferences = {
+  smart_context_enabled: boolean;
+  context_text_model: string;
   image_options?: ImageGenerationOptions;
   composer_mode: "image" | "video";
   video_task_count: number;
@@ -879,7 +890,9 @@ type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferen
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
 const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
 let modelConfigGeneration = 0;
-const grokTTSVoiceRequests = new Map<string, Promise<GrokTTSVoice[]>>();
+let accountAPICacheGeneration = 0;
+let relayModelSettingsSnapshot: string | null = null;
+const audioVoiceRequests = new Map<string, Promise<AudioVoice[]>>();
 
 function clearModelConfigCache() {
   modelConfigGeneration += 1;
@@ -887,10 +900,12 @@ function clearModelConfigCache() {
 }
 
 function clearAccountScopedAPICaches() {
+	accountAPICacheGeneration += 1;
+	relayModelSettingsSnapshot = null;
 	installImageModelDefinitions();
 	imageGenerationPreferencesCache.clear();
 	clearModelConfigCache();
-	grokTTSVoiceRequests.clear();
+	audioVoiceRequests.clear();
 }
 
 if (typeof window !== "undefined") {
@@ -915,7 +930,7 @@ export async function fetchCustomRelayConfigs() {
 }
 
 export async function createCustomRelayConfig(
-  input: { protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string; pricing_group: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     "/api/profile/custom-relay-configs",
@@ -925,12 +940,19 @@ export async function createCustomRelayConfig(
 
 export async function updateCustomRelayConfig(
   id: string,
-  input: { protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string; pricing_group: string },
 ) {
-  return httpRequest<{ item: CustomRelayConfigStatus }>(
+  const generation = accountAPICacheGeneration;
+  const response = await httpRequest<{ item: CustomRelayConfigStatus }>(
     `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
     { method: "PUT", body: input },
   );
+  if (generation === accountAPICacheGeneration && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(RELAY_MODEL_CONFIG_CHANGED_EVENT, {
+      detail: { tokenName: response.item.token_name },
+    }));
+  }
+  return response;
 }
 
 export async function deleteCustomRelayConfig(id: string) {
@@ -1109,26 +1131,26 @@ export type CreateAudioGenerationTaskInput = {
   requestOptions?: CreationTaskRequestOptions;
 };
 
-export type GrokTTSVoice = {
+export type AudioVoice = {
   voice_id: string;
   name?: string;
   language?: string;
 };
 
-export function fetchGrokTTSVoices(model: string, relayTokenName: string) {
+export function fetchAudioVoices(model: string, relayTokenName: string) {
   const query = new URLSearchParams({ model });
   if (relayTokenName.trim()) query.set("token_name", relayTokenName.trim());
   const requestKey = query.toString();
-	const existing = grokTTSVoiceRequests.get(requestKey);
+	const existing = audioVoiceRequests.get(requestKey);
 	if (existing) return existing;
-	const request = httpRequest<{ voices?: GrokTTSVoice[] }>(`/api/creation-tasks/audio-voices?${query.toString()}`, { timeout: 30_000 })
+	const request = httpRequest<{ voices?: AudioVoice[] }>(`/api/creation-tasks/audio-voices?${query.toString()}`, { timeout: 30_000 })
 		.then((response) => Array.isArray(response.voices) ? response.voices.filter((voice) => Boolean(voice.voice_id?.trim())) : [])
 		.finally(() => {
-			if (grokTTSVoiceRequests.get(requestKey) === request) {
-				grokTTSVoiceRequests.delete(requestKey);
+			if (audioVoiceRequests.get(requestKey) === request) {
+				audioVoiceRequests.delete(requestKey);
 			}
 		});
-  grokTTSVoiceRequests.set(requestKey, request);
+  audioVoiceRequests.set(requestKey, request);
   return request;
 }
 
@@ -1432,7 +1454,12 @@ export async function fetchRelayCreationGroups(signal?: AbortSignal) {
 }
 
 export async function fetchSettingsConfig() {
-  return httpRequest<{ config: SettingsConfig }>("/api/settings");
+  const generation = accountAPICacheGeneration;
+  const response = await httpRequest<{ config: SettingsConfig }>("/api/settings");
+  if (generation === accountAPICacheGeneration) {
+    relayModelSettingsSnapshot = relayModelSettingsSignature(response.config);
+  }
+  return response;
 }
 
 export async function fetchPromptSourcesConfig() {
@@ -1503,6 +1530,7 @@ export async function deleteAnnouncement(id: string) {
 
 export async function updateSettingsConfig(settings: SettingsConfig) {
   const generation = modelConfigGeneration;
+  const accountGeneration = accountAPICacheGeneration;
   const response = await httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
     body: settings,
@@ -1510,6 +1538,14 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
   if (generation === modelConfigGeneration) {
     clearModelConfigCache();
     installImageModelDefinitions(response.config.image_model_definitions);
+  }
+  if (accountGeneration === accountAPICacheGeneration) {
+    const nextSnapshot = relayModelSettingsSignature(response.config);
+    const changed = relayModelSettingsSnapshot !== nextSnapshot || Boolean(settings.relay_database_password);
+    relayModelSettingsSnapshot = nextSnapshot;
+    if (changed && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(RELAY_MODEL_CONFIG_CHANGED_EVENT));
+    }
   }
   return response;
 }
@@ -1540,6 +1576,7 @@ export async function fetchAdminVideoModelContracts(options: { signal?: AbortSig
 }
 
 export async function importVideoModelContract(input: {
+  runID?: string;
   sourceType: "file" | "url";
   generatePlugin: boolean;
   file?: File | null;
@@ -1557,7 +1594,9 @@ export async function importVideoModelContract(input: {
   if (input.model?.trim()) formData.append("model", input.model.trim());
   if (input.tokenName?.trim()) formData.append("token_name", input.tokenName.trim());
   let result: VideoModelContractImportResult | undefined;
-  await httpRequestEventStream("/api/admin/video-model-contracts/import", {
+  const runID = input.runID || nanoid();
+  try { await httpRequestEventStream("/api/admin/video-model-contracts/import", {
+    headers: { "X-Agent-Run-ID": runID },
     method: "POST",
     body: formData,
     timeout: 600_000,
@@ -1577,7 +1616,13 @@ export async function importVideoModelContract(input: {
       if (progress.stage === "completed" && progress.result) result = progress.result;
     },
   });
-  if (!result) throw new Error("分析连接已结束，但未收到完成事件；请检查后端日志后重试");
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    const run = await fetchAgentExecution<VideoModelContractImportResult>({ id: runID }, input.signal);
+    if (!run) throw error;
+    return observeAgentExecution<VideoModelContractImportResult>(runID, input.signal || new AbortController().signal);
+  }
+  if (!result) return observeAgentExecution<VideoModelContractImportResult>(runID, input.signal || new AbortController().signal);
   return result;
 }
 
@@ -2063,13 +2108,14 @@ export type ProxyTestResult = {
 };
 
 export async function fetchRelayModels(
-  options: { group?: string; tokenName?: string; signal?: AbortSignal } = {},
+  options: { group?: string; tokenName?: string; includePricing?: boolean | "cached"; signal?: AbortSignal } = {},
 ) {
   const params = new URLSearchParams();
+  if (options.includePricing) params.set("include_pricing", options.includePricing === "cached" ? "cached" : "true");
   if (options.group?.trim()) params.set("group", options.group.trim());
   if (options.tokenName?.trim())
     params.set("token_name", options.tokenName.trim());
-  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null; source?: string; notice?: string }>(
+  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null; source?: string; notice?: string; pricing_notice?: string; pricing_error?: string }>(
     `/api/profile/upstream-models${params.toString() ? `?${params.toString()}` : ""}`,
     { signal: options.signal },
   );

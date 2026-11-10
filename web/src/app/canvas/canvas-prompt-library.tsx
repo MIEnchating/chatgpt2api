@@ -1,5 +1,7 @@
 "use client";
 
+import { TooltipHint } from "@/components/ui/tooltip";
+
 import { useState } from "react";
 import { BookOpenText } from "lucide-react";
 
@@ -11,17 +13,16 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
 
   return (
     <>
-      <Button
+      <TooltipHint content={"提示词"}><Button
         type="button"
         variant="ghost"
         size="icon"
-        className="size-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+        className="shrink-0"
         onClick={() => setOpen(true)}
         aria-label="打开提示词"
-        title="提示词"
       >
-        <BookOpenText className="size-3.5" />
-      </Button>
+        <BookOpenText  />
+      </Button></TooltipHint>
       <ImagePromptMarket
         open={open}
         onOpenChange={setOpen}

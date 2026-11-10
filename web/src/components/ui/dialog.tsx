@@ -1,23 +1,35 @@
-import * as React from "react";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+// shadcn/ui (MIT). See LICENSE.shadcn.
+import { XIcon } from "lucide-react"
 
-import { cn } from "@/lib/utils";
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import * as React from "react"
+import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer"
+import { cn } from "@/lib/utils"
+import { Dialog as DialogPrimitive } from "radix-ui"
 
-function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+import { Button } from "@/components/ui/button"
+
+function Dialog({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogPortal(
-  props: React.ComponentProps<typeof DialogPrimitive.Portal>,
-) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
+function DialogTrigger({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
-function DialogClose(props: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
+function DialogPortal({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+}
+
+function DialogClose({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Close>) {
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
 function DialogOverlay({
@@ -28,152 +40,118 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 backdrop-blur-[2px]",
-        className,
+        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        className
       )}
       {...props}
     />
-  );
+  )
 }
-
-type DialogContentProps = Omit<
-  React.ComponentProps<typeof DialogPrimitive.Content>,
-  "onOpenAutoFocus"
-> & {
-  showCloseButton?: boolean;
-  scrollable?: boolean;
-  overlayClassName?: string;
-};
 
 function DialogContent({
   className,
   children,
   showCloseButton = true,
-  scrollable = true,
-  overlayClassName,
-  style,
+  onOpenAutoFocus,
   onCloseAutoFocus,
   onInteractOutside,
+  style,
   ...props
-}: DialogContentProps) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  showCloseButton?: boolean
+}) {
   const layer = useOverlayLayer("modal");
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
-  const dialogChildren = flattenDialogChildren(children);
-  const headers = dialogChildren.filter(isDialogHeaderElement);
-  const footers = dialogChildren.filter(isDialogFooterElement);
-  const body = dialogChildren.filter(
-    (child) => !isDialogHeaderElement(child) && !isDialogFooterElement(child),
-  );
-
   return (
-    <OverlayLayerProvider value={layer}>
-    <DialogPortal>
-      <DialogOverlay className={overlayClassName} style={{ zIndex: layer - 1 }} />
+    <OverlayLayerProvider value={layer}><DialogPortal>
+      <DialogOverlay style={{ zIndex: layer - 1 }} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         tabIndex={-1}
-        onInteractOutside={(event) => {
-          onInteractOutside?.(event);
-          if (event.target instanceof Element && event.target.closest("[data-sonner-toaster]")) {
-            event.preventDefault();
-          }
-        }}
         onOpenAutoFocus={(event) => {
-          returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          const ownerDocument = (event.currentTarget as HTMLElement).ownerDocument;
+          const activeElement = ownerDocument.activeElement;
+          const menuTriggerId = activeElement instanceof HTMLElement ? activeElement.closest("[role='menu']")?.getAttribute("aria-labelledby") : null;
+          const menuTrigger = menuTriggerId ? ownerDocument.getElementById(menuTriggerId) : null;
+          returnFocusRef.current = menuTrigger instanceof HTMLElement ? menuTrigger : activeElement instanceof HTMLElement && activeElement !== ownerDocument.body ? activeElement : null;
+          onOpenAutoFocus?.(event);
+          if (event.defaultPrevented) return;
           event.preventDefault();
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
         }}
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event);
-          if (!event.defaultPrevented && returnFocusRef.current?.isConnected) {
-            event.preventDefault();
-            returnFocusRef.current.focus({ preventScroll: true });
-          }
+          if (event.defaultPrevented || !returnFocusRef.current?.isConnected) return;
+          event.preventDefault();
+          returnFocusRef.current.focus({ preventScroll: true });
         }}
-        className={cn(
-          "fixed top-[50%] left-[50%] flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-5 overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
-          className,
-        )}
-        {...props}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event);
+          if (event.target instanceof Element && event.target.closest("[data-sonner-toaster]")) event.preventDefault();
+        }}
         data-overlay-layer={layer}
         style={{ ...style, zIndex: layer }}
+        className={cn(
+          "fixed top-1/2 left-1/2 z-50 flex min-h-0 max-h-[calc(100dvh-2rem)] flex-col overflow-hidden w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "[&>:is([data-slot=dialog-body],[data-slot=scroll-area])]:-mx-4 [&>:is([data-slot=dialog-body],[data-slot=scroll-area])]:w-auto [&>:is([data-slot=dialog-body],[data-slot=scroll-area])>[data-radix-scroll-area-viewport]]:px-4",
+          className
+        )}
+        {...props}
       >
-        {scrollable ? (
-          <>
-            {headers}
-            {body.length > 0 ? (
-              <ScrollArea
-                data-slot="dialog-body"
-                className="-mx-1 min-h-0 min-w-0 flex-1 px-1"
-                viewportClassName="overscroll-contain py-1"
-                viewClass="grid min-w-0 gap-4"
-              >
-                {body}
-              </ScrollArea>
-            ) : null}
-            {footers}
-          </>
-        ) : children}
-        {showCloseButton ? (
-          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="absolute top-3 right-3 z-30 inline-flex size-9 items-center justify-center rounded-lg bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60 sm:top-4 sm:right-4">
-            <X className="size-4" />
-            <span className="sr-only">关闭</span>
+        {children}
+        {showCloseButton && (
+          <DialogPrimitive.Close data-slot="dialog-close" asChild>
+            <Button
+              variant="ghost"
+              className="absolute top-2 right-2"
+              size="icon-sm"
+            >
+              <XIcon
+               />
+              <span className="sr-only">关闭</span>
+            </Button>
           </DialogPrimitive.Close>
-        ) : null}
+        )}
       </DialogPrimitive.Content>
-    </DialogPortal>
-    </OverlayLayerProvider>
-  );
-}
-
-function flattenDialogChildren(children: React.ReactNode): React.ReactNode[] {
-  const result: React.ReactNode[] = [];
-  React.Children.forEach(children, (child) => {
-    if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.type === React.Fragment) {
-      result.push(...flattenDialogChildren(child.props.children));
-      return;
-    }
-    result.push(child);
-  });
-  return result;
-}
-
-function isDialogHeaderElement(child: React.ReactNode) {
-  return React.isValidElement(child) && child.type === DialogHeader;
-}
-
-function isDialogFooterElement(child: React.ReactNode) {
-  return React.isValidElement(child) && child.type === DialogFooter;
+    </DialogPortal></OverlayLayerProvider>
+  )
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("min-w-0 shrink-0 flex flex-col gap-2 pr-10 text-left", className)}
+      className={cn("flex shrink-0 flex-col gap-2 pr-8", className)}
       {...props}
     />
-  );
+  )
 }
 
 function DialogFooter({
   className,
-  flush = false,
+  showCloseButton = false,
+  children,
   ...props
-}: React.ComponentProps<"div"> & { flush?: boolean }) {
+}: React.ComponentProps<"div"> & {
+  showCloseButton?: boolean
+}) {
   return (
     <div
       data-slot="dialog-footer"
-      data-flush={flush || undefined}
       className={cn(
-        "z-10 flex min-w-0 shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:flex-wrap sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18 [&>[data-slot=button]]:h-auto [&>[data-slot=button]]:min-h-10 [&>[data-slot=button]]:whitespace-normal",
-        !flush && "border-t border-border/70 pt-3",
-        flush && "min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6",
-        className,
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        className
       )}
       {...props}
-    />
-  );
+    >
+      {children}
+      {showCloseButton && (
+        <DialogPrimitive.Close asChild>
+          <Button variant="outline">关闭</Button>
+        </DialogPrimitive.Close>
+      )}
+    </div>
+  )
 }
 
 function DialogTitle({
@@ -183,10 +161,13 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-display min-w-0 text-xl leading-7 font-semibold [overflow-wrap:anywhere]", className)}
+      className={cn(
+        "cn-font-heading text-base leading-none font-medium",
+        className
+      )}
       {...props}
     />
-  );
+  )
 }
 
 function DialogDescription({
@@ -196,10 +177,13 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]", className)}
+      className={cn(
+        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        className
+      )}
       {...props}
     />
-  );
+  )
 }
 
 export {
@@ -209,5 +193,8 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogOverlay,
+  DialogPortal,
   DialogTitle,
-};
+  DialogTrigger,
+}

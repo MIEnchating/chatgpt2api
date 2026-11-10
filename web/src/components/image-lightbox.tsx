@@ -1,8 +1,13 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
+
+import { Button } from "@/components/ui/button";
+
+
 import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ChevronLeft, ChevronRight, Download, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Dialog as DialogPrimitive } from "radix-ui";
+import { ChevronLeft, ChevronRight, Download, FlipHorizontal2, FlipVertical2, RefreshCw, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -77,12 +82,18 @@ export function ImageLightbox({
   const hasNext = currentIndex < images.length - 1;
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
+  const [flippedX, setFlippedX] = useState(false);
+  const [flippedY, setFlippedY] = useState(false);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; panX: number; panY: number } | null>(null);
   const zoomPercent = Math.round(zoom * 100);
 
   const resetZoom = useCallback(() => {
     setZoom(MIN_ZOOM);
     setPan({ x: 0, y: 0 });
+    setRotation(0);
+    setFlippedX(false);
+    setFlippedY(false);
   }, []);
 
   const zoomIn = useCallback(() => {
@@ -259,11 +270,11 @@ export function ImageLightbox({
     <OverlayLayerProvider value={layer}>
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay style={{ zIndex: layer - 1 }} className="fixed inset-y-0 left-0 h-dvh w-screen bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay style={{ zIndex: layer - 1 }} className="fixed inset-y-0 left-0 h-dvh w-screen bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           data-overlay-layer={layer}
           style={{ zIndex: layer }}
-          className="fixed inset-y-0 left-0 flex h-dvh w-screen flex-col outline-none"
+          className="dark fixed inset-y-0 left-0 flex h-dvh w-screen flex-col text-foreground outline-none"
           tabIndex={-1}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
@@ -275,91 +286,48 @@ export function ImageLightbox({
             图片预览
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            查看、缩放、切换或下载当前图片。
+            查看、缩放、旋转、翻转、切换或下载当前图片。
           </DialogPrimitive.Description>
 
-          <div className="relative z-20 flex w-full shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/10 bg-black/20 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5">
+          <div className="relative z-20 flex w-full shrink-0 flex-wrap items-center justify-end gap-2 border-b bg-background px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5">
             {current.sizeLabel || current.dimensions ? (
-              <span className="mr-auto max-w-full basis-full truncate sm:basis-auto rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90 sm:max-w-[42vw]">
+              <Badge variant="secondary" className="mr-auto max-w-full basis-full truncate sm:basis-auto sm:max-w-[42vw]">
                 {[current.sizeLabel, current.dimensions].filter(Boolean).join(" · ")}
-              </span>
+              </Badge>
             ) : null}
             {images.length > 1 && (
-              <span className="rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white/90">
+              <Badge variant="secondary">
                 {currentIndex + 1} / {images.length}
-              </span>
+              </Badge>
             )}
-            <div className="flex items-center rounded-full bg-black/50 text-white/90">
-              <TooltipButton
-                type="button"
-                onClick={zoomOut}
-                disabled={zoom <= MIN_ZOOM}
-                className="inline-flex size-9 items-center justify-center rounded-l-full transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="缩小图片"
-                tooltip="缩小图片"
-              >
-                <ZoomOut className="size-4" />
-              </TooltipButton>
-              <span className="min-w-12 text-center text-xs font-medium tabular-nums">{zoomPercent}%</span>
-              <TooltipButton
-                type="button"
-                onClick={zoomIn}
-                disabled={zoom >= MAX_ZOOM}
-                className="inline-flex size-9 items-center justify-center transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="放大图片"
-                tooltip="放大图片"
-              >
-                <ZoomIn className="size-4" />
-              </TooltipButton>
-              <TooltipButton
-                type="button"
-                onClick={resetZoom}
-                disabled={zoom === MIN_ZOOM && pan.x === 0 && pan.y === 0}
-                className="inline-flex size-9 items-center justify-center rounded-r-full transition-colors enabled:hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="重置缩放"
-                tooltip="重置缩放"
-              >
-                <RotateCcw className="size-4" />
-              </TooltipButton>
-            </div>
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              aria-label="下载图片"
-            >
-              <Download className="size-4" />
-            </button>
-            <DialogPrimitive.Close className="inline-flex size-9 items-center justify-center rounded-full bg-black/50 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+            <DialogPrimitive.Close asChild><Button type="button" variant="ghost" size="icon-sm">
               <X className="size-4" />
               <span className="sr-only">关闭</span>
-            </DialogPrimitive.Close>
+            </Button></DialogPrimitive.Close>
           </div>
 
           {hasPrev && (
-            <button
+            <Button variant="ghost" size="icon-sm"
               type="button"
               onClick={goPrev}
-              className="absolute top-1/2 left-3 z-10 -translate-y-1/2 sm:left-5 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="absolute top-1/2 left-3 z-10 -translate-y-1/2 sm:left-5 inline-flex items-center justify-center"
               aria-label="上一张"
             >
-              <ChevronLeft className="size-5" />
-            </button>
+              <ChevronLeft  />
+            </Button>
           )}
 
           <div
-            className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-8"
+            className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden p-4 sm:p-8"
             onClick={() => onOpenChange(false)}
             onWheel={handleWheel}
           >
+            <div className="flex size-full items-center justify-center [container-type:size]">
             <AuthenticatedImage
               src={current.src}
               alt=""
-              className={cn(
-                "max-h-full max-w-full rounded-lg object-contain",
-                zoom > MIN_ZOOM ? "cursor-grab touch-none will-change-transform active:cursor-grabbing" : "cursor-zoom-in",
-              )}
-              style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
+              className={cn("max-h-full max-w-full rounded-lg object-contain", zoom > MIN_ZOOM ? "cursor-grab touch-none will-change-transform active:cursor-grabbing" : "cursor-zoom-in")}
+              style={{ maxWidth: rotation % 180 === 0 ? undefined : "100cqh", maxHeight: rotation % 180 === 0 ? undefined : "100cqw", transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom}) rotate(${rotation}deg) scale(${flippedX ? -1 : 1}, ${flippedY ? -1 : 1})` }}
               onClick={(event) => {
                 event.stopPropagation();
                 if (zoom === MIN_ZOOM) {
@@ -373,18 +341,60 @@ export function ImageLightbox({
               onLostPointerCapture={handleImagePointerEnd}
               draggable={false}
             />
+            </div>
           </div>
 
           {hasNext && (
-            <button
+            <Button variant="ghost" size="icon-sm"
               type="button"
               onClick={goNext}
-              className="absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-5 inline-flex size-10 items-center justify-center rounded-full bg-black/40 text-white/90 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-5 inline-flex items-center justify-center"
               aria-label="下一张"
             >
-              <ChevronRight className="size-5" />
-            </button>
+              <ChevronRight  />
+            </Button>
           )}
+
+          <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-center gap-1 border-t bg-background px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]" role="toolbar" aria-label="图片操作">
+            <div className="flex items-center">
+              <TooltipButton
+                type="button"
+                onClick={zoomOut}
+                disabled={zoom <= MIN_ZOOM}
+                className="inline-flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="缩小图片"
+                tooltip="缩小图片"
+              >
+                <ZoomOut  />
+              </TooltipButton>
+              <span className="min-w-12 text-center text-xs font-medium tabular-nums">{zoomPercent}%</span>
+              <TooltipButton
+                type="button"
+                onClick={zoomIn}
+                disabled={zoom >= MAX_ZOOM}
+                className="inline-flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="放大图片"
+                tooltip="放大图片"
+              >
+                <ZoomIn  />
+              </TooltipButton>
+              <TooltipButton
+                type="button"
+                onClick={resetZoom}
+                disabled={zoom === MIN_ZOOM && pan.x === 0 && pan.y === 0 && rotation % 360 === 0 && !flippedX && !flippedY}
+                className="inline-flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="重置图片"
+                tooltip="重置图片"
+              >
+                <RefreshCw />
+              </TooltipButton>
+            </div>
+            <TooltipButton type="button" onClick={() => setRotation((value) => value - 90)} aria-label="向左旋转" tooltip="向左旋转"><RotateCcw /></TooltipButton>
+            <TooltipButton type="button" onClick={() => setRotation((value) => value + 90)} aria-label="向右旋转" tooltip="向右旋转"><RotateCw /></TooltipButton>
+            <TooltipButton type="button" onClick={() => setFlippedX((value) => !value)} aria-label="水平翻转" aria-pressed={flippedX} tooltip="水平翻转"><FlipHorizontal2 /></TooltipButton>
+            <TooltipButton type="button" onClick={() => setFlippedY((value) => !value)} aria-label="垂直翻转" aria-pressed={flippedY} tooltip="垂直翻转"><FlipVertical2 /></TooltipButton>
+            <TooltipButton type="button" onClick={handleDownload} aria-label="下载图片" tooltip="下载图片"><Download /></TooltipButton>
+          </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

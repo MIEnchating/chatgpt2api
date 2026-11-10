@@ -20,53 +20,9 @@ func (w *canvasAgentWorker) appendVisualReference(ref map[string]any) {
 		return
 	}
 	url := util.Clean(ref["url"])
-	if url == "" {
-		return
+	if url != "" {
+		w.visuals = append(w.visuals, map[string]any{"type": "text", "text": canvasAgentReferenceLabel(ref)}, map[string]any{"type": "image", "image": url, "detail": "auto"})
 	}
-	for i := len(w.messages) - 1; i >= 0; i-- {
-		if w.messages[i]["role"] != "user" {
-			continue
-		}
-		parts := util.AsMapSlice(w.messages[i]["content"])
-		if len(parts) == 0 {
-			parts = []map[string]any{{"type": "text", "text": util.Clean(w.messages[i]["content"])}}
-		}
-		for _, part := range parts {
-			if part["type"] == "image_url" && agentMap(part["image_url"])["url"] == url {
-				return
-			}
-		}
-		w.messages[i]["content"] = append(parts, map[string]any{"type": "text", "text": canvasAgentReferenceLabel(ref)}, map[string]any{"type": "image_url", "image_url": map[string]any{"url": url}})
-		w.messages = canvasAgentVisualWindow(w.messages, canvasAgentMaxActiveImages)
-		return
-	}
-}
-
-// Reconnect visual inputs to the original request, never to the answer bubble.
-func (w *canvasAgentWorker) restoreActiveVisualReferences() error {
-	messages := util.AsMapSlice(w.session["messages"])
-	for i := len(messages) - 1; i >= 0; i-- {
-		message := messages[i]
-		if message["role"] != "user" || util.Clean(message["questionAnswerFor"]) != "" {
-			continue
-		}
-		for _, ref := range util.AsMapSlice(message["references"]) {
-			if ref["type"] != "image" && ref["type"] != "panorama" {
-				continue
-			}
-			resolved, err := canvasAgentReference(w.doc, w.session, util.Clean(ref["id"]), util.Clean(ref["source"]))
-			if err != nil {
-				if ref["source"] != "attachment" {
-					w.messages = append(w.messages, map[string]any{"role": "system", "content": "历史引用的节点已被移除。请重新读取当前画布；不要重建已删除节点，缺少必需素材时询问用户。"})
-					continue
-				}
-				return err
-			}
-			w.appendVisualReference(resolved)
-		}
-		return nil
-	}
-	return nil
 }
 
 func (w *canvasAgentWorker) referenceIndex(keyword string) []map[string]any {

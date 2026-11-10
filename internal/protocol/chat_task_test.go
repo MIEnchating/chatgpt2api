@@ -74,3 +74,35 @@ func TestChatTaskResponsesTruncationAndRefusal(t *testing.T) {
 		}
 	}
 }
+
+func TestChatTaskReasoningEffortMatchesModelSupport(t *testing.T) {
+	for _, mode := range []string{"chat", "responses"} {
+		for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "test-model"} {
+			for _, enabled := range []bool{false, true} {
+				t.Run(mode+"/"+model+"/"+map[bool]string{false: "quick", true: "deep"}[enabled], func(t *testing.T) {
+					_, body, err := ChatTaskRequest(map[string]any{"api_mode": mode, "model": model, "reasoning_enabled": enabled})
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := "none"
+					if enabled {
+						want = "medium"
+					} else if model == "gpt-6-astra" || model == "gpt-6.1-sol" {
+						want = "low"
+					}
+					got := body["reasoning_effort"]
+					if mode == "responses" {
+						got = util.StringMap(body["reasoning"])["effort"]
+					}
+					if got != want {
+						t.Fatalf("effort = %v, want %s", got, want)
+					}
+				})
+			}
+			_, body, err := ChatTaskRequest(map[string]any{"api_mode": mode, "model": model})
+			if err != nil || body["reasoning"] != nil || body["reasoning_effort"] != nil {
+				t.Fatalf("unspecified reasoning was changed: %v, %v", body, err)
+			}
+		}
+	}
+}

@@ -1,7 +1,13 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { Card } from "@/components/ui/card";
+
 import { useEffect, useRef, useState } from "react";
-import { ImageUp, LoaderCircle, RotateCcw, Save } from "lucide-react";
+import { ImageUp, RotateCcw, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -41,7 +47,7 @@ export function SiteIconSettings() {
   };
 
   if (isLoadingConfig || !config) {
-    return <div className="flex items-center justify-center py-8"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
+    return <LoadingState className="h-auto" label="正在加载站点图标" />;
   }
 
   const currentIconUrl = String(config.site_icon_url || "").trim();
@@ -54,9 +60,9 @@ export function SiteIconSettings() {
         <p className="text-xs leading-5 text-muted-foreground">PNG、JPEG、WebP 或 GIF，最大 2MB</p>
       </div>
       <div className="mt-3 flex min-w-0 items-center gap-4">
-        <div className="flex size-[72px] shrink-0 items-center justify-center rounded-lg border border-border bg-background p-2 shadow-[var(--shadow-card)]">
+        <Card className="flex size-[72px] shrink-0 items-center justify-center p-2 gap-0 flex-row">
           <img src={previewUrl} alt="网站图标预览" className="size-full rounded-md object-contain" />
-        </div>
+        </Card>
         <div className="min-w-0 flex-1">
           <input
             ref={fileInputRef}
@@ -104,7 +110,7 @@ export function SiteIconSettings() {
                   });
                 }}
               >
-                {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {isSavingConfig ? <Spinner className="size-4 animate-spin" /> : <Save className="size-4" />}
                 应用
               </Button>
             ) : null}

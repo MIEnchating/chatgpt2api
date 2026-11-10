@@ -130,12 +130,14 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 		seen[strings.ToLower(model)] = true
 		options.Models[index] = model
 		resolved, _ := protocol.ResolveVideoModelContract(contract, model)
-		if r := resolved.Capability.SecondsRange; r != nil && (r.Max == nil || *r.Max > 3600) {
-			hostDurationLimited = true
-		}
-		for _, seconds := range resolved.Capability.Seconds {
-			if seconds > 3600 {
+		if resolved.Capability.UsageUnit != "count" {
+			if r := resolved.Capability.SecondsRange; r != nil && (r.Max == nil || *r.Max > 3600) {
 				hostDurationLimited = true
+			}
+			for _, seconds := range resolved.Capability.Seconds {
+				if seconds > 3600 {
+					hostDurationLimited = true
+				}
 			}
 		}
 		profiles = append(profiles, protocol.VideoModelContractProfile{Model: model, Capability: resolved.Capability, Generation: resolved.Generation, Rules: resolved.Rules})
@@ -202,7 +204,8 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 		return result, err
 	}
 	for _, sample := range result.TestCases {
-		if duration, _ := sample.Expected["duration"].(int); duration > 3600 {
+		resolved, _ := protocol.ResolveVideoModelContract(contract, sample.Model)
+		if duration, _ := sample.Expected["duration"].(int); resolved.Capability.UsageUnit != "count" && duration > 3600 {
 			return result, fmt.Errorf("模型 %s 的默认或规则强制时长超过 New API 秒数用量上限 3600 秒", sample.Model)
 		}
 	}

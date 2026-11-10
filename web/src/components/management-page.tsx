@@ -1,5 +1,4 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,13 +21,10 @@ function ManagementPage({
   return (
     <section
       data-management-page
-      className={cn(
-        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
-        className
-      )}
+      className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden", className)}
       {...props}
     >
-      <ScrollArea className="h-full" viewportClassName="h-full" viewClass="flex min-h-full flex-col gap-[var(--page-section-gap)]" viewStyle={{ height: "100%" }}>{children}</ScrollArea>
+      {children}
     </section>
   );
 }
@@ -43,10 +39,7 @@ function ManagementPanel({
   return (
     <div
       data-management-panel
-      className={cn(
-        "card-surface flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border shadow-[var(--shadow-card)]",
-        className
-      )}
+      className={cn("flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0", className)}
       {...props}
     >
       {children}
@@ -58,12 +51,26 @@ function ManagementToolbar({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-management-toolbar
-      className={cn(
-        "min-w-0 shrink-0 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-4",
-        className
-      )}
+      className={cn("min-w-0 shrink-0 border-b border-border px-4 py-4 sm:px-6", className)}
       {...props}
     />
+  );
+}
+
+function ManagementHeader({ title, description, action, className }: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <header data-management-header className={cn("flex shrink-0 flex-wrap items-center justify-between gap-4 px-4 pt-6 pb-4 sm:px-6", className)}>
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {description ? <p className="mt-2 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      {action ? <div className="flex max-w-full flex-wrap items-center gap-2">{action}</div> : null}
+    </header>
   );
 }
 
@@ -105,24 +112,24 @@ function ManagementPagination(props: ManagementPaginationProps) {
     <nav
       data-management-pagination
       aria-label="分页导航"
-      className="mt-auto grid min-h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-border bg-card px-3 py-3 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:px-5"
+      className="mt-auto grid min-h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-border px-4 py-4 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-4 sm:px-6"
     >
       <span className="min-w-0 break-words leading-5 tabular-nums" role="status" aria-live="polite">
         {cursorMode ? "本页" : "共"} {cursorMode ? props.currentItems : props.totalItems} {itemLabel}
       </span>
-      <div className="col-span-2 row-start-2 flex min-w-0 items-center justify-center gap-2 border-t border-border/60 pt-2 sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:border-0 sm:pt-0">
+      <div className="flex min-w-0 items-center justify-center gap-1 sm:gap-2">
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="size-8 shrink-0 rounded-lg sm:size-9"
+          className="shrink-0"
           aria-label="上一页"
           disabled={!canGoPrevious || props.disabled}
           onClick={() => props.onPageChange(page - 1)}
         >
-          <ChevronLeft className="size-4" />
+          <ChevronLeft  />
         </Button>
-        <span className="min-w-16 text-center tabular-nums sm:min-w-24">
+        <span className="min-w-12 text-center tabular-nums sm:min-w-24">
           <span className="sm:hidden">{cursorMode ? `${hasItems || page > 1 ? page : 0}` : `${hasItems ? page : 0} / ${hasItems ? totalPages : 0}`}</span>
           <span className="hidden sm:inline">
           {cursorMode
@@ -134,22 +141,22 @@ function ManagementPagination(props: ManagementPaginationProps) {
           type="button"
           variant="outline"
           size="icon"
-          className="size-8 shrink-0 rounded-lg sm:size-9"
+          className="shrink-0"
           aria-label="下一页"
           disabled={!canGoNext || props.disabled}
           onClick={() => props.onPageChange(page + 1)}
         >
-          <ChevronRight className="size-4" />
+          <ChevronRight  />
         </Button>
       </div>
-      <div className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
+      <div className="justify-self-end">
         <Select
           value={String(props.pageSize)}
           onValueChange={(value) => props.onPageSizeChange(Number(value))}
           disabled={props.disabled}
         >
           <SelectTrigger
-            className="h-8 w-20 shrink-0 rounded-lg px-2 text-xs sm:h-9 sm:w-24 sm:px-3 sm:text-sm"
+            className="w-20 shrink-0 sm:w-24"
             aria-label="每页数量"
           >
             <SelectValue />
@@ -169,6 +176,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
 
 export {
   ManagementPage,
+  ManagementHeader,
   ManagementPagination,
   ManagementPanel,
   ManagementToolbar,

@@ -1,3 +1,6 @@
+import { ItemMedia } from "@/components/ui/item";
+import { Toggle } from "@/components/ui/toggle";
+
 import { SlidersHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -27,23 +30,23 @@ function parseAspectRatio(ratio?: string) {
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
-function AspectRatioGlyph({ ratio, large = false }: { ratio?: string; large?: boolean }) {
+function AspectRatioGlyph({ ratio }: { ratio?: string }) {
   const parsed = parseAspectRatio(ratio);
   if (!parsed) {
     return (
-      <span className="flex size-5 items-center justify-center rounded bg-muted/70" aria-hidden="true">
+      <ItemMedia variant="icon" className="flex size-5 items-center justify-center" aria-hidden="true">
         <SlidersHorizontal className="size-3" />
-      </span>
+      </ItemMedia>
     );
   }
   const landscape = parsed.width >= parsed.height;
   const square = parsed.width === parsed.height;
-  const longEdge = large ? 24 : square ? 15 : 18;
-  const minimumEdge = large ? 10 : 8;
+  const longEdge = square ? 15 : 18;
+  const minimumEdge = 8;
   const width = landscape ? longEdge : Math.max(minimumEdge, longEdge * (parsed.width / parsed.height));
   const height = landscape ? Math.max(minimumEdge, longEdge * (parsed.height / parsed.width)) : longEdge;
   return (
-    <span className={cn("flex shrink-0 items-center justify-center", large ? "size-7" : "size-5")} aria-hidden="true">
+    <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
       <span className="block rounded-[2px] border-[1.5px] border-current" style={{ width, height }} />
     </span>
   );
@@ -55,6 +58,7 @@ export function AspectRatioOptionButton({
   label,
   ratio,
   description,
+  "aria-label": ariaLabel,
   layout = "compact",
   onClick,
 }: {
@@ -63,27 +67,28 @@ export function AspectRatioOptionButton({
   label?: string;
   ratio?: string;
   description?: string;
-  layout?: "compact" | "visual";
+  "aria-label"?: string;
+  layout?: "compact" | "inline";
   onClick: () => void;
 }) {
   const displayLabel = label || aspectRatioDisplayName(ratio);
   const displayDescription = description || (ratio ? ratio : "自动匹配");
   return (
-    <button
+    <Toggle variant="outline"
       type="button"
       disabled={disabled}
-      aria-pressed={active}
+      pressed={active}
+      aria-label={ariaLabel}
       className={cn(
-        "group flex min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-1.5 text-center text-muted-foreground shadow-xs transition-[border-color,background-color,color,box-shadow] enabled:hover:border-foreground/20 enabled:hover:bg-muted enabled:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50",
-        layout === "visual" ? "min-h-[76px] gap-2 py-2" : "min-h-16 gap-1.5 py-2",
-        active && "border-brand/55 bg-brand-soft text-brand enabled:hover:border-brand/65 enabled:hover:bg-brand/15 enabled:hover:text-brand",
+        "group flex min-w-0 items-center justify-center text-center disabled:cursor-not-allowed disabled:opacity-50",
+        layout === "inline" ? "h-8 gap-1 px-1" : "min-h-16 flex-col",
       )}
       onClick={onClick}
     >
-      {layout === "visual" ? (
+      {layout === "inline" ? (
         <>
-          {ratio ? <AspectRatioGlyph ratio={ratio} large /> : null}
-          <span className="max-w-full truncate font-mono text-xs font-semibold leading-none text-current">{displayLabel}</span>
+          <span className="@max-[20rem]:hidden"><AspectRatioGlyph ratio={ratio} /></span>
+          <span className="truncate font-mono text-xs">{displayLabel}</span>
         </>
       ) : (
         <>
@@ -96,6 +101,6 @@ export function AspectRatioOptionButton({
           </span>
         </>
       )}
-    </button>
+    </Toggle>
   );
 }

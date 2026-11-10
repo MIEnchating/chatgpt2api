@@ -2,14 +2,14 @@ import { spawn } from "node:child_process";
 import { readJSONLines } from "./json-lines.mjs";
 
 export class CodexClient {
-  constructor({ cwd, onMessage, onClose, command = "codex", spawnProcess = spawn }) {
+  constructor({ cwd, env, onMessage, onClose, command = "codex", spawnProcess = spawn }) {
     this.pending = new Map();
     this.serverRequests = new Set();
     this.sequence = 0;
     this.closed = false;
-    const env = { ...process.env };
-    delete env.CANVAS_AGENT_TOKEN;
+    if (!env?.CODEX_HOME || env.HOME !== env.USERPROFILE) throw new Error("Codex 必须使用独立的画布运行环境");
     this.child = spawnProcess(command, ["app-server"], { cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    this.exited = new Promise((resolve) => { this.child.once("exit", resolve); this.child.once("error", resolve); });
     this.stopReading = readJSONLines(this.child.stdout, (message) => {
       if (this.closed) return;
         if (message.method === "serverRequest/resolved") this.serverRequests.delete(message.params?.requestId);
@@ -56,7 +56,7 @@ export class CodexClient {
     this.write(error ? { id, error } : { id, result });
   }
   close(error = new Error("Codex 连接已关闭")) {
-    if (this.closed) return;
+    if (this.closed) return this.exited;
     this.closed = true;
     this.stopReading();
     for (const waiting of this.pending.values()) { clearTimeout(waiting.timer); waiting.reject(error); }
@@ -67,5 +67,6 @@ export class CodexClient {
     const timer = setTimeout(() => { if (this.child.exitCode === null) this.child.kill("SIGKILL"); }, 2000);
     timer.unref();
     this.onClose?.(error);
+    return this.exited;
   }
 }

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/base64"
 	"errors"
 	"strings"
 
@@ -8,11 +9,12 @@ import (
 )
 
 type ArkVideoReferences struct {
-	FirstFrame string
-	LastFrame  string
-	Images     []string
-	Videos     []string
-	Audio      []string
+	Base64Format string
+	FirstFrame   string
+	LastFrame    string
+	Images       []string
+	Videos       []string
+	Audio        []string
 }
 
 // Ark uses typed content and explicit roles for all reference media.
@@ -28,7 +30,19 @@ func ArkVideoContent(prompt string, refs ArkVideoReferences) ([]map[string]any, 
 	}
 	content := []map[string]any{{"type": "text", "text": prompt}}
 	appendMedia := func(kind, role, value string) error {
-		if err := publicMediaURL(value); err != nil {
+		if refs.Base64Format != "" {
+			encoded := value
+			if refs.Base64Format == "data_url" {
+				header, data, ok := strings.Cut(value, ",")
+				if !ok || !strings.HasPrefix(header, "data:"+kind+"/") || !strings.HasSuffix(header, ";base64") {
+					return errors.New("参考素材的 Base64 Data URL 类型无效")
+				}
+				encoded = data
+			}
+			if data, err := base64.StdEncoding.Strict().DecodeString(encoded); err != nil || len(data) == 0 {
+				return errors.New("参考素材的 Base64 内容无效")
+			}
+		} else if err := publicMediaURL(value); err != nil {
 			return err
 		}
 		content = append(content, map[string]any{"type": kind + "_url", kind + "_url": map[string]any{"url": value}, "role": role})

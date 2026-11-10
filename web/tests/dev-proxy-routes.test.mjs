@@ -10,6 +10,6 @@ test("development proxy forwards every generated media root", () => {
     const entry = proxy?.[path];
     assert.ok(entry, `missing Vite proxy for ${path}`);
     assert.equal(entry.target, backendTarget);
-    assert.equal(entry.changeOrigin, true);
+    assert.equal(entry.changeOrigin, false, "media requests must preserve the browser-facing host");
   }
 });

@@ -1,11 +1,8 @@
-import { OverlayLayerProvider, useOverlayLayer } from "@/lib/use-overlay-layer";
 import { SlidersHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
-import { canvasFloatingPanelPlacement } from "@/app/canvas/canvas-floating-panel";
+import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
 import {
   buildImageSize,
   formatImageSizeDisplay,
@@ -15,12 +12,10 @@ import {
   ImageSettingsPanel,
   type ImageSettingsValue,
 } from "@/components/generation/image-settings-panel";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ModelPicker } from "@/components/model-picker";
 import { imageOutputCountLimit } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
-import { cn } from "@/lib/utils";
+
 import { CanvasParameterHeader } from "@/app/canvas/canvas-parameter-header";
 
 type CanvasImageParameterPatch = Partial<Pick<CanvasNode,
@@ -37,12 +32,7 @@ type CanvasImageParameterPatch = Partial<Pick<CanvasNode,
   | "generation_model"
 >>;
 
-export function CanvasImageParameterPopover({ node, imageModel, imageModels = [], onChange, expanded = false, showModel = true, showSize = true }: { node: CanvasNode; imageModel: string; imageModels?: string[]; onChange: (patch: CanvasImageParameterPatch) => void; expanded?: boolean; showModel?: boolean; showSize?: boolean }) {
-  const layer = useOverlayLayer("popover");
-  const buttonRef = useRef<HTMLSpanElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+export function CanvasImageParameterPopover({ node, imageModel, imageModels = [], onChange, expanded = false, showModel = true, showSize = true, showCount = true }: { node: CanvasNode; imageModel: string; imageModels?: string[]; onChange: (patch: CanvasImageParameterPatch) => void; expanded?: boolean; showModel?: boolean; showSize?: boolean; showCount?: boolean }) {
   const defaults = defaultCanvasImageParameters();
   const size = node.generation_size ?? defaults.generation_size ?? "";
   const selection = getImageSizeSelectionFromSize(
@@ -52,37 +42,11 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
   const quality = node.generation_quality ?? defaults.generation_quality ?? "";
   const selectedModel = node.generation_model?.trim() || imageModel;
   const modelOptions = Array.from(new Set(imageModels.map((model) => model.trim()).filter(Boolean)));
-  const selectedModelAvailable = modelOptions.includes(selectedModel);
   const countLimit = imageOutputCountLimit(selectedModel);
   const count = Math.max(1, Math.min(countLimit, node.generation_count ?? defaults.generation_count ?? 1));
   const snapToMultiple16 = node.generation_snap_to_multiple_16 ?? defaults.generation_snap_to_multiple_16 ?? true;
   const calculatedSize = buildImageSize(selection, { snapToMultiple16 });
   const sizeLabel = selection.mode !== "auto" && calculatedSize ? formatImageSizeDisplay(calculatedSize) : "自动";
-  const panelPlacement = buttonRect ? canvasFloatingPanelPlacement({
-    anchor: buttonRect,
-    viewportWidth: window.innerWidth,
-    viewportHeight: window.innerHeight,
-  }) : null;
-
-  useEffect(() => {
-    if (!open) return;
-    const syncPosition = () => setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    syncPosition();
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("scroll", syncPosition, true);
-    window.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    return () => {
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("scroll", syncPosition, true);
-      window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-    };
-  }, [open]);
 
   const settingsValue: ImageSettingsValue = {
     ...selection,
@@ -116,12 +80,9 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
     <div className="flex flex-col gap-3.5">
       {showModel ? <section className="order-0 space-y-1.5">
         <ImageParameterLabel help="选择当前图片节点使用的生成模型。">模型</ImageParameterLabel>
-        <Select value={selectedModelAvailable ? selectedModel : ""} disabled={modelOptions.length === 0} onValueChange={(value) => onChange({ generation_model: value })}>
-          <SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue placeholder={modelOptions.length ? "选择模型" : "暂无可用模型"} /></SelectTrigger>
-          <SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
-        </Select>
+        <ModelPicker label="图片生成模型" value={selectedModel} options={modelOptions} onValueChange={(value) => onChange({ generation_model: value })} />
       </section> : null}
-      <ImageSettingsPanel model={selectedModel} value={settingsValue} onChange={updateSettings} showSize={showSize} />
+      <ImageSettingsPanel model={selectedModel} value={settingsValue} onChange={updateSettings} showSize={showSize} showCount={showCount} />
     </div>
   );
 
@@ -130,62 +91,20 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
       <section className="space-y-3 border-t border-border/80 pt-3">
         <div className="flex items-center justify-between gap-3">
           <CanvasParameterHeader summary={`${showSize ? `${sizeLabel} · ` : ""}${count} 张`} />
-                  </div>
+        </div>
         {parameterFields}
       </section>
     );
   }
 
   return (
-    <>
-      <span ref={buttonRef} className="inline-flex">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button type="button" aria-expanded={open} aria-label="打开图片参数" className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background", open && "border-brand-border bg-brand-soft text-brand")} onClick={() => setOpen((value) => !value)} onKeyDown={(event) => { if (open && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
-              <SlidersHorizontal className="size-3.5 text-brand" />
-              <span className="font-semibold">{sizeLabel}</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{count} 张</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>图片参数</TooltipContent>
-        </Tooltip>
-      </span>
-      {open && buttonRect && panelPlacement ? createPortal(
-        <OverlayLayerProvider value={layer}>
-        <ScrollArea
-          data-overlay-layer={layer}
-          ref={panelRef}
-          data-canvas-parameter-panel
-          data-canvas-no-pan
-          role="dialog"
-          ariaLabel="图片参数"
-          className="pointer-events-auto fixed rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-elevated)]"
-          style={{
-            zIndex: layer,
-            left: panelPlacement.left,
-            width: panelPlacement.width,
-            maxHeight: panelPlacement.maxHeight,
-            ...(panelPlacement.direction === "above"
-              ? { bottom: window.innerHeight - buttonRect.top + 8 }
-              : { top: buttonRect.bottom + 8 }),
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(false);
-            buttonRef.current?.querySelector("button")?.focus();
-          }}
-        >
-        <div className="p-3 pr-4">{parameterFields}</div>
-        </ScrollArea>
-        </OverlayLayerProvider>,
-        document.body,
-      ) : null}
-    </>
+    <CanvasParameterPopover
+      icon={<SlidersHorizontal />}
+      label="图片参数"
+      width={360}
+      summary={<>{showSize ? <>{sizeLabel} · </> : null}{count} 张</>}
+    >
+      {parameterFields}
+    </CanvasParameterPopover>
   );
 }

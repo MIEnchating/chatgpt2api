@@ -1,3 +1,4 @@
+import { parseGeneratedScript, parseScriptPrompts } from "./canvas-script.ts";
 import type { CreationTask } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
 import { canvasGenerationNeedsRecovery } from "./canvas-generation-context.ts";
@@ -332,6 +333,16 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
           generation_status: cancelled ? "idle" : "error",
           generation_error: cancelled ? "" : terminalError,
         };
+    }
+    if (node.type === "script") {
+      if (task.status !== "success") return { ...node, script_operation: undefined, generation_status: cancelled ? "idle" : "error", generation_error: cancelled ? "" : terminalError };
+      try {
+        const content = (task.data || []).map((item) => item.text_response || "").join("\n");
+        const operation = node.script_operation;
+        if (!operation || !node.script_project) throw new Error("脚本任务缺少操作信息，请重新生成");
+        const script_project = operation.kind === "script" ? parseGeneratedScript(content) : parseScriptPrompts(content, node.script_project, operation.shot_ids);
+        return { ...node, script_project, script_operation: undefined, generation_status: "success", generation_progress: 100, generation_error: "" };
+      } catch (error) { return { ...node, script_operation: undefined, generation_status: "error", generation_error: error instanceof Error ? error.message : "脚本解析失败" }; }
     }
     if (node.type === "text") {
       const content = textByNodeID.get(node.id);

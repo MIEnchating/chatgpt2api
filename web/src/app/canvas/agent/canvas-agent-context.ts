@@ -43,6 +43,7 @@ export type CanvasAgentContextNode = {
   error?: string;
   groupId?: string;
   detailsOmitted?: boolean;
+  scriptProject?: CanvasNode["script_project"];
 };
 
 export type CanvasAgentContext = {
@@ -113,6 +114,7 @@ export function summarizeCanvasAgentNode(node: CanvasNode, fullContent = false):
     status: node.generation_status || "idle",
     progress: node.generation_progress,
     prompt: !isText ? node.prompt : undefined,
+    ...(node.type === "script" ? { scriptProject: node.script_project } : {}),
     model,
     size,
     seconds: node.generation_video_seconds,

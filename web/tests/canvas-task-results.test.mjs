@@ -557,3 +557,16 @@ test("recovered video tasks restore progress and preserve it on failure", () => 
   assert.equal(success.nodes[0].generation_progress, 100);
   assert.equal(success.nodes[0].generation_status, "success");
 });
+
+test("persisted script generation restores structured shots without overwriting the story", () => {
+  const source = { id: "script-1", type: "script", prompt: "原故事", task_id: "script-task", generation_status: "loading", script_project: { step: 0, confirmed: false, shots: [], assets: [] }, script_operation: { kind: "script", shot_ids: [] } };
+  const content = JSON.stringify({ assets: [], shots: [{ seconds: 5, description: "雨中的街道", asset_ids: [], dialogue: [] }] });
+  const result = reconcilePersistedCanvasTaskNodes([source], { id: "script-task", status: "success", data: [{ text_response: content }] });
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].script_project.shots[0].description, "雨中的街道");
+  assert.equal(result.nodes[0].prompt, "原故事");
+  assert.equal(result.nodes[0].script_operation, undefined);
+  const invalid = reconcilePersistedCanvasTaskNodes([source], { id: "script-task", status: "success", data: [{ text_response: "not json" }] });
+  assert.equal(invalid.nodes[0].generation_status, "error");
+  assert.equal(invalid.nodes[0].prompt, "原故事");
+});

@@ -261,6 +261,63 @@ func TestDatabaseBackendRowCASConflictRequiresReloadBeforeRetry(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackendDocumentDeadlinePreservesCheckpointAndAllowsRetry(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "checkpoint.db"))
+	exerciseDocumentDeadlineRecovery(t, backend)
+}
+
+func exerciseDocumentDeadlineRecovery(t *testing.T, backend *DatabaseBackend) {
+	t.Helper()
+	const name = "canvas_agent_runtime/deadline-test.json"
+	before := map[string]any{"phase": "waiting", "taskId": "already-submitted"}
+	if err := backend.SaveJSONDocument(name, before); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := backend.DeleteJSONDocument(name); err != nil {
+			t.Errorf("delete deadline test checkpoint: %v", err)
+		}
+	}()
+	snapshot := backend.documentSnapshots[name]
+	blocker, err := NewDatabaseBackend(backend.databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Close()
+	tx, err := blocker.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("UPDATE json_documents SET data = data WHERE name = "+blocker.placeholder(1), name); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err = backend.SaveJSONDocumentContext(ctx, name, map[string]any{"phase": "next"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked checkpoint save = %v, want context deadline instead of raw SQL transaction error", err)
+	}
+	if backend.documentSnapshots[name] != snapshot {
+		t.Fatal("failed save acknowledged an uncommitted checkpoint")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := backend.LoadJSONDocument(name)
+	if err != nil || !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("failed save replaced durable checkpoint: loaded=%v err=%v", loaded, err)
+	}
+	next := map[string]any{"phase": "resumed", "taskId": "already-submitted"}
+	if err := backend.SaveJSONDocument(name, next); err != nil {
+		t.Fatalf("save after deadline did not recover: %v", err)
+	}
+	loaded, err = blocker.LoadJSONDocument(name)
+	if err != nil || !reflect.DeepEqual(loaded, next) {
+		t.Fatalf("resumed checkpoint not durable: loaded=%v err=%v", loaded, err)
+	}
+}
+
 func TestEncodeRowsRejectsMissingAndDuplicateKeys(t *testing.T) {
 	if _, err := encodeRows("accounts", []map[string]any{{"type": "Plus"}}); err == nil {
 		t.Fatal("encodeRows() missing key error = nil")

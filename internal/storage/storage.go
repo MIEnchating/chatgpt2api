@@ -592,7 +592,7 @@ func (b *DatabaseBackend) SaveAuthState(keys []map[string]any, documents map[str
 	for _, name := range documentNames {
 		knownDocument := knownDocuments[name]
 		updatedAt := nextJSONDocumentUpdatedAt(knownDocument.UpdatedAt)
-		if err := b.applyJSONDocument(tx, name, knownDocument, documentData[name], updatedAt); err != nil {
+		if err := b.applyJSONDocument(context.Background(), tx, name, knownDocument, documentData[name], updatedAt); err != nil {
 			return err
 		}
 		nextDocuments[name] = jsonDocumentSnapshot{Data: documentData[name], UpdatedAt: updatedAt, Exists: true}
@@ -702,7 +702,7 @@ func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
 	return b.SaveJSONDocumentContext(context.Background(), name, value)
 }
 
-// SaveJSONDocumentContext writes a document and aborts the transaction when ctx is done.
+// SaveJSONDocumentContext atomically compares and writes one document with ctx.
 func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name string, value any) error {
 	rel, err := cleanDocumentName(name)
 	if err != nil {
@@ -725,10 +725,16 @@ func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name stri
 	defer func() { _ = tx.Rollback() }()
 	text := string(data)
 	updatedAt := nextJSONDocumentUpdatedAt(known.UpdatedAt)
-	if err := b.applyJSONDocument(tx, rel, known, text, updatedAt); err != nil {
+	if err := b.applyJSONDocument(ctx, tx, rel, known, text, updatedAt); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: text, UpdatedAt: updatedAt, Exists: true}
@@ -808,14 +814,25 @@ func (b *DatabaseBackend) readJSONDocumentSnapshot(ctx context.Context, name str
 	return jsonDocumentSnapshot{Data: text, UpdatedAt: updatedAt, Exists: true}, nil
 }
 
-func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonDocumentSnapshot, data, updatedAt string) error {
+func (b *DatabaseBackend) applyJSONDocument(ctx context.Context, tx *sql.Tx, name string, known jsonDocumentSnapshot, data, updatedAt string) error {
 	if !known.Exists {
 		query := "INSERT INTO json_documents (name, data, updated_at) VALUES (?, ?, ?)"
 		if b.driver == "postgres" {
 			query = "INSERT INTO json_documents (name, data, updated_at) VALUES ($1, $2, $3)"
 		}
-		if _, err := tx.Exec(query, name, data, updatedAt); err != nil {
-			return b.classifyRowInsertError(tx, "json_documents", "name", name, err)
+		if _, err := tx.ExecContext(ctx, query, name, data, updatedAt); err != nil {
+			_ = tx.Rollback()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			current, inspectErr := b.readJSONDocumentSnapshot(ctx, name)
+			if inspectErr != nil {
+				return fmt.Errorf("insert json_documents row %q: %w (inspect row: %v)", name, err, inspectErr)
+			}
+			if current.Exists {
+				return fmt.Errorf("%w: insert json_documents row %q", ErrConcurrentRowUpdate, name)
+			}
+			return err
 		}
 		return nil
 	}
@@ -826,12 +843,18 @@ func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonD
 	} else if b.driver == "mysql" {
 		query = "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND BINARY data = BINARY ? AND BINARY updated_at = BINARY ?"
 	}
-	result, err := tx.Exec(query, args...)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	if affected != 1 {

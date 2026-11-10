@@ -12,6 +12,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -63,6 +64,7 @@ type StorageObjectProviderInput struct {
 	Endpoint        string `json:"endpoint"`
 	Region          string `json:"region"`
 	Bucket          string `json:"bucket"`
+	BucketInHost    bool   `json:"bucketInHost"`
 	AccessKeyID     string `json:"accessKeyId"`
 	SecretAccessKey string `json:"secretAccessKey"`
 	PublicBaseURL   string `json:"publicBaseUrl"`
@@ -749,7 +751,7 @@ func normalizeUserStorageProvider(ownerID string, input StorageObjectProviderInp
 	return normalizeStorageProvider(model.StorageProvider{
 		ID:   "user-" + strings.TrimSpace(ownerID) + "-" + strings.ToLower(strings.TrimSpace(input.Type)),
 		Name: input.Name, Type: input.Type, Endpoint: input.Endpoint, Region: input.Region,
-		Bucket: input.Bucket, AccessKeyID: input.AccessKeyID, SecretAccessKey: input.SecretAccessKey,
+		Bucket: input.Bucket, BucketInHost: input.BucketInHost, AccessKeyID: input.AccessKeyID, SecretAccessKey: input.SecretAccessKey,
 		PublicBaseURL: input.PublicBaseURL, PathPrefix: input.PathPrefix,
 		Username: input.Username, Password: input.Password, Weight: 1, Enabled: enabled, OwnerUserID: strings.TrimSpace(ownerID),
 	})
@@ -913,7 +915,28 @@ func putStorageObject(ctx context.Context, provider model.StorageProvider, objec
 		if err != nil {
 			return err
 		}
-		_, err = client.PutObject(ctx, provider.Bucket, objectKey, source, size, minio.PutObjectOptions{ContentType: contentType})
+		// Sign the actual payload for S3 providers that reject UNSIGNED-PAYLOAD.
+		file, err := os.CreateTemp("", "s3-media-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(file.Name())
+		defer file.Close()
+		hash := sha256.New()
+		written, err := io.Copy(io.MultiWriter(file, hash), source)
+		if err != nil {
+			return err
+		}
+		if written != size {
+			return fmt.Errorf("S3 upload size mismatch")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		_, err = (minio.Core{Client: client}).PutObject(ctx, provider.Bucket, objectKey, file, size, "", hex.EncodeToString(hash.Sum(nil)), minio.PutObjectOptions{ContentType: contentType, DisableContentSha256: true})
 		return err
 	case model.StorageProviderTypeWebDAV:
 		return putGenericWebDAVObject(ctx, provider, objectKey, source, size)
@@ -1021,6 +1044,9 @@ func newGenericS3Client(provider model.StorageProvider) (*minio.Client, error) {
 	}
 	if strings.TrimSpace(provider.OwnerUserID) != "" {
 		options.Transport = SafeOutboundTransport()
+	}
+	if provider.BucketInHost {
+		options.BucketLookup = minio.BucketLookupDNS
 	}
 	return minio.New(parsed.Host, options)
 }

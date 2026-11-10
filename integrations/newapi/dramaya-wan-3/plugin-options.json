@@ -1,0 +1,15 @@
+{
+  "key": "dramaya-wan-3",
+  "version": "1.0.0",
+  "base_url": "https://video.dramaya.us",
+  "models": [
+    "wan-3"
+  ],
+  "auth_mode": "bearer",
+  "auth_header": "",
+  "download_mode": "signed_url",
+  "result_fields": [
+    "video_url",
+    "data[0].url"
+  ]
+}

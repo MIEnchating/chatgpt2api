@@ -1,12 +1,15 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 
@@ -14,6 +17,41 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
+
+func TestTemporaryMediaUploadRequiresIdentityAndMedia(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	_, token := createPasswordUserSession(t, app, "temporary-uploader", "Password123!", "Uploader")
+	for _, authenticated := range []bool{false, true} {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", `form-data; name="file"; filename="note.txt"`)
+		header.Set("Content-Type", "text/plain")
+		part, err := writer.CreatePart(header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("private note")); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/api/files/temporary", &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		want := http.StatusUnauthorized
+		if authenticated {
+			setRequestAuthCookie(request, token)
+			want = http.StatusBadRequest
+		}
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatalf("authenticated=%v: status %d, want %d: %s", authenticated, response.Code, want, response.Body.String())
+		}
+	}
+}
 
 func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	webDAVData := []byte("0123456789")

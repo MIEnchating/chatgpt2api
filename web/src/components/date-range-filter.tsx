@@ -1,5 +1,9 @@
 "use client";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+import { ButtonGroup } from "@/components/ui/button-group";
+
 import { useEffect, useState } from "react";
 import { format, parse, subDays } from "date-fns";
 import { CalendarIcon } from "lucide-react";
@@ -45,21 +49,21 @@ export function DateRangeFilter({ startDate, endDate, onChange, className }: Dat
         <PopoverTrigger asChild>
           <Button
             variant="outline"
-            className="h-10 w-full min-w-0 justify-start rounded-lg px-3 font-normal"
+            className="w-full min-w-0 justify-start"
           >
-            <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
+            <CalendarIcon className="shrink-0 text-muted-foreground" />
             <span className="truncate">{label}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[min(calc(100vw-1.5rem),20.5rem)] border-border bg-popover p-2 shadow-[var(--shadow-elevated)] sm:w-auto sm:p-3"
+          className="w-[min(calc(100vw-1.5rem),20.5rem)] sm:w-auto"
           align="center"
           collisionPadding={12}
           sideOffset={8}
-        >
-          <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/50 p-1" aria-label="快捷日期范围">
-            {[{ label: "今天", days: 0 }, { label: "近 7 天", days: 6 }, { label: "近 30 天", days: 29 }].map(({ label: presetLabel, days }) => <Button key={days} type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { const today = new Date(); onChange(format(subDays(today, days), "yyyy-MM-dd"), format(today, "yyyy-MM-dd")); setOpen(false); }}>{presetLabel}</Button>)}
-          </div>
+        ><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+          <ButtonGroup className="mb-3 grid w-full grid-cols-3" aria-label="快捷日期范围">
+            {[{ label: "今天", days: 0 }, { label: "近 7 天", days: 6 }, { label: "近 30 天", days: 29 }].map(({ label: presetLabel, days }) => <Button key={days} type="button" variant="ghost" size="sm"  onClick={() => { const today = new Date(); onChange(format(subDays(today, days), "yyyy-MM-dd"), format(today, "yyyy-MM-dd")); setOpen(false); }}>{presetLabel}</Button>)}
+          </ButtonGroup>
           <Calendar
             mode="range"
             defaultMonth={selected?.from}
@@ -71,7 +75,7 @@ export function DateRangeFilter({ startDate, endDate, onChange, className }: Dat
             <Button type="button" variant="ghost" size="sm" disabled={!startDate && !endDate} onClick={() => { onChange("", ""); setOpen(false); }}>清除日期</Button>
             <Button type="button" size="sm" onClick={() => setOpen(false)}>完成</Button>
           </div>
-        </PopoverContent>
+        </ScrollArea></PopoverContent>
       </Popover>
     </Field>
   );

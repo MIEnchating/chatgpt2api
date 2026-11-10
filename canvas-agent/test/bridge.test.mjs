@@ -11,7 +11,7 @@ async function fixture(t) {
   const bridge = createCanvasAgentServer({ token, origins: [origin], createClient(options) {
     const client = { ...options, ready: Promise.resolve(), calls: [], closed: false,
       async request(method, params) { this.calls.push({ method, params }); return method.startsWith("thread/") ? { thread: { id: params.threadId || `thread-${clients.length}` } } : method === "turn/start" ? { turn: { id: "turn-1" } } : {}; },
-      reply() {}, close() { this.closed = true; },
+      replies: [], reply(id, result, error) { this.replies.push({ id, result, error }); }, close() { this.closed = true; },
     }; clients.push(client); return client;
   } });
   await new Promise((resolve) => bridge.server.listen(0, "127.0.0.1", resolve));
@@ -62,11 +62,31 @@ test("enforces current dynamic tool schema, local cwd, approval and sandbox limi
   const response = await f.request(`/sessions/${sessionId}/rpc`, { method: "thread/start", params: { cwd: "/root", approvalPolicy: "never", sandbox: "danger-full-access", dynamicTools: [], model: "test-model" } });
   assert.equal(response.status, 200);
   const call = f.clients[0].calls[0];
-  assert.equal(call.params.sandbox, "read-only"); assert.equal(call.params.approvalPolicy, "on-request");
+  assert.equal(call.params.sandbox, "read-only"); assert.equal(call.params.approvalPolicy, "never");
+  assert.equal(call.params.config["features.shell_tool"], false);
+  assert.equal(call.params.config["features.view_image"], false);
+  assert.equal(call.params.config["features.plugins"], false);
+  assert.equal(call.params.config["features.apps"], false);
   assert.match(call.params.cwd, /chatgpt2api-codex-/);
   assert.deepEqual(call.params.dynamicTools, [{ type: "function", ...tool }]);
   const refused = await f.request(`/sessions/${sessionId}/rpc`, { method: "command/exec", params: { command: "anything" } });
   assert.equal(refused.status, 400); assert.equal(f.clients[0].calls.length, 1);
+});
+
+test("denies native commands, file changes and undeclared tools without browser approval", async (t) => {
+  const f = await fixture(t); const { sessionId } = await f.session();
+  await f.request(`/sessions/${sessionId}/rpc`, { method: "thread/start" });
+  const client = f.clients[0];
+  client.onMessage({ id: "command", method: "item/commandExecution/requestApproval", params: { command: "read private file" } });
+  client.onMessage({ id: "file", method: "item/fileChange/requestApproval", params: {} });
+  client.onMessage({ id: "unknown", method: "item/tool/call", params: { tool: "read_file" } });
+  assert.deepEqual(client.replies.slice(0, 2).map((reply) => reply.result), [{ decision: "decline" }, { decision: "decline" }]);
+  assert.equal(client.replies[2].result.success, false);
+  client.onMessage({ id: "allowed", method: "item/tool/call", params: { tool: tool.name } });
+  assert.equal(client.replies.length, 3);
+  const stream = await f.stream(sessionId);
+  const event = await stream.next();
+  assert.equal(event.message.id, "allowed");
 });
 
 test("isolates threads from other accounts and concurrent page connections", async (t) => {
@@ -80,6 +100,10 @@ test("isolates threads from other accounts and concurrent page connections", asy
   await f.request(`/sessions/${a.sessionId}`, undefined, { method: "DELETE" });
   const resumed = await f.session();
   assert.equal((await f.request(`/sessions/${resumed.sessionId}/rpc`, { method: "thread/resume", params: { threadId: thread } })).status, 200);
+  const resumedCall = f.clients.at(-1).calls.at(-1);
+  assert.equal(resumedCall.params.sandbox, "read-only");
+  assert.equal(resumedCall.params.approvalPolicy, "never");
+  assert.equal(resumedCall.params.config["features.shell_tool"], false);
 });
 
 test("relays MCP calls through the connected page and resolves its result", async (t) => {

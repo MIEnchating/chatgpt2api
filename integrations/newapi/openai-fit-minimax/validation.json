@@ -1,0 +1,56 @@
+{
+  "checked_at": "2026-11-09",
+  "contract_models": 5,
+  "contract_modes": 10,
+  "node_tests": {
+    "passed": 15,
+    "total": 15
+  },
+  "newapi_host": {
+    "source_revision": "4ecc40ec0787291e84e236be953f1040c705f993",
+    "runtime": "pkg/jsplugin.RunCLI from the local New API checkout",
+    "lint_passed": true,
+    "passed": 317,
+    "total": 317
+  },
+  "go_checks": [
+    {
+      "command": "go test ./integrations/newapi/openai-fit-minimax ./internal/videocontract ./internal/protocol",
+      "results": {
+        "integrations/newapi/openai-fit-minimax": "passed, executed this run",
+        "internal/videocontract": "passed, executed this run",
+        "internal/protocol": "passed, executed this run"
+      }
+    }
+  ],
+  "isolated_sqlite_import": {
+    "created": 5,
+    "repeat_import_updated": 5,
+    "persisted_contracts_verified": true,
+    "registered_models_verified": 5,
+    "existing_contracts_preserved": true
+  },
+  "reproducible_build": true,
+  "plugin_sha256": "4285cee7738d26c34f3c683ca8fa1766195f7da5c8845d578e2883cf6ebd8ded",
+  "frontend_changed": false,
+  "live_provider_generation_verified": false,
+  "production_plugin_uploaded": false,
+  "running_service_contracts_imported": false,
+  "billing_usage": {
+    "per_call_models": [
+      "minimax H3 768 Spica",
+      "minimax-h3-chovy",
+      "minimax-H3-super"
+    ],
+    "per_call_facts": {
+      "count": 1,
+      "resolution": "model output resolution"
+    },
+    "per_second_models": [
+      "minimax H3-self",
+      "minimax H3"
+    ],
+    "verified": true
+  },
+  "plugin_version": "1.0.2"
+}

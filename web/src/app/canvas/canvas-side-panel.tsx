@@ -1,24 +1,13 @@
-import {
-  AudioLines,
-  BookOpen,
-  Camera,
-  ChevronRight,
-  Eye,
-  FileText,
-  FolderOpen,
-  Group,
-  Image as ImageIcon,
-  Images,
-  LoaderCircle,
-  ArrowLeftToLine,
-  Plus,
-  RefreshCcw,
-  Search,
-  Settings2,
-  Type,
-  Video,
-  type LucideIcon,
-} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { LoadingState } from "@/components/ui/loading-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ItemMedia } from "@/components/ui/item";
+import { Toggle } from "@/components/ui/toggle";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { AudioLines, BookOpen, Camera, ChevronRight, Eye, FileText, FolderOpen, Group, Image as ImageIcon, Images, ArrowLeftToLine, Plus, RefreshCcw, Search, Settings2, Type, Video, type LucideIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
@@ -33,9 +22,8 @@ import { canvasNodeTreeRows } from "@/app/canvas/canvas-node-tree";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { statusToneClasses } from "@/components/ui/status-tone";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { fetchPromptSourcesConfig, type ManagedImage } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -69,6 +57,7 @@ const NODE_META: Record<CanvasNode["type"], { label: string; icon: LucideIcon }>
   video: { label: "视频", icon: Video },
   audio: { label: "音频", icon: AudioLines },
   panorama: { label: "全景图", icon: Images },
+  script: { label: "脚本", icon: Type },
   director: { label: "导演台", icon: Camera },
   group: { label: "组", icon: Group },
   text: { label: "文字", icon: Type },
@@ -82,9 +71,9 @@ const NODE_FILTERS: Array<{ value: "all" | CanvasNode["type"]; label: string }> 
 
 const STATUS_CLASS: Record<NonNullable<CanvasNode["generation_status"]>, string> = {
   idle: "bg-muted-foreground/35",
-  loading: statusToneClasses.warning.dot,
-  success: statusToneClasses.success.dot,
-  error: statusToneClasses.danger.dot,
+  loading: "bg-muted-foreground",
+  success: "bg-muted-foreground",
+  error: "bg-destructive",
 };
 
 const STATUS_LABEL: Record<NonNullable<CanvasNode["generation_status"]>, string> = {
@@ -241,40 +230,22 @@ export function CanvasSidePanel({
       }}
     >
       {open ? <button type="button" aria-label="关闭画布侧栏" tabIndex={-1} style={{ bottom: "var(--canvas-dock-clearance)" }} className="pointer-events-auto absolute inset-0 z-0 bg-slate-950/20 backdrop-blur-[1px] md:hidden" onClick={() => onOpenChange(false)} /> : null}
-      <aside
+      <Card role="complementary"
         aria-label="画布资源侧栏"
-        className={cn(
-          "absolute top-0 bottom-[var(--canvas-dock-clearance)] left-0 z-10 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col border-r bg-card/98 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl transition-[opacity,transform,box-shadow,border-color] duration-300 ease-in-out motion-reduce:transition-none md:bottom-[var(--canvas-side-panel-bottom)] md:max-w-none [@media(max-height:540px)]:rounded-xl [@media(max-height:540px)]:border [@media(max-height:540px)]:shadow-xl",
-          open
-            ? "pointer-events-auto translate-x-0 border-border opacity-100 shadow-xl md:shadow-none"
-            : "pointer-events-none -translate-x-full border-transparent opacity-0 shadow-none",
-        )}
+        className={cn("absolute top-0 bottom-[var(--canvas-dock-clearance)] left-0 z-10 flex min-h-0 max-w-[calc(100%-1.5rem)] flex-col pb-[env(safe-area-inset-bottom)] transition-[opacity,transform,box-shadow,border-color] duration-300 ease-in-out motion-reduce:transition-none md:bottom-[var(--canvas-side-panel-bottom)] md:max-w-none p-0 gap-0", open
+    ? "pointer-events-auto translate-x-0 opacity-100" : "pointer-events-none -translate-x-full opacity-0")}
         style={{ width }}
       >
+        <Tabs value={tab} onValueChange={(value) => onTabChange(value as CanvasSidePanelTab)} className="contents">
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-3">
-          <div
-            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-lg bg-muted/70 p-1"
-            role="tablist"
-            aria-label="画布侧栏"
-            onKeyDown={(event) => {
-              const tabs: CanvasSidePanelTab[] = ["canvas", "assets", "prompts"];
-              const index = tabs.indexOf(tab);
-              const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length]
-                : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length]
-                  : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : null;
-              if (!next) return;
-              event.preventDefault();
-              onTabChange(next);
-              event.currentTarget.querySelector<HTMLButtonElement>(`[data-canvas-panel-tab="${next}"]`)?.focus();
-            }}
-          >
-            <SidePanelTab data-canvas-panel-tab="canvas" active={tab === "canvas"} onClick={() => onTabChange("canvas")}>画布</SidePanelTab>
-            <SidePanelTab data-canvas-panel-tab="assets" active={tab === "assets"} onClick={() => onTabChange("assets")}>生成历史</SidePanelTab>
-            <SidePanelTab data-canvas-panel-tab="prompts" active={tab === "prompts"} onClick={() => onTabChange("prompts")}>提示词库</SidePanelTab>
-          </div>
+          <TabsList className="h-auto min-w-0 flex-1" aria-label="画布侧栏">
+            <TabsTrigger value="canvas" data-canvas-panel-tab="canvas" >画布</TabsTrigger>
+            <TabsTrigger value="assets" data-canvas-panel-tab="assets" >生成历史</TabsTrigger>
+            <TabsTrigger value="prompts" data-canvas-panel-tab="prompts" >提示词库</TabsTrigger>
+          </TabsList>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden" role="tabpanel" aria-label={tab === "canvas" ? "画布节点" : tab === "assets" ? "生成历史" : "提示词库"}>
+        <TabsContent value={tab} className="min-h-0 flex-1 overflow-hidden" aria-label={tab === "canvas" ? "画布节点" : tab === "assets" ? "生成历史" : "提示词库"}>
           {tab === "canvas" ? (
             <CanvasNodesTab nodes={nodes} selectedNodeIDs={selectedNodeIDs} onFocusNode={(nodeID) => { onFocusNode(nodeID); closeOnMobile(); }} />
           ) : tab === "assets" ? (
@@ -282,12 +253,12 @@ export function CanvasSidePanel({
           ) : (
             <CanvasPromptsTab sessionKey={sessionKey} onInsert={insertPrompt} />
           )}
-        </div>
+        </TabsContent>
 
         <div data-canvas-side-panel-footer className="flex h-16 shrink-0 items-center justify-between gap-3 border-t border-border/70 px-3">
-          <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-muted-foreground hover:text-foreground" aria-label="收起侧栏" title="收起侧栏" onClick={() => onOpenChange(false)}>
-            <ArrowLeftToLine className="size-4" />
-          </Button>
+          <TooltipHint content={"收起侧栏"}><Button type="button" variant="ghost" size="icon"  aria-label="收起侧栏" onClick={() => onOpenChange(false)}>
+            <ArrowLeftToLine  />
+          </Button></TooltipHint>
           <span role="status" className="text-xs tabular-nums text-muted-foreground">共 {nodes.length} 节点</span>
         </div>
 
@@ -307,30 +278,12 @@ export function CanvasSidePanel({
             onWidthChange(Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, nextWidth)));
           }}
         >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-brand/60 group-focus-visible:bg-brand" />
-          <span className="absolute left-1/2 top-1/2 h-10 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border transition-colors group-hover:bg-brand group-focus-visible:bg-brand" />
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary" />
+          <span className="absolute left-1/2 top-1/2 h-10 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
         </button>
-      </aside>
+        </Tabs>
+      </Card>
     </div>
-  );
-}
-
-function SidePanelTab({ active, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { active: boolean }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      tabIndex={active ? 0 : -1}
-      className={cn(
-        "min-w-0 flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-[color,background-color,box-shadow] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-        active && "bg-card text-foreground shadow-sm",
-        className,
-      )}
-      {...props}
-    >
-      {props.children}
-    </button>
   );
 }
 
@@ -364,13 +317,13 @@ function CanvasNodesTab({ nodes, selectedNodeIDs, onFocusNode }: {
       <div className="shrink-0 space-y-2.5 border-b border-border/70 bg-muted/15 p-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">画布节点</span>
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{nodes.length}</span>
-          {selectedNodeIDs.size ? <span className="ml-auto whitespace-nowrap text-[10px] tabular-nums text-brand">已选 {selectedNodeIDs.size}</span> : null}
+          <Badge variant="secondary" className="tabular-nums">{nodes.length}</Badge>
+          {selectedNodeIDs.size ? <span className="ml-auto whitespace-nowrap text-[10px] tabular-nums text-primary">已选 {selectedNodeIDs.size}</span> : null}
         </div>
-        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索节点标题或内容" aria-label="搜索节点标题或内容" />
+        <SearchInput value={query} onValueChange={setQuery}  placeholder="搜索节点标题或内容" aria-label="搜索节点标题或内容" />
         <div className="flex items-center justify-between gap-2">
           <Select value={type} onValueChange={(value) => setType(value as "all" | CanvasNode["type"])}>
-            <SelectTrigger aria-label="节点类型筛选" className="h-8 w-32 shrink-0 gap-1 rounded-lg border-border/80 bg-card px-2 text-xs shadow-none"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="节点类型筛选" className="w-32 shrink-0"><SelectValue /></SelectTrigger>
             <SelectContent>
               {NODE_FILTERS.map((filter) => <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>)}
             </SelectContent>
@@ -379,12 +332,12 @@ function CanvasNodesTab({ nodes, selectedNodeIDs, onFocusNode }: {
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="p-2">
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-2">
         {treeRows.length ? (
           <div className="space-y-1">
             {treeRows.map(({ node, depth, hasChildren }) => (
               <div key={node.id} className="flex items-center gap-1" style={{ marginLeft: depth * 20 }}>
-                {node.type === "group" && hasChildren ? <button type="button" aria-label={`${collapsedGroups.has(node.id) ? "展开" : "收起"}${node.title || "组"}`} aria-expanded={!collapsedGroups.has(node.id)} className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted" onClick={() => setCollapsedGroups((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next; })}><ChevronRight className={cn("size-4 transition-transform", !collapsedGroups.has(node.id) && "rotate-90")} /></button> : null}
+                {node.type === "group" && hasChildren ? <Button variant="ghost" size="icon-sm" type="button" aria-label={`${collapsedGroups.has(node.id) ? "展开" : "收起"}${node.title || "组"}`} aria-expanded={!collapsedGroups.has(node.id)} className="grid shrink-0 place-items-center" onClick={() => setCollapsedGroups((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next; })}><ChevronRight className={cn("size-4 transition-transform", !collapsedGroups.has(node.id) && "rotate-90")} /></Button> : null}
               <CanvasNodeRow
                 key={node.id}
                 ref={(element) => { rowRefs.current[node.id] = element; }}
@@ -400,7 +353,7 @@ function CanvasNodesTab({ nodes, selectedNodeIDs, onFocusNode }: {
             {nodes.length ? <SidePanelEmpty icon={Search} title="没有匹配的节点" description="试试其他关键词或筛选条件" action={query || type !== "all" ? { label: "清除筛选", onClick: () => { setQuery(""); setType("all"); } } : undefined} /> : <SidePanelEmpty icon={Images} title="画布暂无节点" description="从下方工具栏添加一个节点" />}
           </div>
         )}
-      </ScrollArea>
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
     </div>
   );
 }
@@ -417,20 +370,16 @@ const CanvasNodeRow = ({ ref, node, selected, onClick }: {
   const subtitle = node.type === "text" ? node.prompt || meta.label : meta.label;
 
   return (
-    <button
+    <Toggle variant="outline"
       ref={ref}
       type="button"
-      aria-pressed={selected}
-      className={cn(
-        "group relative flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-lg border px-2 py-1.5 text-left transition-[color,background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        selected ? "border-brand/45 bg-brand-soft shadow-sm" : "border-transparent hover:border-border/70 hover:bg-muted/70",
-      )}
+      pressed={selected}
+      className="group relative flex min-h-14 min-w-0 flex-1 items-center text-left justify-start"
       onClick={onClick}
     >
-      {selected ? <span className="absolute inset-y-2 left-0.5 w-0.5 rounded-full bg-brand" /> : null}
-      <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted/75 text-muted-foreground ring-1 ring-border/40">
-        {preview ? <AuthenticatedImage src={preview} alt="" className="size-full object-cover" /> : <Icon className="size-4.5" />}
-      </span>
+      <ItemMedia variant={preview ? "image" : "icon"} className="size-10">
+        {preview ? <AuthenticatedImage src={preview} alt="" className="size-full object-cover" /> : <Icon  />}
+      </ItemMedia>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium text-foreground">{node.title || meta.label}</span>
         <span className="mt-0.5 block truncate text-[11px] leading-4 text-muted-foreground">{subtitle}</span>
@@ -440,19 +389,12 @@ const CanvasNodeRow = ({ ref, node, selected, onClick }: {
           <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_CLASS[node.generation_status])} />
         </TooltipHint>
       ) : null}
-    </button>
+    </Toggle>
   );
 };
 
 function SidePanelEmpty({ icon: Icon, title, description, action }: { icon: LucideIcon; title: string; description: string; action?: { label: string; onClick: () => void } }) {
-  return (
-    <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center">
-      <span className="mb-2 grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground"><Icon className="size-4.5" /></span>
-      <p className="text-xs font-medium text-foreground">{title}</p>
-      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{description}</p>
-      {action ? <Button type="button" variant="outline" size="sm" className="mt-3 h-7 text-[11px]" onClick={action.onClick}>{action.label}</Button> : null}
-    </div>
-  );
+  return <EmptyState compact icon={Icon} title={title} description={description} className="min-h-48" action={action ? <Button type="button" variant="outline" size="sm" onClick={action.onClick}>{action.label}</Button> : undefined} />;
 }
 
 function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
@@ -474,31 +416,31 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
       <div className="shrink-0 space-y-2.5 border-b border-border/70 bg-muted/15 p-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">生成历史</span>
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{images.length}</span>
-          <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 gap-1.5 rounded-lg px-2 text-xs" onClick={onOpenAssets}>
-            <FolderOpen className="size-3.5" />全部素材
+          <Badge variant="secondary" className="tabular-nums">{images.length}</Badge>
+          <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={onOpenAssets}>
+            <FolderOpen  />全部素材
           </Button>
         </div>
-        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索素材名称或提示词" aria-label="搜索素材" />
+        <SearchInput value={query} onValueChange={setQuery}  placeholder="搜索素材名称或提示词" aria-label="搜索素材" />
         <p className="text-[11px] text-muted-foreground">点击插入，或将素材拖到画布指定位置</p>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="p-2.5">
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-2.5">
         {loading && !images.length ? (
           <div className="grid grid-cols-2 gap-2 p-0.5" aria-label="正在加载素材">
-            {Array.from({ length: 4 }, (_, index) => <span key={index} className="aspect-square animate-pulse rounded-lg bg-muted" />)}
+            {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="aspect-square motion-reduce:animate-none" />)}
           </div>
         ) : filteredImages.length ? (
           <div className="grid grid-cols-2 gap-2">
             {filteredImages.map((image) => {
               const title = image.name || image.prompt || "图片";
               return (
-                <button
+                <Button variant="outline"
                   key={image.path}
                   type="button"
                   draggable
                   aria-label={`插入素材：${title}`}
-                  className="group relative min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card text-left transition-[border-color,box-shadow] hover:border-brand/50 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group relative block h-auto w-full min-w-0 overflow-hidden whitespace-normal p-0 text-left"
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-yunmian-image", JSON.stringify(image));
                     event.dataTransfer.effectAllowed = "copy";
@@ -510,14 +452,14 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
                     <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent px-2 pb-1.5 pt-5 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">点击插入画布</span>
                   </span>
                   <span className="block truncate px-2 py-1.5 text-[11px] font-medium">{title}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
         ) : (
           images.length ? <SidePanelEmpty icon={Search} title="没有匹配的素材" description="试试名称、提示词或模型" action={query ? { label: "清除搜索", onClick: () => setQuery("") } : undefined} /> : <SidePanelEmpty icon={FolderOpen} title="暂无素材" description="生成或上传素材后，可从这里快速插入" action={{ label: "打开素材库", onClick: onOpenAssets }} />
         )}
-      </ScrollArea>
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
     </div>
   );
 }
@@ -608,20 +550,17 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
       <div className="shrink-0 space-y-2.5 border-b border-border/70 bg-muted/15 p-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">提示词库</span>
-          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">{filteredPrompts.length}</span>
-          <TooltipHint content="刷新提示词库"><Button type="button" variant="ghost" size="icon" className="ml-auto size-7 rounded-lg text-muted-foreground" aria-label="刷新提示词库" disabled={loading} onClick={() => load(true)}><RefreshCcw className={cn("size-3.5", loading && "animate-spin")} /></Button></TooltipHint>
+          <Badge variant="secondary" className="shrink-0 tabular-nums">{filteredPrompts.length}</Badge>
+          <TooltipHint content="刷新提示词库"><Button type="button" variant="ghost" size="icon" className="ml-auto" aria-label="刷新提示词库" disabled={loading} onClick={() => load(true)}>{loading ? <Spinner className="size-3.5" /> : <RefreshCcw className="size-3.5" />}</Button></TooltipHint>
         </div>
-        <SearchInput value={query} onValueChange={setQuery} className="h-9 bg-card" placeholder="搜索提示词" aria-label="搜索提示词" />
+        <SearchInput value={query} onValueChange={setQuery}  placeholder="搜索提示词" aria-label="搜索提示词" />
       </div>
 
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="p-2">
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-2">
         {loading && !prompts.length ? (
-          <div className="grid min-h-48 place-items-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
+          <LoadingState className="min-h-48" label="正在加载提示词" />
         ) : error && !prompts.length ? (
-          <div className="grid min-h-48 place-items-center gap-3 px-5 text-center text-xs text-muted-foreground">
-            <span className="line-clamp-3">{error}</span>
-            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => load(true)}><RefreshCcw className="size-3.5" />重试</Button>
-          </div>
+          <EmptyState compact role="alert" title="提示词加载失败" description={error} className="min-h-48" action={<Button type="button" variant="outline" size="sm" onClick={() => load(true)}><RefreshCcw />重试</Button>} />
         ) : promptGroups.length ? (
           <div className="space-y-1">
             {promptGroups.map((category) => {
@@ -630,18 +569,18 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
               const visiblePrompts = category.prompts.slice(0, visibleCount);
               return (
                 <section key={category.id} className="pb-1">
-                  <button
+                  <Button variant="outline"
                     type="button"
-                    className="sticky top-0 z-10 flex h-9 w-full items-center gap-1.5 rounded-lg border border-transparent bg-background/95 px-2 text-left text-xs font-medium text-muted-foreground backdrop-blur-sm transition-[color,background-color,border-color] hover:border-border/70 hover:bg-muted hover:text-foreground"
+                    className="sticky top-0 z-10 flex w-full items-center text-left justify-start"
                     aria-expanded={opened}
                     title={category.label !== category.id ? category.label : undefined}
                     onClick={() => setExpandedCategoryID((current) => current === category.id ? null : category.id)}
                   >
                     <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", opened && "rotate-90")} />
-                    <BookOpen className="size-3.5 shrink-0" />
+                    <BookOpen className="shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{category.label || category.id}</span>
-                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground/80">{category.prompts.length}</span>
-                  </button>
+                    <Badge variant="secondary" className="shrink-0 tabular-nums">{category.prompts.length}</Badge>
+                  </Button>
                   {opened ? (
                     <div className="space-y-1 pt-1">
                       {visiblePrompts.map((prompt) => <CanvasPromptRow key={`${prompt.source}:${prompt.id}`} prompt={prompt} onView={() => setDetail(prompt)} onInsert={() => insert(prompt)} />)}
@@ -650,7 +589,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-full text-[11px] text-muted-foreground"
+                          className="w-full"
                           onClick={() => setVisibleCounts((current) => ({
                             ...current,
                             [category.id]: Math.min(category.prompts.length, visibleCount + SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE),
@@ -668,19 +607,19 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
         ) : (
           prompts.length ? <SidePanelEmpty icon={Search} title="没有匹配的提示词" description="试试其他关键词" action={query ? { label: "清除搜索", onClick: () => setQuery("") } : undefined} /> : <SidePanelEmpty icon={BookOpen} title="暂无提示词" description="提示词库加载后会显示在这里" action={{ label: "重新加载", onClick: () => load(true) }} />
         )}
-      </ScrollArea>
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
 
       <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
-        <DialogContent scrollable={false} className="flex max-h-[min(86dvh,680px)] w-[min(92vw,600px)] flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border px-5 py-4">
-            <DialogTitle className="text-base">{detail?.title || "提示词详情"}</DialogTitle>
+        <DialogContent className="flex max-h-[min(86dvh,680px)] w-[min(92vw,600px)] flex-col overflow-hidden sm:max-w-none">
+          <DialogHeader className="shrink-0">
+            <DialogTitle >{detail?.title || "提示词详情"}</DialogTitle>
             <DialogDescription>{detail ? `${detail.category} · ${detail.sourceLabel}` : ""}</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="min-h-0 flex-1" viewportClassName="p-5">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-5">
             {detail?.preview ? <img src={detail.preview} alt={detail.title} className="mb-4 max-h-[min(18rem,22dvh)] w-full rounded-md border border-border bg-muted object-contain" /> : null}
             <p className="whitespace-pre-wrap break-words text-sm leading-6">{detail?.prompt}</p>
-          </ScrollArea>
-          <DialogFooter flush>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+          <DialogFooter className="m-0 shrink-0">
             <Button type="button" variant="outline" onClick={() => setDetail(null)}>关闭</Button>
             <Button type="button" onClick={() => { if (detail) insert(detail); setDetail(null); }}><Plus />插入画布</Button>
           </DialogFooter>
@@ -692,20 +631,20 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
 
 function CanvasPromptRow({ prompt, onView, onInsert }: { prompt: BananaPrompt; onView: () => void; onInsert: () => void }) {
   return (
-    <div className="group flex min-h-14 items-center gap-2 rounded-lg border border-transparent px-1.5 py-1.5 transition-[background-color,border-color] hover:border-border/60 hover:bg-muted/65">
+    <Card className="group flex min-h-14 items-center gap-2 px-1.5 py-1.5 flex-row">
       <PromptThumbnail prompt={prompt} />
-      <button type="button" className="min-w-0 flex-1 text-left" onClick={onView}>
+      <Button variant="ghost" type="button" className="min-w-0 flex-1 text-left justify-start h-auto flex-col items-start whitespace-normal [&>span]:w-full" onClick={onView}>
         <span className="block truncate text-xs font-medium text-foreground">{prompt.title}</span>
         <span className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{prompt.prompt}</span>
         <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/75">
           {[prompt.sourceLabel, formatSidePanelPromptDate(prompt.created)].filter(Boolean).join(" · ")}
         </span>
-      </button>
+      </Button>
       <span className="flex shrink-0 items-center gap-0.5">
-        <Button type="button" variant="ghost" size="icon" className="size-7 rounded-lg text-muted-foreground opacity-70 transition-opacity group-hover:opacity-100" aria-label={`查看 ${prompt.title}`} title="查看详情" onClick={onView}><Eye className="size-3.5" /></Button>
-        <Button type="button" variant="ghost" size="icon" className="size-7 text-brand" aria-label={`插入 ${prompt.title}`} title="插入画布" onClick={onInsert}><Plus className="size-3.5" /></Button>
+        <TooltipHint content={"查看详情"}><Button type="button" variant="ghost" size="icon" className="opacity-70 group-hover:opacity-100" aria-label={`查看 ${prompt.title}`} onClick={onView}><Eye  /></Button></TooltipHint>
+        <TooltipHint content={"插入画布"}><Button type="button" variant="ghost" size="icon"  aria-label={`插入 ${prompt.title}`} onClick={onInsert}><Plus  /></Button></TooltipHint>
       </span>
-    </div>
+    </Card>
   );
 }
 

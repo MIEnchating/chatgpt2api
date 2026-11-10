@@ -22,7 +22,7 @@ test("profile applies successful model configuration independently and clears st
 
 test("empty profile model selectors stay controlled and disabled", () => {
   assert.match(profileSource, /const current = resolveConfiguredModel\(options, preferences\[field\], defaultModel\)/);
-  assert.match(profileSource, /<Select value=\{current\} disabled=\{isLoading \|\| options\.length === 0\}/);
+  assert.match(profileSource, /<ModelPicker id=\{fieldId\} label=\{label\} value=\{current\} options=\{options\} disabled=\{isLoading\}/);
   assert.doesNotMatch(profileSource, /value=\{options\.includes\(current\) \? current : undefined\}/);
 });
 

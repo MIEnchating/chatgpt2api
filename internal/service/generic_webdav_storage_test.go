@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -10,6 +13,38 @@ import (
 
 	"golang.org/x/net/webdav"
 )
+
+func TestGenericWebDAVEncodedRootPath(t *testing.T) {
+	ctx := context.Background()
+	root := "/素材 空格+%#?"
+	fs := webdav.NewMemFS()
+	if err := fs.Mkdir(ctx, root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	handler := &webdav.Handler{FileSystem: fs, LockSystem: webdav.NewMemLS()}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
+	defer server.Close()
+	provider := model.StorageProvider{Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL + "/" + url.PathEscape(strings.TrimPrefix(root, "/")), PathPrefix: "assets"}
+	key := "assets/图片 +%#?.png"
+	if err := putGenericWebDAVObject(ctx, provider, key, strings.NewReader("image"), 5); err != nil {
+		t.Fatal(err)
+	}
+	object, err := downloadGenericWebDAVObject(ctx, provider, model.StorageObject{ObjectKey: key, Bytes: 5}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(object.Stream)
+	object.Stream.Close()
+	if err != nil || string(data) != "image" {
+		t.Fatalf("download = %q, %v", data, err)
+	}
+	if err := deleteGenericWebDAVObject(ctx, provider, key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat(ctx, root+"/"+key); err == nil {
+		t.Fatal("object was not deleted")
+	}
+}
 
 func TestCleanStorageObjectPath(t *testing.T) {
 	for input, want := range map[string]string{

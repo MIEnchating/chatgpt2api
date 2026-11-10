@@ -31,6 +31,51 @@ func pluginOptionsFixture() NewAPIVideoPluginOptions {
 	return NewAPIVideoPluginOptions{Key: "example-video", Version: "1.0.0", BaseURL: "https://video.example.com", AuthMode: "bearer", DownloadMode: "signed_url", ResultFields: []string{"video_url", "data[0].url"}}
 }
 
+func TestDramayaWan3PluginArtifact(t *testing.T) {
+	dir := "../../integrations/newapi/dramaya-wan-3"
+	data, err := os.ReadFile(filepath.Join(dir, "contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Version   int                          `json:"version"`
+		Contracts []ImportedVideoModelContract `json:"contracts"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.Version != 4 || len(document.Contracts) != 1 || !document.Contracts[0].Enabled {
+		t.Fatalf("invalid import document: %#v", document)
+	}
+	contract := document.Contracts[0].Contract
+	reports, err := protocol.DryRunVideoModelContracts([]protocol.VideoModelContract{contract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 || !reports[0].Passed || reports[0].ModelsTested != 1 || reports[0].ModesTested != 1 {
+		t.Fatalf("unexpected dry run: %#v", reports)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "plugin-options.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var options NewAPIVideoPluginOptions
+	if err := json.Unmarshal(data, &options); err != nil {
+		t.Fatal(err)
+	}
+	result, err := GenerateNewAPIVideoPlugin(contract, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := os.ReadFile(filepath.Join(dir, result.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(artifact) != result.Source {
+		t.Fatal("published plugin differs from the contract generator output")
+	}
+}
+
 func TestGenerateNewAPIVideoPluginPreservesModelIDSpaces(t *testing.T) {
 	contract, options := pluginContractFixture(t), pluginOptionsFixture()
 	contract.Models = []string{"MiniMax H3 Max", "OpenAI Video"}
@@ -82,6 +127,7 @@ func TestGenerateNewAPIVideoPluginValidation(t *testing.T) {
 			o.BaseURL += "/" + strings.Repeat("a", 192)
 		}, "191"},
 		{"missing auth", func(_ *protocol.VideoModelContract, o *NewAPIVideoPluginOptions) { o.AuthMode = "" }, "鉴权"},
+		{"invalid usage unit", func(c *protocol.VideoModelContract, _ *NewAPIVideoPluginOptions) { c.Capability.UsageUnit = "minute" }, "用量单位"},
 		{"dangerous header", func(_ *protocol.VideoModelContract, o *NewAPIVideoPluginOptions) {
 			o.AuthMode = "header"
 			o.AuthHeader = "Cookie"
@@ -190,6 +236,14 @@ func TestGenerateNewAPIVideoPluginHonorsHostDurationLimit(t *testing.T) {
 	contract.Capability.DefaultSeconds = 3601
 	if _, err := GenerateNewAPIVideoPlugin(contract, pluginOptionsFixture()); err == nil || !strings.Contains(err.Error(), "3600") {
 		t.Fatalf("expected host duration validation, got %v", err)
+	}
+	contract.Capability.UsageUnit = "count"
+	result, err = GenerateNewAPIVideoPlugin(contract, pluginOptionsFixture())
+	if err != nil {
+		t.Fatalf("count usage must not inherit the second-unit limit: %v", err)
+	}
+	if strings.Contains(strings.Join(result.Warnings, " "), "3600") {
+		t.Fatal("count usage must not report the second-unit host limit")
 	}
 }
 
@@ -320,6 +374,16 @@ func TestGeneratedNewAPIVideoPluginRuntime(t *testing.T) {
 		sources[name] = result.Source
 	}
 	add("dramaya", contract, options)
+	countContract := pluginContractFixture(t)
+	countContract.ModelProfiles = nil
+	countContract.Capability.UsageUnit = "count"
+	countContract.Capability.Seconds = nil
+	countMaxDuration := 3601
+	countContract.Capability.SecondsRange = &protocol.VideoDurationRange{Min: 1, Max: &countMaxDuration, Step: 1}
+	countContract.Capability.DefaultSeconds = 3601
+	countOptions := pluginOptionsFixture()
+	countOptions.Models = append([]string(nil), countContract.Models...)
+	add("count", countContract, countOptions)
 	options.BaseURL = "  "
 	add("no-base", contract, options)
 	options.BaseURL = pluginOptionsFixture().BaseURL

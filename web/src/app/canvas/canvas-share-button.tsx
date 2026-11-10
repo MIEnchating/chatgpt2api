@@ -1,9 +1,11 @@
-import { LoaderCircle, Share2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { TooltipHint } from "@/components/ui/tooltip";
+import { Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { CanvasShareDialog } from "@/app/canvas/canvas-share-dialog";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+
 import { fetchCanvasShare } from "@/services/api/canvas";
 
 export function CanvasShareButton({ projectID, disabled, beforeShare, onOpen }: {
@@ -27,20 +29,19 @@ export function CanvasShareButton({ projectID, disabled, beforeShare, onOpen }: 
   }, [projectID]);
 
   return <>
-    <Button
+    <TooltipHint content={loading ? "正在读取分享状态" : shared ? "已开启只读分享，点击管理" : shared === false ? "生成只读分享链接" : "未能读取分享状态，点击重试"}><Button
       variant="ghost"
       size="sm"
-      className={cn("h-8 shrink-0 gap-1 rounded-lg px-2 text-xs", shared && "bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand")}
+      className="shrink-0"
       disabled={disabled || loading || !projectID}
       aria-label={shared ? "已分享" : "分享"}
       aria-expanded={open}
       aria-haspopup="dialog"
-      title={loading ? "正在读取分享状态" : shared ? "已开启只读分享，点击管理" : shared === false ? "生成只读分享链接" : "未能读取分享状态，点击重试"}
       onClick={() => { onOpen(); setOpen(true); }}
     >
-      {loading ? <LoaderCircle className="size-4 animate-spin" /> : <Share2 className="size-4" />}
+      {loading ? <Spinner /> : <Share2  />}
       {shared ? "已分享" : "分享"}
-    </Button>
+    </Button></TooltipHint>
     {open ? <CanvasShareDialog projectID={projectID} beforeShare={beforeShare} onClose={() => setOpen(false)} onShareChange={setShared} /> : null}
   </>;
 }

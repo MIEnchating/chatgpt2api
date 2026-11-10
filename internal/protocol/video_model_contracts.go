@@ -36,6 +36,7 @@ type VideoModelReferenceLimits struct {
 
 type VideoModelContractCapability struct {
 	Parameters           []VideoModelParameter     `json:"parameters,omitempty"`
+	UsageUnit            string                    `json:"usage_unit,omitempty"`
 	SecondsRange         *VideoDurationRange       `json:"seconds_range,omitempty"`
 	Prompt               *VideoPromptConstraint    `json:"prompt,omitempty"`
 	Sizes                []string                  `json:"sizes"`
@@ -135,6 +136,8 @@ type VideoModelContractPolling struct {
 type VideoModelContractTransport struct {
 	MultipartFields     map[string]string `json:"multipart_fields,omitempty"`
 	LocalMaterial       string            `json:"local_material"`
+	MaterialTransports  []string          `json:"material_transports,omitempty"`
+	Base64Format        string            `json:"base64_format,omitempty"`
 	MultipartFileField  string            `json:"multipart_file_field"`
 	MultipartRepeatable bool              `json:"multipart_repeatable"`
 	MultipartMixedURLs  bool              `json:"multipart_mixed_urls"`
@@ -230,6 +233,23 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Name = strings.TrimSpace(contract.Name)
 	contract.Driver = strings.ToLower(strings.TrimSpace(contract.Driver))
 	contract.Transport.LocalMaterial = strings.ToLower(strings.TrimSpace(contract.Transport.LocalMaterial))
+	contract.Transport.MaterialTransports = uniqueTrimmedStrings(contract.Transport.MaterialTransports, true)
+	materialPriority := []string{"multipart", "base64", "url"}
+	for _, method := range contract.Transport.MaterialTransports {
+		if !slices.Contains(materialPriority, method) {
+			return VideoModelContract{}, fmt.Errorf("不支持的素材提交方式 %q", method)
+		}
+	}
+	slices.SortFunc(contract.Transport.MaterialTransports, func(a, b string) int {
+		return slices.Index(materialPriority, a) - slices.Index(materialPriority, b)
+	})
+	if len(contract.Transport.MaterialTransports) > 0 {
+		contract.Transport.LocalMaterial = contract.Transport.MaterialTransports[0]
+	}
+	contract.Transport.Base64Format = strings.ToLower(strings.TrimSpace(contract.Transport.Base64Format))
+	if contract.Transport.Base64Format == "" && (contract.Transport.LocalMaterial == "base64" || slices.Contains(contract.Transport.MaterialTransports, "base64")) {
+		contract.Transport.Base64Format = "data_url"
+	}
 	contract.Transport.MultipartFileField = strings.TrimSpace(contract.Transport.MultipartFileField)
 	for role, field := range contract.Transport.MultipartFields {
 		if strings.TrimSpace(field) == "" {
@@ -257,6 +277,10 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Capability.Sizes = uniqueTrimmedStrings(contract.Capability.Sizes, false)
 	contract.Capability.Resolutions = uniqueTrimmedStrings(contract.Capability.Resolutions, false)
 	contract.Capability.Seconds = uniqueSortedInts(contract.Capability.Seconds)
+	contract.Capability.UsageUnit = strings.ToLower(strings.TrimSpace(contract.Capability.UsageUnit))
+	if contract.Capability.UsageUnit == "" {
+		contract.Capability.UsageUnit = "second"
+	}
 	contract.Capability.DefaultSize = strings.TrimSpace(contract.Capability.DefaultSize)
 	contract.Capability.DefaultResolution = strings.TrimSpace(contract.Capability.DefaultResolution)
 	contract.Request.DurationValueType = strings.ToLower(strings.TrimSpace(contract.Request.DurationValueType))
@@ -785,8 +809,11 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	if !IsSupportedVideoContractDriver(contract.Driver) {
 		return fmt.Errorf("传输驱动仅支持 %s", strings.Join(SupportedVideoContractDrivers(), "、"))
 	}
-	if contract.Transport.LocalMaterial != "url" && contract.Transport.LocalMaterial != "multipart" {
-		return fmt.Errorf("本地素材提交方式仅支持 url 或 multipart")
+	if !slices.Contains([]string{"multipart", "base64", "url"}, contract.Transport.LocalMaterial) {
+		return fmt.Errorf("本地素材提交方式仅支持 multipart、base64 或 url")
+	}
+	if !slices.Contains([]string{"", "data_url", "raw"}, contract.Transport.Base64Format) {
+		return fmt.Errorf("Base64 格式仅支持 data_url 或 raw")
 	}
 	if contract.Transport.LocalMaterial == "multipart" {
 		if len(contract.Transport.MultipartFields) == 0 && !videoContractMultipartFieldPattern.MatchString(contract.Transport.MultipartFileField) {
@@ -821,6 +848,9 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		}
 	}
 	capability := contract.Capability
+	if !stringSliceContains([]string{"second", "count"}, capability.UsageUnit) {
+		return fmt.Errorf("用量单位仅支持 second 或 count")
+	}
 	if len(capability.Sizes) > 32 || len(capability.Seconds) == 0 && capability.SecondsRange == nil || len(capability.Seconds) > 60 || len(capability.Resolutions) > 16 {
 		return fmt.Errorf("视频参数选项数量超出限制")
 	}
@@ -829,9 +859,11 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 			return fmt.Errorf("视频参数值 %q 格式无效", value)
 		}
 	}
-	for _, seconds := range capability.Seconds {
-		if seconds < 1 || seconds > 3600 {
-			return fmt.Errorf("视频时长必须在 1-3600 秒之间")
+	if capability.UsageUnit != "count" {
+		for _, seconds := range capability.Seconds {
+			if seconds < 1 || seconds > 3600 {
+				return fmt.Errorf("视频时长必须在 1-3600 秒之间")
+			}
 		}
 	}
 	if !VideoDurationSupported(capability, capability.DefaultSeconds) {
@@ -1232,6 +1264,7 @@ func cloneVideoContract(contract VideoModelContract) VideoModelContract {
 		contract.ModelProfiles[index] = videoModelProfileFromContract(profile.Model, value)
 	}
 	contract.Transport.MultipartFields = maps.Clone(contract.Transport.MultipartFields)
+	contract.Transport.MaterialTransports = slices.Clone(contract.Transport.MaterialTransports)
 	contract.Capability.Parameters = slices.Clone(contract.Capability.Parameters)
 	for i := range contract.Capability.Parameters {
 		p := &contract.Capability.Parameters[i]

@@ -1,6 +1,6 @@
 export type CanvasTool = "select" | "pan";
 
-export const CANVAS_AGENT_WIDTH = 420;
+export const CANVAS_AGENT_WIDTH = 500;
 
 const CANVAS_DOCK_STACK_BREAKPOINT = 1120;
 

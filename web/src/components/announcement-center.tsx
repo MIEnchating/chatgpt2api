@@ -1,13 +1,19 @@
 "use client";
 
+import { Spinner } from "@/components/ui/spinner";
+
+import { Badge } from "@/components/ui/badge";
+
+import { TooltipHint } from "@/components/ui/tooltip";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, BellOff, CalendarClock, ChevronRight, LoaderCircle } from "lucide-react";
+import { Bell, BellOff, CalendarClock, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingState } from "@/components/ui/loading-state";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -75,7 +81,7 @@ function announcementTime(value: string) {
   });
 }
 
-export function AnnouncementCenter({ className, sessionKey }: { className?: string; sessionKey: string }) {
+export function AnnouncementCenter({ className, sessionKey, side }: { className?: string; sessionKey: string; side: "right" | "bottom" }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [preferences, setPreferences] = useState<AnnouncementPreferences>(emptyPreferences);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -242,34 +248,32 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
   return (
     <>
       <Popover open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
-        <PopoverTrigger asChild>
-          <Button
+        <TooltipHint content={"系统公告"}><span className="inline-flex shrink-0"><PopoverTrigger asChild><Button
             type="button"
             variant="ghost"
             size="icon"
-            className={cn("relative size-8 rounded-lg", className)}
+            className={cn("relative", className)}
             aria-label={unreadCount > 0 ? `系统公告，${unreadCount} 条未读` : "系统公告"}
-            title="系统公告"
           >
-            <Bell className="size-4" />
+            <Bell className="size-5" />
             {unreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold leading-4 text-white ring-2 ring-card">
+              <Badge variant="secondary" className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}
-              </span>
+              </Badge>
             ) : null}
-          </Button>
-        </PopoverTrigger>
+          </Button></PopoverTrigger></span></TooltipHint>
         <PopoverContent
-          scrollable={false}
+          side={side}
           align="end"
+          collisionPadding={8}
           sideOffset={8}
-          className="w-[min(calc(100vw-1.5rem),360px)] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-[var(--shadow-popover)]"
+          className="w-[min(calc(100vw-1.5rem),360px)] overflow-hidden"
         >
           <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/15 px-4 py-3">
             <div className="text-sm font-semibold text-foreground">系统公告</div>
             <div className="text-xs text-muted-foreground">{announcements.length} 条</div>
           </div>
-          <ScrollArea className="min-h-0 max-h-[min(420px,65dvh)] flex-1">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(420px,65dvh)] flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
             {!isLoaded ? (
               <LoadingState label="正在加载公告" className="min-h-40" />
             ) : announcements.length === 0 ? (
@@ -279,44 +283,41 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                 const version = announcementVersion(item);
                 const unread = !seenVersions.has(version);
                 return (
-                  <button
+                  <Button variant="outline"
                     key={version}
                     type="button"
-                    className="group flex w-full items-start gap-3 border-b border-border/70 px-4 py-3 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="group flex w-full items-start text-left transition justify-start h-auto min-h-8 whitespace-normal py-2"
                     onClick={() => openAnnouncement(item)}
                   >
                     <span
-                      className={cn(
-                        "mt-1.5 size-2 shrink-0 rounded-full",
-                        unread ? "bg-brand" : "bg-border",
-                      )}
+                      className={cn("mt-1.5 size-2 shrink-0 rounded-full", unread ? "bg-primary" : "bg-border")}
                     />
                     <span className="min-w-0 flex-1">
                       <span className={cn("line-clamp-2 break-words text-sm leading-6 text-foreground", unread && "font-semibold")}>{item.title}</span>
                       <span className="mt-1 block text-[11px] text-muted-foreground">{unread ? "未读 · " : ""}{announcementTime(item.updated_at)}</span>
                       <span className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">{item.content}</span>
                     </span>
-                    <ChevronRight className="mt-2 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
-                  </button>
+                    <ChevronRight className="mt-2 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
+                  </Button>
                 );
               })
             )}
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         </PopoverContent>
       </Popover>
 
       <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="w-[min(92vw,520px)]">
+        <DialogContent className="w-[min(92vw,520px)] sm:max-w-none">
           <DialogHeader>
             <DialogTitle>{selected?.title || "系统公告"}</DialogTitle>
             <DialogDescription>
               系统公告{selected?.updated_at ? ` · ${announcementTime(selected.updated_at)}` : ""}
             </DialogDescription>
-          </DialogHeader>
+          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
           <div className="whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]">
             {selected?.content || ""}
           </div>
-          <DialogFooter className="gap-2 sm:justify-end">
+          </ScrollArea><DialogFooter className="sm:justify-end">
             {isAutomaticPrompt ? (
               <>
                 <Button
@@ -325,7 +326,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                   disabled={isUpdating}
                   onClick={() => void closeAutomaticPrompt("today")}
                 >
-                  <CalendarClock className="size-4" />
+                  <CalendarClock  />
                   今日关闭
                 </Button>
                 <Button
@@ -333,7 +334,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
                   disabled={isUpdating}
                   onClick={() => void closeAutomaticPrompt("forever")}
                 >
-                  {isUpdating ? <LoaderCircle className="size-4 animate-spin" /> : <BellOff className="size-4" />}
+                  {isUpdating ? <Spinner /> : <BellOff  />}
                   永久关闭
                 </Button>
               </>

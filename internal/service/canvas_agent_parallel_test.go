@@ -276,7 +276,7 @@ func TestCanvasAgentAdditionalOutputsRetainSourcesAndGroupDeletionScope(t *testi
 func TestCanvasAgentSDKRunsIndependentWorkflowInParallel(t *testing.T) {
 	var turns, started atomic.Int32
 	barrier := make(chan struct{})
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
 		switch turns.Add(1) {
 		case 1:
 			steps := []map[string]any{}

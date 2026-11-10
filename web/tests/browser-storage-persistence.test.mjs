@@ -88,8 +88,8 @@ test("account-scoped API caches are invalidated across login boundaries", async 
 	assert.match(api, /function clearAccountScopedAPICaches\(\)/);
 	assert.match(api, /imageGenerationPreferencesCache\.clear\(\)/);
 	assert.match(api, /modelConfigCache\.clear\(\)/);
-	assert.match(api, /grokTTSVoiceRequests\.clear\(\)/);
+	assert.match(api, /audioVoiceRequests\.clear\(\)/);
 	assert.match(api, /login[\s\S]*?clearAccountScopedAPICaches\(\)/);
 	assert.match(api, /logout[\s\S]*?clearAccountScopedAPICaches\(\)/);
-	assert.match(api, /grokTTSVoiceRequests\.get\(requestKey\) === request/);
+	assert.match(api, /audioVoiceRequests\.get\(requestKey\) === request/);
 });

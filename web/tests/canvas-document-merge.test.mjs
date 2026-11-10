@@ -37,3 +37,19 @@ test('acknowledged movement stays undoable without losing generated output', () 
  local.nodes=[];remote.nodes=[];
  assert.equal(mergeCanvasHistory(base,local,base,remote).nodes[0].id,'n');
 });
+
+test('Agent polling and save acknowledgement preserve pending queue edits without replacing model history', () => {
+ const base=doc(),local=structuredClone(base),remote=structuredClone(base);
+ const first={paused:false,messages:[{id:'q1',text:'new direction',createdAt:'now',references:[]}]};
+ local.agent_sessions[0].messageQueue=first;
+ remote.agent_sessions[0].messages=[{role:'assistant',text:'new progress'}];remote.revision=2;
+ const merged=mergeCanvasDocuments(base,local,remote);
+ assert.deepEqual(merged.agent_sessions[0].messageQueue,first);
+ assert.deepEqual(merged.agent_sessions[0].messages,remote.agent_sessions[0].messages);
+ const sent=structuredClone(merged),typing=structuredClone(merged);
+ typing.agent_sessions[0].messageQueue.messages.push({id:'q2',text:'second direction',createdAt:'now',references:[]});
+ const ack=mergeCanvasDocuments(base,typing,sent);
+ assert.equal(ack.agent_sessions[0].messageQueue.messages.length,2);
+ const clean=mergeCanvasDocuments(sent,sent,remote);
+ assert.equal(clean.agent_sessions[0].messageQueue,undefined,'another client can update an acknowledged queue');
+});

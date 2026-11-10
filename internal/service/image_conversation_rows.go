@@ -867,6 +867,7 @@ func imageConversationHistorySummary(item map[string]any) map[string]any {
 		"id":                                  util.Clean(item["id"]),
 		"revision":                            imageConversationRevision(item),
 		"title":                               util.Clean(item["title"]),
+		"composerMode":                        item["composerMode"],
 		"createdAt":                           strings.TrimSpace(util.Clean(item["createdAt"])),
 		"updatedAt":                           imageConversationUpdatedAt(item),
 		"historySummary":                      map[string]any{"turnCount": len(turns), "queued": queued, "running": running},

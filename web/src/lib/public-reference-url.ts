@@ -47,3 +47,9 @@ export function isPublicReferenceURL(value: string) {
     return false;
   }
 }
+
+export function isPublicHTTPSReferenceURL(value: string) {
+  const input = value.trim();
+  if (!input.startsWith("https://")) return false;
+  return isPublicReferenceURL(input);
+}

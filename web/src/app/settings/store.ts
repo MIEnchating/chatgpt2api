@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
 import { resolveConfiguredModel } from "@/lib/model-config-selection";
+import { resolveModelGroupConfig } from "@/lib/model-groups";
 import { invalidateStorageProviderCache } from "@/services/storage-provider";
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
@@ -118,10 +119,10 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "https://www.yunmian.tech",
-    relay_text_group: String(config.relay_text_group || "").trim(),
-    relay_image_group: String(config.relay_image_group || "").trim(),
-    relay_video_group: String(config.relay_video_group || "").trim(),
-    relay_audio_group: String(config.relay_audio_group || "").trim(),
+    relay_text_group: config.relay_text_group || [],
+    relay_image_group: config.relay_image_group || [],
+    relay_video_group: config.relay_video_group || [],
+    relay_audio_group: config.relay_audio_group || [],
     relay_database_url: "",
     relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
     relay_database_driver: relayDatabaseFields.driver,
@@ -151,6 +152,7 @@ function normalizeStorageSetting(value: SettingsConfig["storage"]): StorageSetti
 			endpoint: String(provider.endpoint || "").trim(),
 			region: String(provider.region || "auto").trim() || "auto",
 			bucket: String(provider.bucket || "").trim(),
+			bucketInHost: provider.bucketInHost === true,
 			accessKeyId: String(provider.accessKeyId || ""),
 			secretAccessKey: "",
 			publicBaseUrl: String(provider.publicBaseUrl || "").trim(),
@@ -197,6 +199,7 @@ type SettingsStore = SettingsSessionData & {
   setImageModels: (value: string) => void;
   setImageModelDefinitions: (value: NonNullable<SettingsConfig["image_model_definitions"]>) => void;
   setModelCapabilities: (value: NonNullable<SettingsConfig["model_capabilities"]>) => void;
+  setModelGroups: (value: NonNullable<SettingsConfig["model_groups"]>) => void;
   setVideoModels: (value: string) => void;
   setTextModels: (value: string) => void;
   setAudioModels: (value: string) => void;
@@ -215,7 +218,7 @@ type SettingsStore = SettingsSessionData & {
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
   setRelayParameterTranslation: (value: string) => void;
-  setRelayCreationGroup: (kind: "text" | "image" | "video" | "audio", value: string) => void;
+  setRelayCreationGroup: (kind: "text" | "image" | "video" | "audio", value: string[]) => void;
   setRelayDatabaseType: (value: "newapi" | "sub2api") => void;
   setRelayDatabaseDriver: (value: "sqlite" | "postgres" | "mysql") => void;
   setRelayDatabaseField: (field: "host" | "port" | "name" | "user" | "password", value: string) => void;
@@ -408,6 +411,7 @@ export function createSettingsStore(
         default_text_model: resolveConfiguredModel(textModels, config.default_text_model),
         audio_models: audioModels,
         model_capabilities: config.model_capabilities || {},
+        model_groups: resolveModelGroupConfig([...textModels, ...imageModels, ...videoModels, ...audioModels], config.model_groups),
         default_audio_model: resolveConfiguredModel(audioModels, config.default_audio_model),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
@@ -424,10 +428,10 @@ export function createSettingsStore(
         app_title: String(config.app_title || "云棉").trim() || "云棉",
         project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
-        relay_text_group: String(config.relay_text_group || "").trim(),
-        relay_image_group: String(config.relay_image_group || "").trim(),
-        relay_video_group: String(config.relay_video_group || "").trim(),
-        relay_audio_group: String(config.relay_audio_group || "").trim(),
+        relay_text_group: config.relay_text_group || [],
+        relay_image_group: config.relay_image_group || [],
+        relay_video_group: config.relay_video_group || [],
+        relay_audio_group: config.relay_audio_group || [],
         relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
         relay_database_driver: config.relay_database_driver === "sqlite" ? "sqlite" : config.relay_database_driver === "mysql" ? "mysql" : "postgres",
         relay_database_host: String(config.relay_database_host || "").trim(),
@@ -446,6 +450,13 @@ export function createSettingsStore(
         payload.relay_database_password = String(config.relay_database_password);
       }
       if (!canConfigureRelayDatabase) {
+        delete payload.relay_text_group;
+        delete payload.relay_image_group;
+        delete payload.relay_video_group;
+        delete payload.relay_audio_group;
+        delete payload.storage;
+        delete payload.relay_parameter_translation;
+        delete payload.allow_user_custom_relay_config;
         delete payload.relay_database_type;
         delete payload.relay_database_driver;
         delete payload.relay_database_host;
@@ -528,6 +539,10 @@ export function createSettingsStore(
 
   setModelCapabilities: (value) => {
     set((state) => state.config ? { config: { ...state.config, model_capabilities: value } } : {});
+  },
+
+  setModelGroups: (value) => {
+    set((state) => state.config ? { config: { ...state.config, model_groups: value } } : {});
   },
 
   setVideoModels: (value) => {

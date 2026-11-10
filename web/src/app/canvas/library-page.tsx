@@ -1,6 +1,16 @@
-import { CanvasAgentAssetMenu, CanvasAgentComposer, CanvasAgentComposerToolbar, CanvasAgentSendButton } from "./canvas-agent-composer";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { PromptInput, PromptInputFooter, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
+import { ItemMedia } from "@/components/ui/item";
+import { Card } from "@/components/ui/card";
+import { ManagementHeader, ManagementPanel, ManagementToolbar } from "@/components/management-page";
+import { CanvasAgentAttachments } from "./canvas-agent-attachments";
+import { InputGroupTextarea } from "@/components/ui/input-group";
+import { TooltipHint } from "@/components/ui/tooltip";
+import { CanvasAgentAssetMenu } from "./canvas-agent-composer";
 import { CanvasAgentSkillPicker } from "@/app/canvas/canvas-agent-skill-picker";
-import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, LoaderCircle, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,9 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
-import { Textarea } from "@/components/ui/textarea";
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { CanvasAssetPicker } from "@/app/canvas/canvas-asset-picker";
@@ -353,9 +362,10 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }
 
   return (
-    <section aria-label="无限画布" className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
-      <div className="card-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
-        <div data-canvas-project-toolbar className="flex min-w-0 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5">
+    <section aria-label="无限画布" className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ManagementHeader title="无限画布" description="管理画布项目，继续创作或导入已有画布。" />
+      <ManagementPanel className="flex-1">
+        <ManagementToolbar data-canvas-project-toolbar className="flex min-w-0 shrink-0 flex-wrap items-center gap-3">
           <SearchInput value={query} onValueChange={setQuery} placeholder="搜索画布名称" containerClassName="min-w-40 flex-1 sm:max-w-sm" />
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground" role="status">{loading ? "正在加载" : `共 ${visibleProjects.length} 个画布`}</span>
           {projects.length ? <Button type="button" variant="ghost" size="sm" disabled={busy || !visibleProjects.length} onClick={toggleAllProjects}><CheckSquare />{allVisibleSelected ? "取消全选" : "全选当前结果"}</Button> : null}
@@ -363,50 +373,50 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             <Button type="button" variant="outline" disabled={busy} onClick={() => importInputRef.current?.click()}><FileUp />导入画布</Button>
             {selectedProjectIDs.size ? <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => void exportSelectedProjects()}><Download />导出选中 ({selectedProjectIDs.size})</Button>
-              <Button type="button" variant="outline" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
-              <Button type="button" variant="ghost" size="icon" className="size-9" title="取消选择" aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button>
+              <Button type="button" variant="outline"  disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
+              <TooltipHint content={"取消选择"}><Button type="button" variant="ghost" size="icon"  aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button></TooltipHint>
             </> : null}
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAgentStarterOpen(true)}><Bot />Agent</Button>
-            <Button type="button" disabled={busy} onClick={() => void createAndOpen()}>{busy ? <LoaderCircle className="animate-spin" /> : <Plus />}新建画布</Button>
+            <Button type="button" disabled={busy} onClick={() => void createAndOpen()}>{busy ? <Spinner /> : <Plus />}新建画布</Button>
           </div>
-        </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div data-canvas-project-content className="w-full p-4 sm:p-5">
+        </ManagementToolbar>
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
+        <div data-canvas-project-content className="w-full p-4 sm:p-6">
         {loading ? (
-          <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载画布...</div>
+          <LoadingState className="min-h-[360px]" label="正在加载画布..." />
         ) : loadError ? (
           <EmptyState icon={FolderOpen} title="画布加载失败" description={loadError} className="min-h-72" action={<Button variant="outline" onClick={() => setReloadKey((key) => key + 1)}>重新加载</Button>} />
         ) : visibleProjects.length ? (
           <div data-canvas-project-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {visibleProjects.map((project) => (
-              <div key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} data-interaction="trigger" className="interactive-card group flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)]">
+              <Card key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} className="group flex min-w-0 flex-col p-4 text-left gap-0">
                 <div className="mb-3 flex min-h-5 items-center justify-between gap-3">
-                  <label data-disabled={busy} className="selection-trigger flex items-center gap-2 text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}>
-                    <Checkbox checked={selectedProjectIDs.has(project.id)} onCheckedChange={() => toggleProject(project.id)} className="selection-control" disabled={busy} aria-label={`选择${project.title}`} />
+                  <Label data-disabled={busy} className="cursor-pointer has-disabled:cursor-not-allowed flex items-center gap-2 text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+                    <Checkbox checked={selectedProjectIDs.has(project.id)} onCheckedChange={() => toggleProject(project.id)} disabled={busy} aria-label={`选择${project.title}`} />
                     <span>{selectedProjectIDs.has(project.id) ? "已选择" : "选择"}</span>
-                  </label>
-                  {project.id === activeProjectID ? <span className="text-[11px] font-medium text-brand">当前画布</span> : null}
+                  </Label>
+                  {project.id === activeProjectID ? <span className="text-[11px] font-medium text-primary">当前画布</span> : null}
                 </div>
-                <button type="button" disabled={busy} onClick={() => void openProject(project)} className="interactive-card-trigger min-w-0 flex-1 text-left disabled:cursor-wait disabled:opacity-60">
+                <Button variant="ghost" type="button" disabled={busy} onClick={() => void openProject(project)} className="block h-auto justify-start whitespace-normal p-0 min-w-0 flex-1 text-left disabled:cursor-wait disabled:opacity-60">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"><Sparkles className="size-4.5" /></span>
+                      <ItemMedia variant="icon" className="flex size-9 shrink-0 items-center justify-center"><Sparkles  /></ItemMedia>
                       <span className="truncate text-base font-semibold">{project.title || "未命名画布"}</span>
                     </div>
-                    <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-brand" />
+                    <ArrowRight className="mt-1 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary" />
                   </div>
                   <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <p className="shrink-0">{project.node_count} 个节点</p>
                     <span aria-hidden="true" className="text-border">·</span>
                     <p>{projectDate(project.updated_at || project.created_at)}</p>
                   </div>
-                </button>
+                </Button>
                 <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/70 pt-3">
-                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="导出画布" aria-label="导出画布" disabled={busy} onClick={() => void exportProject(project)}><Download className="size-4" /></Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="重命名画布" aria-label="重命名画布" disabled={busy} onClick={() => void renameProject(project)}><Pencil className="size-4" /></Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-destructive hover:text-destructive" title="删除画布" aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2 className="size-4" /></Button>
+                  <TooltipHint content={"导出画布"}><Button type="button" variant="ghost" size="icon"  aria-label="导出画布" disabled={busy} onClick={() => void exportProject(project)}><Download  /></Button></TooltipHint>
+                  <TooltipHint content={"重命名画布"}><Button type="button" variant="ghost" size="icon"  aria-label="重命名画布" disabled={busy} onClick={() => void renameProject(project)}><Pencil  /></Button></TooltipHint>
+                  <TooltipHint content={"删除画布"}><Button type="button" variant="ghost" size="icon"  aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2  /></Button></TooltipHint>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         ) : query.trim() ? (
@@ -416,18 +426,18 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
         )}
         <input ref={importInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importProjects(event.target.files?.[0])} />
         </div>
-      </ScrollArea>
-      </div>
+      </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+      </ManagementPanel>
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
-        <DialogContent scrollable={false} className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
+        <DialogContent className="w-[min(94vw,900px)] max-w-none sm:max-w-none">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-brand" />Agent</DialogTitle>
+            <DialogTitle className="flex items-center"><Bot className="size-5 text-primary" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
-          <CanvasAgentComposer data-canvas-agent-starter className="flex-1">
-            <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-1">
-              {pendingAssets.length ? <div className="mb-2 flex flex-wrap gap-1.5">{pendingAssets.map((asset) => <span key={asset.nodeId} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border bg-muted/40 pl-2 pr-1 text-[11px]"><span className="max-w-52 truncate">{asset.reference.label} · {asset.reference.title}</span><button type="button" className="grid size-5 place-items-center rounded hover:bg-muted" aria-label={`移除${asset.reference.title}`} onClick={() => setPendingAssets((current) => current.filter((item) => item.nodeId !== asset.nodeId))}><X className="size-3" /></button></span>)}</div> : null}
-              <Textarea
+          <PromptInput data-canvas-agent-starter className="flex-1">
+            <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
+              <CanvasAgentAttachments attachments={pendingAssets.map((asset) => asset.reference)} onRemove={(id) => setPendingAssets((current) => current.filter((item) => item.reference.id !== id))} />
+              <InputGroupTextarea
                 value={agentPrompt}
                 onChange={(event) => setAgentPrompt(event.target.value)}
                 onPaste={(event) => {
@@ -439,18 +449,18 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void createWithAgent();
                 }}
-                className="min-h-36 max-h-[50dvh] resize-none border-0 bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 sm:min-h-48"
+                className="min-h-36 max-h-[50dvh] resize-none sm:min-h-48"
                 placeholder="描述创作目标"
                 aria-label="Agent 创作目标"
               />
               <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
-            </ScrollArea>
-            <CanvasAgentComposerToolbar>
+            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            <PromptInputFooter>
               <CanvasAgentAssetMenu uploading={uploadingAsset} disabled={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
-              <CanvasAgentSendButton disabled={!agentPrompt.trim() || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" title="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <LoaderCircle className="animate-spin" /> : <ArrowUp />}</CanvasAgentSendButton>
-            </CanvasAgentComposerToolbar>
+              <PromptInputSubmit disabled={!agentPrompt.trim() || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" title="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <Spinner /> : <ArrowUp />}</PromptInputSubmit>
+            </PromptInputFooter>
             <input ref={agentUploadInputRef} hidden type="file" accept="image/*,video/*,audio/*" onChange={onAgentUploadChange} />
-          </CanvasAgentComposer>
+          </PromptInput>
         </DialogContent>
       </Dialog>
       <CanvasProjectDialog

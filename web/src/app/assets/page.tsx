@@ -1,30 +1,45 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+import { Label } from "@/components/ui/label";
+import { LibraryWorkspace } from "@/components/library-workspace";
+import { LayoutGrid, List, Folder, Tags } from "lucide-react";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Item } from "@/components/ui/item";
+
+import { Alert } from "@/components/ui/alert";
+
+
+
+import { Toggle } from "@/components/ui/toggle";
+
+
+import { TooltipHint } from "@/components/ui/tooltip";
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Trash2, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
-import { AssetForm } from "@/app/assets/asset-form";
-import { AssetGroupToolbar } from "@/app/assets/asset-groups";
+import { AssetCard, AssetListRow, AssetPreview } from "@/app/assets/asset-display";
+import { useNavigate } from "react-router-dom";
+import { AssetGroupMenu } from "@/app/assets/asset-groups";
 import { assetLabels } from "@/app/assets/asset-filters";
 import { useAssetGroups } from "@/lib/use-asset-groups";
 import { assetListKey, assetModel, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary, selectPersistedAssets, settleAssetOperations } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/lib/use-my-assets";
-import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
+import { ManagementPage, ManagementPagination, ManagementToolbar } from "@/components/management-page";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { deleteManagedImages, fetchManagedImages, updateManagedImageVisibility } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import { cn } from "@/lib/utils";
 import { copyWithToast } from "@/lib/clipboard-text";
 import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -55,6 +70,7 @@ export default function AssetsPage() {
 }
 
 function AssetsContent({ session }: { session: StoredAuthSession }) {
+  const navigate = useNavigate();
   const scope = session.key;
   const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, true);
   const groupState = useAssetGroups(scope);
@@ -80,15 +96,15 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   const [visibleLoading, setVisibleLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [kind, setKind] = useState<"all" | MyAssetKind>("all");
+  const [view, setView] = useState<"list" | "grid">("grid");
   const [visibility, setVisibility] = useState<"all" | MyAssetVisibility>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
-  const [editing, setEditing] = useState<MyAsset | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
   const [preview, setPreview] = useState<MyAsset | null>(null);
   const [deleting, setDeleting] = useState<MyAsset | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const toolbarViewportRef = useRef<HTMLDivElement>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkActionBusy, setBulkActionBusy] = useState(false);
 
@@ -160,8 +176,13 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   const visibleAssets = filtered.slice((page - 1) * pageSize, page * pageSize);
   const visibleKeys = visibleAssets.map(assetListKey);
   const selectedAssets = allAssets.filter((asset) => selectedKeys.has(assetListKey(asset)));
+  const hasSelection = selectedAssets.length > 0;
   const selectedOnPage = visibleKeys.filter((key) => selectedKeys.has(key)).length;
   const allVisibleSelected = visibleKeys.length > 0 && selectedOnPage === visibleKeys.length;
+
+  useLayoutEffect(() => {
+    if (toolbarViewportRef.current) toolbarViewportRef.current.scrollLeft = 0;
+  }, [hasSelection]);
 
   useEffect(() => setPage(1), [keyword, kind, pageSize, visibility, groupFilter]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
@@ -359,64 +380,401 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     }
   };
 
+
+  const sectionTitle = groupFilter === "ungrouped" ? "未分类素材" : groupFilter !== "all" ? groupState.groups.find((group) => group.id === groupFilter)?.name || "素材标签" : kind === "all" ? "全部素材" : `${kindOptions.find((option) => option.value === kind)?.label}素材`;
+  const createAsset = () => navigate("/assets/new");
+
+  const Display = view === "list" ? AssetListRow : AssetCard;
+  const assetItems = visibleAssets.map((asset, index) => {
+    const key = assetListKey(asset);
+    const canManage = canManageAsset(asset);
+    return (
+      <Display
+        key={key}
+        asset={asset}
+        eager={index < 6}
+        selected={selectedKeys.has(key)}
+        onSelectedChange={(checked) =>
+          setSelectedKeys((current) => {
+            const next = new Set(current);
+            if (checked) next.add(key);
+            else next.delete(key);
+            return next;
+          })
+        }
+        onOpen={() => setPreview(asset)}
+        onEdit={
+          canManage && asset.kind !== "video" && !asset.managedPath
+            ? () => {
+                navigate(`/assets/${encodeURIComponent(asset.id)}/edit`);
+              }
+            : undefined
+        }
+        onDelete={
+          canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images"))
+            ? () => setDeleting(asset)
+            : undefined
+        }
+        onCopy={() => void copyText(asset)}
+        onDownload={() => void download(asset)}
+      />
+    );
+  });
+
   return (
     <ManagementPage data-assets-layout aria-label="我的素材">
-      <ManagementPanel className="flex-1">
-        <ManagementToolbar>
-        <div data-asset-filter-bar className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 lg:flex lg:flex-wrap">
-          <SearchInput value={keyword} onValueChange={setKeyword} placeholder="搜索标题、标签、内容、来源或备注" containerClassName="col-span-2 w-full lg:w-auto lg:min-w-60 lg:flex-1" />
-          <ScrollArea role="group" ariaLabel="素材类型" className="col-span-2 max-w-full rounded-lg bg-muted p-1 lg:w-fit lg:shrink-0" viewClass="flex w-max min-w-full items-center gap-1" >{kindOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setKind(option.value)} aria-pressed={kind === option.value} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition sm:px-2.5", kind === option.value && "bg-card text-foreground shadow-sm")}>{option.value === "all" ? null : <Icon className="hidden size-3.5 min-[360px]:block" />}{option.label}</button>; })}</ScrollArea>
-          <ScrollArea role="group" ariaLabel="素材可见范围" className="w-fit min-w-0 max-w-full rounded-lg bg-muted p-1 lg:shrink-0" viewClass="flex w-max min-w-full items-center gap-1" >{visibilityOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setVisibility(option.value)} aria-pressed={visibility === option.value} className={cn("inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-medium text-muted-foreground transition sm:flex-none sm:px-2.5", visibility === option.value && "bg-card text-foreground shadow-sm")}>{Icon ? <Icon className="hidden size-3.5 min-[360px]:block" /> : null}{option.label}</button>; })}</ScrollArea>
-          <Button type="button" className="ml-auto shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>
-        </div>
-        </ManagementToolbar>
-        <AssetGroupToolbar state={groupState} filter={groupFilter} onFilterChange={setGroupFilter} selectedKeys={selectedAssets.map(assetListKey)} availableKeys={availableGroupKeys} />
-        <div data-asset-selection-toolbar className="flex min-h-14 min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
-          <label data-disabled={!visibleAssets.length} className="selection-trigger flex shrink-0 items-center gap-2 text-xs font-medium"><Checkbox checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false} disabled={!visibleAssets.length} onCheckedChange={(checked) => toggleVisibleSelection(checked === true)} /><span>全选当前页</span></label>
-          {selectedAssets.length ? (
-            <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-muted/70 py-1 pr-1 pl-2.5 text-xs text-muted-foreground">
-              <span className="tabular-nums">已选 {selectedAssets.length} 项</span>
-              <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 rounded-md" onClick={() => setSelectedKeys(new Set())} aria-label="清空选择" title="清空选择"><X className="size-3.5" /></Button>
+      <LibraryWorkspace
+        title="我的素材"
+        sidebar={
+          <>
+            <nav aria-label="素材类型" className="space-y-1">
+              {kindOptions.map((option) => {
+                const Icon = option.value === "all" ? Folder : option.icon;
+                return (
+                  <Button
+                    key={option.value}
+                    data-library-filter
+                    variant={groupFilter === "all" && kind === option.value ? "secondary" : "ghost"}
+                    className="h-11 w-full justify-start font-normal"
+                    onClick={() => {
+                      setKind(option.value);
+                      setGroupFilter("all");
+                    }}
+                  >
+                    <Icon />
+                    {option.value === "all" ? "全部素材" : option.label}
+                  </Button>
+                );
+              })}
+            </nav>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2 px-2">
+                <h2 className="text-xs text-muted-foreground">标签</h2>
+                <AssetGroupMenu
+                  state={groupState}
+                  filter={groupFilter}
+                  onFilterChange={(value) => {
+                    setGroupFilter(value);
+                    setKind("all");
+                  }}
+                  selectedKeys={[]}
+                  availableKeys={availableGroupKeys}
+                />
+              </div>
+              <Button
+                data-library-filter
+                variant={groupFilter === "ungrouped" ? "secondary" : "ghost"}
+                className="h-11 w-full justify-start font-normal"
+                onClick={() => {
+                  setGroupFilter("ungrouped");
+                  setKind("all");
+                }}
+              >
+                <Tags />
+                未分类素材
+              </Button>
+              {groupState.groups.map((group) => (
+                <div key={group.id} className="flex min-w-0 items-center gap-1">
+                  <Button
+                    data-library-filter
+                    variant={groupFilter === group.id ? "secondary" : "ghost"}
+                    className="h-11 min-w-0 flex-1 justify-start font-normal"
+                    onClick={() => {
+                      setGroupFilter(group.id);
+                      setKind("all");
+                    }}
+                  >
+                    <Tags />
+                    <span className="truncate">{group.name}</span>
+                  </Button>
+                  <AssetGroupMenu
+                    state={groupState}
+                    filter={groupFilter}
+                    onFilterChange={setGroupFilter}
+                    selectedKeys={[]}
+                    availableKeys={availableGroupKeys}
+                    group={group}
+                  />
+                </div>
+              ))}
+              {groupState.error ? (
+                <Button variant="ghost" size="sm" onClick={groupState.reload}>
+                  <RefreshCw />
+                  重试读取标签
+                </Button>
+              ) : null}
             </div>
-          ) : <span className="shrink-0 px-1 text-xs text-muted-foreground">未选择素材</span>}
-          <div className={cn("ml-auto min-w-0 flex-wrap items-center gap-2", selectedAssets.length ? "flex" : "hidden sm:flex")}>
-            <Select value={selectedVisibility} disabled={!visibilityManageableAssets.length || bulkActionBusy} onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}>
-              <SelectTrigger className="h-9 w-[128px] shrink-0 px-2.5 text-xs" aria-label="设置所选素材可见范围">
-                <SelectValue placeholder="可见范围" className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap [&>svg]:shrink-0" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="private"><LockKeyhole className="size-3.5 shrink-0" />个人</SelectItem>
-                <SelectItem value="public"><Globe2 className="size-3.5 shrink-0" />公开</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button type="button" variant="outline" size="sm" className="h-9 w-[72px] shrink-0 px-2" disabled={!selectedAssets.length || bulkActionBusy} onClick={() => void downloadSelected()}><Download />下载</Button>
-            <Button type="button" variant="outline" size="sm" className="h-9 w-[72px] shrink-0 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={!deletableSelectedAssets.length || bulkActionBusy} onClick={() => setBulkDeleteOpen(true)}><Trash2 />删除</Button>
-          </div>
-        </div>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
-        <div data-asset-content className="flex min-w-0 w-full flex-col gap-[var(--page-section-gap)]">
-          {managedError ? <div role="alert" className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
-          {!initialLoadComplete ? <div role="status" className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" action={allAssets.length ? <Button variant="outline" onClick={() => { setKeyword(""); setKind("all"); setVisibility("all"); setGroupFilter("all"); }}>清除筛选</Button> : <Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>} />}
-        </div>
-        </ScrollArea>
-        {!initialLoadComplete ? <div className="min-h-14 shrink-0 border-t border-border" /> : <ManagementPagination
-          page={page}
-          totalPages={totalPages}
-          totalItems={filtered.length}
-          pageSize={pageSize}
-          pageSizeOptions={[12, 24, 48, 96]}
-          itemLabel="项"
-          onPageChange={setPage}
-          onPageSizeChange={(value) => {
-            setPageSize(value);
-            setPage(1);
-          }}
-        />}
-      </ManagementPanel>
-      <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={async (next) => { await upsertAsset(next); setFormOpen(false); }} />
-      <AssetPreview asset={preview ? { ...preview, tags: assetLabels(preview, groupState.groups) } : null} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onDownload={() => preview && void download(preview)} />
-      <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>
+          </>
+        }
+      >
+        {(sidebarToggle) => (
+          <>
+            <ManagementToolbar className="space-y-3">
+              <div data-asset-filter-bar className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  {sidebarToggle}
+                  <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">{sectionTitle}</h1>
+                </div>
+                <div className="flex min-w-0 flex-1 basis-full items-center justify-end gap-2 sm:basis-auto">
+                  <SearchInput
+                    value={keyword}
+                    onValueChange={setKeyword}
+                    placeholder="搜索标题、标签、内容、来源或备注"
+                    containerClassName="min-w-24 max-w-sm flex-1"
+                  />
+                  <Button onClick={createAsset}>
+                    <Plus />
+                    新增素材
+                  </Button>
+                </div>
+              </div>
+              <div data-asset-toolbar-row className="flex min-w-0 items-start gap-3">
+                <ScrollAreaRoot type="auto" className="relative h-12 min-w-0 flex-1 overflow-hidden">
+                  <ScrollAreaViewport ref={toolbarViewportRef} className="h-full w-full [&>div]:block!" tabIndex={0} role="region" aria-label="素材操作">
+                    <div data-asset-selection-toolbar={hasSelection ? true : undefined} className="flex h-9 w-max min-w-full items-center gap-2">
+                      {view === "grid" || hasSelection ? <Label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs has-disabled:cursor-not-allowed">
+                        <Checkbox
+                          aria-label="全选当前页"
+                          checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false}
+                          disabled={!visibleAssets.length}
+                          onCheckedChange={(checked) => toggleVisibleSelection(checked === true)}
+                        />
+                        全选当前页
+                      </Label> : null}
+                      {hasSelection ? <>
+                        <Item variant="muted" className="flex h-8 w-auto shrink-0 flex-nowrap items-center gap-1 py-1 pr-1 pl-2.5">
+                          <span className="tabular-nums">已选 {selectedAssets.length} 项</span>
+                          <TooltipHint content="清空选择">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="shrink-0"
+                              onClick={() => setSelectedKeys(new Set())}
+                              aria-label="清空选择"
+                            >
+                              <X />
+                            </Button>
+                          </TooltipHint>
+                        </Item>
+                        <AssetGroupMenu
+                          state={groupState}
+                          filter={groupFilter}
+                          onFilterChange={setGroupFilter}
+                          selectedKeys={selectedAssets.map(assetListKey)}
+                          availableKeys={availableGroupKeys}
+                        />
+                        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
+                          <Select
+                            value={selectedVisibility}
+                            disabled={!visibilityManageableAssets.length || bulkActionBusy}
+                            onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}
+                          >
+                            <SelectTrigger className="w-28 shrink-0" aria-label="设置所选素材可见范围">
+                              <SelectValue
+                                placeholder="可见范围"
+                                className="inline-flex min-w-0 items-center whitespace-nowrap [&>svg]:shrink-0"
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="private">
+                                <LockKeyhole className="shrink-0" />
+                                个人
+                              </SelectItem>
+                              <SelectItem value="public">
+                                <Globe2 className="shrink-0" />
+                                公开
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="shrink-0"
+                            disabled={!selectedAssets.length || bulkActionBusy}
+                            onClick={() => void downloadSelected()}
+                          >
+                            <Download />
+                            下载
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="shrink-0"
+                            disabled={!deletableSelectedAssets.length || bulkActionBusy}
+                            onClick={() => setBulkDeleteOpen(true)}
+                          >
+                            <Trash2 />
+                            删除
+                          </Button>
+                        </div>
+                      </> : (
+                        <div role="group" aria-label="素材可见范围" className="flex items-center gap-1">
+                          {visibilityOptions.map((option) => {
+                            const Icon = option.icon;
+                            return (
+                              <Toggle
+                                key={option.value}
+                                pressed={visibility === option.value}
+                                onPressedChange={() => setVisibility(option.value)}
+                              >
+                                {Icon ? <Icon /> : null}
+                                {option.label}
+                              </Toggle>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </ScrollAreaViewport>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollAreaRoot>
+                <div role="group" aria-label="素材视图" className="ml-auto flex items-center gap-1">
+                  <Button
+                    variant={view === "grid" ? "secondary" : "ghost"}
+                    size="icon"
+                    aria-label="卡片视图"
+                    aria-pressed={view === "grid"}
+                    onClick={() => setView("grid")}
+                  >
+                    <LayoutGrid />
+                  </Button>
+                  <Button
+                    variant={view === "list" ? "secondary" : "ghost"}
+                    size="icon"
+                    aria-label="列表视图"
+                    aria-pressed={view === "list"}
+                    onClick={() => setView("list")}
+                  >
+                    <List />
+                  </Button>
+                </div>
+              </div>
+            </ManagementToolbar>
+            <ScrollArea
+              className="min-h-0 min-w-0 flex-1"
+              contentClassName="p-4 pr-1 sm:p-6 sm:pr-3"
+              onWheel={(event) => event.stopPropagation()}
+            >
+              <div data-asset-content className="flex min-w-0 w-full flex-col gap-[var(--page-section-gap)]">
+                {managedError ? (
+                  <Alert variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManagedReloadKey((value) => value + 1)}
+                    >
+                      <RefreshCw />
+                      重试
+                    </Button>
+                  </Alert>
+                ) : null}
+                {!initialLoadComplete ? (
+                  <LoadingState className="min-h-80" label="正在同步素材…" />
+                ) : visibleAssets.length ? (
+                  <>
+                    {view === "list" ? (
+                      <Table aria-label="素材列表" className="table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                aria-label="全选当前页"
+                                checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false}
+                                onCheckedChange={(checked) => toggleVisibleSelection(checked === true)}
+                              />
+                            </TableHead>
+                            <TableHead>名称</TableHead>
+                            <TableHead className="hidden w-36 md:table-cell">来源</TableHead>
+                            <TableHead className="hidden w-44 xl:table-cell">更新时间</TableHead>
+                            <TableHead className="w-12 text-right">操作</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>{assetItems}</TableBody>
+                      </Table>
+                    ) : (
+                      <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">
+                        {assetItems}
+                      </div>
+                    )}
+                  </>
+                ) : managedError && allAssets.length === 0 ? null : (
+                  <EmptyState
+                    icon={ImageIcon}
+                    title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"}
+                    description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"}
+                    className="min-h-80"
+                    action={
+                      allAssets.length ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setKeyword("");
+                            setKind("all");
+                            setVisibility("all");
+                            setGroupFilter("all");
+                          }}
+                        >
+                          清除筛选
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => {
+                            createAsset();
+                          }}
+                        >
+                          <Plus />
+                          新增素材
+                        </Button>
+                      )
+                    }
+                  />
+                )}
+              </div>
+            </ScrollArea>
+            {!initialLoadComplete ? (
+              <div className="min-h-16 shrink-0 border-t border-border" />
+            ) : (
+              <ManagementPagination
+                page={page}
+                totalPages={totalPages}
+                totalItems={filtered.length}
+                pageSize={pageSize}
+                pageSizeOptions={[12, 24, 48, 96]}
+                itemLabel="项"
+                onPageChange={setPage}
+                onPageSizeChange={(value) => {
+                  setPageSize(value);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
+        )}
+      </LibraryWorkspace>
+      <AssetPreview asset={preview ? { ...preview, tags: assetLabels(preview, groupState.groups) } : null} onClose={() => setPreview(null)} onDownload={() => preview && void download(preview)} />
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}
+        title="删除素材？"
+        description={<>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</>}
+        confirmLabel="删除"
+        busy={deleteBusy}
+        destructive
+        onConfirm={() => void confirmDelete()}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}
+        title="批量删除素材？"
+        description={<>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</>}
+        confirmLabel={`删除 ${deletableSelectedAssets.length} 项`}
+        busy={bulkActionBusy}
+        destructive
+        onConfirm={() => void deleteSelected()}
+      />
     </ManagementPage>
   );
 }

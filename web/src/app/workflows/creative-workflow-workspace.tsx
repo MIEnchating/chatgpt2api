@@ -1,37 +1,37 @@
 "use client";
+import { Attachment, AttachmentGroup, AttachmentMedia, AttachmentActions, AttachmentAction, AttachmentTrigger, AttachmentContent, AttachmentTitle } from "@/components/ui/attachment";
+import { ModelPicker } from "@/components/model-picker";
+
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { LabeledField as Field } from "@/components/labeled-field";
+
+import { PromptInput, PromptInputFooter, PromptInputSubmit } from "@/components/ai-elements/prompt-input";
+
+import { useSearchParams } from "react-router-dom";
+import { EditorWorkspace } from "@/components/editor-workspace";
+import { LibraryWorkspace } from "@/components/library-workspace";
+import { WorkflowList } from "./workflow-list";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AgentExecutionRecovery } from "@/components/agent/agent-execution-recovery";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+import { InputGroupTextarea } from "@/components/ui/input-group";
+import { Item , ItemMedia } from "@/components/ui/item";
+import { Card } from "@/components/ui/card";
+
+import { Toggle as ToggleButton } from "@/components/ui/toggle";
+
+
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+import { TooltipHint } from "@/components/ui/tooltip";
 
 import { watchCreationTasks, waitForCreationTask } from "@/lib/creation-task-events";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Bot,
-  Braces,
-  ChevronDown,
-  ChevronRight,
-  CircleCheck,
-  CircleAlert,
-  Clock3,
-  ClipboardList,
-  Copy,
-  Download,
-  Globe2,
-  Image as ImageIcon,
-  Layers3,
-  LoaderCircle,
-  LockKeyhole,
-  Pencil,
-  Play,
-  Plus,
-  Save,
-  Settings2,
-  Sparkles,
-  Trash2,
-  Upload,
-  Workflow as WorkflowIcon,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, Braces, ChevronDown, ChevronRight, CircleCheck, CircleAlert, Clock3, ClipboardList, Copy, Download, Globe2, Image as ImageIcon, Layers3, LayoutGrid, List, Folder, LockKeyhole, Pencil, Play, Plus, Save, Settings2, Sparkles, Trash2, Upload, Workflow as WorkflowIcon, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -71,18 +71,17 @@ import {
   workflowReferenceCleanupKeys,
 } from "@/app/workflows/workflow-reference-lifecycle";
 import { runCurrentWorkflowAgentDraft } from "@/app/workflows/workflow-agent-draft-lifecycle";
-import { AgentActivityLine } from "@/components/agent/agent-activity-line";
 import { AgentNotice } from "@/components/agent/agent-notice";
 import { assetListKey, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { Button } from "@/components/ui/button";
+import { CodeBlockCopyButton } from "@/components/ui/code-block";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { statusToneClasses } from "@/components/ui/status-tone";
 import { useNow } from "@/lib/use-now";
-import { copyWithToast } from "@/lib/clipboard-text";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field as FormField, FieldContent, FieldDescription, FieldLabel, FieldSet } from "@/components/ui/field";
 import { AuthenticatedImage } from "@/components/authenticated-image";
-import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
+import { ManagementPage, ManagementPagination, ManagementToolbar } from "@/components/management-page";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
   ImageSettingsPanel,
@@ -101,7 +100,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loading-state";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -278,6 +277,11 @@ function CreativeWorkflowWorkspaceContent({
   generationDefaults,
   session,
 }: CreativeWorkflowWorkspaceProps & { session: StoredAuthSession }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editorRoute = searchParams.get("editor") || "";
+  const editorTemplate = searchParams.get("template") || "single_image";
+  const editorRouteKey = `${editorRoute}:${editorTemplate}`;
+  const [resolvedEditorRoute, setResolvedEditorRoute] = useState("");
   const sessionKey = session.key;
   const { preferences, isReady: preferencesReady } = useImageGenerationPreferences(sessionKey);
   const { isReady: relayPreferencesReady, tokenNameForModel, nextTokenNameForModel } = useRelayTokenPreferences();
@@ -293,6 +297,8 @@ function CreativeWorkflowWorkspaceContent({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const [modeFilter, setModeFilter] = useState<"all" | CreativeWorkflow["mode"]>("all");
+  const [view, setView] = useState<"list" | "grid">("grid");
   const [scopeFilter, setScopeFilter] = useState<"all" | CreativeWorkflow["scope"]>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
@@ -322,6 +328,7 @@ function CreativeWorkflowWorkspaceContent({
   const [agentModel, setAgentModel] = useState("");
   const [agentReferences, setAgentReferences] = useState<WorkflowReference[]>([]);
   const [agentBusy, setAgentBusy] = useState(false);
+  const [agentRunID, setAgentRunID] = useState("");
   const [agentDraft, setAgentDraft] = useState<CreativeWorkflow | null>(null);
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "template" | "agent" | null>(null);
@@ -360,9 +367,21 @@ function CreativeWorkflowWorkspaceContent({
     setAgentReferences(next);
   }
 
-  function replaceEditor(workflow: CreativeWorkflow | null) {
+  function replaceEditor(workflow: CreativeWorkflow | null, template: CreativeWorkflow["mode"] | "product_detail" = workflow?.mode || "single_image") {
     workflowEditorGenerationRef.current += 1;
+    const next = new URLSearchParams(searchParams);
+    if (workflow) {
+      const id = items.some((item) => item.id === workflow.id) ? workflow.id : "new";
+      next.set("editor", id);
+      next.set("template", template);
+      setResolvedEditorRoute(`${id}:${template}`);
+    } else {
+      next.delete("editor");
+      next.delete("template");
+      setResolvedEditorRoute(":single_image");
+    }
     setEditing(workflow);
+    setSearchParams(next, { replace: !workflow });
   }
 
   function updateTasks(updater: (current: WorkflowTask[]) => WorkflowTask[]) {
@@ -596,6 +615,37 @@ function CreativeWorkflowWorkspaceContent({
     return () => { controller.abort(); unsubscribe(); clearTimeout(recoveryTimer); };
   }, [runningWorkflowTaskIDs]);
 
+  useEffect(() => {
+    if (loading || resolvedEditorRoute === editorRouteKey) return;
+    setResolvedEditorRoute(editorRouteKey);
+    workflowEditorGenerationRef.current += 1;
+    if (!editorRoute) {
+      setEditing(null);
+      return;
+    }
+    if (editorRoute === "new") {
+      const defaults = workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID);
+      if (editorTemplate === "product_detail") setEditing(createProductDetailWorkflow(models, preferences, defaults));
+      else if (editorTemplate === "single_image" || editorTemplate === "multi_image_series")
+        setEditing(createBlankWorkflow(models, preferences, editorTemplate, defaults));
+      else setEditing(null);
+      return;
+    }
+    const workflow = items.find((item) => item.id === editorRoute && item.editable !== false);
+    setEditing(workflow ? structuredClone(workflow) : null);
+  }, [
+    editorRoute,
+    editorRouteKey,
+    resolvedEditorRoute,
+    editorTemplate,
+    generationDefaults,
+    items,
+    loading,
+    models,
+    preferences,
+    sessionTextChannelID,
+  ]);
+
   const categories = useMemo(
     () =>
       Array.from(
@@ -606,6 +656,7 @@ function CreativeWorkflowWorkspaceContent({
   const filteredItems = useMemo(() => {
     const text = query.trim().toLowerCase();
     return items.filter((workflow) => {
+      if (modeFilter !== "all" && workflow.mode !== modeFilter) return false;
       if (category !== "all" && (workflow.category || "未分类") !== category)
         return false;
       if (scopeFilter !== "all" && workflow.scope !== scopeFilter) return false;
@@ -614,11 +665,11 @@ function CreativeWorkflowWorkspaceContent({
         value.toLowerCase().includes(text),
       );
     });
-  }, [category, items, query, scopeFilter]);
+  }, [category, items, query, scopeFilter, modeFilter]);
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const visibleWorkflows = filteredItems.slice((safePage - 1) * pageSize, safePage * pageSize);
-  useEffect(() => setPage(1), [category, pageSize, query, scopeFilter]);
+  useEffect(() => setPage(1), [category, pageSize, query, scopeFilter, modeFilter]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
   const renderedPrompt = useMemo(
     () => (running ? renderWorkflowPrompt(running, values) : ""),
@@ -1455,6 +1506,39 @@ function CreativeWorkflowWorkspaceContent({
     }
   }
 
+  function acceptWorkflowAgentDraft(response: Awaited<ReturnType<typeof draftWorkflowWithAgent>>) {
+          const draft = response.draft;
+          const base = createBlankWorkflow(
+            models,
+            preferences,
+            draft.mode === "multi_image_series"
+              ? "multi_image_series"
+              : "single_image",
+            workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
+          );
+          setAgentDraft(
+            normalizeWorkflow(
+              {
+                ...base,
+                ...draft,
+                id: taskID("workflow-draft"),
+                scope: draft.scope === "public" ? "public" : "private",
+                variables: Array.isArray(draft.variables) ? draft.variables : base.variables,
+                config: { ...base.config, ...draft.config },
+                series_config: {
+                  ...base.series_config,
+                  ...draft.series_config,
+                },
+              },
+              models,
+              preferences,
+            ),
+          );
+          setAgentWarnings(Array.isArray(response.warnings) ? response.warnings : []);
+          toast.success("Agent 草稿已生成，请预览后应用");
+
+  }
+
   async function draftWithAgent() {
     if (!session || !agentPrompt.trim() || agentDraftAbortControllerRef.current) return;
     const model = resolveConfiguredModel(
@@ -1472,6 +1556,7 @@ function CreativeWorkflowWorkspaceContent({
     const controller = new AbortController();
     agentDraftAbortControllerRef.current = controller;
     setAgentBusy(true);
+    setAgentRunID("");
     const isCurrent = () => (
       workspaceActiveRef.current
       && agentDraftAbortControllerRef.current === controller
@@ -1492,38 +1577,8 @@ function CreativeWorkflowWorkspaceContent({
           model,
           channelID: tokenNameForModel("text", model),
           references: preparedReferences,
-        }, { signal }),
-        commit: (response) => {
-          const draft = response.draft;
-          const base = createBlankWorkflow(
-            models,
-            preferences,
-            draft.mode === "multi_image_series"
-              ? "multi_image_series"
-              : "single_image",
-            workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
-          );
-          setAgentDraft(
-            normalizeWorkflow(
-              {
-                ...base,
-                ...draft,
-                id: taskID("workflow-draft"),
-                scope: agentScope,
-                variables: Array.isArray(draft.variables) ? draft.variables : base.variables,
-                config: { ...base.config, ...draft.config },
-                series_config: {
-                  ...base.series_config,
-                  ...draft.series_config,
-                },
-              },
-              models,
-              preferences,
-            ),
-          );
-          setAgentWarnings(Array.isArray(response.warnings) ? response.warnings : []);
-          toast.success("Agent 草稿已生成，请预览后应用");
-        },
+        }, { signal, onStarted: (id) => { if (isCurrent()) setAgentRunID(id); } }),
+        commit: acceptWorkflowAgentDraft,
       });
     } catch (error) {
       if (isCurrent()) {
@@ -1550,94 +1605,303 @@ function CreativeWorkflowWorkspaceContent({
     );
   }
 
+  const createWorkflow = (mode: CreativeWorkflow["mode"]) =>
+    replaceEditor(
+      createBlankWorkflow(
+        models,
+        preferences,
+        mode,
+        workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
+      ),
+    );
+  const createDetailWorkflow = () =>
+    replaceEditor(
+      createProductDetailWorkflow(
+        models,
+        preferences,
+        workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
+      ),
+      "product_detail",
+    );
+
+  const sectionTitle =
+    category !== "all"
+      ? category
+      : modeFilter === "single_image"
+        ? "单图工作流"
+        : modeFilter === "multi_image_series"
+          ? "多图系列"
+          : "全部工作流";
   const workflowActions = (
-    <>
-      <Button variant="outline" onClick={() => setAgentOpen(true)}><Bot />Agent</Button>
-      {!hideTaskList ? <Button variant="outline" className="relative" onClick={() => setTaskHistoryOpen(true)}>
-        {runningTaskCount ? <LoaderCircle className="animate-spin" /> : <ClipboardList />}
-        任务记录
-        {runningTaskCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-5 text-primary-foreground">{runningTaskCount}</span> : null}
-      </Button> : null}
-      <Button variant="outline" onClick={() => replaceEditor(createProductDetailWorkflow(models, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Layers3 />新建详情模板</Button>
-      <Button onClick={() => replaceEditor(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>
-    </>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button>
+          <Plus />
+          创建
+          <ChevronDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onSelect={() => createWorkflow("single_image")}>
+          <ImageIcon />
+          新建工作流
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => createWorkflow("multi_image_series")}>
+          <Layers3 />
+          新建多图系列
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={createDetailWorkflow}>
+          <Layers3 />
+          新建详情模板
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
     <ManagementPage aria-label="工作流">
-      <ManagementPanel className={cn("flex-1", embedded && "rounded-none border-0 bg-transparent shadow-none")}>
-        <header className={cn("shrink-0 border-b border-border p-4 sm:px-5", embedded && "pr-14 sm:pr-14")}>
-          <div data-workflow-toolbar className="flex w-full flex-wrap items-center gap-3">
-            <div className="relative min-w-0 basis-full sm:flex-[1_1_320px]">
-              <SearchInput aria-label="搜索工作流" value={query} onValueChange={setQuery} placeholder="搜索名称、分类或描述" />
-            </div>
-            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="h-10 min-w-0 flex-1 sm:w-36 sm:flex-none" aria-label="工作流分类"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部分类</SelectItem>
-                  {categories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <ScrollArea className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full items-center gap-1"  role="group" ariaLabel="工作流范围">
-                {workflowScopeOptions.map((option) => {
-                  const Icon = option.icon;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setScopeFilter(option.value)}
-                      aria-pressed={scopeFilter === option.value}
-                      className={cn(
-                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                        scopeFilter === option.value && "bg-card text-foreground shadow-sm",
-                      )}
-                    >
-                      {Icon ? <Icon className="size-3.5" /> : null}
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </ScrollArea>
-            </div>
-            <div data-workflow-actions className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-              {workflowActions}
-            </div>
-          </div>
-        </header>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
-          <div className="flex w-full flex-col gap-8">
-            {visibleWorkflows.length ? (
-              <section aria-label="工作流列表">
-                <div data-workflow-grid className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {visibleWorkflows.map((workflow) => (
-                  <WorkflowCard
-                    key={workflow.id}
-                    workflow={workflow}
-                    onRun={() => openRunner(workflow)}
-                    onEdit={() => replaceEditor(structuredClone(workflow))}
-                    onCopy={() => void duplicateWorkflow(workflow)}
-                    onDelete={() => setDeletingWorkflow(workflow)}
-                  />
+      {editorRoute ? (
+        resolvedEditorRoute !== editorRouteKey ? (
+          <LoadingState label="正在加载工作流编辑器" />
+        ) : editing ? (
+          <WorkflowEditor
+            workflow={editing}
+            isNew={!items.some((item) => item.id === editing?.id)}
+            models={models}
+            preferences={preferences}
+            saving={workflowSaving}
+            referenceBusy={referenceBusy}
+            onChange={setEditing}
+            onSave={persist}
+            onAssetsOpen={() => setAssetPickerTarget("template")}
+            onReferencesAdd={(files) => void addReferences(files, "template")}
+            onClose={() => replaceEditor(null)}
+          />
+        ) : (
+          <EmptyState
+            title="无法打开工作流"
+            description="工作流不存在，或当前账号没有编辑权限。"
+            action={<Button onClick={() => replaceEditor(null)}>返回工作流</Button>}
+          />
+        )
+      ) : (
+        <LibraryWorkspace
+          title="工作流"
+          sidebar={
+            <>
+              <Button variant="ghost" className="h-11 w-full justify-start" onClick={() => createWorkflow("single_image")}>
+                <Plus />
+                创建工作流
+              </Button>
+              <nav aria-label="工作流分类" className="space-y-1">
+                {(
+                  [
+                    { value: "all", label: "全部工作流", icon: Folder },
+                    { value: "single_image", label: "单图工作流", icon: ImageIcon },
+                    { value: "multi_image_series", label: "多图系列", icon: Layers3 },
+                  ] as const
+                ).map((option) => (
+                  <Button
+                    key={option.value}
+                    data-library-filter
+                    variant={category === "all" && modeFilter === option.value ? "secondary" : "ghost"}
+                    className="h-11 w-full justify-start font-normal"
+                    onClick={() => {
+                      setCategory("all");
+                      setModeFilter(option.value);
+                    }}
+                  >
+                    <option.icon />
+                    {option.label}
+                  </Button>
                 ))}
+              </nav>
+              {categories.length ? (
+                <div className="space-y-1">
+                  <h2 className="px-2 pb-2 text-xs text-muted-foreground">分类</h2>
+                  {categories.map((item) => (
+                    <Button
+                      key={item}
+                      data-library-filter
+                      variant={category === item ? "secondary" : "ghost"}
+                      className="h-11 w-full justify-start font-normal"
+                      onClick={() => {
+                        setCategory(item);
+                        setModeFilter("all");
+                      }}
+                    >
+                      <Folder />
+                      <span className="truncate">{item}</span>
+                    </Button>
+                  ))}
                 </div>
-              </section>
-            ) : (
-              <EmptyState icon={WorkflowIcon} title={items.length ? "没有匹配的工作流" : "还没有工作流"} description={items.length ? "试试其他关键词，或清除筛选查看全部工作流。" : "创建一个模板，开始组织你的创作步骤。"} className="min-h-72" action={items.length ? <Button variant="outline" onClick={() => { setQuery(""); setCategory("all"); setScopeFilter("all"); }}>清除筛选</Button> : <Button onClick={() => replaceEditor(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>} />
-            )}
-          </div>
-        </ScrollArea>
-        <ManagementPagination
-          page={safePage}
-          totalPages={totalPages}
-          totalItems={filteredItems.length}
-          pageSize={pageSize}
-          pageSizeOptions={[12, 24, 48]}
-          itemLabel="个"
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      </ManagementPanel>
+              ) : null}
+            </>
+          }
+          footer={
+            !hideTaskList ? (
+              <Button variant="ghost" className="h-11 w-full justify-start" onClick={() => setTaskHistoryOpen(true)}>
+                {runningTaskCount ? <Spinner /> : <ClipboardList />}任务记录
+                {runningTaskCount ? <Badge variant="secondary">{runningTaskCount}</Badge> : null}
+              </Button>
+            ) : null
+          }
+        >
+          {(sidebarToggle) => (
+            <>
+              <ManagementToolbar className={cn("space-y-5", embedded && "pr-14 sm:pr-14")}>
+                <div data-workflow-toolbar className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {sidebarToggle}
+                    <h1 className="text-2xl font-semibold tracking-tight">{sectionTitle}</h1>
+                  </div>
+                  <div
+                    data-workflow-actions
+                    className="grid min-w-0 flex-1 basis-full grid-cols-2 items-center gap-2 sm:flex sm:basis-auto sm:justify-end"
+                  >
+                    <SearchInput
+                      aria-label="搜索工作流"
+                      value={query}
+                      onValueChange={setQuery}
+                      placeholder="搜索工作流"
+                      containerClassName="col-span-2 min-w-0 max-w-sm sm:min-w-24 sm:flex-1"
+                    />
+                    <Button variant="outline" onClick={() => setAgentOpen(true)}>
+                      <Bot />
+                      Agent 创建
+                    </Button>
+                    {workflowActions}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div role="group" aria-label="工作流范围" className="flex items-center gap-1">
+                    {workflowScopeOptions.map((option) => {
+                      const Icon = option.icon;
+                      return (
+                        <ToggleButton
+                          key={option.value}
+                          pressed={scopeFilter === option.value}
+                          onPressedChange={() => setScopeFilter(option.value)}
+                        >
+                          {Icon ? <Icon /> : null}
+                          {option.label}
+                        </ToggleButton>
+                      );
+                    })}
+                  </div>
+                  <div role="group" aria-label="工作流视图" className="flex items-center gap-1">
+                    <Button
+                      variant={view === "grid" ? "secondary" : "ghost"}
+                      size="icon"
+                      aria-label="卡片视图"
+                      aria-pressed={view === "grid"}
+                      onClick={() => setView("grid")}
+                    >
+                      <LayoutGrid />
+                    </Button>
+                    <Button
+                      variant={view === "list" ? "secondary" : "ghost"}
+                      size="icon"
+                      aria-label="列表视图"
+                      aria-pressed={view === "list"}
+                      onClick={() => setView("list")}
+                    >
+                      <List />
+                    </Button>
+                  </div>
+                </div>
+              </ManagementToolbar>
+              <ScrollArea
+                className="min-h-0 min-w-0 flex-1"
+                contentClassName="p-4 pr-1 sm:p-6 sm:pr-3"
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex w-full flex-col gap-8">
+                  {visibleWorkflows.length ? (
+                    <section aria-label="工作流列表" className="@container/workflows">
+                      {view === "list" ? (
+                        <WorkflowList
+                          items={visibleWorkflows}
+                          onRun={openRunner}
+                          onEdit={(workflow) => replaceEditor(structuredClone(workflow))}
+                          onCopy={(workflow) => void duplicateWorkflow(workflow)}
+                          onDelete={setDeletingWorkflow}
+                        />
+                      ) : (
+                        <div
+                          data-workflow-grid
+                          className="grid grid-cols-1 gap-3 @min-[36rem]/workflows:grid-cols-2 @min-[56rem]/workflows:grid-cols-3 @min-[80rem]/workflows:grid-cols-4"
+                        >
+                          {visibleWorkflows.map((workflow) => (
+                            <WorkflowCard
+                              key={workflow.id}
+                              workflow={workflow}
+                              onRun={() => openRunner(workflow)}
+                              onEdit={() => replaceEditor(structuredClone(workflow))}
+                              onCopy={() => void duplicateWorkflow(workflow)}
+                              onDelete={() => setDeletingWorkflow(workflow)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ) : (
+                    <EmptyState
+                      icon={WorkflowIcon}
+                      title={items.length ? "没有匹配的工作流" : "还没有工作流"}
+                      description={
+                        items.length ? "试试其他关键词，或清除筛选查看全部工作流。" : "创建一个模板，开始组织你的创作步骤。"
+                      }
+                      className="min-h-72"
+                      action={
+                        items.length ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setQuery("");
+                              setCategory("all");
+                              setModeFilter("all");
+                              setScopeFilter("all");
+                            }}
+                          >
+                            清除筛选
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() =>
+                              replaceEditor(
+                                createBlankWorkflow(
+                                  models,
+                                  preferences,
+                                  "single_image",
+                                  workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
+                                ),
+                              )
+                            }
+                          >
+                            <Plus />
+                            新建工作流
+                          </Button>
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              </ScrollArea>
+              <ManagementPagination
+                page={safePage}
+                totalPages={totalPages}
+                totalItems={filteredItems.length}
+                pageSize={pageSize}
+                pageSizeOptions={[12, 24, 48]}
+                itemLabel="个"
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            </>
+          )}
+        </LibraryWorkspace>
+      )}
       <ConfirmDialog
         open={Boolean(deletingWorkflow)}
         title="删除工作流"
@@ -1676,19 +1940,7 @@ function CreativeWorkflowWorkspaceContent({
         }}
         onClose={() => setTaskHistoryOpen(false)}
       />
-      <WorkflowEditor
-        workflow={editing}
-        isNew={!items.some((item) => item.id === editing?.id)}
-        models={models}
-        preferences={preferences}
-        saving={workflowSaving}
-        referenceBusy={referenceBusy}
-        onChange={setEditing}
-        onSave={persist}
-        onAssetsOpen={() => setAssetPickerTarget("template")}
-        onReferencesAdd={(files) => void addReferences(files, "template")}
-        onClose={() => replaceEditor(null)}
-      />
+
       <WorkflowRunner
         key={running?.id || "closed-workflow-runner"}
         workflow={running}
@@ -1726,12 +1978,14 @@ function CreativeWorkflowWorkspaceContent({
         draft={agentDraft}
         warnings={agentWarnings}
         busy={agentBusy || referenceBusy}
+        activeID={agentBusy ? agentRunID : undefined}
         onPromptChange={setAgentPrompt}
         onScopeChange={setAgentScope}
         onModelChange={setAgentModel}
         onAssetsOpen={() => setAssetPickerTarget("agent")}
         onReferencesAdd={(files) => void addReferences(files, "agent")}
         onReferenceRemove={removeAgentReference}
+        onRecovered={acceptWorkflowAgentDraft}
         onRun={() => void draftWithAgent()}
         onApply={applyAgentDraft}
         onClose={() => setAgentOpen(false)}
@@ -1752,9 +2006,9 @@ function CreativeWorkflowWorkspaceContent({
 function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow: CreativeWorkflow; onRun: () => void; onEdit: () => void; onCopy: () => void; onDelete: () => void }) {
   const isSeries = workflow.mode === "multi_image_series";
   return (
-    <article data-interaction="controls" className="interactive-card group flex min-h-44 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <Card className="group flex min-h-44 flex-col p-4 gap-0">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"><WorkflowIcon className="size-4" /></span>
+        <ItemMedia variant="icon" className="grid size-9 shrink-0 place-items-center"><WorkflowIcon className="size-4" /></ItemMedia>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-semibold">{workflow.name}</h3><span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">{workflow.scope === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}{workflow.scope === "public" ? "公开" : "个人"}</span></div>
           <p className="mt-0.5 text-xs text-muted-foreground">{workflow.category || "未分类"}</p>
@@ -1762,8 +2016,8 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
       </div>
       <p className="mt-3 line-clamp-2 flex-1 text-xs leading-5 text-muted-foreground">{workflow.description || workflow.config.prompt_template}</p>
       <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        <Badge variant={isSeries ? "violet" : "info"} className="shrink-0 px-2.5 py-1 font-semibold">
-          {isSeries ? <Layers3 className="size-3.5" /> : <ImageIcon className="size-3.5" />}
+        <Badge variant={isSeries ? "secondary" : "secondary"} className="shrink-0">
+          {isSeries ? <Layers3  /> : <ImageIcon  />}
           {isSeries ? "多图生成" : "单图生成"}
         </Badge>
         <span className="shrink-0">{workflow.variables.length} 个变量</span>
@@ -1772,11 +2026,11 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
       </div>
       <div className="mt-3 flex items-center gap-1 border-t border-border/70 pt-3">
         <Button size="sm" onClick={onRun}><Play />运行</Button>
-        {workflow.editable !== false ? <Button size="icon" variant="ghost" title="编辑" onClick={onEdit}><Pencil /></Button> : null}
-        <Button size="icon" variant="ghost" title="复制" onClick={onCopy}><Copy /></Button>
-        {workflow.editable !== false ? <Button size="icon" variant="ghost" className="ml-auto text-destructive" title="删除" onClick={onDelete}><Trash2 /></Button> : null}
+        {workflow.editable !== false ? <TooltipHint content={"编辑"}><Button aria-label="编辑" size="icon" variant="ghost" onClick={onEdit}><Pencil /></Button></TooltipHint> : null}
+        <TooltipHint content={"复制"}><Button aria-label="复制" size="icon" variant="ghost" onClick={onCopy}><Copy /></Button></TooltipHint>
+        {workflow.editable !== false ? <TooltipHint content={"删除"}><Button aria-label="删除" size="icon" variant="ghost" className="ml-auto" onClick={onDelete}><Trash2 /></Button></TooltipHint> : null}
       </div>
-    </article>
+    </Card>
   );
 }
 
@@ -1788,9 +2042,9 @@ function workflowTaskDuration(task: WorkflowTask, now: number) {
 }
 
 function WorkflowTaskStatus({ task }: { task: WorkflowTask }) {
-  if (task.status === "running") return <Badge variant="info"><LoaderCircle className="size-3 animate-spin" />运行中</Badge>;
-  if (task.status === "failed") return <Badge variant="danger">失败</Badge>;
-  return <Badge variant="success">完成</Badge>;
+  if (task.status === "running") return <Badge variant="secondary"><Spinner />运行中</Badge>;
+  if (task.status === "failed") return <Badge variant="destructive">失败</Badge>;
+  return <Badge variant="default">完成</Badge>;
 }
 
 type WorkflowTaskFilter = "all" | WorkflowTask["status"];
@@ -1819,33 +2073,28 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
   return (
     <>
       <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-        <DialogContent scrollable={false} className="max-h-[min(88dvh,780px)] w-[min(96vw,920px)] max-w-none gap-0 p-0">
-          <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
-            <DialogTitle className="flex items-center gap-2 text-lg"><ClipboardList className="size-5" />任务记录</DialogTitle>
+        <DialogContent className="max-h-[min(88dvh,780px)] w-[min(96vw,920px)] max-w-none sm:max-w-none">
+          <DialogHeader >
+            <DialogTitle className="flex items-center"><ClipboardList className="size-5" />任务记录</DialogTitle>
             <DialogDescription>{counts.running ? `${counts.running} 个工作流任务正在执行` : tasks.length ? `共 ${tasks.length} 条工作流运行记录` : "运行工作流后，任务记录会显示在这里"}</DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-5 py-3 sm:px-6">
-            <ScrollArea className="max-w-full rounded-lg bg-muted p-1" viewClass="flex w-max min-w-full items-center gap-1"  role="tablist" ariaLabel="任务状态">
+            <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-w-full p-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain" aria-label="任务状态"><ToggleGroup type="single" value={filter} onValueChange={(value) => { if (value) setFilter(value as WorkflowTaskFilter); }} aria-label="任务状态" className="min-w-full w-max">
               {filters.map((option) => (
-                <button
+                <ToggleGroupItem
                   key={option.value}
                   type="button"
-                  role="tab"
-                  aria-selected={filter === option.value}
-                  onClick={() => setFilter(option.value)}
-                  className={cn(
-                    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors",
-                    filter === option.value && "bg-card text-foreground shadow-sm",
-                  )}
+                  value={option.value}
+                  className="shrink-0"
                 >
                   {option.label}
                   <span className="tabular-nums text-[10px] opacity-70">{counts[option.value]}</span>
-                </button>
+                </ToggleGroupItem>
               ))}
-            </ScrollArea>
-            {counts.success + counts.failed > 0 ? <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={clearing} onClick={() => setClearConfirmOpen(true)}>{clearing ? <LoaderCircle className="animate-spin" /> : <Trash2 />}{clearing ? "清理中" : "清理历史"}</Button> : null}
+            </ToggleGroup></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            {counts.success + counts.failed > 0 ? <Button size="sm" variant="ghost"  disabled={clearing} onClick={() => setClearConfirmOpen(true)}>{clearing ? <Spinner /> : <Trash2 />}{clearing ? "清理中" : "清理历史"}</Button> : null}
           </div>
-          <ScrollArea className="max-h-[min(62dvh,560px)]" viewportClassName="overscroll-contain">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(62dvh,560px)]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
             {filteredTasks.length ? (
               <div data-workflow-task-list>
                 {filteredTasks.map((task) => <WorkflowTaskRow key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />)}
@@ -1858,24 +2107,29 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
                 className="min-h-72"
               />
             )}
-          </ScrollArea>
-          <DialogFooter flush><Button variant="outline" onClick={onClose}>关闭</Button></DialogFooter>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+          <DialogFooter className="m-0 shrink-0"><Button variant="outline" onClick={onClose}>关闭</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog
+      <ConfirmDialog
         open={clearConfirmOpen}
         onOpenChange={(nextOpen) => {
           if (clearing) return;
           setClearConfirmOpen(nextOpen);
           if (!nextOpen) setClearAssets(false);
         }}
-      >
-        <DialogContent className="w-[min(92vw,460px)]">
-          <DialogHeader>
-            <DialogTitle>清理任务历史？</DialogTitle>
-            <DialogDescription>将清除 {clearableTasks.length} 条已完成或失败的任务记录，运行中的任务不会受到影响。</DialogDescription>
-          </DialogHeader>
-          <label className={cn("flex items-start gap-3 rounded-lg border border-border p-3.5", (!canDeleteAssets || !clearableAssetCount) && "cursor-not-allowed bg-muted/40")}>
+        title="清理任务历史？"
+        description={<>将清除 {clearableTasks.length} 条已完成或失败的任务记录，运行中的任务不会受到影响。</>}
+        confirmLabel={clearing ? "清理中" : clearAssets ? "清理记录和素材" : "仅清理记录"}
+        busy={clearing}
+        destructive
+        onConfirm={() => void onClearCompleted(clearAssets).then((cleared) => {
+                if (!cleared) return;
+                setClearConfirmOpen(false);
+                setClearAssets(false);
+              })}
+      ><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+          <Item variant="outline" asChild><Label className={cn("flex items-start gap-3 p-3.5", (!canDeleteAssets || !clearableAssetCount) && "cursor-not-allowed")}>
             <Checkbox
               className="mt-0.5"
               checked={clearAssets}
@@ -1892,25 +2146,8 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
                     : "这些任务记录没有可删除的服务器素材。"}
               </span>
             </span>
-          </label>
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={clearing} onClick={() => setClearConfirmOpen(false)}>取消</Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={clearing}
-              onClick={() => void onClearCompleted(clearAssets).then((cleared) => {
-                if (!cleared) return;
-                setClearConfirmOpen(false);
-                setClearAssets(false);
-              })}
-            >
-              {clearing ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-              {clearing ? "清理中" : clearAssets ? "清理记录和素材" : "仅清理记录"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </Label></Item>
+          </ScrollArea></ConfirmDialog>
     </>
   );
 }
@@ -1919,22 +2156,12 @@ function WorkflowTaskRow({ task, now, onOpen }: { task: WorkflowTask; now: numbe
   const duration = workflowTaskDuration(task, now);
   const title = task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name;
   return (
-    <article
-      role="button"
-      tabIndex={0}
-      aria-label={`查看任务：${title}`}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-      className="group grid cursor-pointer grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3 py-3 outline-none transition-colors last:border-b-0 hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-2 focus-visible:ring-ring/30 sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:px-4"
-    >
-      <div className="grid aspect-square size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted sm:size-16">
-        {task.images[0]?.url ? <AuthenticatedImage src={task.images[0].url} alt="" className="size-full object-cover" placeholderClassName="min-h-0" /> : task.status === "running" ? <LoaderCircle className="size-5 animate-spin text-muted-foreground" /> : <ImageIcon className="size-5 text-muted-foreground" />}
-      </div>
+    <Item asChild className="flex-nowrap gap-1"><article>
+      <Button type="button" variant="ghost" aria-label={`查看任务：${title}`} onClick={onOpen}
+        className="group grid h-auto min-w-0 flex-1 grid-cols-[56px_minmax(0,1fr)_auto] items-center justify-start gap-3 whitespace-normal text-left sm:grid-cols-[64px_minmax(0,1fr)_auto]">
+      <Card className="grid aspect-square size-14 shrink-0 place-items-center overflow-hidden sm:size-16 gap-0 p-0">
+        {task.images[0]?.url ? <AuthenticatedImage src={task.images[0].url} alt="" className="size-full object-cover" placeholderClassName="min-h-0" /> : task.status === "running" ? <Spinner className="size-5 animate-spin text-muted-foreground" /> : <ImageIcon className="size-5 text-muted-foreground" />}
+      </Card>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="truncate text-sm font-semibold">{title}</h3>
@@ -1949,11 +2176,10 @@ function WorkflowTaskRow({ task, now, onOpen }: { task: WorkflowTask; now: numbe
           {task.images.length ? <span>{task.images.length} 个结果</span> : null}
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <Button size="icon" variant="ghost" title="复制提示词" onClick={(event) => { event.stopPropagation(); copyWithToast(task.prompt, "提示词已复制"); }}><Copy /></Button>
-        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </div>
-    </article>
+      <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </Button>
+      <TooltipHint content="复制提示词"><CodeBlockCopyButton type="button" aria-label="复制提示词" size="icon" value={task.prompt} /></TooltipHint>
+    </article></Item>
   );
 }
 
@@ -2001,16 +2227,11 @@ function WorkflowImageSettings({
       ) : null}
       <div className="space-y-1.5">
         <ImageParameterLabel>图片模型</ImageParameterLabel>
-        <Select value={modelAvailable ? model : ""} disabled={readOnly || !modelOptions.length} onValueChange={(next) => onModelChange?.(next)}>
-          <SelectTrigger aria-label="图片模型"><SelectValue placeholder={modelOptions.length ? "选择图片模型" : "暂无可用模型"} /></SelectTrigger>
-          <SelectContent>
-            {modelOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <ModelPicker label="图片模型" value={model} options={modelOptions} disabled={readOnly} onValueChange={(next) => onModelChange?.(next)} />
       </div>
-      <fieldset disabled={readOnly || !modelAvailable} className={cn(readOnly && "[&_button]:cursor-default [&_input]:cursor-default")}>
+      <FieldSet disabled={readOnly || !modelAvailable} className={cn(readOnly && "[&_button]:cursor-default [&_input]:cursor-default")}>
         <ImageSettingsPanel disabled={readOnly || !modelAvailable} model={model} value={value} showSnapToMultiple16={false} onChange={(patch) => onChange?.(patch)} />
-      </fieldset>
+      </FieldSet>
     </section>
   );
 }
@@ -2029,47 +2250,45 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   const title = task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent scrollable={false} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
+      <DialogContent className={cn("sm:max-w-none", cn("h-[min(92dvh,920px)]", "w-[min(96vw,1180px)] max-w-none"))}>
+        <DialogHeader >
           <div className="flex flex-wrap items-center gap-2 pr-8">
-            <DialogTitle className="text-lg">{title}</DialogTitle>
+            <DialogTitle >{title}</DialogTitle>
             <WorkflowTaskStatus task={task} />
           </div>
           <DialogDescription>{new Date(task.started_at).toLocaleString("zh-CN")} · 耗时 {duration} · {task.count} 张</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain">
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
           <div className="grid min-h-full lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
             <section className="min-w-0 border-b border-border p-4 sm:p-6 lg:border-r lg:border-b-0">
               {activeImage ? (
                 <>
-                  <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/50 lg:min-h-[520px]">
+                  <Card className="flex min-h-72 items-center justify-center overflow-hidden lg:min-h-[520px] gap-0 p-0 flex-row">
                     <AuthenticatedImage src={activeImage.url} alt={`${title} 结果 ${selectedImage + 1}`} className="max-h-[62dvh] w-full object-contain" />
-                  </div>
-                  <ScrollArea className="mt-2 min-h-16" viewClass="flex w-max min-w-full gap-2 pb-1" >
+                  </Card>
+                  <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden mt-2 min-h-16" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 flex w-max min-w-full gap-2 pb-1">
                     {task.images.map((image, index) => (
-                      <button key={`${image.url}-${index}`} type="button" aria-label={`查看第 ${index + 1} 张结果`} onClick={() => setSelectedImage(index)} className={cn("relative aspect-square size-16 shrink-0 overflow-hidden rounded-md border bg-muted", selectedImage === index ? "border-primary ring-2 ring-primary/20" : "border-border")}>
+                      <Button variant="outline" size="icon-sm" key={`${image.url}-${index}`} type="button" aria-label={`查看第 ${index + 1} 张结果`} onClick={() => setSelectedImage(index)} className={cn("h-auto p-0", "relative aspect-square size-16 shrink-0 overflow-hidden")}>
                         <AuthenticatedImage src={image.url} alt="" className="size-full object-cover" placeholderClassName="min-h-0" />
-                        <span className="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-[10px] text-white">{index + 1}</span>
-                      </button>
+                        <Badge variant="secondary" className="absolute right-1 bottom-1">{index + 1}</Badge>
+                      </Button>
                     ))}
-                  </ScrollArea>
+                  </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                   <p className="mt-1 text-xs text-muted-foreground">{activeImage.width && activeImage.height ? `${activeImage.width} × ${activeImage.height}` : "尺寸未记录"}{activeImage.bytes ? ` · ${formatWorkflowBytes(activeImage.bytes)}` : ""}</p>
                 </>
               ) : (
-                <div className="grid min-h-72 place-items-center rounded-lg border border-dashed border-border text-center text-sm text-muted-foreground lg:min-h-[520px]">
-                  <div>{task.status === "running" ? <LoaderCircle className="mx-auto mb-3 size-6 animate-spin" /> : <ImageIcon className="mx-auto mb-3 size-6" />}<p>{task.status === "running" ? `任务生成中，已运行 ${duration}` : "任务没有返回图片"}</p></div>
-                </div>
+                task.status === "running" ? <LoadingState className="min-h-72 lg:min-h-[520px]" label={`任务生成中，已运行 ${duration}`} /> : <EmptyState className="min-h-72 lg:min-h-[520px]" icon={ImageIcon} title="任务没有返回图片" />
               )}
             </section>
             <aside className="min-w-0 p-4 sm:p-6">
-              {task.error ? <section className={cn("mb-5 border-l-2 border-rose-500 px-3 py-2.5 text-sm", statusToneClasses.danger.soft)}><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
+              {task.error ? <Alert variant="destructive" className="mb-5"><AlertTitle>失败原因</AlertTitle><AlertDescription className="whitespace-pre-wrap">{task.error}</AlertDescription></Alert> : null}
               <section className="border-b border-border pb-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold">当前图片提示词</h3>
                     {activeImage ? <p className="mt-1 truncate text-xs text-muted-foreground">{activeImageTitle} · 第 {selectedImage + 1}/{task.images.length} 张</p> : null}
                   </div>
-                  <Button size="icon" variant="ghost" title="复制当前图片提示词" disabled={!activeImagePrompt} onClick={() => copyWithToast(activeImagePrompt, "提示词已复制")}><Copy /></Button>
+                  <TooltipHint content={"复制当前图片提示词"}><CodeBlockCopyButton aria-label="复制当前图片提示词" size="icon" disabled={!activeImagePrompt} value={activeImagePrompt} /></TooltipHint>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/85">{activeImagePrompt || "未记录"}</p>
               </section>
@@ -2077,7 +2296,7 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
                 <h3 className="text-sm font-semibold">输入变量</h3>
                 {inputEntries.length ? <dl className="mt-3 divide-y divide-border/70">{inputEntries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(90px,0.35fr)_minmax(0,1fr)] gap-3 py-2 text-xs"><dt className="break-words text-muted-foreground">{key}</dt><dd className="whitespace-pre-wrap break-words text-foreground">{value}</dd></div>)}</dl> : <p className="mt-2 text-xs text-muted-foreground">没有输入变量</p>}
               </section>
-              {task.references.length ? <section className="border-b border-border py-5">{[["风格模板", templateReferences], ["产品实拍", productReferences]].map(([label, items]) => (items as WorkflowReference[]).length ? <div key={label as string} className="mb-4 last:mb-0"><h3 className="text-sm font-semibold">{label as string}</h3><div className="mt-3 grid grid-cols-4 gap-2">{(items as WorkflowReference[]).map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer" className="group min-w-0"><div className="aspect-square overflow-hidden rounded-md border border-border bg-muted"><AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" /></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{reference.name}</p></a>)}</div></div> : null)}</section> : null}
+              {task.references.length ? <section className="border-b border-border py-5">{[["风格模板", templateReferences], ["产品实拍", productReferences]].map(([label, items]) => (items as WorkflowReference[]).length ? <div key={label as string} className="mb-4 last:mb-0"><h3 className="text-sm font-semibold">{label as string}</h3><WorkflowReferenceGrid references={items as WorkflowReference[]} className="grid-cols-4" openOriginal /></div> : null)}</section> : null}
               <section className="border-b border-border py-5">
                 <h3 className="text-sm font-semibold">创作参数快照</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
@@ -2095,8 +2314,8 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
               </section>
             </aside>
           </div>
-        </ScrollArea>
-        <DialogFooter flush className="flex-row justify-end sm:justify-end">
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        <DialogFooter className="m-0 shrink-0 flex-row justify-end sm:justify-end">
           <Button variant="outline" onClick={onClose}>关闭</Button>
           {activeImage ? <Button onClick={() => void downloadWorkflowImage(activeImage.url, `workflow-task-${selectedImage + 1}.png`).catch((error) => toast.error(error instanceof Error ? error.message : "图片下载失败"))}><Download />下载当前图片</Button> : null}
         </DialogFooter>
@@ -2105,14 +2324,41 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   );
 }
 
-function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenceBusy, onChange, onSave, onAssetsOpen, onReferencesAdd, onClose }: { workflow: CreativeWorkflow | null; isNew: boolean; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; referenceBusy: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onClose: () => void }) {
+function WorkflowEditor({
+  workflow,
+  isNew,
+  models,
+  preferences,
+  saving,
+  referenceBusy,
+  onChange,
+  onSave,
+  onAssetsOpen,
+  onReferencesAdd,
+  onClose,
+}: {
+  workflow: CreativeWorkflow | null;
+  isNew: boolean;
+  models: ModelConfig | null;
+  preferences: ImageGenerationPreferences;
+  saving: boolean;
+  referenceBusy: boolean;
+  onChange: (workflow: CreativeWorkflow | null) => void;
+  onSave: (workflow: CreativeWorkflow) => void;
+  onAssetsOpen: () => void;
+  onReferencesAdd: (files: FileList | null) => void;
+  onClose: () => void;
+}) {
   const templateInputRef = useRef<HTMLInputElement>(null);
   const promptTemplateRef = useRef<HTMLTextAreaElement>(null);
+  const reviewPromptsID = useId();
   if (!workflow) return null;
   const patch = (value: Partial<CreativeWorkflow>) => onChange({ ...workflow, ...value });
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
-  const patchSeries = (value: Partial<WorkflowSeriesConfig>) => patch({ series_config: { ...workflow.series_config, ...value } });
-  const patchVariable = (id: string, value: Partial<WorkflowVariable>) => patch({ variables: workflow.variables.map((item) => item.id === id ? { ...item, ...value } : item) });
+  const patchSeries = (value: Partial<WorkflowSeriesConfig>) =>
+    patch({ series_config: { ...workflow.series_config, ...value } });
+  const patchVariable = (id: string, value: Partial<WorkflowVariable>) =>
+    patch({ variables: workflow.variables.map((item) => (item.id === id ? { ...item, ...value } : item)) });
   const promptTemplate = workflow.config.prompt_template;
   const templateVariableKeys = Array.from(promptTemplate.matchAll(/{{\s*([\w.-]+)\s*}}/g), (match) => match[1]);
   const uniqueTemplateVariableKeys = [...new Set(templateVariableKeys)];
@@ -2135,9 +2381,10 @@ function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenc
     const templateReferences = workflow.template_references.filter((reference) => reference.id !== id);
     patch({
       template_references: templateReferences,
-      series_config: workflow.mode === "multi_image_series" && templateReferences.length
-        ? { ...workflow.series_config, target_count: String(templateReferences.length) }
-        : workflow.series_config,
+      series_config:
+        workflow.mode === "multi_image_series" && templateReferences.length
+          ? { ...workflow.series_config, target_count: String(templateReferences.length) }
+          : workflow.series_config,
     });
   };
   const moveTemplateReference = (id: string, direction: -1 | 1) => {
@@ -2166,271 +2413,406 @@ function WorkflowEditor({ workflow, isNew, models, preferences, saving, referenc
     });
   };
   return (
-    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent scrollable={false} showCloseButton={!saving} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <DialogTitle>{isNew ? "新建工作流" : "编辑工作流"}</DialogTitle>
-            <Badge variant="secondary">{workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"}</Badge>
-            <Badge variant="outline">{workflow.variables.length} 个变量</Badge>
+    <EditorWorkspace
+      title={isNew ? "新建工作流" : "编辑工作流"}
+      description={`工作流信息、输入变量、提示词与创作参数 · ${workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"} · ${workflow.variables.length} 个变量`}
+      backLabel="返回工作流"
+      onBack={onClose}
+      busy={saving}
+      actions={
+        <Button
+          aria-label="保存工作流"
+          disabled={saving || referenceBusy || !workflow.name.trim() || !workflow.config.prompt_template.trim()}
+          onClick={() => onSave(workflow)}
+        >
+          {saving ? <Spinner /> : <Save />}
+          {saving ? "保存中" : "保存"}
+        </Button>
+      }
+    >
+      <FieldSet disabled={saving} className="contents space-y-6">
+        <section className="border-b border-border pb-6">
+          <div className="mb-4 flex items-center gap-2">
+            <ItemMedia variant="icon" className="grid size-6 place-items-center">
+              1
+            </ItemMedia>
+            <h3 className="text-sm font-semibold">基本信息</h3>
           </div>
-          <DialogDescription>工作流信息、输入变量、提示词与创作参数</DialogDescription>
-        </DialogHeader>
-        <ScrollArea aria-busy={saving} className={cn("min-h-0 flex-1 transition-opacity", saving && "pointer-events-none opacity-70")} viewportClassName="overscroll-contain p-5 sm:p-6">
-          <fieldset disabled={saving} className="contents space-y-6">
-          <section className="border-b border-border pb-6">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">1</span>
-              <h3 className="text-sm font-semibold">基本信息</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="工作流名称">{(fieldId) => <Input id={fieldId}
+                value={workflow.name}
+                onChange={(event) => patch({ name: event.target.value })}
+                placeholder="输入工作流名称"
+              />}</Field>
+            <Field label="分类">{(fieldId) => <Input id={fieldId}
+                value={workflow.category}
+                onChange={(event) => patch({ category: event.target.value })}
+                placeholder="输入分类"
+              />}</Field>
+            <Field label="生成方式">{(fieldId) => <Select
+                value={workflow.mode}
+                onValueChange={(mode: CreativeWorkflow["mode"]) =>
+                  patch({
+                    mode,
+                    series_config:
+                      mode === "multi_image_series" && workflow.template_references.length
+                        ? { ...workflow.series_config, target_count: String(workflow.template_references.length) }
+                        : workflow.series_config,
+                  })
+                }
+              >
+                <SelectTrigger id={fieldId}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single_image">单图生成</SelectItem>
+                  <SelectItem value="multi_image_series">多图生成</SelectItem>
+                </SelectContent>
+              </Select>}</Field>
+            <Field label="可见范围">{(fieldId) => <Select value={workflow.scope} onValueChange={(scope: CreativeWorkflow["scope"]) => patch({ scope })}>
+                <SelectTrigger id={fieldId}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">个人工作流</SelectItem>
+                  <SelectItem value="public">公开工作流</SelectItem>
+                </SelectContent>
+              </Select>}</Field>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <Field label="适用场景">{(fieldId) => <Textarea id={fieldId}
+                  rows={2}
+                  value={workflow.description}
+                  onChange={(event) => patch({ description: event.target.value })}
+                  placeholder="输入适用场景说明"
+                />}</Field>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Field label="工作流名称"><Input value={workflow.name} onChange={(event) => patch({ name: event.target.value })} placeholder="输入工作流名称" /></Field>
-              <Field label="分类"><Input value={workflow.category} onChange={(event) => patch({ category: event.target.value })} placeholder="输入分类" /></Field>
-              <Field label="生成方式">
-                <Select value={workflow.mode} onValueChange={(mode: CreativeWorkflow["mode"]) => patch({
-                  mode,
-                  series_config: mode === "multi_image_series" && workflow.template_references.length
-                    ? { ...workflow.series_config, target_count: String(workflow.template_references.length) }
-                    : workflow.series_config,
-                })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="single_image">单图生成</SelectItem><SelectItem value="multi_image_series">多图生成</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field label="可见范围">
-                <Select value={workflow.scope} onValueChange={(scope: CreativeWorkflow["scope"]) => patch({ scope })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="private">个人工作流</SelectItem><SelectItem value="public">公开工作流</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <div className="sm:col-span-2 lg:col-span-4"><Field label="适用场景"><Textarea rows={2} value={workflow.description} onChange={(event) => patch({ description: event.target.value })} placeholder="输入适用场景说明" /></Field></div>
-            </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="border-b border-border pb-6">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-start gap-2">
-                <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">2</span>
-                <div>
-                  <h3 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="size-4" />风格模板图 <Badge variant="outline">{workflow.template_references.length}</Badge></h3>
-                  <p className="mt-1 text-xs text-muted-foreground">按详情页顺序添加优秀成品图。生成时只迁移版式和视觉风格，商品外观以运行时实拍图为准。</p>
-                </div>
+        <section className="border-b border-border pb-6">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <ItemMedia variant="icon" className="grid size-6 shrink-0 place-items-center">
+                2
+              </ItemMedia>
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <ImageIcon className="size-4" />
+                  风格模板图 <Badge variant="outline">{workflow.template_references.length}</Badge>
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  按详情页顺序添加优秀成品图。生成时只迁移版式和视觉风格，商品外观以运行时实拍图为准。
+                </p>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
-                <Button size="sm" variant="outline" disabled={referenceBusy || workflow.template_references.length >= 14} onClick={() => templateInputRef.current?.click()}>
-                  {referenceBusy ? <LoaderCircle className="animate-spin" /> : <Upload />}上传模板图
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={onAssetsOpen}>
+                我的素材
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={referenceBusy || workflow.template_references.length >= 14}
+                onClick={() => templateInputRef.current?.click()}
+              >
+                {referenceBusy ? <Spinner /> : <Upload />}上传模板图
+              </Button>
+              <input
+                ref={templateInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  onReferencesAdd(event.currentTarget.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+          </div>
+          {workflow.scope === "public" &&
+          workflow.template_references.some((reference) => reference.visibility !== "public") ? (
+            <Alert className="mb-3">
+              <AlertDescription>公开工作流只能使用公开素材。请移除个人模板图，或将工作流改为个人。</AlertDescription>
+            </Alert>
+          ) : null}
+          <WorkflowReferenceGrid
+            references={workflow.template_references}
+            className="grid-cols-3 sm:grid-cols-5 lg:grid-cols-7"
+            emptyMessage="还没有模板图"
+            disabled={referenceBusy}
+            onRemove={removeTemplateReference}
+            onMove={moveTemplateReference}
+          />
+        </section>
+
+        <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-6">
+            <section className="border-b border-border pb-6">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ItemMedia variant="icon" className="grid size-6 place-items-center">
+                    3
+                  </ItemMedia>
+                  <h3 className="text-sm font-semibold">输入变量</h3>
+                  <Badge variant="outline">{workflow.variables.length}</Badge>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => patch({ variables: [...workflow.variables, createWorkflowVariable()] })}
+                >
+                  <Plus />
+                  添加变量
                 </Button>
-                <input
-                  ref={templateInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    onReferencesAdd(event.currentTarget.files);
-                    event.currentTarget.value = "";
-                  }}
-                />
               </div>
-            </div>
-            {workflow.scope === "public" && workflow.template_references.some((reference) => reference.visibility !== "public") ? (
-              <p className={cn("mb-3 border-l-2 border-amber-500 px-3 py-2 text-xs", statusToneClasses.warning.soft)}>公开工作流只能使用公开素材。请移除个人模板图，或将工作流改为个人。</p>
-            ) : null}
-            <WorkflowReferenceGrid
-              references={workflow.template_references}
-              className="grid-cols-3 sm:grid-cols-5 lg:grid-cols-7"
-              emptyMessage="还没有模板图"
-              disabled={referenceBusy}
-              onRemove={removeTemplateReference}
-              onMove={moveTemplateReference}
-            />
-          </section>
-
-          <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="min-w-0 space-y-6">
-              <section className="border-b border-border pb-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">3</span>
-                    <h3 className="text-sm font-semibold">输入变量</h3>
-                    <Badge variant="outline">{workflow.variables.length}</Badge>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => patch({ variables: [...workflow.variables, createWorkflowVariable()] })}><Plus />添加变量</Button>
+              {workflow.variables.length ? (
+                <div className="space-y-3">
+                  {workflow.variables.map((variable, index) => (
+                    <VariableEditor
+                      key={variable.id}
+                      index={index}
+                      variable={variable}
+                      onChange={(value) => patchVariable(variable.id, value)}
+                      onDelete={() =>
+                        patch({ variables: workflow.variables.filter((item) => item.id !== variable.id) })
+                      }
+                    />
+                  ))}
                 </div>
-                {workflow.variables.length ? (
-                  <div className="space-y-3">
-                    {workflow.variables.map((variable, index) => (
-                      <VariableEditor
-                        key={variable.id}
-                        index={index}
-                        variable={variable}
-                        onChange={(value) => patchVariable(variable.id, value)}
-                        onDelete={() => patch({ variables: workflow.variables.filter((item) => item.id !== variable.id) })}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">暂无输入变量</div>
-                )}
-              </section>
+              ) : (
+                <EmptyState compact title="暂无输入变量" />
+              )}
+            </section>
 
-              <section className={cn(workflow.mode === "multi_image_series" && "border-b border-border pb-6")}>
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">4</span>
-                  <h3 className="text-sm font-semibold">提示词模板</h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label htmlFor="workflow-prompt-template" className="text-sm font-medium">用户提示词模板</label>
-                      <span className="text-xs tabular-nums text-muted-foreground">{promptTemplate.length} 字 · {Math.max(1, promptTemplate.split("\n").length)} 行</span>
-                    </div>
-                    <div className="overflow-hidden rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
-                      <Textarea
-                        id="workflow-prompt-template"
-                        ref={promptTemplateRef}
-                        rows={8}
-                        className="min-h-44 resize-y rounded-none border-0 bg-transparent font-mono text-[13px] leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0"
-                        value={promptTemplate}
-                        onChange={(event) => patchConfig({ prompt_template: event.target.value })}
-                        placeholder="例如：为 {{product_name}} 生成一张……"
-                      />
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1"><Braces className="size-3.5" />使用双大括号插入变量</span>
-                        <span>空变量会替换为空文本</span>
-                        {undefinedTemplateVariables.length ? <span className={cn("inline-flex items-center gap-1", statusToneClasses.warning.text)}><CircleAlert className="size-3.5" />未定义：{undefinedTemplateVariables.join("、")}</span> : null}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-muted-foreground">快速插入</span>
-                      {workflow.variables.length ? workflow.variables.map((variable) => (
-                        <Button key={variable.id} type="button" size="sm" variant="outline" className="h-7 px-2 font-mono text-xs" onClick={() => insertTemplateVariable(variable.key)} disabled={!variable.key}>
+            <section className={cn(workflow.mode === "multi_image_series" && "border-b border-border pb-6")}>
+              <div className="mb-4 flex items-center gap-2">
+                <ItemMedia variant="icon" className="grid size-6 place-items-center">
+                  4
+                </ItemMedia>
+                <h3 className="text-sm font-semibold">提示词模板</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label htmlFor="workflow-prompt-template" className="text-sm font-medium">
+                      用户提示词模板
+                    </Label>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {promptTemplate.length} 字 · {Math.max(1, promptTemplate.split("\n").length)} 行
+                    </span>
+                  </div>
+                  <PromptInput className="h-auto min-w-0">
+                    <InputGroupTextarea
+                      id="workflow-prompt-template"
+                      ref={promptTemplateRef}
+                      rows={8}
+                      className="min-h-44 resize-y font-mono"
+                      value={promptTemplate}
+                      onChange={(event) => patchConfig({ prompt_template: event.target.value })}
+                      placeholder="例如：为 {{product_name}} 生成一张……"
+                    />
+                    <PromptInputFooter className="flex-wrap">
+                      <span className="inline-flex items-center gap-1">
+                        <Braces className="size-3.5" />
+                        使用双大括号插入变量
+                      </span>
+                      <span>空变量会替换为空文本</span>
+                      {undefinedTemplateVariables.length ? (
+                        <span className={cn("inline-flex items-center gap-1", "text-muted-foreground")}>
+                          <CircleAlert className="size-3.5" />
+                          未定义：{undefinedTemplateVariables.join("、")}
+                        </span>
+                      ) : null}
+                    </PromptInputFooter>
+                  </PromptInput>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">快速插入</span>
+                    {workflow.variables.length ? (
+                      workflow.variables.map((variable) => (
+                        <Button
+                          key={variable.id}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="font-mono"
+                          onClick={() => insertTemplateVariable(variable.key)}
+                          disabled={!variable.key}
+                        >
                           {`{{${variable.key || "变量名"}}}`}
                         </Button>
-                      )) : <span className="text-xs text-muted-foreground">先在上方添加变量</span>}
-                    </div>
-                    <p className="text-xs leading-5 text-muted-foreground">建议把固定要求写在模板中，把产品名称、风格、受众等变化内容定义为变量。变量名必须与上方设置完全一致。</p>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">先在上方添加变量</span>
+                    )}
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="系统提示词"><Textarea rows={3} value={workflow.config.system_prompt} onChange={(event) => patchConfig({ system_prompt: event.target.value })} placeholder="可选" /></Field>
-                    <Field label="负面约束"><Textarea rows={3} value={workflow.config.negative_prompt} onChange={(event) => patchConfig({ negative_prompt: event.target.value })} placeholder="可选" /></Field>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    建议把固定要求写在模板中，把产品名称、风格、受众等变化内容定义为变量。变量名必须与上方设置完全一致。
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                      rows={3}
+                      value={workflow.config.system_prompt}
+                      onChange={(event) => patchConfig({ system_prompt: event.target.value })}
+                      placeholder="可选"
+                    /></PromptInput>}</Field>
+                  <Field label="负面约束">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                      rows={3}
+                      value={workflow.config.negative_prompt}
+                      onChange={(event) => patchConfig({ negative_prompt: event.target.value })}
+                      placeholder="可选"
+                    /></PromptInput>}</Field>
+                </div>
+              </div>
+            </section>
+
+            {workflow.mode === "multi_image_series" ? (
+              <section>
+                <div className="mb-4 flex items-start gap-2">
+                  <ItemMedia variant="icon" className="grid size-6 shrink-0 place-items-center">
+                    5
+                  </ItemMedia>
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <Layers3 className="size-4" />
+                      多图提示词规划
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">设置系列拆分数量、并发和每张图片的规划要求。</p>
                   </div>
                 </div>
+                <Card className="grid gap-4 p-4 xl:grid-cols-[240px_minmax(0,1fr)]">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="草稿张数">{(fieldId) => <Input id={fieldId}
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={workflow.series_config.target_count}
+                          onChange={(event) => patchSeries({ target_count: event.target.value })}
+                        />}</Field>
+                      <Field label="图片并发">{(fieldId) => <Input id={fieldId}
+                          type="number"
+                          min={1}
+                          max={6}
+                          value={workflow.series_config.concurrency}
+                          onChange={(event) => patchSeries({ concurrency: event.target.value })}
+                        />}</Field>
+                    </div>
+                    <FormField orientation="horizontal">
+                      <Checkbox
+                        id={reviewPromptsID}
+                        checked={workflow.series_config.review_required}
+                        onCheckedChange={(checked) => patchSeries({ review_required: checked === true })}
+                      />
+                      <FieldContent>
+                        <FieldLabel htmlFor={reviewPromptsID}>生成前审核提示词</FieldLabel>
+                        <FieldDescription>确认并调整每张图的提示词后，再生成图片。</FieldDescription>
+                      </FieldContent>
+                    </FormField>
+                  </div>
+                  <Field label="系列拆分说明">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                      rows={4}
+                      value={workflow.series_config.prompt_instruction}
+                      onChange={(event) => patchSeries({ prompt_instruction: event.target.value })}
+                      placeholder="说明封面、步骤、要点和总结图之间的结构关系"
+                    /></PromptInput>}</Field>
+                </Card>
               </section>
-
-              {workflow.mode === "multi_image_series" ? (
-                <section>
-                  <div className="mb-4 flex items-start gap-2">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">5</span>
-                    <div>
-                      <h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词规划</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">设置系列拆分数量、并发和每张图片的规划要求。</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 rounded-lg border border-border bg-card p-4 xl:grid-cols-[240px_minmax(0,1fr)]">
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="草稿张数"><Input type="number" min={1} max={20} value={workflow.series_config.target_count} onChange={(event) => patchSeries({ target_count: event.target.value })} /></Field>
-                        <Field label="图片并发"><Input type="number" min={1} max={6} value={workflow.series_config.concurrency} onChange={(event) => patchSeries({ concurrency: event.target.value })} /></Field>
-                      </div>
-                      <div className="flex min-h-9 items-center rounded-lg border border-border px-3"><Toggle label="生成前审核提示词" checked={workflow.series_config.review_required} onChange={(checked) => patchSeries({ review_required: checked })} /></div>
-                    </div>
-                    <Field label="系列拆分说明"><Textarea rows={4} value={workflow.series_config.prompt_instruction} onChange={(event) => patchSeries({ prompt_instruction: event.target.value })} placeholder="说明封面、步骤、要点和总结图之间的结构关系" /></Field>
-                  </div>
-                </section>
-              ) : null}
-            </div>
-
-            <aside className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm lg:sticky lg:top-0">
-              <div className="p-4">
-                <WorkflowImageSettings models={models} model={imageModel} value={imageSettings} onModelChange={(model) => patchConfig({ model, image_model: model })} onChange={patchImageSettings} />
-              </div>
-              {!workflow.config.system_prompt && preferences.system_prompt ? (
-                <div className="border-t border-border p-4"><Button className="w-full" size="sm" variant="outline" onClick={() => patchConfig({ system_prompt: preferences.system_prompt })}>使用当前系统提示词</Button></div>
-              ) : null}
-            </aside>
+            ) : null}
           </div>
-          </fieldset>
-        </ScrollArea>
-        <DialogFooter flush className="flex-row">
-          <p className="mr-auto hidden text-xs text-muted-foreground sm:block">{!workflow.name.trim() ? "请填写工作流名称" : !workflow.config.prompt_template.trim() ? "请填写用户提示词模板" : "工作流配置已就绪"}</p>
-          <Button variant="outline" disabled={saving} onClick={onClose}>取消</Button>
-          <Button disabled={saving || referenceBusy || !workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "保存中" : "保存"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          <Card className="min-w-0 overflow-hidden lg:sticky lg:top-0 gap-0 p-0">
+            <div className="p-4">
+              <WorkflowImageSettings
+                models={models}
+                model={imageModel}
+                value={imageSettings}
+                onModelChange={(model) => patchConfig({ model, image_model: model })}
+                onChange={patchImageSettings}
+              />
+            </div>
+            {!workflow.config.system_prompt && preferences.system_prompt ? (
+              <div className="border-t border-border p-4">
+                <Button
+                  className="w-full"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => patchConfig({ system_prompt: preferences.system_prompt })}
+                >
+                  使用当前系统提示词
+                </Button>
+              </div>
+            ) : null}
+          </Card>
+        </div>
+      </FieldSet>
+    </EditorWorkspace>
   );
 }
 
 function VariableEditor({ index, variable, onChange, onDelete }: { index: number; variable: WorkflowVariable; onChange: (value: Partial<WorkflowVariable>) => void; onDelete: () => void }) {
   return (
-    <article className="rounded-lg border border-border bg-card p-3.5">
+    <Card className="p-3.5 gap-0">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h4 className="text-xs font-semibold text-muted-foreground">变量 {index + 1}</h4>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs"><Checkbox checked={variable.required} onCheckedChange={(checked) => onChange({ required: checked === true })} />必填</label>
-          <Button size="icon" variant="ghost" title="删除变量" onClick={onDelete}><Trash2 /></Button>
+          <Label className="flex items-center gap-1.5 text-xs"><Checkbox checked={variable.required} onCheckedChange={(checked) => onChange({ required: checked === true })} />必填</Label>
+          <TooltipHint content={"删除变量"}><Button aria-label="删除变量" size="icon" variant="ghost" onClick={onDelete}><Trash2 /></Button></TooltipHint>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Field label="变量名"><Input value={variable.key} onChange={(event) => onChange({ key: event.target.value.replace(/[^\w.-]/g, "_") })} placeholder="例如 product_name" /></Field>
-        <Field label="显示名称"><Input value={variable.label} onChange={(event) => onChange({ label: event.target.value })} placeholder="例如 产品名称" /></Field>
-        <Field label="输入类型">
-          <Select value={variable.type} onValueChange={(type: WorkflowVariable["type"]) => onChange({ type })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+        <Field label="变量名">{(fieldId) => <Input id={fieldId} value={variable.key} onChange={(event) => onChange({ key: event.target.value.replace(/[^\w.-]/g, "_") })} placeholder="例如 product_name" />}</Field>
+        <Field label="显示名称">{(fieldId) => <Input id={fieldId} value={variable.label} onChange={(event) => onChange({ label: event.target.value })} placeholder="例如 产品名称" />}</Field>
+        <Field label="输入类型">{(fieldId) => <Select value={variable.type} onValueChange={(type: WorkflowVariable["type"]) => onChange({ type })}>
+            <SelectTrigger id={fieldId}><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="text">短文本</SelectItem><SelectItem value="textarea">长文本</SelectItem><SelectItem value="number">数字</SelectItem><SelectItem value="select">选项</SelectItem><SelectItem value="boolean">开关</SelectItem></SelectContent>
-          </Select>
-        </Field>
+          </Select>}</Field>
         {variable.type === "select" ? (
-          <Field label="默认选项">
-            <Select value={variable.default_value || "__none"} onValueChange={(value) => onChange({ default_value: value === "__none" ? "" : value })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+          <Field label="默认选项">{(fieldId) => <Select value={variable.default_value || "__none"} onValueChange={(value) => onChange({ default_value: value === "__none" ? "" : value })}>
+              <SelectTrigger id={fieldId}><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="__none">无默认值</SelectItem>{variable.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
-            </Select>
-          </Field>
+            </Select>}</Field>
         ) : variable.type === "boolean" ? (
-          <Field label="默认状态"><div className="flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs"><Checkbox checked={variable.default_value === "true"} onCheckedChange={(checked) => onChange({ default_value: checked === true ? "true" : "false" })} />{variable.default_value === "true" ? "开启" : "关闭"}</div></Field>
+          <Field label="默认状态">{(fieldId) => <Card className="flex h-9 items-center gap-2 px-3 p-0 flex-row"><Checkbox id={fieldId} checked={variable.default_value === "true"} onCheckedChange={(checked) => onChange({ default_value: checked === true ? "true" : "false" })} />{variable.default_value === "true" ? "开启" : "关闭"}</Card>}</Field>
         ) : (
-          <Field label="默认值"><Input type={variable.type === "number" ? "number" : "text"} value={variable.default_value} onChange={(event) => onChange({ default_value: event.target.value })} placeholder="可选" /></Field>
+          <Field label="默认值">{(fieldId) => <Input id={fieldId} type={variable.type === "number" ? "number" : "text"} value={variable.default_value} onChange={(event) => onChange({ default_value: event.target.value })} placeholder="可选" />}</Field>
         )}
         {variable.type === "select" ? (
-          <div className="sm:col-span-2 xl:col-span-2"><Field label="选项"><Input value={variable.options.join(" / ")} onChange={(event) => { const options = parseVariableOptions(event.target.value); onChange({ options, default_value: options.includes(variable.default_value) ? variable.default_value : "" }); }} placeholder="例如 自动 / 极简 / 商业" /></Field></div>
+          <div className="sm:col-span-2 xl:col-span-2"><Field label="选项">{(fieldId) => <Input id={fieldId} value={variable.options.join(" / ")} onChange={(event) => { const options = parseVariableOptions(event.target.value); onChange({ options, default_value: options.includes(variable.default_value) ? variable.default_value : "" }); }} placeholder="例如 自动 / 极简 / 商业" />}</Field></div>
         ) : null}
-        <div className="sm:col-span-2 xl:col-span-2"><Field label="输入提示"><Input value={variable.placeholder || ""} onChange={(event) => onChange({ placeholder: event.target.value })} placeholder="可选" /></Field></div>
+        <div className="sm:col-span-2 xl:col-span-2"><Field label="输入提示">{(fieldId) => <Input id={fieldId} value={variable.placeholder || ""} onChange={(event) => onChange({ placeholder: event.target.value })} placeholder="可选" />}</Field></div>
       </div>
-    </article>
+    </Card>
   );
 }
 
-function WorkflowReferenceGrid({ references, className, emptyMessage, disabled = false, onRemove, onMove }: { references: readonly WorkflowReference[]; className: string; emptyMessage?: string; disabled?: boolean; onRemove?: (id: string) => void; onMove?: (id: string, direction: -1 | 1) => void }) {
+function WorkflowReferenceGrid({ references, className, emptyMessage, disabled = false, openOriginal = false, onRemove, onMove }: { references: readonly WorkflowReference[]; className: string; emptyMessage?: string; disabled?: boolean; openOriginal?: boolean; onRemove?: (id: string) => void; onMove?: (id: string, direction: -1 | 1) => void }) {
   if (!references.length) {
-    return emptyMessage ? <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">{emptyMessage}</div> : null;
+    return emptyMessage ? <EmptyState compact title={emptyMessage} className="mt-3 min-h-0 py-5" /> : null;
   }
   return (
-    <div className={cn("mt-3 grid gap-2", className)}>
+    <AttachmentGroup className={cn("mt-3 grid gap-2 overflow-x-visible", className)}>
       {references.map((reference, index) => (
-        <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
-          <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
-          {onMove ? <span className="absolute top-1 left-1 grid size-5 place-items-center rounded bg-black/65 text-[10px] font-semibold text-white">{index + 1}</span> : null}
-          {onRemove ? <button
-            type="button"
-            aria-label={`移除参考图 ${reference.name}`}
-            disabled={disabled}
-            className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => onRemove(reference.id)}
-          >
-            <X className="size-3" />
-          </button> : null}
-          {onMove ? (
-            <div className="absolute bottom-1 left-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              <button type="button" title="前移" disabled={disabled || index === 0} onClick={() => onMove(reference.id, -1)} className="grid size-6 place-items-center rounded bg-black/65 text-white disabled:cursor-not-allowed disabled:opacity-40"><ArrowUp className="size-3 rotate-[-90deg]" /></button>
-              <button type="button" title="后移" disabled={disabled || index === references.length - 1} onClick={() => onMove(reference.id, 1)} className="grid size-6 place-items-center rounded bg-black/65 text-white disabled:cursor-not-allowed disabled:opacity-40"><ArrowDown className="size-3 rotate-[-90deg]" /></button>
-            </div>
-          ) : null}
-        </div>
+        <Attachment key={reference.id} orientation="vertical" className="w-full min-w-0 has-data-[slot=attachment-content]:w-full">
+          <AttachmentMedia variant="image">
+            <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
+          </AttachmentMedia>
+          {openOriginal ? <>
+            <AttachmentTrigger asChild><a href={reference.url} target="_blank" rel="noreferrer" aria-label={`打开参考图 ${reference.name}`} /></AttachmentTrigger>
+            <AttachmentContent><AttachmentTitle>{reference.name}</AttachmentTitle></AttachmentContent>
+          </> : null}
+          {onMove ? <Badge variant="secondary" className="absolute top-1 left-1 size-5 p-0">{index + 1}</Badge> : null}
+          {onRemove ? <AttachmentActions className="group-data-[orientation=vertical]/attachment:top-1 group-data-[orientation=vertical]/attachment:right-1">
+            <AttachmentAction aria-label={`移除参考图 ${reference.name}`} disabled={disabled} onClick={() => onRemove(reference.id)}><X /></AttachmentAction>
+          </AttachmentActions> : null}
+          {onMove ? <AttachmentActions className="group-data-[orientation=vertical]/attachment:top-auto group-data-[orientation=vertical]/attachment:bottom-1 group-data-[orientation=vertical]/attachment:left-1 group-data-[orientation=vertical]/attachment:right-auto">
+            <AttachmentAction title="前移" aria-label={`前移 ${reference.name}`} disabled={disabled || index === 0} onClick={() => onMove(reference.id, -1)}><ArrowUp className="rotate-[-90deg]" /></AttachmentAction>
+            <AttachmentAction title="后移" aria-label={`后移 ${reference.name}`} disabled={disabled || index === references.length - 1} onClick={() => onMove(reference.id, 1)}><ArrowDown className="rotate-[-90deg]" /></AttachmentAction>
+          </AttachmentActions> : null}
+        </Attachment>
       ))}
-    </div>
+    </AttachmentGroup>
   );
 }
 
@@ -2487,8 +2869,8 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
   const imageSize = buildImageSize(imageSettings, { snapToMultiple16: imageSettings.snapToMultiple16 }) || "自动";
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent scrollable={false} className="h-[min(92dvh,900px)] w-[min(96vw,1120px)] max-w-none gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
+      <DialogContent className={cn("sm:max-w-none", cn("h-[min(92dvh,900px)]", "w-[min(96vw,1120px)] max-w-none"))}>
+        <DialogHeader >
           <div className="flex min-w-0 flex-wrap items-center gap-2 pr-8">
             <DialogTitle>{workflow.name}</DialogTitle>
             <Badge variant="secondary">{workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"}</Badge>
@@ -2496,15 +2878,15 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
           </div>
           <DialogDescription>{workflow.description || "填写内容，确认提示词后启动生成任务。"}</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain p-5 sm:p-6" viewClass="grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-          <section className="rounded-lg border border-border bg-card shadow-sm">
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)] p-5 sm:p-6">
+          <Card className="gap-0 p-0">
             <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3.5">
               <div>
                 <h3 className="text-sm font-semibold">填写生成内容</h3>
                 <p className="mt-1 text-xs text-muted-foreground">这些内容会自动填入工作流提示词。</p>
               </div>
               {requiredVariables.length ? (
-                <Badge variant={completedRequiredVariables === requiredVariables.length ? "success" : "warning"} className="shrink-0 tabular-nums">
+                <Badge variant={completedRequiredVariables === requiredVariables.length ? "default" : "outline"} className="shrink-0 tabular-nums">
                   必填 {completedRequiredVariables}/{requiredVariables.length}
                 </Badge>
               ) : null}
@@ -2517,7 +2899,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                   value={values[variable.key] || ""}
                   onChange={(value) => onValuesChange({ ...values, [variable.key]: value })}
                 />
-              )) : <p className="rounded-lg bg-muted/40 px-3 py-5 text-center text-xs text-muted-foreground">此工作流没有需要填写的变量</p>}
+              )) : <Item variant="muted" className="px-3 py-5 text-center">此工作流没有需要填写的变量</Item>}
             </div>
             {workflow.template_references.length ? (
               <div className="border-t border-border p-4">
@@ -2540,7 +2922,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
                   <Button size="sm" variant="outline" disabled={referenceBusy} onClick={() => inputRef.current?.click()}>
-                    {referenceBusy ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                    {referenceBusy ? <Spinner /> : <Upload />}
                     上传
                   </Button>
                 </div>
@@ -2559,25 +2941,25 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
               <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage={workflow.template_references.length ? "请添加至少一张新产品实拍图" : "未添加产品参考图"} disabled={referenceBusy} onRemove={onReferenceRemove} />
               {referenceOverflow ? <p className="mt-2 text-xs text-destructive">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
             </div>
-          </section>
+          </Card>
           <div className="space-y-4">
-            <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+            <Card className="p-4 gap-0">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">生成提示词预览</h3>
-                <Button size="sm" variant="outline" onClick={() => copyWithToast(prompt, "提示词已复制")}><Copy />复制</Button>
+                <CodeBlockCopyButton size="sm" variant="outline" value={prompt}>复制</CodeBlockCopyButton>
               </div>
-              <ScrollArea maxHeight="18rem" className="rounded-lg bg-muted/40" viewportClassName="p-3" viewClass="text-xs leading-5 whitespace-pre-wrap">
+              <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain" style={{maxHeight: "18rem"}}><div className="min-w-0 text-xs leading-5 whitespace-pre-wrap p-3">
                 {prompt || "填写变量后会在这里预览最终提示词"}
-              </ScrollArea>
-            </section>
-            <section className="overflow-hidden rounded-lg border border-border bg-card">
-              <button
+              </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            </Card>
+            <Card className="overflow-hidden gap-0 p-0">
+              <Button variant="ghost"
                 type="button"
                 aria-expanded={settingsOpen}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                className="flex w-full items-center text-left justify-start"
                 onClick={() => setSettingsOpen((open) => !open)}
               >
-                <Settings2 className="size-4 shrink-0 text-muted-foreground" />
+                <Settings2 className="shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">创作参数</span>
                   <span className="mt-1 block truncate text-xs text-muted-foreground">
@@ -2585,27 +2967,27 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                   </span>
                 </span>
                 <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", settingsOpen && "rotate-180")} />
-              </button>
+              </Button>
               {settingsOpen ? (
                 <div className="border-t border-border p-4">
                   <WorkflowImageSettings models={models} model={imageModel} value={imageSettings} readOnly showHeading={false} />
                 </div>
               ) : null}
-            </section>
+            </Card>
           </div>
           {workflow.mode === "multi_image_series" ? (
-            <section data-workflow-series-workspace className="overflow-hidden rounded-lg border border-border bg-card lg:col-span-2">
+            <Card data-workflow-series-workspace className="overflow-hidden lg:col-span-2 gap-0 p-0">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词</h3>
                   <Badge variant="outline">{drafts.length} 条</Badge>
-                  {completedDraftCount > 0 ? <Badge variant="success">已完成 {completedDraftCount}</Badge> : null}
-                  {runningDraftCount > 0 ? <Badge variant="info"><LoaderCircle className="size-3 animate-spin" />生成中 {runningDraftCount}</Badge> : null}
+                  {completedDraftCount > 0 ? <Badge variant="default">已完成 {completedDraftCount}</Badge> : null}
+                  {runningDraftCount > 0 ? <Badge variant="secondary"><Spinner />生成中 {runningDraftCount}</Badge> : null}
                 </div>
                 {drafts.length ? (
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" disabled={!textModelAvailable || draftLoading || runningDraftCount > 0} onClick={onGenerateDrafts}>
-                      {draftLoading ? <LoaderCircle className="animate-spin" /> : null}
+                      {draftLoading ? <Spinner /> : null}
                       重新生成提示词
                     </Button>
                     <Button size="sm" disabled={!imageModelAvailable || !runnableDraftCount || runningDraftCount > 0} onClick={onRunAll}>
@@ -2621,35 +3003,32 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                     const complete = step < seriesStep || allDraftsComplete && step === 4;
                     const current = step === seriesStep && !allDraftsComplete;
                     return (
-                      <div
+                      <Card
                         key={label}
                         aria-current={current ? "step" : undefined}
-                        className={cn(
-                          "flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium",
-                          complete && statusToneClasses.success.panel,
-                          current && "border-primary/35 bg-primary/[0.05] text-primary",
-                          !complete && !current && "border-border text-muted-foreground",
-                        )}
+                        className="flex min-h-10 items-center gap-2 px-3 flex-row"
                       >
-                        <span className={cn("grid size-5 shrink-0 place-items-center rounded-full border text-[10px]", current && "border-primary bg-primary text-primary-foreground")}>
+                        <ItemMedia variant="icon" className="grid size-5 shrink-0 place-items-center">
                           {complete ? <CircleCheck className="size-4" /> : step}
-                        </span>
+                        </ItemMedia>
                         {label}
-                      </div>
+                      </Card>
                     );
                   })}
                 </div>
-                <div className="mt-3 flex min-h-10 items-center rounded-lg bg-muted/55 px-3 text-xs font-medium text-foreground">
+                <Item variant="muted" className="mt-3 flex min-h-10 items-center px-3">
                   {seriesNextStep}
-                </div>
+                </Item>
 
                 {drafts.length ? (
                   <>
-                    <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                      <Input className="min-w-0 flex-1" value={batchAppend} onChange={(event) => onBatchAppendChange(event.target.value)} placeholder="为所有提示词追加统一要求" />
-                      <Button variant="outline" disabled={!batchAppend.trim() || runningDraftCount > 0} onClick={onBatchAppend}>批量追加</Button>
-                    </div>
-                    <ScrollArea maxHeight="520px" className="mt-4" viewportClassName="pr-2" viewClass="grid gap-3 2xl:grid-cols-2">
+                    <PromptInput className="mt-4">
+                      <InputGroupTextarea rows={1} value={batchAppend} onChange={(event) => onBatchAppendChange(event.target.value)} aria-label="为所有提示词追加统一要求" placeholder="为所有提示词追加统一要求" />
+                      <PromptInputFooter>
+                        <Button type="button" size="sm" className="ml-auto" variant="outline" disabled={!batchAppend.trim() || runningDraftCount > 0} onClick={onBatchAppend}>批量追加</Button>
+                      </PromptInputFooter>
+                    </PromptInput>
+                    <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden mt-4" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain" style={{maxHeight: "520px"}}><div className="min-w-0 grid gap-3 2xl:grid-cols-2">
                       {drafts.map((draft, index) => (
                         <SeriesDraftCard
                           key={draft.id}
@@ -2664,21 +3043,16 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                           onRun={() => onRunDraft(draft, index)}
                         />
                       ))}
-                    </ScrollArea>
+                    </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                   </>
                 ) : (
-                  <div className="mt-4 flex min-h-44 flex-col items-center justify-center rounded-lg border border-dashed border-border px-5 text-center">
-                    {draftLoading ? <LoaderCircle className="size-6 animate-spin text-primary" /> : <Sparkles className="size-6 text-muted-foreground" />}
-                    <p className="mt-3 text-sm font-medium">{draftLoading ? "正在生成多图提示词" : "还没有提示词草稿"}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{draftLoading ? "生成后可逐条修改、排序或单独生成。" : "系统会根据工作流规划拆分每张图片的标题和提示词。"}</p>
-                    {!draftLoading ? <Button className="mt-4" size="sm" disabled={!textModelAvailable || missingRequiredVariables > 0} onClick={onGenerateDrafts}><Layers3 />生成提示词</Button> : null}
-                  </div>
+                  draftLoading ? <LoadingState className="mt-4 min-h-44" label="正在生成多图提示词" description="生成后可逐条修改、排序或单独生成。" /> : <EmptyState className="mt-4 min-h-44" icon={Sparkles} title="还没有提示词草稿" description="系统会根据工作流规划拆分每张图片的标题和提示词。" action={<Button size="sm" disabled={!textModelAvailable || missingRequiredVariables > 0} onClick={onGenerateDrafts}><Layers3 />生成提示词</Button>} />
                 )}
               </div>
-            </section>
+            </Card>
           ) : null}
-        </ScrollArea>
-        <DialogFooter flush className="flex-row">
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        <DialogFooter className="m-0 shrink-0 flex-row">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">
             {missingProductReference
               ? "请添加新产品实拍图后再生成"
@@ -2695,7 +3069,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
             disabled={!primaryModelAvailable || referenceBusy || referenceOverflow || missingProductReference || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
             onClick={workflow.mode === "multi_image_series" && drafts.length > 0 ? onRunAll : onRun}
           >
-            {draftLoading || runningDraftCount > 0 ? <LoaderCircle className="animate-spin" /> : workflow.mode === "multi_image_series" ? drafts.length ? <Play /> : <Layers3 /> : <Play />}
+            {draftLoading || runningDraftCount > 0 ? <Spinner /> : workflow.mode === "multi_image_series" ? drafts.length ? <Play /> : <Layers3 /> : <Play />}
             {workflow.mode === "multi_image_series"
               ? drafts.length
                 ? allDraftsComplete
@@ -2714,51 +3088,48 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
 
 function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChange, onMove, onDelete, onRun }: { draft: WorkflowSeriesDraft; index: number; first: boolean; last: boolean; generationDisabled: boolean; onChange: (patch: Partial<WorkflowSeriesDraft>) => void; onMove: (direction: -1 | 1) => void; onDelete: () => void; onRun: () => void }) {
   const statusLabel = draft.status === "success" ? "已完成" : draft.status === "failed" ? "生成失败" : draft.status === "running" ? "生成中" : "待审核";
-  const statusVariant: "success" | "danger" | "info" | "warning" = draft.status === "success" ? "success" : draft.status === "failed" ? "danger" : draft.status === "running" ? "info" : "warning";
+  const statusVariant = draft.status === "success" ? "default" : draft.status === "failed" ? "destructive" : draft.status === "running" ? "secondary" : "outline";
   const running = draft.status === "running";
   const resultURL = draft.result_ids?.[0] || "";
   return (
-    <article data-series-draft-card data-status={draft.status} className={cn("overflow-hidden rounded-lg border bg-background", running ? "border-sky-500/40" : draft.status === "success" ? "border-emerald-500/35" : "border-border")}>
+    <Card data-series-draft-card data-status={draft.status} className="overflow-hidden">
       <header className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2.5">
         <Badge variant="secondary" className="shrink-0 tabular-nums">{String(index + 1).padStart(2, "0")}</Badge>
-        <Input className="h-8 min-w-[150px] flex-1 bg-background font-medium" value={draft.title} aria-label={`第 ${index + 1} 张标题`} onChange={(event) => onChange({ title: event.target.value })} />
-        <Badge variant={statusVariant} className="shrink-0">{running ? <LoaderCircle className="size-3 animate-spin" /> : null}{statusLabel}</Badge>
+        <Input className="min-w-[150px] flex-1" value={draft.title} aria-label={`第 ${index + 1} 张标题`} onChange={(event) => onChange({ title: event.target.value })} />
+        <Badge variant={statusVariant} className="shrink-0">{running ? <Spinner /> : null}{statusLabel}</Badge>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <Button className="size-8" size="icon" variant="ghost" title="上移" disabled={first || running} onClick={() => onMove(-1)}><ArrowUp /></Button>
-          <Button className="size-8" size="icon" variant="ghost" title="下移" disabled={last || running} onClick={() => onMove(1)}><ArrowDown /></Button>
-          <Button className="size-8" size="icon" variant="ghost" title="复制提示词" onClick={() => copyWithToast(draft.prompt, "提示词已复制")}><Copy /></Button>
-          <Button className="size-8" size="icon" variant="ghost" title="删除草稿" disabled={running} onClick={onDelete}><Trash2 /></Button>
+          <TooltipHint content={"上移"}><Button aria-label="上移"  size="icon" variant="ghost" disabled={first || running} onClick={() => onMove(-1)}><ArrowUp /></Button></TooltipHint>
+          <TooltipHint content={"下移"}><Button aria-label="下移"  size="icon" variant="ghost" disabled={last || running} onClick={() => onMove(1)}><ArrowDown /></Button></TooltipHint>
+          <TooltipHint content={"复制提示词"}><CodeBlockCopyButton aria-label="复制提示词" size="icon" value={draft.prompt} /></TooltipHint>
+          <TooltipHint content={"删除草稿"}><Button aria-label="删除草稿"  size="icon" variant="ghost" disabled={running} onClick={onDelete}><Trash2 /></Button></TooltipHint>
         </div>
       </header>
       <div className={cn("grid gap-3 p-3", resultURL && "sm:grid-cols-[132px_minmax(0,1fr)]")}>
         {resultURL ? (
-          <div className="relative min-h-32 overflow-hidden rounded-lg border border-border bg-muted/40">
+          <Card className="relative min-h-32 overflow-hidden gap-0 p-0">
             <AuthenticatedImage src={resultURL} alt={`${draft.title || `第 ${index + 1} 张`}生成结果`} loading="lazy" decoding="async" className="size-full min-h-32 object-cover" placeholderClassName="min-h-32" />
-            <span className="absolute right-2 bottom-2 rounded-md bg-black/65 px-2 py-1 text-[10px] font-medium text-white">生成结果</span>
-          </div>
+            <Badge variant="secondary" className="absolute right-2 bottom-2">生成结果</Badge>
+          </Card>
         ) : running ? (
-          <div className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-sky-500/30 bg-sky-500/[0.04] text-center">
-            <LoaderCircle className="size-5 animate-spin text-sky-500" />
-            <span className={cn("mt-2 text-xs font-medium", statusToneClasses.info.text)}>正在生成图片</span>
-          </div>
+          <LoadingState label="正在生成图片" className="min-h-32" />
         ) : null}
         <div className="min-w-0">
           <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-medium text-muted-foreground"><span>图片提示词</span><span className="font-normal tabular-nums">{draft.prompt.length} 字</span></div>
-          <div className="overflow-hidden rounded-lg border border-input bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+          <PromptInput className="h-auto min-w-0">
             <PromptTextareaFrame className="h-32 min-h-32">
-              <Textarea className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-3 py-2.5 text-sm font-normal leading-6 text-foreground shadow-none focus-visible:ring-0" value={draft.prompt} disabled={running} onChange={(event) => onChange({ prompt: event.target.value, status: draft.status === "success" ? "draft" : draft.status })} />
+              <InputGroupTextarea className="min-h-full resize-none overflow-hidden" value={draft.prompt} disabled={running} onChange={(event) => onChange({ prompt: event.target.value, status: draft.status === "success" ? "draft" : draft.status })} />
             </PromptTextareaFrame>
-          </div>
+          </PromptInput>
         </div>
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border bg-muted/15 px-3 py-2.5">
-        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-destructive" : draft.status === "success" ? statusToneClasses.success.text : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
+        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-destructive" : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
         <Button size="sm" variant={draft.status === "draft" || draft.status === "failed" ? "default" : "outline"} className="shrink-0" disabled={generationDisabled || !draft.prompt.trim() || running || draft.status === "success"} onClick={onRun}>
-          {running ? <LoaderCircle className="animate-spin" /> : draft.status === "success" ? <CircleCheck /> : <Play />}
+          {running ? <Spinner /> : draft.status === "success" ? <CircleCheck /> : <Play />}
           {running ? "生成中" : draft.status === "success" ? "已生成" : "生成此图"}
         </Button>
       </div>
-    </article>
+    </Card>
   );
 }
 
@@ -2767,7 +3138,7 @@ function WorkflowVariableInput({ variable, value, onChange }: { variable: Workfl
   const label = variable.label || variable.key;
   return (
     <div className="grid min-w-0 gap-2 text-xs">
-      <label htmlFor={inputID} className="font-medium">{label}{variable.required ? <span className="ml-1 text-destructive">*</span> : null}</label>
+      <Label htmlFor={inputID} className="font-medium">{label}{variable.required ? <span className="ml-1 text-destructive">*</span> : null}</Label>
       {variable.type === "textarea" ? (
         <Textarea id={inputID} required={variable.required} rows={3} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} />
       ) : variable.type === "select" ? (
@@ -2776,10 +3147,10 @@ function WorkflowVariableInput({ variable, value, onChange }: { variable: Workfl
           <SelectContent><SelectItem value="__none">请选择</SelectItem>{variable.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
         </Select>
       ) : variable.type === "boolean" ? (
-        <div className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3">
+        <Card className="flex min-h-10 items-center justify-between gap-3 px-3 p-0 flex-row">
           <span className="text-muted-foreground">{value === "true" ? "已开启" : "已关闭"}</span>
           <Checkbox id={inputID} aria-label={label} aria-required={variable.required} checked={value === "true"} onCheckedChange={(checked) => onChange(checked === true ? "true" : "false")} />
-        </div>
+        </Card>
       ) : (
         <Input id={inputID} required={variable.required} type={variable.type === "number" ? "number" : "text"} value={value} placeholder={variable.placeholder || variable.default_value} onChange={(event) => onChange(event.target.value)} />
       )}
@@ -2797,12 +3168,14 @@ type AgentDialogProps = {
   draft: CreativeWorkflow | null;
   warnings: string[];
   busy: boolean;
+  activeID?: string;
   onPromptChange: (value: string) => void;
   onScopeChange: (value: "private" | "public") => void;
   onModelChange: (value: string) => void;
   onAssetsOpen: () => void;
   onReferencesAdd: (files: FileList | null) => void;
   onReferenceRemove: (id: string) => void;
+  onRecovered: (response: Awaited<ReturnType<typeof draftWorkflowWithAgent>>) => void;
   onRun: () => void;
   onApply: () => void;
   onClose: () => void;
@@ -2818,12 +3191,14 @@ function AgentDialog({
   draft,
   warnings,
   busy,
+  activeID,
   onPromptChange,
   onScopeChange,
   onModelChange,
   onAssetsOpen,
   onReferencesAdd,
   onReferenceRemove,
+  onRecovered,
   onRun,
   onApply,
   onClose,
@@ -2832,38 +3207,37 @@ function AgentDialog({
   const textModelOptions = configuredModelNames(models?.text_models);
   const modelAvailable = isWorkflowModelConfigured(model, textModelOptions);
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
-      <DialogContent className="w-[min(96vw,980px)]">
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="w-[min(96vw,980px)] sm:max-w-none">
         <DialogHeader>
           <DialogTitle>Agent</DialogTitle>
           <DialogDescription>描述创作目标与需要填写的变量，生成草稿后可继续编辑。</DialogDescription>
-        </DialogHeader>
+        </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+        <AgentExecutionRecovery domain="workflow" busy={busy} activeID={activeID} onResult={onRecovered} />
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Select value={scope} onValueChange={onScopeChange}>
+              <Select disabled={busy} value={scope} onValueChange={onScopeChange}>
                 <SelectTrigger aria-label="工作流可见范围"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="private">个人工作流</SelectItem>
                   <SelectItem value="public">公开工作流</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={modelAvailable ? model : ""} disabled={!textModelOptions.length} onValueChange={onModelChange}>
-                <SelectTrigger aria-label="Agent 文本模型"><SelectValue placeholder={textModelOptions.length ? "选择文本模型" : "暂无可用模型"} /></SelectTrigger>
-                <SelectContent>
-                  {textModelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <ModelPicker label="Agent 文本模型" value={model} options={textModelOptions} disabled={busy} onValueChange={onModelChange} placeholder="暂无可用文本模型" />
             </div>
-            <label className="grid gap-2 text-xs font-medium">
-              <span>创作需求 <span className="text-destructive">*</span></span>
-              <Textarea className="min-h-36 sm:min-h-56" rows={6} required value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="例如：创建一个电商海报工作流，只需要输入产品名称、核心卖点、活动信息，固定商业摄影质感和营销文案结构。" />
-            </label>
-            <section className="rounded-lg border border-border p-3">
+            <PromptInput>
+              <InputGroupTextarea aria-label="创作需求" className="min-h-36 sm:min-h-56" rows={6} required disabled={busy} value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="例如：创建一个电商海报工作流，输入产品名称、核心卖点和活动信息，生成摄影方案与营销文案。" />
+              <PromptInputFooter>
+                <span className="text-xs">生成后预览并应用草稿</span>
+                <PromptInputSubmit disabled={busy || !prompt.trim() || !modelAvailable} aria-label="生成工作流草稿" onClick={onRun}>{busy ? <Spinner /> : <Sparkles />}</PromptInputSubmit>
+              </PromptInputFooter>
+            </PromptInput>
+            <Card className="p-3 gap-0">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold">参考图</h3>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={onAssetsOpen}>我的素材</Button>
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}><Upload />上传</Button>
                 </div>
                 <input
@@ -2879,14 +3253,9 @@ function AgentDialog({
                 />
               </div>
               <WorkflowReferenceGrid references={references} className="grid-cols-5" disabled={busy} onRemove={onReferenceRemove} />
-            </section>
-            {busy ? <AgentActivityLine>正在根据需求生成工作流草稿…</AgentActivityLine> : null}
-            <Button className="w-full" disabled={busy || !prompt.trim() || !modelAvailable} onClick={onRun}>
-              {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
-              生成工作流草稿
-            </Button>
+            </Card>
           </div>
-          <aside className="space-y-3 rounded-lg border border-border p-3">
+          <Card className="space-y-3 p-3 gap-0">
             <h3 className="text-sm font-semibold">草稿预览</h3>
             {draft ? (
               <>
@@ -2895,7 +3264,7 @@ function AgentDialog({
                   <p className="mt-1 text-xs text-muted-foreground">{draft.category || "未分类"} · {draft.variables.length} 个变量 · {draft.scope === "public" ? "公开" : "个人"}</p>
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">{draft.description || "暂无描述"}</p>
-                <ScrollArea maxHeight="16rem" className="rounded-lg bg-muted/50" viewportClassName="p-3" viewClass="whitespace-pre-wrap text-xs leading-5">{draft.config.prompt_template}</ScrollArea>
+                <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain" style={{maxHeight: "16rem"}}><div className="min-w-0 whitespace-pre-wrap text-xs leading-5 p-3">{draft.config.prompt_template}</div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                 {warnings.length ? (
                   <AgentNotice className="space-y-1">
                     {warnings.map((warning) => <p key={warning}>{warning}</p>)}
@@ -2906,9 +3275,9 @@ function AgentDialog({
             ) : (
               <EmptyState compact icon={WorkflowIcon} title="草稿将在这里显示" description="填写需求并生成后，确认变量和提示词，再应用到编辑器。" />
             )}
-          </aside>
+          </Card>
         </div>
-        <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>关闭</Button></DialogFooter>
+        </ScrollArea><DialogFooter><Button variant="outline" onClick={onClose}>关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -2926,37 +3295,29 @@ function WorkflowAssetPicker({ open, assets, loading, imageOnly = false, onInser
   });
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="w-[min(94vw,900px)]">
-        <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>{imageOnly ? "选择图片作为工作流的持久风格模板。" : "选择文本填入变量或提示词，选择图片作为参考图。"}</DialogDescription></DialogHeader>
+      <DialogContent className="w-[min(94vw,900px)] sm:max-w-none">
+        <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>{imageOnly ? "选择图片作为工作流的持久风格模板。" : "选择文本填入变量或提示词，选择图片作为参考图。"}</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <SearchInput value={query} onValueChange={setQuery} placeholder="搜索素材名称、内容或标签" />
         <p className="text-xs tabular-nums text-muted-foreground" role="status">{filtered.length} 个{imageOnly ? "图片" : ""}素材 · 点击插入</p>
-        <ScrollArea className="h-[min(58vh,560px)]" viewportClassName="pr-3">
+        <ScrollAreaRoot data-slot="scroll-area" className={cn("h-[min(58vh,560px)]", "group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden")} onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
           {loading && !filtered.length ? (
-            <div className="grid h-48 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
+            <LoadingState className="h-48" label="正在加载素材" />
           ) : filtered.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((asset) => (
-                <button key={assetListKey(asset)} type="button" data-interaction="primary" aria-label={`插入素材 ${asset.title}`} className="interactive-card min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onInsert(asset)}>
+                <Button variant="outline" key={assetListKey(asset)} type="button" aria-label={`插入素材 ${asset.title}`} className="block h-auto justify-start whitespace-normal p-0 min-w-0 overflow-hidden text-left" onClick={() => onInsert(asset)}>
                   <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
                     {asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.coverUrl || asset.url} alt={asset.title} className="size-full object-cover" placeholderClassName="min-h-0" /> : asset.kind === "video" && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content || (asset.kind === "audio" ? "音频素材" : "媒体素材")}</p>}
                   </div>
                   <div className="p-3"><p className="truncate text-sm font-semibold">{asset.title}</p><p className="mt-1 text-xs text-muted-foreground">{asset.kind === "text" ? "文本" : asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "音频"}</p></div>
-                </button>
+                </Button>
               ))}
             </div>
           ) : (
             <EmptyState icon={ImageIcon} title={query.trim() ? "没有匹配的素材" : "暂无可用素材"} description={query.trim() ? "试试其他关键词，或清除搜索查看全部素材。" : "在「我的素材」中添加素材后，即可在这里引用。"} action={query.trim() ? <Button variant="outline" size="sm" onClick={() => setQuery("")}>清除搜索</Button> : undefined} />
           )}
-        </ScrollArea>
-      </DialogContent>
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+      </ScrollArea></DialogContent>
     </Dialog>
   );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">{label}</span>{children}</label>;
-}
-
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return <label className="flex w-full items-center justify-between gap-2 text-xs"><span>{label}</span><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} /></label>;
 }

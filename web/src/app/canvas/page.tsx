@@ -1,6 +1,28 @@
 "use client";
 
-import { OverlaySurface } from "@/components/ui/overlay-layer";
+import { Kbd } from "@/components/ui/kbd";
+import { Separator } from "@/components/ui/separator";
+
+
+import { LabeledField } from "@/components/labeled-field";
+import { Label } from "@/components/ui/label";
+import { mergeCanvasAgentMessageQueues } from "./agent/canvas-agent-message-queue";
+
+import { CodeBlock, CodeBlockContent, CodeBlockCopyButton } from "@/components/ui/code-block";
+
+import { Item, ItemMedia } from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+
+import { Toggle } from "@/components/ui/toggle";
+
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+
+
+import { uploadTemporaryMedia } from "@/services/file-storage";
 
 import { mergeCanvasDocuments, mergeCanvasHistory } from "./canvas-document-merge";
 import { fetchCanvasAgentRun } from "./agent/canvas-agent-backend";
@@ -13,8 +35,8 @@ import { canvasAgentAttachmentURLs } from "./agent/canvas-agent-reference";
 import { waitForCreationTask, CreationTaskTimeoutError } from "@/lib/creation-task-events";
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
-import { Bot, Camera, Check, ChevronDown, CircleDot, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, LoaderCircle, Menu, Music, Paperclip, Pencil, Plus, Redo2, Settings2, SlidersHorizontal, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Bot, Camera, ChevronDown, CircleDot, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, Menu, Music, Paperclip, Pencil, Plus, Redo2, Settings2, SlidersHorizontal, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -28,7 +50,7 @@ import { canvasProjectPath } from "@/lib/canvas-project-route";
 import { CanvasSidePanel, type CanvasSidePanelTab } from "@/app/canvas/canvas-side-panel";
 import { buildCanvasAgentContext, summarizeCanvasAgentNode, summarizeCanvasAgentTask } from "@/app/canvas/agent/canvas-agent-context";
 import { queryCanvasAgentNodes } from "@/app/canvas/agent/canvas-agent-query";
-import { arrangeCanvasAgentNodes, CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE, canvasAgentMediaLayoutSources, canvasAgentNodePosition, canvasAgentSourceNodeIDs, canvasAgentVideoDurationHint, canvasAgentVideoSupportsAudio, validateCanvasAgentVideoSeconds } from "@/app/canvas/agent/canvas-agent-generation";
+import { arrangeCanvasAgentNodes, canvasAgentMediaLayoutSources, canvasAgentNodePosition, canvasAgentSourceNodeIDs, canvasAgentVideoDurationHint, canvasAgentVideoSupportsAudio, validateCanvasAgentVideoSeconds } from "@/app/canvas/agent/canvas-agent-generation";
 import { isCanvasAgentSession, clearCanvasAgentSessionReferences, syncCanvasAgentSessions } from "@/app/canvas/agent/canvas-agent-sessions";
 import type { CanvasAgentAction, CanvasAgentToolResult } from "@/app/canvas/agent/canvas-agent-tools";
 import type { CanvasAgentConfig, CanvasAgentState, CanvasAssistantReference, CanvasAssistantSession, CanvasInsertAssetPayload, CanvasPendingAgentRequest } from "@/app/canvas/agent/canvas-agent-types";
@@ -36,6 +58,9 @@ import { canvasPendingAgentAssetNode, createCanvasPendingAgentAsset, normalizeCa
 import { applyCameraPrompt } from "@/app/canvas/canvas-camera";
 import { CanvasCameraControl } from "@/app/canvas/canvas-camera-control";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
+import { CanvasScriptWorkspace } from "@/app/canvas/canvas-script-workspace";
+import { CanvasScriptActions, CanvasScriptPromptPanel } from "@/app/canvas/canvas-script-node";
+import { concatenateScriptPrompts, createScriptProject, parseGeneratedScript, parseScriptPrompts, scriptAssetImage, scriptAssetConnections, scriptAssetsToGenerate, type ScriptAssetGeneration, scriptGenerationInstruction, scriptCanGenerateMedia, scriptPromptInstruction, scriptMediaPlan } from "@/app/canvas/canvas-script";
 import { CanvasDirector, type CanvasDirectorCapture, type CanvasDirectorPanorama, type CanvasDirectorVideo } from "@/app/canvas/canvas-director";
 import { fitDirectorVideoNodeSize, getNextDirectorOutputY } from "@/app/canvas/canvas-director-output";
 import { buildCanvasAudioGenerationRequest, canvasAgentAudioNodeParameters, canvasAudioGenerationReferences, canvasAudioProvider, canvasAudioReferences, canvasAudioResponseFormat, isCanvasAudioFile, resolveCanvasAudioModel, type CanvasAudioReference } from "@/app/canvas/canvas-audio";
@@ -48,7 +73,7 @@ import { canvasGenerationActiveNodeID, placeCanvasGenerationResultNodes, setCanv
 import { canvasTextGenerationPlan, resolveCanvasTextModel } from "@/app/canvas/canvas-text-generation";
 import { appendCanvasHistorySnapshot, canvasHistoryKey, canvasHistoryLeaseExpired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "@/app/canvas/canvas-history";
 import { canvasImageAngleLabel, canvasImageAnglePrompt, cropCanvasImage, splitCanvasImage, upscaleCanvasImage, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
-import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "@/app/canvas/canvas-node-geometry";
+import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasEmptyMediaNodeFrame, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "@/app/canvas/canvas-node-geometry";
 import { canvasGenerationStatusLabel, canvasNodeInfoJSON } from "@/app/canvas/canvas-node-info";
 import { CANVAS_GROUP_PADDING, canvasNodeBounds, expandCanvasRemovalNodeIDs, expandCanvasGroupNodeIDs } from "@/app/canvas/canvas-groups";
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
@@ -88,7 +113,7 @@ import {
 } from "@/components/relay-token-required-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { CanvasNodeInputToolbar } from "@/app/canvas/canvas-node-input-toolbar";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -96,13 +121,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CanvasEmptyState } from "./canvas-empty-state";
 import { CANVAS_AGENT_WIDTH, canvasWorkspaceControlsStacked, type CanvasTool } from "./canvas-workspace-layout";
 import { CANVAS_DOCK_BREAKPOINT, CANVAS_DOCK_MIN_WIDTH, CANVAS_DOCK_COMPACT_WIDTH, CANVAS_DOCK_WIDTH, CanvasNodeCreatePalette, CanvasWorkspaceControls, type CanvasCreatableNodeType } from "@/app/canvas/canvas-workspace-controls";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipHint } from "@/components/ui/tooltip";
 import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
 import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
 import { configuredModelNames } from "@/lib/model-config-selection";
-import { isPublicReferenceURL } from "@/lib/public-reference-url";
+import { isPublicHTTPSReferenceURL, isPublicReferenceURL } from "@/lib/public-reference-url";
 import { AutoDLWorkflowFields } from "@/components/autodl-workflow-fields";
 import { isAutoDLRelay } from "@/services/api/autodl";
 import { prepareImageEditReferences } from "@/lib/image-edit-references";
@@ -112,7 +137,7 @@ import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { activateCanvasTaskQueueSession, clearCanvasTaskQueueForCanvas, clearCanvasTaskQueueForSession, syncCanvasTaskQueue } from "@/store/canvas-task-queue";
-import { resolveConfiguredVideoModel, resolveVideoSeconds, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, resolveVideoSeconds, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultReferenceMode, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoModelRequiresHTTPSReferences, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchDisplayResolution, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
 import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
 import {
@@ -125,6 +150,7 @@ import {
   type CanvasDocument,
   type CanvasNode,
   type CanvasProjectSummary,
+  type CanvasScriptProject,
   type CanvasWorkspaceResponse,
 } from "@/services/api/canvas";
 import { resolveMediaURL, uploadMediaBlob } from "@/services/file-storage";
@@ -139,16 +165,16 @@ import { CanvasCropDialog, CanvasSplitDialog, CanvasUpscaleDialog, CanvasAngleDi
 import { CanvasMaskDialog } from "@/app/canvas/canvas-mask-dialog";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { LoadingState } from "@/components/ui/loading-state";
-import { statusToneClasses } from "@/components/ui/status-tone";
+import { Spinner } from "@/components/ui/spinner";
 
 type CanvasSwitchPhase = "switching" | "revealing" | null;
 type ConnectionOrigin = { nodeID: string; handleType: "source" | "target" };
 type PendingConnectionCreate = ConnectionOrigin & { position: { x: number; y: number }; menu: { x: number; y: number } };
 type CanvasNodeCreateMenu = { position: { x: number; y: number }; menu: { x: number; y: number } };
 type CanvasContextMenu =
-  | { type: "canvas"; x: number; y: number; position: { x: number; y: number } }
-  | { type: "node"; x: number; y: number; nodeID: string }
-  | { type: "connection"; x: number; y: number; connectionID: string };
+  | { type: "canvas"; position: { x: number; y: number } }
+  | { type: "node"; nodeID: string }
+  | { type: "connection"; connectionID: string };
 type CanvasImageToolState = { kind: "crop" | "split" | "upscale" | "mask" | "angle"; nodeID: string; sourceURL: string };
 type PendingPanoramaImport = {
   url: string;
@@ -329,6 +355,7 @@ function canvasNodeFallbackTitle(type: CanvasNode["type"]) {
   if (type === "config") return "生成配置";
   if (type === "audio") return "音频";
   if (type === "panorama") return "全景图";
+  if (type === "script") return "脚本";
   if (type === "director") return "导演台";
   if (type === "group") return "组";
   return "文字";
@@ -347,7 +374,6 @@ function canvasVideoParameters(node?: CanvasNode | null) {
 	const model = node?.generation_video_model || "";
 	const sizes = videoSizeOptions(model);
 	const normalizedSeconds = resolveVideoSeconds(model, node?.generation_video_seconds);
-	const resolutions = videoResolutionOptions(model);
 	const defaultSize = videoDefaultSize(model);
 	const storedSize = String(node?.generation_video_size || "");
 	const normalizedSize = sizes.includes(storedSize) ? storedSize : defaultSize;
@@ -356,10 +382,12 @@ function canvasVideoParameters(node?: CanvasNode | null) {
 		generation_video_size: normalizedSize,
 		generation_video_seconds: normalizedSeconds,
     generation_video_parameters: node?.generation_video_parameters,
-			generation_video_resolution: resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : videoDefaultResolution(model),
+			generation_video_resolution: videoWorkbenchDisplayResolution(model, node?.generation_video_resolution || ""),
 	    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? false) : videoAudioControl(model) === "always",
 	    generation_video_watermark: node?.generation_video_watermark ?? false,
-			generation_video_reference_mode: node?.generation_video_reference_mode === "reference" ? "reference" as const : "first-frame" as const,
+			generation_video_reference_mode: node?.generation_video_reference_mode === "reference" && supportsVideoMultimodalReferences(model)
+				? "reference" as const
+				: videoDefaultReferenceMode(model),
 		generation_video_reference_image_urls: Array.isArray(node?.generation_video_reference_image_urls) ? node.generation_video_reference_image_urls : [],
     generation_video_reference_urls: Array.isArray(node?.generation_video_reference_urls) ? node.generation_video_reference_urls : [],
 			generation_video_reference_audio_urls: Array.isArray(node?.generation_video_reference_audio_urls) ? node.generation_video_reference_audio_urls : [],
@@ -380,7 +408,7 @@ function canvasVideoModelPatch(model: string) {
     generation_video_seconds: seconds,
     generation_video_parameters: {},
     generation_video_resolution: resolutions[0] || videoDefaultResolution(model),
-    generation_video_reference_mode: "first-frame" as const,
+    generation_video_reference_mode: videoDefaultReferenceMode(model),
   };
 }
 
@@ -531,7 +559,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const workflowFields = <AutoDLWorkflowFields tokenName={relayTokenName} model={params.generation_video_model} value={node.generation_workflow_inputs || {}} onChange={(generation_workflow_inputs) => onParametersChange({ generation_workflow_inputs })} disabled={running} />;
   return <div className="flex h-full min-h-0 flex-col gap-2">
     {showPromptEditor ? <PromptTextareaFrame className="min-h-0 flex-1">
-      <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" containerClassName="min-h-full" className="min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
+      <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" containerClassName="min-h-full" className="min-h-full w-full resize-none overflow-hidden" />
     </PromptTextareaFrame> : null}
     <CanvasNodeInputToolbar action={showGenerateFooter ? <CanvasGenerationFooter
       running={running}
@@ -541,9 +569,9 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
     /> : undefined}>
       {showPromptEditor ? <CanvasInlineModelSelect value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /> : null}
       <CanvasParameterPopover icon={<SlidersHorizontal />} label="视频参数" summary={parameterSummary} width={440}>
-        {referencePanelVisible ? <div role="group" aria-label="视频设置分类" className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
-          <button type="button" aria-pressed={parameterSection === "output"} className={cn("flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-medium transition-colors", parameterSection === "output" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setParameterSection("output")}><Video className="size-3.5" />视频参数</button>
-          <button type="button" aria-pressed={parameterSection === "references"} className={cn("flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-medium transition-colors", parameterSection === "references" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setParameterSection("references")}><Paperclip className="size-3.5" />参考素材</button>
+        {referencePanelVisible ? <div role="group" aria-label="视频设置分类" className="mb-4 grid grid-cols-2 gap-1 p-1">
+          <Toggle  type="button" pressed={parameterSection === "output"} className="flex items-center justify-center" onClick={() => setParameterSection("output")}><Video  />视频参数</Toggle>
+          <Toggle  type="button" pressed={parameterSection === "references"} className="flex items-center justify-center" onClick={() => setParameterSection("references")}><Paperclip  />参考素材</Toggle>
         </div> : null}
         <div hidden={referencePanelVisible && parameterSection !== "output"} className="space-y-4 text-xs">
           {workflowFields}
@@ -645,7 +673,7 @@ function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, mod
           aria-label="文本生成要求"
           placeholder="输入生成或修改要求，@ 引用画布节点"
           containerClassName="min-h-full"
-          className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground/55"
+          className="min-h-full resize-none overflow-hidden"
         />
       </PromptTextareaFrame>
       <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} stopping={cancelling} disabled={running ? cancelling : !canGenerate} onGenerate={onGenerate} onStop={onStop} />}>
@@ -701,7 +729,7 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
           aria-label="图片生成要求"
           placeholder={editingExistingImage ? "描述你想如何修改这张图，@ 引用画布节点" : "描述要生成的图片，@ 引用画布节点"}
           containerClassName="min-h-full"
-          className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground/55"
+          className="min-h-full resize-none overflow-hidden"
         />
       </PromptTextareaFrame>
       <CanvasNodeInputToolbar action={<CanvasGenerationFooter
@@ -713,7 +741,7 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
         />}>
         <CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => onParametersChange({ generation_model })} />
         <CanvasImageParameterPopover node={node} imageModel={imageModel} imageModels={imageModels} onChange={onParametersChange} showModel={false} />
-        <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 shrink-0 text-xs" />
+        <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="h-8 shrink-0" />
         <CanvasPromptLibrary onSelect={updatePrompt} />
       </CanvasNodeInputToolbar>
     </div>
@@ -730,6 +758,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const documentRef = useRef(cloneDocument(DEFAULT_DOCUMENT));
   const serverDocumentRef = useRef(cloneDocument(DEFAULT_DOCUMENT));
   const [backendAgentRun, setBackendAgentRun] = useState<CanvasDocument["agent_run"]>();
+  const [agentLocallyObserving, setAgentLocallyObserving] = useState(false);
   const backendSnapshotRef = useRef<(document: CanvasDocument) => void>(() => {});
   const nodesRef = useRef<CanvasNode[]>([]);
   const connectionsRef = useRef<CanvasConnection[]>([]);
@@ -752,6 +781,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const switchRevealTimerRef = useRef<number | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const temporaryUploadRef = useRef(false);
+  const batchUploadRef = useRef(false);
   const uploadNodeIDRef = useRef("");
   const uploadPositionRef = useRef<{ x: number; y: number } | null>(null);
   const cancelledTaskIDsRef = useRef(new Set<string>());
@@ -797,6 +828,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [initialAgentRequest, setInitialAgentRequest] = useState<{ prompt: string; references: CanvasAssistantReference[] } | null>(null);
   const [agentReferenceNodeClick, setAgentReferenceNodeClick] = useState<{ nodeID: string | null; version: number }>({ nodeID: null, version: 0 });
   const [agentConfig, setAgentConfig] = useState<CanvasAgentConfig | null>(null);
+  const [openScriptNodeID, setOpenScriptNodeID] = useState("");
   const [openDirectorNodeID, setOpenDirectorNodeID] = useState("");
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryImages, setLibraryImages] = useState<ManagedImage[]>([]);
@@ -819,6 +851,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [uploadingNodeID, setUploadingNodeID] = useState("");
   const [nodeInfoID, setNodeInfoID] = useState("");
   const nodeInfo = nodes.find((node) => node.id === nodeInfoID);
+  const contextMenuTriggerID = useId();
   const [contextMenu, setContextMenu] = useState<CanvasContextMenu | null>(null);
   const [runningNodeID, setRunningNodeID] = useState("");
   const [runningResultNodeID, setRunningResultNodeID] = useState("");
@@ -844,6 +877,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [videoModels, setVideoModels] = useState<string[]>([]);
   const [audioModel, setAudioModel] = useState("gpt-4o-mini-tts");
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
+  const defaultCanvasModelsRef = useRef({ imageModel: "", textModel: "gpt-5.5", videoModel: "" });
   const { tokenNameForModel, nextTokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
@@ -896,6 +930,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   const resolvedAgentConfig = useMemo(() => normalizeCanvasAgentConfig(agentConfig), [agentConfig]);
 
+  const openScriptNode = nodes.find((node) => node.id === openScriptNodeID && node.type === "script") || null;
   const openDirectorNode = openDirectorNodeID
     ? nodes.find((node) => node.id === openDirectorNodeID && node.type === "director") || null
     : null;
@@ -948,11 +983,18 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           const personalAudioModel = configuredAudioModels.includes(imageGenerationPreferences.default_audio_model)
             ? imageGenerationPreferences.default_audio_model
             : config.default_audio_model;
-          setImageModel(resolveCanvasImageModel(personalImageModel, configuredImageModels));
+          const defaults = {
+            imageModel: resolveCanvasImageModel(personalImageModel, configuredImageModels),
+            textModel: resolveCanvasTextModel(personalTextModel, configuredTextModels),
+            videoModel: personalVideoModel,
+          };
+          defaultCanvasModelsRef.current = defaults;
+          const saved = storedCanvasAgentConfig(documentRef.current);
+          setImageModel(saved?.imageModel || defaults.imageModel);
           setImageModels(configuredImageModels);
-          setTextModel(resolveCanvasTextModel(personalTextModel, configuredTextModels));
+          setTextModel(saved?.textModel || defaults.textModel);
           setTextModels(configuredTextModels);
-          setVideoModel(personalVideoModel);
+          setVideoModel(saved?.videoModel || defaults.videoModel);
           setVideoModels(configuredVideoModels);
           setAudioModel(resolveCanvasAudioModel(personalAudioModel, configuredAudioModels));
           setAudioModels(configuredAudioModels);
@@ -1102,6 +1144,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     scheduleSave();
   }
 
+  function updateCanvasAgentConfig(patch: Partial<CanvasAgentConfig>) {
+    if (documentRef.current.id !== renderedCanvasID) return;
+    const next = { ...normalizeCanvasAgentConfig(documentRef.current.agent_config), ...patch };
+    setAgentConfig(next);
+    documentRef.current = { ...documentRef.current, agent_config: next };
+    scheduleSave();
+  }
+
   function captureDocument(): CanvasDocument {
     return {
       ...documentRef.current,
@@ -1222,7 +1272,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   async function persistGenerationCheckpoint() {
     scheduleSave();
-    if (!await flushCanvasSaves({ save: persistCanvas, getChangeVersion: () => saveChangeVersionRef.current, getProjectID: () => documentRef.current.id })) {
+    const projectID = documentRef.current.id;
+    if (!await persistCanvas() || documentRef.current.id !== projectID) {
       throw new Error("执行记录保存失败，请重试后继续生成");
     }
   }
@@ -1234,7 +1285,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const merged = mergeCanvasDocuments(serverDocumentRef.current, local, document);
     if (serverDocumentRef.current.agent_run?.status === "running" || document.agent_run?.status === "running") {
       const snapshots = new Set([...historyRef.current, ...redoRef.current, ...(generationHistoryBaseRef.current || [])]);
-      for (const snapshot of snapshots) Object.assign(snapshot, mergeCanvasHistory(serverDocumentRef.current, local, snapshot, document));
+      const serverChanges = mergeCanvasDocuments(local, serverDocumentRef.current, document);
+      for (const snapshot of snapshots) Object.assign(snapshot, mergeCanvasHistory(serverDocumentRef.current, local, snapshot, document, serverChanges));
     }
     serverDocumentRef.current = cloneDocument(document);
     documentRef.current = merged;
@@ -1250,7 +1302,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   backendSnapshotRef.current = applyBackendAgentDocument;
 
   useEffect(() => {
-    if (backendAgentRun?.status !== "running") return;
+    if (backendAgentRun?.status !== "running" || agentLocallyObserving) return;
     const projectID = documentRef.current.id;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -1263,7 +1315,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
     void refresh();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [backendAgentRun?.id, backendAgentRun?.status]);
+  }, [backendAgentRun?.id, backendAgentRun?.status, agentLocallyObserving]);
 
   function applyDocument(document: CanvasDocument, resetHistory = true) {
     serverDocumentRef.current = cloneDocument(document);
@@ -1271,6 +1323,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     loadedRef.current = false;
     canvasOperationEpochRef.current += 1;
     cancelCanvasMediaOperations();
+    setOpenScriptNodeID("");
     canvasRecoveryAbortControllerRef.current?.abort();
     canvasRecoveryAbortControllerRef.current = null;
     const recoveryTaskIDs = [...new Set((document.nodes || []).flatMap((node) => (
@@ -1279,7 +1332,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     const next = cloneDocument({
       ...document,
-      nodes: (document.nodes || []).map((node) => normalizeCanvasNodeTitle(normalizeCanvasVideoNode(node))),
+      nodes: (document.nodes || []).map((node) => canvasEmptyMediaNodeFrame(normalizeCanvasNodeTitle(normalizeCanvasVideoNode(node)))),
       connections: document.connections || [],
     });
     const restoredAgentSessions = storedCanvasAgentSessions(next);
@@ -1300,6 +1353,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setBackground(backgroundRef.current);
     setShowImageInfo(showImageInfoRef.current);
     setAgentConfig(storedCanvasAgentConfig(next));
+    const savedModels = storedCanvasAgentConfig(next);
+    setImageModel(savedModels?.imageModel || defaultCanvasModelsRef.current.imageModel);
+    setTextModel(savedModels?.textModel || defaultCanvasModelsRef.current.textModel);
+    setVideoModel(savedModels?.videoModel || defaultCanvasModelsRef.current.videoModel);
     setAgentSessions(restoredAgentSessions);
     setActiveAgentSessionID(restoredActiveAgentSessionID);
     setAgentOpen(next.agent_panel?.open === true);
@@ -1438,7 +1495,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         : node.type === "video" && typeof patch.generation_video_size === "string"
           ? patch.generation_video_size
           : "";
-      if ((node.type !== "image" && node.type !== "video") || node.url || !size) return next;
+      if ((node.type !== "image" && node.type !== "video") || node.url || node.free_resize || !size) return next;
       const defaults = CANVAS_NODE_DEFAULT_SIZE[node.type];
       const frame = canvasEmptyImageFrameFromSize(node, size, defaults.width, defaults.height);
       return frame ? { ...next, ...frame } : next;
@@ -1635,7 +1692,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
 
   function addBlankNodeAt(point: { x: number; y: number }) {
-    const node = { id: `image-${randomID()}`, type: "image" as const, x: point.x, y: point.y, width: 340, height: 240, scale_x: 1, scale_y: 1, title: "图片", prompt: "", ...preferredCanvasImageParameters(), created_at: createdAt() };
+    const node = canvasEmptyMediaNodeFrame({ id: `image-${randomID()}`, type: "image" as const, x: point.x, y: point.y, width: 340, height: 240, scale_x: 1, scale_y: 1, title: "图片", prompt: "", ...preferredCanvasImageParameters(), created_at: createdAt() });
     addNode(node);
     setPanelNodeID(node.id);
   }
@@ -1903,12 +1960,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (!(["image", "panorama", "video", "audio"] as CanvasNode["type"][]).includes(node.type)) return { ok: false, code: "not_media_node", message: `节点 ${nodeID} 不是媒体节点` };
       return { ok: true, ...summarizeCanvasAgentTask(node) };
     }
-    if (action.name === "create_primary_script_node" || action.name === "create_text_node") {
+    if (action.name === "create_text_node") {
       const sourceNodeIDs = stringValues("sourceNodeIds");
       const missing = missingNodeID(sourceNodeIDs);
       if (missing) return missingNode(missing);
       const sourceNodes = sourceNodeIDs.map((nodeID) => getNode(nodeID)!);
-      const size = action.name === "create_primary_script_node" ? CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE : CANVAS_NODE_DEFAULT_SIZE.text;
+      const size = CANVAS_NODE_DEFAULT_SIZE.text;
       const point = sourcePosition(sourceNodes, size);
       const content = stringValue("content");
       const node: CanvasNode = { id: `text-${randomID()}`, type: "text", ...point, ...size, font_size: 14, scale_x: 1, scale_y: 1, title: stringValue("title") || content.slice(0, 32) || "文字", prompt: content, generation_status: "success", created_at: createdAt() };
@@ -1916,14 +1973,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       replaceNodes([...nodesRef.current, node]);
       replaceConnections([...connectionsRef.current, ...createdConnections]);
       selectOnly(node.id);
-      if (action.name === "create_primary_script_node" && autoTitlePending) {
-        const projectTitle = stringValue("projectTitle");
-        if (projectTitle) {
-          titleRef.current = projectTitle;
-          setTitle(projectTitle);
-        }
-        documentRef.current = { ...documentRef.current, agent_auto_title_pending: false };
-      }
       pushHistory();
       return { ok: true, nodeId: node.id, connectionIds: createdConnections.map((connection) => connection.id), node: summarizeCanvasAgentNode(node) };
     }
@@ -1946,10 +1995,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       return { ok: true, nodeId: nodeID, node: summarizeCanvasAgentNode(nextNodes.find((node) => node.id === nodeID)!) };
     }
     if (action.name === "delete_node") {
-      const nodeID = stringValue("nodeId");
-      if (!getNode(nodeID)) return missingNode(nodeID);
+      const nodeIDs = Array.isArray(action.arguments.nodeIds) ? action.arguments.nodeIds as string[] : [stringValue("nodeId")];
+      for (const nodeID of nodeIDs) if (!getNode(nodeID)) return missingNode(nodeID);
       const before = nodesRef.current.map((node) => node.id);
-      removeNodes(new Set([nodeID]));
+      removeNodes(new Set(nodeIDs));
       const remaining = new Set(nodesRef.current.map((node) => node.id));
       return { ok: true, deletedNodeIds: before.filter((id) => !remaining.has(id)) };
     }
@@ -2035,7 +2084,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const videoSize = mediaSettings.parameters.generation_video_size || "";
       const size = type === "video"
         ? canvasNodeSizeFromRatio(videoSize, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video
-        : CANVAS_NODE_DEFAULT_SIZE[type];
+        : type === "image" ? canvasNodeSizeFromRatio(mediaSettings.parameters.generation_size || "", CANVAS_NODE_DEFAULT_SIZE.image.width, CANVAS_NODE_DEFAULT_SIZE.image.height) || CANVAS_NODE_DEFAULT_SIZE.image : CANVAS_NODE_DEFAULT_SIZE[type];
       const layoutSourceNodes = canvasAgentMediaLayoutSources(type, nodesRef.current, sourceNodes);
       const point = sourcePosition(layoutSourceNodes, size);
       const prompt = stringValue("prompt");
@@ -2147,14 +2196,18 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (uploadingNodeID) return;
     const target = nodesRef.current.find((node) => node.id === nodeID);
     if (target?.type !== "image" && target?.type !== "panorama" && target?.type !== "video" && target?.type !== "audio") return;
+    temporaryUploadRef.current = false;
+    if (imageInputRef.current) imageInputRef.current.multiple = false;
     uploadNodeIDRef.current = nodeID;
     uploadPositionRef.current = null;
     imageInputRef.current?.click();
   }
 
-  function requestCanvasImageUpload(position?: { x: number; y: number }) {
+  function requestCanvasImageUpload(position?: { x: number; y: number }, temporary = false) {
     if (uploadingNodeID) return;
     const rect = hostRef.current?.getBoundingClientRect();
+    temporaryUploadRef.current = temporary;
+    if (imageInputRef.current) imageInputRef.current.multiple = true;
     uploadNodeIDRef.current = "";
     uploadPositionRef.current = position || {
       x: ((rect?.width || 640) / 2 - viewportRef.current.x) / viewportRef.current.zoom,
@@ -2164,25 +2217,35 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function handleNodeImageUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
     const nodeID = uploadNodeIDRef.current;
-    const position = uploadPositionRef.current;
+    const position = uploadPositionRef.current || canvasCenterPosition();
+    const temporary = temporaryUploadRef.current;
     uploadNodeIDRef.current = "";
     uploadPositionRef.current = null;
-    if (!file) return;
-    if (isCanvasAudioFile(file)) {
-      await uploadAudioFile(file, nodeID, position || undefined);
-      return;
-    }
-    if (file.type.startsWith("video/") || /\.(mp4|mov)$/i.test(file.name)) {
-      await uploadVideoFile(file, nodeID, position || undefined);
-      return;
-    }
-    await uploadImageFile(file, nodeID, position || undefined);
+    temporaryUploadRef.current = false;
+    await uploadCanvasFiles(nodeID ? files.slice(0, 1) : files, position, nodeID, temporary);
   }
 
-  async function uploadVideoFile(file: File, nodeID = "", position?: { x: number; y: number }) {
+  async function uploadCanvasFiles(files: File[], position: { x: number; y: number }, nodeID = "", temporary = false) {
+    if (batchUploadRef.current || uploadingNodeID) return;
+    batchUploadRef.current = true;
+    const projectID = documentRef.current.id;
+    const epoch = canvasOperationEpochRef.current;
+    try {
+      for (const [index, file] of files.entries()) {
+        if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== epoch) break;
+        const point = { x: position.x + index % 3 * 440, y: position.y + Math.floor(index / 3) * 400 };
+        if (isCanvasAudioFile(file)) await uploadAudioFile(file, nodeID, point, temporary);
+        else if (file.type.startsWith("video/") || /\.(mp4|mov)$/i.test(file.name)) await uploadVideoFile(file, nodeID, point, temporary);
+        else if (file.type.startsWith("image/")) await uploadImageFile(file, nodeID, point, temporary);
+        else toast.error(`不支持的素材：${file.name}`);
+      }
+    } finally { batchUploadRef.current = false; }
+  }
+
+  async function uploadVideoFile(file: File, nodeID = "", position?: { x: number; y: number }, temporary = false) {
     if (uploadingNodeID) return toast.error("已有素材正在上传");
     const validationError = canvasVideoFileError(file);
     if (validationError) return toast.error(validationError);
@@ -2192,7 +2255,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const uploaded = await uploadMediaBlob(file, file.name);
+      const uploaded = temporary ? await uploadTemporaryMedia(file) : await uploadMediaBlob(file, file.name);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) return;
       const target = nodeID ? nodesRef.current.find((node) => node.id === nodeID && node.type === "video") : null;
       if (nodeID && !target) return;
@@ -2249,7 +2312,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function uploadAudioFile(file: File, nodeID = "", position?: { x: number; y: number }) {
+  async function uploadAudioFile(file: File, nodeID = "", position?: { x: number; y: number }, temporary = false) {
     if (uploadingNodeID) return toast.error("已有素材正在上传");
     if (!isCanvasAudioFile(file)) return toast.error("请选择音频文件");
     const initialTarget = nodeID ? nodesRef.current.find((node) => node.id === nodeID && node.type === "audio") : null;
@@ -2258,7 +2321,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const uploaded = await uploadMediaBlob(file, file.name);
+      const uploaded = temporary ? await uploadTemporaryMedia(file) : await uploadMediaBlob(file, file.name);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) return;
       const target = nodeID ? nodesRef.current.find((node) => node.id === nodeID && node.type === "audio") : null;
       if (nodeID && !target) return;
@@ -2318,7 +2381,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  async function uploadImageFile(file: File, nodeID = "", position?: { x: number; y: number }) {
+  async function uploadImageFile(file: File, nodeID = "", position?: { x: number; y: number }, temporary = false) {
     if (uploadingNodeID) return toast.error("已有图片正在上传");
     if (!file.type.startsWith("image/")) return toast.error("请选择图片文件");
     const initialTarget = nodeID ? nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "panorama")) : null;
@@ -2327,8 +2390,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const uploaded = await uploadImage(file);
-      const sourceSize = uploaded;
+      const uploaded = temporary ? await uploadTemporaryMedia(file) : await uploadImage(file);
+      const sourceSize = { width: uploaded.width || 1024, height: uploaded.height || 1024 };
       await primeAuthenticatedImageCache(uploaded.url, file);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) {
         void refreshLibrary();
@@ -2483,17 +2546,22 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     else if (type === "image") addBlankNodeAt(point);
     else if (type === "audio") addAudioNodeAt(point);
     else if (type === "panorama") addPanoramaNodeAt(point);
+    else if (type === "script") {
+      const node: CanvasNode = { id: `script-${randomID()}`, type: "script", ...point, ...CANVAS_NODE_DEFAULT_SIZE.script, scale_x: 1, scale_y: 1, title: "脚本", prompt: "", generation_text_model: textModel, script_project: createScriptProject(), created_at: createdAt() };
+      addNode(node);
+      setPanelNodeID(node.id);
+    }
     else if (type === "director") addDirectorNodeAt(point);
     else if (type === "config") addConfigNodeAt(point);
     else addBlankVideoNodeAt(point);
   }
 
-  function createPendingNode(type: "text" | "image" | "video" | "audio" | "panorama" | "director" | "config") {
+  function createPendingNode(type: CanvasCreatableNodeType) {
     if (!pendingConnection) return;
     const size = type === "video"
       ? canvasNodeSizeFromRatio(canvasVideoParameters({ generation_video_model: videoModel, generation_video_audio: imageGenerationPreferences.workbench.video_generate_audio } as CanvasNode).generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video
       : CANVAS_NODE_DEFAULT_SIZE[type];
-    const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - size.width / 2, y: pendingConnection.position.y - size.height / 2, ...size, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" || type === "panorama" || type === "config" ? preferredCanvasImageParameters() : type === "video" ? canvasVideoParameters({ generation_video_model: videoModel, generation_video_audio: imageGenerationPreferences.workbench.video_generate_audio } as CanvasNode) : type === "audio" ? preferredCanvasAudioParameters() : {}), ...(type === "config" ? { generation_mode: "image" as const, generation_model: imageModel } : {}), ...(type === "panorama" ? { generation_size: "2:1" } : {}), created_at: createdAt() };
+    const node: CanvasNode = canvasEmptyMediaNodeFrame({ id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - size.width / 2, y: pendingConnection.position.y - size.height / 2, ...size, ...(type === "text" ? { font_size: 14 } : {}), ...(type === "script" ? { generation_text_model: textModel, script_project: createScriptProject() } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" || type === "panorama" || type === "config" ? preferredCanvasImageParameters() : type === "video" ? canvasVideoParameters({ generation_video_model: videoModel, generation_video_audio: imageGenerationPreferences.workbench.video_generate_audio } as CanvasNode) : type === "audio" ? preferredCanvasAudioParameters() : {}), ...(type === "config" ? { generation_mode: "image" as const, generation_model: imageModel } : {}), ...(type === "panorama" ? { generation_size: "2:1" } : {}), created_at: createdAt() });
     const connection = resolveCanvasConnection(pendingConnection, node.id, [...nodesRef.current, node]);
     if (!connection || !canConnect(connection.sourceID, connection.targetID)) {
       return toast.error("该节点不能与生成配置节点连接");
@@ -3427,7 +3495,239 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function confirmStopGeneration() {
     const nodeID = stopTargetNodeID;
     setStopTargetNodeID("");
-    if (nodeID) void stopGeneration(nodeID);
+    if (nodesRef.current.some((node) => node.id === nodeID && node.type === "script")) void stopScriptTasks(nodeID);
+    else if (nodeID) void stopGeneration(nodeID);
+  }
+
+  function scriptRelatedNodeIDs(nodeID: string) {
+    const node = nodesRef.current.find((item) => item.id === nodeID);
+    return new Set([nodeID, ...(node?.script_project?.assets.map((asset) => asset.image_node_id) || []), ...(node?.script_project?.shots.flatMap((shot) => [shot.image_node_id, shot.video_node_id]) || []), ...connectionsRef.current.filter((edge) => edge.from_node_id === nodeID).map((edge) => edge.to_node_id)].filter((id): id is string => Boolean(id)));
+  }
+
+  function scriptNodeRunning(nodeID: string) {
+    const related = scriptRelatedNodeIDs(nodeID);
+    return related.has(uploadingNodeID) || nodesRef.current.some((node) => related.has(node.id) && (node.generation_status === "loading" || nodeGenerationRunning(node.id)));
+  }
+
+  function stopScriptGenerations(nodeID: string) {
+    if (scriptNodeRunning(nodeID)) setStopTargetNodeID(nodeID);
+  }
+
+  async function stopScriptTasks(nodeID: string) {
+    const projectID = documentRef.current.id;
+    const epoch = canvasOperationEpochRef.current;
+    const related = scriptRelatedNodeIDs(nodeID);
+    const recovering = nodesRef.current.filter((node) => related.has(node.id) && node.generation_status === "loading" && !activeGenerationsRef.current.has(node.id));
+    try {
+      await Promise.all([...related].map((id) => stopGeneration(id)));
+      const taskIDs = [...new Set(recovering.map((node) => node.task_id).filter((id): id is string => Boolean(id)))];
+      if (taskIDs.length) await stopCreationTasks(taskIDs, undefined, session.key);
+      if (!mountedRef.current || documentRef.current.id !== projectID || canvasOperationEpochRef.current !== epoch) return;
+      const recoveringIDs = new Set(recovering.map((node) => node.id));
+      replaceNodes(nodesRef.current.map((node) => recoveringIDs.has(node.id) && node.generation_status === "loading" ? { ...node, script_operation: undefined, generation_status: "idle", generation_error: "" } : node));
+      pushHistory();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "停止脚本任务失败"); }
+  }
+
+  function downloadScript(node: CanvasNode) {
+    const blob = new Blob([JSON.stringify({ title: node.title, story: node.prompt, ...node.script_project }, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${node.title || "脚本"}.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function concatenateScript(nodeID: string, ids: readonly string[]) {
+    const node = nodesRef.current.find((item) => item.id === nodeID);
+    const project = node?.script_project;
+    if (!project || scriptNodeRunning(nodeID)) return;
+    updateNodeGenerationParameters(nodeID, { script_project: { ...project, shots: project.shots.map((shot) => ids.includes(shot.id) ? { ...shot, ...concatenateScriptPrompts(shot, project.assets) } : shot) } });
+  }
+
+  async function runScriptTextGeneration(nodeID: string, kind: "script" | "prompts", shotIDs: string[] = []) {
+    const source = nodesRef.current.find((node) => node.id === nodeID && node.type === "script");
+    if (!source || scriptNodeRunning(nodeID)) return;
+    const model = source.generation_text_model || textModel;
+    if (!textModels.includes(model)) return toast.error("请选择全局模型设置中已启用的文本模型");
+    const relayTokenName = nextTokenNameForModel("text", model);
+    if (!relayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
+    const project = source.script_project || createScriptProject();
+    const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, source.prompt || "");
+    if (kind === "script" && !context.prompt.trim() && !context.referenceImageURLs.length) return toast.error("请描述故事或连接参考素材");
+    if (kind === "prompts" && (!shotIDs.length || project.shots.filter((shot) => shotIDs.includes(shot.id)).some((shot) => !shot.description.trim()))) return toast.error("请先填写镜头画面描述");
+    const instruction = kind === "script" ? scriptGenerationInstruction(context.prompt) : scriptPromptInstruction(project, shotIDs);
+    const projectID = documentRef.current.id;
+    const epoch = canvasOperationEpochRef.current;
+    const current = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === epoch && nodesRef.current.some((node) => node.id === nodeID);
+    const controller = new AbortController();
+    const clientTaskID = `canvas-script-${randomID()}`;
+    const active = registerActiveGeneration(controller, [nodeID], [clientTaskID]);
+    replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, script_project: project, script_operation: { kind, shot_ids: shotIDs }, generation_status: "loading", generation_started_at: Date.now(), generation_error: "", task_id: clientTaskID } : node));
+    try {
+      const referenceURLs = kind === "script" ? context.referenceImageURLs : project.assets.flatMap((asset) => { const image = scriptAssetImage(asset, nodesRef.current); return image?.url ? [image.url] : []; });
+      const messages = await canvasTextGenerationMessages(instruction, referenceURLs, controller.signal);
+      await persistGenerationCheckpoint();
+      controller.signal.throwIfAborted();
+      if (!current()) return;
+      const task = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: instruction, model, messages, stream: true, relayTokenName, requestOptions: { signal: controller.signal } });
+      addActiveGenerationTask(active, task.id || clientTaskID, clientTaskID);
+      if (!current()) return;
+      controller.signal.throwIfAborted();
+      replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, task_id: task.id || clientTaskID } : node));
+      scheduleSave();
+      const completed = await waitForTask(task.id || clientTaskID, undefined, controller.signal);
+      if (!current()) return;
+      controller.signal.throwIfAborted();
+      if (completed.status !== "success") throw new Error(completed.error || "脚本生成失败");
+      const content = (completed.data || []).map((item) => item.text_response || "").join("\n");
+      const nextProject = kind === "script" ? parseGeneratedScript(content) : parseScriptPrompts(content, project, shotIDs);
+      replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, script_project: nextProject, script_operation: undefined, generation_status: "success", generation_progress: 100, generation_error: "" } : node));
+      pushHistory();
+      toast.success(kind === "script" ? "分镜脚本已生成" : "提示词已合成");
+    } catch (error) {
+      if (!current()) return;
+      const message = error instanceof Error ? error.message : "脚本生成失败";
+      replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, script_operation: undefined, generation_status: controller.signal.aborted ? "idle" : "error", generation_error: controller.signal.aborted ? "" : message } : node));
+      pushHistory();
+      if (!controller.signal.aborted) toast.error(message);
+    } finally { completeActiveGeneration(active); }
+  }
+
+  function updateScriptProject(nodeID: string, project: CanvasScriptProject, addedNodes: CanvasNode[] = []) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    if (!source) return false;
+    const edges = scriptAssetConnections(nodeID, project, source.script_project, connectionsRef.current);
+    if (nodesRef.current.length + addedNodes.length > 500 || edges.length > 2000) {
+      toast.error("画布容量不足，请清理节点和连线后重试");
+      return false;
+    }
+    replaceNodes([...nodesRef.current.map((node) => node.id === nodeID ? { ...node, script_project: project } : node), ...addedNodes]);
+    replaceConnections(edges);
+    pushHistory();
+    return true;
+  }
+
+  function createScriptAssetNodes(nodeID: string, assetIDs: string[], parameters: Partial<CanvasNode> = {}, prompt?: string) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    const project = source?.script_project;
+    if (!source || !project) return [];
+    const assets = project.assets.filter((asset) => assetIDs.includes(asset.id));
+    const added = assets.map((asset): CanvasNode => canvasEmptyMediaNodeFrame({
+      ...preferredCanvasImageParameters(), ...parameters,
+      id: `image-${randomID()}`, type: "image", x: source.x - 440,
+      y: source.y + project.assets.findIndex((item) => item.id === asset.id) * 300,
+      ...CANVAS_NODE_DEFAULT_SIZE.image, scale_x: 1, scale_y: 1,
+      title: asset.name || "脚本资产", created_at: createdAt(), generation_count: 1,
+      exclude_upstream_text: true,
+      prompt: prompt?.trim() || `${asset.name}：${asset.description}。生成清晰的${asset.kind === "character" ? "角色" : asset.kind === "scene" ? "场景" : "道具"}设定图，保持视觉特征一致。`,
+    }));
+    const bindings = new Map(assets.map((asset, index) => [asset.id, added[index].id]));
+    const next = { ...project, assets: project.assets.map((asset) => bindings.has(asset.id) ? { ...asset, image_node_id: bindings.get(asset.id)! } : asset) };
+    return updateScriptProject(nodeID, next, added) ? added : [];
+  }
+
+  function insertScriptAsset(nodeID: string, assetID: string, payload: CanvasInsertAssetPayload) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    const project = source?.script_project;
+    const asset = project?.assets.find((asset) => asset.id === assetID);
+    if (!source || !project || !asset || scriptNodeRunning(nodeID)) return;
+    const pending = createCanvasPendingAgentAsset(payload, payload.title);
+    const node = canvasPendingAgentAssetNode(pending, 0, 1, { x: source.x - 440, y: source.y + project.assets.indexOf(asset) * 300 });
+    if (node.type !== "image" || !node.url) return;
+    updateScriptProject(nodeID, { ...project, assets: project.assets.map((item) => item.id === assetID ? { ...item, image_node_id: node.id } : item) }, [node]);
+  }
+
+  async function uploadScriptReference(nodeID: string, file: File) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    if (!source || scriptNodeRunning(nodeID) || uploadingNodeID) return;
+    if (!file.type.startsWith("image/")) return toast.error("请选择图片文件");
+    const node: CanvasNode = { id: `image-${randomID()}`, type: "image", x: source.x - 440, y: source.y, ...CANVAS_NODE_DEFAULT_SIZE.image, scale_x: 1, scale_y: 1, title: file.name, created_at: createdAt() };
+    replaceNodes([...nodesRef.current, node]);
+    connectNodes(node.id, nodeID);
+    await uploadImageFile(file, node.id);
+    if (nodesRef.current.some((node) => node.id === nodeID)) { setSelectedNodeIDs(new Set([nodeID])); setSelectedConnectionID(""); setPanelNodeID(nodeID); }
+  }
+
+  async function uploadScriptAsset(nodeID: string, assetID: string, file: File) {
+    if (scriptNodeRunning(nodeID) || uploadingNodeID) return;
+    if (!file.type.startsWith("image/")) return toast.error("请选择图片文件");
+    const node = createScriptAssetNodes(nodeID, [assetID])[0];
+    if (node) await uploadImageFile(file, node.id);
+  }
+
+  async function generateScriptAssets(nodeID: string, request: ScriptAssetGeneration) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    if (!source?.script_project || scriptNodeRunning(nodeID)) return;
+    const model = request.parameters.generation_model || imageModel;
+    if (!imageModels.includes(model)) return toast.error("请先配置图片模型");
+    if (!nextTokenNameForModel("image", model).trim()) { setRelayTokenDialogKind("image"); return; }
+    if (request.prompt !== undefined && !request.prompt.trim()) return toast.error("请填写图片生成提示词");
+    const assets = request.prompt !== undefined
+      ? source.script_project.assets.filter((asset) => request.assetIDs.includes(asset.id) && scriptAssetImage(asset, nodesRef.current)?.generation_status !== "loading")
+      : scriptAssetsToGenerate(source.script_project, nodesRef.current, request.assetIDs);
+    if (!assets.length) return toast.info("没有可生成的资产，已有图片或任务的资产不会重复提交");
+    if (request.prompt === undefined && assets.some((asset) => !asset.name.trim() || !asset.description.trim())) return toast.error("请先填写资产名称和设定");
+    const targets = createScriptAssetNodes(nodeID, assets.map((asset) => asset.id), { ...canvasImageParameters(request.parameters as CanvasNode), generation_model: model }, request.prompt);
+    await Promise.all(targets.map((node) => runGeneration(node.id, undefined, false, { generationModel: model, resultTitle: node.title, selectResultNode: false })));
+  }
+
+  async function generateScriptMedia(nodeID: string, type: "image" | "video") {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    const project = source?.script_project;
+    if (!source || !project || scriptNodeRunning(nodeID)) return;
+    let plan: ReturnType<typeof scriptMediaPlan>;
+    try { plan = scriptMediaPlan(project, type, nodesRef.current); }
+    catch (error) { return toast.error(error instanceof Error ? error.message : "无法读取镜头素材关联"); }
+    if (!plan.missing.length && !plan.ready.length && !plan.tracked.length) return toast.info("已复用全部现有素材，未重复提交生成");
+    if (plan.missing.length || plan.ready.length) {
+      if (!scriptCanGenerateMedia(project, type, nodesRef.current)) return toast.error("请先确认镜头；新建素材还需准备资产并合成提示词");
+    }
+    if (plan.missing.length) {
+      const selectedModel = type === "image" ? imageModel : videoModel;
+      if (!(type === "image" ? imageModels : videoModels).includes(selectedModel)) return toast.error(`请先配置${type === "image" ? "图片" : "视频"}模型`);
+      if (!nextTokenNameForModel(type, selectedModel).trim()) { setRelayTokenDialogKind(type); return; }
+      if (type === "video") {
+        const error = plan.missing.map((shot) => validateCanvasAgentVideoSeconds(selectedModel, shot.seconds)).find(Boolean);
+        if (error) return toast.error(error);
+      }
+    }
+    const projectID = documentRef.current.id;
+    const operationEpoch = canvasOperationEpochRef.current;
+    const size = CANVAS_NODE_DEFAULT_SIZE[type];
+    const startY = connectionsRef.current.reduce((y, edge) => { const node = nodesRef.current.find((item) => item.id === edge.to_node_id); return edge.from_node_id === nodeID && node ? Math.max(y, node.y + node.height + 36) : y; }, source.y);
+    if (nodesRef.current.length + plan.missing.length > 500) return toast.error("画布容量不足，请减少镜头或清理节点和连线");
+    const created = plan.missing.map((shot, index): CanvasNode => {
+      const point = { x: source.x + source.width + 120, y: startY + index * (size.height + 36) };
+      const title = `${source.title || "脚本"} · 第 ${project.shots.findIndex((item) => item.id === shot.id) + 1} 镜`;
+      return type === "image" ? { id: `image-${randomID()}`, type: "image", ...point, ...size, scale_x: 1, scale_y: 1, title, prompt: shot.image_prompt, exclude_upstream_text: true, ...preferredCanvasImageParameters(), generation_count: 1, created_at: createdAt() } : { ...buildVideoNode({ title, prompt: shot.video_prompt }, point), generation_video_seconds: shot.seconds, exclude_upstream_text: true };
+    });
+    const edges: CanvasConnection[] = created.flatMap((node, index) => {
+      const shot = plan.missing[index];
+      const assets = project.assets.filter((asset) => shot.asset_ids.includes(asset.id) || shot.dialogue.some((line) => line.asset_id === asset.id));
+      const ids = new Set([source.id, ...assets.map((asset) => asset.image_node_id).filter(Boolean)]);
+      return [...ids].map((id) => ({ id: `connection-${randomID()}`, from_node_id: id, to_node_id: node.id }));
+    });
+    if (connectionsRef.current.length + edges.length > 2000) return toast.error("画布连线容量不足，请清理后重试");
+    if (created.length) {
+      const bindings = new Map(plan.missing.map((shot, index) => [shot.id, created[index].id]));
+      const field = type === "image" ? "image_node_id" : "video_node_id";
+      replaceNodes([...nodesRef.current.map((node) => node.id === source.id ? { ...node, script_project: { ...project, shots: project.shots.map((shot) => bindings.has(shot.id) ? { ...shot, [field]: bindings.get(shot.id)! } : shot) } } : node), ...created]);
+      replaceConnections([...connectionsRef.current, ...edges]);
+      pushHistory();
+    }
+    try { await persistGenerationCheckpoint(); }
+    catch (error) { return toast.error(error instanceof Error ? error.message : "镜头关联保存失败，未提交生成"); }
+    if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) return;
+    const taskIDs = plan.tracked.flatMap((node) => node.task_id ? [node.task_id] : []);
+    const session = getCachedAuthSession();
+    if (taskIDs.length && session) {
+      if (!canvasRecoveryAbortControllerRef.current || canvasRecoveryAbortControllerRef.current.signal.aborted) canvasRecoveryAbortControllerRef.current = new AbortController();
+      void recoverCanvasTasks(projectID, operationEpoch, taskIDs, session.key, canvasRecoveryAbortControllerRef.current.signal);
+      toast.info("已有任务按原 ID 核对进度；失败任务可在原素材节点明确重试");
+    }
+    await Promise.all([...plan.ready, ...created].map((node) => runGeneration(node.id, undefined, node.generation_status === "error")));
   }
 
   async function runTextGeneration(nodeID: string, retry = false) {
@@ -3962,6 +4262,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 		})) {
 			return toast.error("参考素材 URL 必须是公网可访问的 http(s) 地址，或当前站点已上传的素材地址");
 		}
+		if (videoModelRequiresHTTPSReferences(params.generation_video_model) && [...configuredImageURLs, firstFrameURL, lastFrameURL, ...referenceVideoURLs, ...referenceAudioURLs].filter(Boolean).some((url) => isPublicReferenceURL(url) && !isPublicHTTPSReferenceURL(url))) {
+			return toast.error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+		}
 			if (referenceMode === "reference" && configuredImageURLs.length + referenceVideoURLs.length + referenceAudioURLs.length === 0 && !firstFrameURL && !lastFrameURL) {
 			return toast.error("多模态参考模式至少需要一个公网图片、视频或音频 URL");
 		}
@@ -4006,6 +4309,18 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				const preparedReferenceAudioURLs = await Promise.all(
 					referenceAudioURLs.map((url) => preparePublicVideoMediaReference(url, "audio", controller.signal)),
 				);
+				if (videoModelRequiresHTTPSReferences(params.generation_video_model)) {
+					const preparedURLs = [
+						...referenceImageURLs,
+						preparedFirstFrameURL,
+						preparedLastFrameURL,
+						...preparedReferenceVideoURLs,
+						...preparedReferenceAudioURLs,
+					].filter((url): url is string => Boolean(url));
+					if (preparedURLs.some((url) => !isPublicHTTPSReferenceURL(url))) {
+						throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+					}
+				}
 				const normalizedVideo = normalizeVideoRequest({
 				model: params.generation_video_model,
 				size: params.generation_video_size,
@@ -4102,6 +4417,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   async function runGeneration(nodeID: string, prompt?: string, retry = false, options: CanvasGenerationOptions = {}) {
     const concurrent = options.concurrent !== false;
     const specialNode = nodesRef.current.find((node) => node.id === nodeID);
+    if (specialNode?.type === "script") return runScriptTextGeneration(nodeID, "script");
     if (specialNode?.type === "text") return runTextGeneration(nodeID, retry);
     if (specialNode?.type === "config" && specialNode.generation_mode === "text") return runTextGeneration(nodeID, retry);
     if (specialNode?.type === "audio" || specialNode?.type === "config" && specialNode.generation_mode === "audio") return runAudioGeneration(nodeID, concurrent, retry, options.onSubmitted);
@@ -4516,44 +4832,25 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
   }
 
-  function openNodeContextMenu(event: ReactMouseEvent, nodeID: string) {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ type: "node", x: event.clientX, y: event.clientY, nodeID });
+  function openNodeContextMenu(_event: ReactMouseEvent, nodeID: string) {
+    setContextMenu({ type: "node", nodeID });
   }
 
-  function openConnectionContextMenu(event: ReactMouseEvent<SVGPathElement>, connectionID: string) {
-    event.preventDefault();
-    event.stopPropagation();
+  function openConnectionContextMenu(_event: ReactMouseEvent<SVGPathElement>, connectionID: string) {
     setSelectedNodeIDs(new Set());
     setSelectedConnectionID(connectionID);
     setPanelNodeID("");
-    setContextMenu({ type: "connection", x: event.clientX, y: event.clientY, connectionID });
+    setContextMenu({ type: "connection", connectionID });
   }
 
-  function openCanvasContextMenu(event: ReactMouseEvent, position: { x: number; y: number }) {
-    event.preventDefault();
-    setContextMenu({ type: "canvas", x: event.clientX, y: event.clientY, position });
+  function openCanvasContextMenu(_event: ReactMouseEvent, position: { x: number; y: number }) {
+    setContextMenu({ type: "canvas", position });
   }
 
   function handleCanvasDrop(event: ReactDragEvent<HTMLDivElement>, position: { x: number; y: number }) {
     event.preventDefault();
-      const files = Array.from(event.dataTransfer.files);
-      const audioFile = files.find(isCanvasAudioFile);
-    if (audioFile) {
-      void uploadAudioFile(audioFile, "", position);
-        return;
-      }
-      const videoFile = files.find((item) => item.type.startsWith("video/") || /\.(mp4|mov)$/i.test(item.name));
-      if (videoFile) {
-        void uploadVideoFile(videoFile, "", position);
-        return;
-      }
-      const file = files.find((item) => item.type.startsWith("image/"));
-    if (file?.type.startsWith("image/")) {
-      void uploadImageFile(file, "", position);
-      return;
-    }
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length) { void uploadCanvasFiles(files, position); return; }
     const raw = event.dataTransfer.getData("application/x-yunmian-image");
     if (!raw) return;
     try {
@@ -4565,6 +4862,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   function renderNodeQuickActions(node: CanvasNode) {
+    if (node.type === "script") return <CanvasScriptActions running={scriptNodeRunning(node.id)} ready={{ image: Boolean(node.script_project && scriptCanGenerateMedia(node.script_project, "image", nodesRef.current)), video: Boolean(node.script_project && scriptCanGenerateMedia(node.script_project, "video", nodesRef.current)) }} onGenerate={() => void runScriptTextGeneration(node.id, "script")} onImages={() => void generateScriptMedia(node.id, "image")} onVideos={() => void generateScriptMedia(node.id, "video")} onDownload={() => downloadScript(node)} />;
     const imageEditingModel = node.generation_model?.trim() || imageModel.trim();
     return (
       <CanvasNodeQuickActions
@@ -4619,6 +4917,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   function renderNodePanelContent(node: CanvasNode) {
+    if (node.type === "script") return <CanvasScriptPromptPanel node={node} models={textModels} defaultModel={textModel} references={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} running={scriptNodeRunning(node.id)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} onGenerate={() => void runScriptTextGeneration(node.id, "script")} onStop={() => stopScriptGenerations(node.id)} onUploadReference={(file) => void uploadScriptReference(node.id, file)} />;
     if (node.type === "config") {
       const running = nodeGenerationRunning(node.id);
       const mode = node.generation_mode || "image";
@@ -4646,11 +4945,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         <CanvasInlineModelSelect value={configModel} models={configModels} label="生成模型" onChange={(value) => updateNodeGenerationParameters(node.id, mode === "image" ? { generation_model: value } : mode === "text" ? { generation_text_model: value } : mode === "audio" ? { generation_audio_model: value } : canvasVideoModelPatch(value))} />
         <CanvasParameterPopover icon={<SlidersHorizontal />} label="生成设置" summary={{ image: "图片", text: "文本", video: "视频", audio: "音频" }[mode]}>
           <div className="space-y-3">
-            <label className="grid gap-1 text-xs"><span className="text-muted-foreground">生成模式</span><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></label>
+            <LabeledField className="grid gap-1 text-xs" label={<span className="text-muted-foreground">生成模式</span>}>{(fieldId) => <><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger id={fieldId}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></>}</LabeledField>
             {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
           </div>
         </CanvasParameterPopover>
-        {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="h-8 shrink-0 px-2.5 text-xs" /></> : null}
+        {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="h-8 shrink-0 px-2.5" /></> : null}
         {mode === "video" ? <CanvasVideoPromptPanel relayTokenName={tokenNameForModel("video", configVideoParams.generation_video_model)} node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={running} generationBusy={false} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} /> : null}
         <CanvasPromptLibrary onSelect={(value) => updateNodeComposerContent(node.id, value, true)} />
       </CanvasNodeInputToolbar>;
@@ -4844,7 +5143,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (documentRef.current.agent_run?.status === "running") return;
       const toolShortcut = !command && !event.altKey && !event.shiftKey && ["v", "h"].includes(event.key.toLowerCase());
       const zoomShortcut = command && !event.altKey && ["+", "=", "-", "0"].includes(event.key);
-      if (zoomShortcut && !target?.closest("[data-canvas-side-panel],[data-canvas-agent-panel],[data-slot='popover-content'],[role='dialog'],[role='listbox']")) {
+      if (zoomShortcut && !target?.closest("[data-canvas-side-panel],[data-canvas-agent-panel],[data-slot='popover-content'],[data-slot='dropdown-menu-content'],[data-slot='context-menu-content'],[role='dialog'],[role='listbox']")) {
         event.preventDefault();
         if (event.key === "0") fitCanvasContent();
         else updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, viewportRef.current.zoom * (event.key === "-" ? 1 / 1.2 : 1.2)), true);
@@ -4855,7 +5154,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         || target?.tagName === "TEXTAREA"
         || target?.tagName === "SELECT"
         || target?.isContentEditable
-        || target?.closest("[data-canvas-no-pan],[data-canvas-side-panel],[data-canvas-agent-panel],[data-slot='popover-content'],[role='dialog'],[role='listbox'],[role='combobox']")
+        || target?.closest("[data-canvas-no-pan],[data-canvas-side-panel],[data-canvas-agent-panel],[data-slot='popover-content'],[data-slot='dropdown-menu-content'],[data-slot='context-menu-content'],[role='dialog'],[role='listbox'],[role='combobox']")
         || (!zoomShortcut && !toolShortcut && target?.closest("[data-canvas-controls]"))
       ) return;
       if (toolShortcut) { event.preventDefault(); setCanvasTool(event.key.toLowerCase() === "h" ? "pan" : "select"); }
@@ -4896,25 +5195,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return () => window.removeEventListener("pointerdown", outside, true);
   }, [nodeCreateMenu]);
 
-  useEffect(() => {
-    if (!canvasMenuOpen) return;
-    const outside = (event: PointerEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target?.closest("[data-canvas-menu]")) setCanvasMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", outside, true);
-    return () => window.removeEventListener("pointerdown", outside, true);
-  }, [canvasMenuOpen]);
-
-  useEffect(() => {
-    if (!projectMenuOpen) return;
-    const close = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest("[data-canvas-project-menu],[aria-label='画布项目']")) setProjectMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", close, true);
-    return () => window.removeEventListener("pointerdown", close, true);
-  }, [projectMenuOpen]);
-
   const dockedAgentWidth = Math.min(CANVAS_AGENT_WIDTH, agentAreaWidth);
   const reservedAgentWidth = agentOpen && agentDisplayMode === "docked" ? dockedAgentWidth : 0;
   const controlsWidth = workspaceWidth;
@@ -4934,6 +5214,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const renderedCanvasID = documentRef.current.id;
 
   return (
+    <ContextMenu modal={false} open={Boolean(contextMenu)} onOpenChange={(open) => { if (!open) setContextMenu(null); }}>
     <section ref={workspaceRef} style={{ "--canvas-dock-clearance": dockClearance, "--canvas-agent-bottom": agentBottom, "--canvas-agent-docked-bottom": dockedAgentBottom, "--canvas-side-panel-bottom": sidePanelBottom, "--canvas-agent-width": `${dockedAgentWidth}px` } as CSSProperties} aria-label={`画布编辑器：${title}`} className="relative flex h-full min-h-0 min-w-0 overflow-hidden bg-card">
       <h1 className="sr-only">{title || "无限画布"}</h1>
       <div className="contents"><CanvasSidePanel
@@ -4963,6 +5244,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       </div>
       <div ref={agentAreaRef} className="relative flex min-w-0 flex-1 overflow-hidden">
       <div ref={hostRef} data-canvas-host style={{ marginRight: reservedAgentWidth }} className="relative min-w-0 flex-1 overflow-hidden bg-muted/50">
+      <ContextMenuTrigger asChild><div id={contextMenuTriggerID} tabIndex={0} aria-label="画布操作区" className="absolute inset-0">
       <CanvasEngine
         tool={canvasTool}
         nodes={nodes}
@@ -4994,6 +5276,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onNodeMediaLoad={handleNodeMediaLoad}
         onViewImage={(nodeID) => setPreviewNodeID(nodeID)}
         onFocusNode={focusCanvasNode}
+        onScriptOpen={(nodeID) => {
+          const project = nodesRef.current.find((node) => node.id === nodeID)?.script_project;
+          if (project) {
+            const edges = scriptAssetConnections(nodeID, project, project, connectionsRef.current);
+            if (JSON.stringify(edges) !== JSON.stringify(connectionsRef.current)) updateScriptProject(nodeID, project);
+          }
+          setPanelNodeID(""); setOpenScriptNodeID(nodeID);
+        }}
         onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }}
         onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)}
         onNodeActivate={activateNode}
@@ -5010,49 +5300,66 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         renderNodeQuickActions={renderNodeQuickActions}
         onDrop={handleCanvasDrop}
       />
+      </div></ContextMenuTrigger>
       {referenceReturn && nodes.some((node) => node.id === referenceReturn.nodeID) ? <CanvasReferenceReturn expiresAt={referenceReturn.expiresAt} onReturn={returnToReferenceOrigin} onDismiss={() => setReferenceReturn(null)} /> : null}
       {audioTrimNodeID && nodes.some((node) => node.id === audioTrimNodeID && node.type === "audio") ? <CanvasAudioTrimDialog key={audioTrimNodeID} node={nodes.find((node) => node.id === audioTrimNodeID)!} busy={mediaBusyNodeIDs.has(audioTrimNodeID)} onClose={() => setAudioTrimNodeID("")} onTrim={(trim) => void editCanvasMedia(audioTrimNodeID, "trim-audio", trim)} /> : null}
       {!loading && !switchPhase && !nodes.length && !agentOpen && canvasSize.height > 360 ? <CanvasEmptyState onCreate={createCanvasNode} /> : null}
-      {selectedNodeIDs.size > 1 && !agentOpen ? <div className="absolute left-3 top-16 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-xl border border-border bg-card/95 p-1.5 shadow-sm"><span className="px-2 text-xs tabular-nums text-muted-foreground">已选 {selectedNodeIDs.size} 个节点</span><Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => createGroupFromSelection()}><Grid2X2 />编组</Button></div> : null}
+      {selectedNodeIDs.size > 1 && !agentOpen ? <Card className="absolute left-3 top-16 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-2 p-1.5 flex-row"><span className="px-2 text-xs tabular-nums text-muted-foreground">已选 {selectedNodeIDs.size} 个节点</span><Button size="sm" variant="secondary"  onClick={() => createGroupFromSelection()}><Grid2X2 />编组</Button></Card> : null}
+      {openScriptNode?.script_project ? <CanvasScriptWorkspace key={`${documentRef.current.id}:${openScriptNode.id}`} node={openScriptNode} nodes={nodes} project={openScriptNode.script_project} models={textModels} defaultModel={textModel} running={scriptNodeRunning(openScriptNode.id)} onClose={() => setOpenScriptNodeID("")} onChange={(script_project) => updateScriptProject(openScriptNode.id, script_project)} onModelChange={(generation_text_model) => updateNodeGenerationParameters(openScriptNode.id, { generation_text_model })} onSynthesize={(ids, smart) => { if (smart) void runScriptTextGeneration(openScriptNode.id, "prompts", ids); else concatenateScript(openScriptNode.id, ids); }} scope={session.key} imageModels={imageModels} imageModel={imageModel} imageDefaults={{ ...openScriptNode, ...preferredCanvasImageParameters(), generation_model: imageModel, generation_count: 1 }} onInsertAsset={(assetID, payload) => insertScriptAsset(openScriptNode.id, assetID, payload)} onNavigateAsset={(nodeID) => { setOpenScriptNodeID(""); focusAgentCanvasNode(nodeID); }} onSaveAsset={(nodeID) => void saveCanvasNodeAsset(nodeID)} onGenerateAssets={(request) => void generateScriptAssets(openScriptNode.id, request)} onUploadAsset={(assetID, file) => void uploadScriptAsset(openScriptNode.id, assetID, file)} onGenerateMedia={(type) => void generateScriptMedia(openScriptNode.id, type)} onStop={() => stopScriptGenerations(openScriptNode.id)} /> : null}
       {openDirectorNode ? <CanvasDirector nodeId={openDirectorNode.id} project={openDirectorNode.director_project} panoramas={directorPanoramas} theme={colorTheme} onClose={() => setOpenDirectorNodeID("")} onProjectChange={handleDirectorProjectChange} onPanoramaRemoved={handleDirectorPanoramaRemoved} onCapturesSent={handleDirectorCapturesSent} onVideoSent={handleDirectorVideoSent} /> : null}
 
       {pendingConnection ? <CanvasNodeCreatePalette point={pendingConnection.menu} viewport={canvasSize} connecting onCreate={createPendingNode} /> : null}
       {nodeCreateMenu ? <CanvasNodeCreatePalette point={nodeCreateMenu.menu} viewport={canvasSize} onCreate={(type) => { createCanvasNode(type, nodeCreateMenu.position); setNodeCreateMenu(null); }} /> : null}
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start gap-3">
-        <div data-canvas-menu className="pointer-events-auto relative flex h-10 min-w-0 max-w-full items-center rounded-xl border border-border bg-card/95 p-1 shadow-[var(--shadow-elevated)] backdrop-blur-xl">
-          <Button aria-label="画布菜单" aria-expanded={canvasMenuOpen} title="画布菜单" variant="ghost" size="icon" className={cn("size-8 rounded-lg", canvasMenuOpen && "bg-brand-soft text-brand")} onClick={() => { setCanvasMenuOpen((value) => !value); setProjectMenuOpen(false); }}><Menu className="size-5" /></Button>
-          <div className="mx-1 h-5 w-px bg-border" />
-          <Button aria-label="画布项目" aria-expanded={projectMenuOpen} variant="ghost" size="sm" className="h-8 min-w-0 max-w-[30vw] flex-1 rounded-lg px-2 text-xs font-semibold sm:max-w-56 sm:px-2.5" onClick={() => { setProjectMenuOpen((value) => !value); setCanvasMenuOpen(false); }}><span className="truncate">{title}</span><ChevronDown className={cn("size-3.5 transition-transform", projectMenuOpen && "rotate-180")} /></Button>
+        <Card data-canvas-menu className="pointer-events-auto relative flex h-10 min-w-0 max-w-full items-center p-1 gap-0 flex-row">
+          <DropdownMenu modal={false} open={canvasMenuOpen} onOpenChange={(open) => { setCanvasMenuOpen(open); if (open) setProjectMenuOpen(false); }}>
+            <TooltipHint content="画布菜单"><span className="inline-flex"><DropdownMenuTrigger asChild><Button type="button" aria-label="画布菜单" variant="ghost" size="icon"><Menu /></Button></DropdownMenuTrigger></span></TooltipHint>
+            <DropdownMenuContent data-canvas-menu align="start" sideOffset={10} className="w-60 max-w-[calc(100vw-1.5rem)]">
+              <DropdownMenuItem onSelect={() => navigate("/canvas")}><Images />回到主页</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setProjectDialog({ mode: "create", title: `无限画布 ${projects.length + 1}` })}><Plus />新建画布</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setProjectDialog({ mode: "rename", title })}><Pencil />重命名</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => setProjectDialog({ mode: "delete", title })}><Trash2 />删除当前画布</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => requestCanvasImageUpload()}><Upload />导入素材</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => void exportImage()}><Download />导出画布图片</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportProjectArchive()}><FileDown />导出画布</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => importRef.current?.click()}><FileUp />导入画布</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" disabled={!nodes.length} onSelect={() => setClearConfirmationOpen(true)}><Eraser />清空画布</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={historyRef.current.length <= 1} onSelect={undo}><Undo2 />撤销<Kbd className="ml-auto">⌘ Z</Kbd></DropdownMenuItem>
+              <DropdownMenuItem disabled={!redoRef.current.length} onSelect={redo}><Redo2 />重做<Kbd className="ml-auto">⌘ ⇧ Z</Kbd></DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Separator orientation="vertical" className="mx-1 h-5" />
+          <Popover open={projectMenuOpen} onOpenChange={(open) => { setProjectMenuOpen(open); if (open) setCanvasMenuOpen(false); }}>
+            <PopoverTrigger asChild><Button type="button" aria-label="画布项目" variant="ghost" size="sm" className="min-w-0 max-w-[30vw] flex-1 sm:max-w-56"><span className="truncate">{title}</span><ChevronDown /></Button></PopoverTrigger>
+            <PopoverContent data-canvas-project-menu align="start" sideOffset={10} className="w-80 max-w-[calc(100vw-1.5rem)] max-h-(--radix-popover-content-available-height) overflow-hidden">
+              <PopoverHeader><PopoverTitle>画布项目</PopoverTitle><PopoverDescription>跨设备自动同步</PopoverDescription></PopoverHeader>
+              <ScrollArea className="min-h-0 max-h-56 flex-1" contentClassName="py-1">
+                <ToggleGroup type="single" orientation="vertical" value={documentRef.current.id} aria-label="选择画布项目" className="w-full flex-col items-stretch" onValueChange={(id) => { if (id && id !== documentRef.current.id) void runProject({ action: "activate", project_id: id }); }}>
+                  {projects.map((project) => <ToggleGroupItem key={project.id} value={project.id} className="h-auto min-h-9 w-full justify-start whitespace-normal text-left"><span className="min-w-0 flex-1 break-words">{project.title}</span><Badge variant="outline">{project.node_count}</Badge></ToggleGroupItem>)}
+                </ToggleGroup>
+              </ScrollArea>
+              <Separator />
+              <ToggleGroup type="single" value={background} aria-label="画布背景" className="w-full" onValueChange={(value) => { if (value !== "dots" && value !== "grid" && value !== "plain") return; backgroundRef.current = value; setBackground(value); setTimeout(pushHistory); }}>
+                <ToggleGroupItem value="dots" className="min-w-0 flex-1"><CircleDot />点阵</ToggleGroupItem>
+                <ToggleGroupItem value="grid" className="min-w-0 flex-1"><Grid2X2 />网格</ToggleGroupItem>
+                <ToggleGroupItem value="plain" className="min-w-0 flex-1"><Square />空白</ToggleGroupItem>
+              </ToggleGroup>
+              <Label className="flex items-center justify-between gap-3 text-xs"><span className="flex min-w-0 items-center gap-1.5"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></Label>
+            </PopoverContent>
+          </Popover>
           <CanvasShareButton key={`${session.key}:${documentRef.current.id}`} projectID={documentRef.current.id} disabled={loading || Boolean(switchPhase)} beforeShare={() => flushCanvasSaves({ save: persistCanvas, getChangeVersion: () => saveChangeVersionRef.current, getProjectID: () => documentRef.current.id })} onOpen={() => { setCanvasMenuOpen(false); setProjectMenuOpen(false); }} />
-          {canvasMenuOpen ? <ScrollArea className="absolute left-0 top-12 z-50 w-60 whitespace-nowrap rounded-xl border border-border bg-card p-1.5 text-sm shadow-xl [&_svg]:shrink-0" viewClass="" viewportClassName="overscroll-contain" style={{ maxWidth: Math.max(0, canvasSize.width - 26), maxHeight: Math.max(80, canvasSize.height - 76) }}>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); navigate("/canvas"); }}><Images className="size-4 text-muted-foreground" />回到主页</button>
-            <div className="my-1 h-px bg-border" />
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "create", title: `无限画布 ${projects.length + 1}` }); }}><Plus className="size-4 text-muted-foreground" />新建画布</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "rename", title }); }}><Pencil className="size-4 text-muted-foreground" />重命名</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-destructive hover:bg-destructive/10" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "delete", title }); }}><Trash2 className="size-4" />删除当前画布</button>
-            <div className="my-1 h-px bg-border" />
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); requestCanvasImageUpload(); }}><Upload className="size-4 text-muted-foreground" />导入素材</button>
-            <div className="my-1 h-px bg-border" />
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); void exportImage(); }}><Download className="size-4 text-muted-foreground" />导出画布图片</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); void exportProjectArchive(); }}><FileDown className="size-4 text-muted-foreground" />导出画布</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); importRef.current?.click(); }}><FileUp className="size-4 text-muted-foreground" />导入画布</button>
-            <button type="button" disabled={!nodes.length} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-destructive hover:bg-destructive/10 disabled:opacity-40" onClick={() => { setCanvasMenuOpen(false); setClearConfirmationOpen(true); }}><Eraser className="size-4" />清空画布</button>
-            <div className="my-1 h-px bg-border" />
-            <button type="button" disabled={historyRef.current.length <= 1} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setCanvasMenuOpen(false); undo(); }}><span className="flex items-center gap-3"><Undo2 className="size-4" />撤销</span><kbd className="text-[11px] text-muted-foreground">⌘ Z</kbd></button>
-            <button type="button" disabled={!redoRef.current.length} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setCanvasMenuOpen(false); redo(); }}><span className="flex items-center gap-3"><Redo2 className="size-4" />重做</span><kbd className="text-[11px] text-muted-foreground">⌘ ⇧ Z</kbd></button>
-          </ScrollArea> : null}
-        </div>
+        </Card>
       </div>
-
-      {projectMenuOpen ? <ScrollArea data-canvas-project-menu className="absolute top-16 left-3 z-40 w-80 max-w-[calc(100%_-_1.5rem)] rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)]" viewClass="" viewportClassName="overscroll-contain" style={{ maxHeight: Math.max(80, canvasSize.height - 80) }}><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-brand-soft text-brand")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></ScrollArea> : null}
-
-
 
       {assetPickerMounted ? <Suspense fallback={(
         <Dialog open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
-          <DialogContent scrollable={false} className="flex h-[min(760px,92dvh)] w-[min(94vw,960px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-            <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
+          <DialogContent className={cn("sm:max-w-none", cn("h-[min(760px,92dvh)]", "flex w-[min(94vw,960px)] max-w-none flex-col overflow-hidden"))}>
+            <DialogHeader className="shrink-0">
               <DialogTitle>选择素材</DialogTitle>
               <DialogDescription>选择文本、图片、视频或音频，点击即可插入画布。</DialogDescription>
             </DialogHeader>
@@ -5071,12 +5378,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {miniMapOpen && showWorkspaceControls && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap onClose={() => setMiniMapOpen(false)} nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
-      {contextMenu ? <CanvasRightClickMenu mediaNode={contextMenu.type === "node" ? nodes.find((node) => node.id === contextMenu.nodeID) : undefined} onInfo={() => { if (contextMenu.type === "node") setNodeInfoID(contextMenu.nodeID); setContextMenu(null); }} onCopyContent={() => { if (contextMenu.type === "node") void copyNodePrompt(contextMenu.nodeID); setContextMenu(null); }} menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") createCanvasNode("video", contextMenu.position); setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { void exportProjectArchive(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
+      {contextMenu ? <CanvasRightClickMenu triggerID={contextMenuTriggerID} mediaNode={contextMenu.type === "node" ? nodes.find((node) => node.id === contextMenu.nodeID) : undefined} onInfo={() => { if (contextMenu.type === "node") setNodeInfoID(contextMenu.nodeID); setContextMenu(null); }} onCopyContent={() => { if (contextMenu.type === "node") void copyNodePrompt(contextMenu.nodeID); setContextMenu(null); }} menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") createCanvasNode("video", contextMenu.position); setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { void exportProjectArchive(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
       <Dialog open={Boolean(nodeInfo)} onOpenChange={(open) => { if (!open) setNodeInfoID(""); }}>
-        <DialogContent className="w-[min(560px,calc(100vw-2rem))]">
-          <DialogHeader><DialogTitle>节点详情</DialogTitle><DialogDescription>查看节点信息、生成记录和原始数据。</DialogDescription></DialogHeader>
+        <DialogContent className="w-[min(560px,calc(100vw-2rem))] sm:max-w-none">
+          <DialogHeader><DialogTitle>节点详情</DialogTitle><DialogDescription>查看节点信息、生成记录和原始数据。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
           {nodeInfo ? <CanvasNodeInfoContent key={nodeInfo.id} node={nodeInfo} configInputs={nodeInfo.type === "config" ? canvasConfigInputs(nodeInfo.id, nodes, connections) : []} /> : null}
-        </DialogContent>
+        </ScrollArea></DialogContent>
       </Dialog>
       <RelayTokenRequiredDialog
         kind={relayTokenDialogKind || "image"}
@@ -5093,12 +5400,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onConfirm={confirmCanvasProjectDialog}
       />
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
-        <DialogContent scrollable={false} className="w-[min(92vw,560px)] gap-0 p-0">
-          <DialogHeader className="border-b px-6 py-5">
+        <DialogContent className="w-[min(92vw,560px)] sm:max-w-none">
+          <DialogHeader >
             <DialogTitle>画布快捷键</DialogTitle>
             <DialogDescription>使用键盘和鼠标快速操作画布。</DialogDescription>
           </DialogHeader>
-          <ScrollArea maxHeight="min(68dvh,560px)" viewportClassName="p-5 sm:p-6" viewClass="grid gap-1">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain" style={{maxHeight: "min(68dvh,560px)"}}><div className="min-w-0 grid gap-1 p-5 sm:p-6">
             <CanvasShortcut keys={["V"]} description="选择工具：选中、框选和移动节点" />
             <CanvasShortcut keys={["H"]} description="抓手工具：平移画布" />
             <CanvasShortcut keys={["Space", "拖动"]} description="临时移动画布" />
@@ -5113,11 +5420,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             <CanvasShortcut keys={["Ctrl / Cmd", "Shift", "Z"]} description="重做" />
             <CanvasShortcut keys={["Delete / Backspace"]} description="删除选中" />
             <CanvasShortcut keys={["Esc"]} description="取消选择并关闭浮层" />
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(pendingPanoramaImport)} onOpenChange={(open) => { if (!open) setPendingPanoramaImport(null); }}>
-        <DialogContent className="w-[min(92vw,420px)]">
+        <DialogContent className="w-[min(92vw,420px)] sm:max-w-none">
           <DialogHeader>
             <DialogTitle>导入 2:1 图片</DialogTitle>
             <DialogDescription>这张图片符合严格的 2:1 全景比例，请选择节点类型。</DialogDescription>
@@ -5129,10 +5436,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(stopTargetNodeID)} onOpenChange={(open) => { if (!open) setStopTargetNodeID(""); }}>
-        <DialogContent className="w-[min(92vw,420px)]">
+        <DialogContent className="w-[min(92vw,420px)] sm:max-w-none">
           <DialogHeader>
             <DialogTitle>停止生成？</DialogTitle>
-            <DialogDescription>当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。</DialogDescription>
+            <DialogDescription>{nodesRef.current.some((node) => node.id === stopTargetNodeID && node.type === "script") ? "将停止此脚本及其资产、分镜和视频的生成任务，已完成的结果会保留。" : "当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。"}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStopTargetNodeID("")}>继续生成</Button>
@@ -5141,7 +5448,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </DialogContent>
       </Dialog>
       <Dialog open={clearConfirmationOpen} onOpenChange={setClearConfirmationOpen}>
-        <DialogContent className="w-[min(92vw,420px)]">
+        <DialogContent className="w-[min(92vw,420px)] sm:max-w-none">
           <DialogHeader>
             <DialogTitle>清空画布？</DialogTitle>
             <DialogDescription>这会删除当前画布上的所有节点和连线。</DialogDescription>
@@ -5160,12 +5467,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         <CanvasAngleDialog sourceURL={imageTool?.kind === "angle" ? imageTool.sourceURL : ""} open={imageTool?.kind === "angle"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={angleCanvasNode} />
       </> : null}
       {previewPanorama?.url ? (
-        <OverlaySurface className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewNodeID("")}>
-          <div className="relative h-[85vh] w-[85vw] overflow-hidden rounded-xl" onClick={(event) => event.stopPropagation()}>
+        <Dialog open onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }}>
+          <DialogContent className="h-[85dvh] w-[85vw] gap-0 p-0 sm:max-w-[85vw]">
+            <DialogTitle className="sr-only">{previewPanorama.title || "全景图"}</DialogTitle>
+            <DialogDescription className="sr-only">拖动查看全景图，按 Escape 关闭预览。</DialogDescription>
             <CanvasPanoramaViewer src={previewPanorama.url} alt={previewPanorama.title || "全景图"} proxyGeneratedPanorama={Boolean(previewPanorama.task_id && !previewPanorama.storage_key)} immersive />
-            <Button variant="secondary" size="icon" className="absolute right-3 top-3 z-20 size-9" aria-label="关闭全景图" title="关闭全景图" onClick={() => setPreviewNodeID("")}><X /></Button>
-          </div>
-        </OverlaySurface>
+          </DialogContent>
+        </Dialog>
       ) : null}
       {previewVideo?.url ? <CanvasVideoPreview src={previewVideo.url} title={previewVideo.title || "视频"} onDownload={() => void downloadNodeImage(previewVideo.id)} onClose={() => setPreviewNodeID("")} /> : null}
       {imageLightboxMounted ? <ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} /> : null}
@@ -5173,16 +5481,17 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       <Input ref={imageInputRef} type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={(event) => void handleNodeImageUpload(event)} />
       </div>
       {agentPanelMounted ? <Suspense fallback={agentOpen ? (
-        <aside aria-label="Agent 对话面板" aria-busy="true" className={cn("absolute z-40 flex min-h-0 flex-col overflow-hidden bg-card", agentDisplayMode === "docked" ? "top-0 bottom-[var(--canvas-agent-docked-bottom)] right-0 border-l" : "right-3 bottom-[var(--canvas-agent-bottom)] max-w-[calc(100%-1.5rem)] h-[min(calc(100%-var(--canvas-agent-bottom)-1rem),calc((min(780px,86dvh)+100%-var(--canvas-agent-bottom)-1rem)/2))] rounded-2xl border shadow-[var(--shadow-dialog)] sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:h-[min(780px,86dvh,calc(100dvh-var(--canvas-dock-clearance)-2rem))] [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]")} style={{ width: agentDisplayMode === "docked" ? dockedAgentWidth : `min(${CANVAS_AGENT_WIDTH}px, calc(100% - 12px))` }}>
+        <Card role="complementary" aria-label="Agent 对话面板" aria-busy="true" className={cn("absolute z-40 flex min-h-0 flex-col overflow-hidden p-0 gap-0", agentDisplayMode === "docked" ? "top-0 bottom-[var(--canvas-agent-docked-bottom)] right-0" : "right-3 bottom-[var(--canvas-agent-bottom)] max-w-[calc(100%-1.5rem)] h-[min(880px,calc(100%-var(--canvas-agent-bottom)-1rem))] sm:right-4 sm:max-w-[calc(100%-2rem)] [@media(max-height:540px)]:fixed [@media(max-height:540px)]:h-[min(880px,calc(100dvh-var(--canvas-dock-clearance)-2rem))] [@media(max-height:540px)]:bottom-[calc(var(--canvas-dock-clearance)+1rem)] [@media(max-height:540px)]:z-[45]")} style={{ width: agentDisplayMode === "docked" ? dockedAgentWidth : `min(${CANVAS_AGENT_WIDTH}px, calc(100% - 12px))` }}>
           <header className="flex shrink-0 items-center justify-between border-b px-3 py-2">
-            <span className="flex items-center gap-2 text-sm font-semibold"><Bot className="size-4 text-brand" />Agent</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Bot className="size-4 text-primary" />Agent</span>
             <Button type="button" variant="ghost" size="icon" aria-label="收起 Agent" onClick={closeAgentPanel}><X /></Button>
           </header>
           <LoadingState className="min-h-0 flex-1" label="正在加载 Agent" />
-        </aside>
+        </Card>
       ) : null}><CanvasAgentPanel
         key={renderedCanvasID}
         backendRun={backendAgentRun}
+        onLocalObservationChange={setAgentLocallyObserving}
         onBackendDocument={applyBackendAgentDocument}
         open={agentOpen}
         nodes={nodes}
@@ -5190,10 +5499,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         referenceNodeClick={agentReferenceNodeClick}
         model={textModel}
         models={textModels}
-        onModelChange={setTextModel}
+        onModelChange={(value) => { setTextModel(value); updateCanvasAgentConfig({ textModel: value }); }}
         mediaModels={{
-          image: { value: imageModel, options: imageModels, onChange: setImageModel },
-          video: { value: videoModel, options: videoModels, onChange: setVideoModel },
+          image: { value: imageModel, options: imageModels, onChange: (value) => { setImageModel(value); updateCanvasAgentConfig({ imageModel: value }); } },
+          video: { value: videoModel, options: videoModels, onChange: (value) => { setVideoModel(value); updateCanvasAgentConfig({ videoModel: value }); } },
         }}
         configuredSystemPrompt={imageGenerationPreferences.system_prompt}
         initialSessions={agentSessions}
@@ -5213,7 +5522,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onPersist={persistGenerationCheckpoint}
         onSessionsChange={(sessions, activeSessionID) => {
           if (documentRef.current.id !== renderedCanvasID) return;
-          if (documentRef.current.agent_run?.status === "running") return;
+          if (documentRef.current.agent_run?.status === "running") {
+            const queued = mergeCanvasAgentMessageQueues([], sessions, documentRef.current.agent_sessions || []).filter(isCanvasAgentSession);
+            setAgentSessions(queued);
+            documentRef.current = { ...documentRef.current, agent_sessions: queued };
+            scheduleSave();
+            return;
+          }
           setAgentSessions(sessions);
           setActiveAgentSessionID(activeSessionID);
           documentRef.current = {
@@ -5223,12 +5538,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           };
           scheduleSave();
         }}
-        onAgentConfigChange={(patch) => {
-          const next = { ...resolvedAgentConfig, ...patch };
-          setAgentConfig(next);
-          documentRef.current = { ...documentRef.current, agent_config: next };
-          scheduleSave();
-        }}
+        onAgentConfigChange={updateCanvasAgentConfig}
         onExecuteAction={(action, messageReferenceNodeIDs, execution) => documentRef.current.id === renderedCanvasID
           ? executeCanvasAgentAction(action, messageReferenceNodeIDs, execution)
           : Promise.resolve({ ok: false, code: "run_stale", message: "画布已切换，当前执行已停止" })}
@@ -5242,6 +5552,25 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         }}
         onClose={closeAgentPanel}
       /></Suspense> : null}
+      {!showWorkspaceControls && !agentOpen && !loading && !switchPhase ? <Button
+        type="button"
+        data-canvas-agent-trigger
+        variant="secondary"
+        size="icon"
+        aria-label={backendAgentRun?.status === "running" ? "Agent 正在执行，打开对话" : "打开 Agent"}
+        aria-expanded={false}
+        onClick={() => {
+          setPanelNodeID("");
+          setAgentOpen(true);
+          documentRef.current = { ...documentRef.current, agent_panel: { open: true, width: CANVAS_AGENT_WIDTH, mode: agentDisplayMode } };
+          scheduleSave();
+        }}
+        className="pointer-events-auto absolute right-3 z-30 shadow-md"
+        style={{ bottom: "var(--canvas-agent-bottom)" }}
+      >
+        <Bot />
+        {backendAgentRun?.status === "running" ? <Spinner className="absolute -right-1 -top-1 size-3.5" /> : null}
+      </Button> : null}
       {loading || switchPhase ? <CanvasSwitchShell label={loading ? "正在加载画布…" : switchLabel} revealing={!loading && switchPhase === "revealing"} /> : null}
       </div>
       {showWorkspaceControls ? <div data-canvas-workspace-overlay className="pointer-events-none absolute inset-0 z-30"><CanvasWorkspaceControls
@@ -5272,6 +5601,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         snapToGrid={snapToGrid}
         onCreate={createCanvasNode}
         onUpload={() => requestCanvasImageUpload()}
+        onTemporaryUpload={() => requestCanvasImageUpload(undefined, true)}
         onAssets={() => setAssetPickerOpen(true)}
         onManagement={() => setSidePanel((current) => ({ ...current, open: !(current.open && current.tab === "canvas"), tab: "canvas" }))}
         onHistory={() => setSidePanel((current) => ({ ...current, open: !(current.open && current.tab === "assets"), tab: "assets" }))}
@@ -5289,6 +5619,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onShortcuts={() => setShortcutsOpen(true)}
       /></div> : null}
     </section>
+    </ContextMenu>
   );
 }
 
@@ -5301,32 +5632,25 @@ function CanvasSwitchShell({ label, revealing = false }: { label: string; reveal
       aria-label={label}
       aria-hidden={revealing}
     >
-      <div className="flex flex-col items-center gap-3 px-6 text-center">
-        <LoaderCircle className="size-6 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
-        <p className="text-sm text-muted-foreground">{label}</p>
-      </div>
+      <LoadingState className="h-auto" label={label} />
     </div>
   );
 }
 
 function CanvasShortcut({ keys, description }: { keys: string[]; description: string }) {
   return (
-    <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(120px,auto)] items-center gap-4 rounded-lg px-2 py-1.5 hover:bg-muted/60">
+    <Item size="xs" className="grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(120px,auto)] gap-4">
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         {keys.map((key, index) => (
           <span key={`${key}-${index}`} className="flex items-center gap-1.5">
             {index ? <span className="text-xs text-muted-foreground">+</span> : null}
-            <kbd className="min-w-9 rounded-md border border-border bg-muted/50 px-2 py-1.5 text-center text-xs font-medium leading-none shadow-sm">{key}</kbd>
+            <Kbd>{key}</Kbd>
           </span>
         ))}
       </span>
       <span className="text-right text-sm text-muted-foreground">{description}</span>
-    </div>
+    </Item>
   );
-}
-
-function BackgroundButton({ active, label, ...props }: React.ComponentProps<typeof Button> & { active: boolean; label: string }) {
-  return <Button variant="ghost" size="sm" className={cn("h-8 flex-1 text-[11px]", active && "bg-card text-brand dark:bg-background")} {...props}>{props.children}{label}</Button>;
 }
 
 function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange, onClose }: { onClose: () => void; nodes: CanvasNode[]; viewport: CanvasDocument["viewport"]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: CanvasDocument["viewport"]) => void }) {
@@ -5358,17 +5682,18 @@ function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange, onClos
   }
 
   return (
-    <div data-canvas-minimap className="absolute left-3 z-30 overflow-hidden rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur" style={{ width, bottom: "var(--canvas-dock-clearance)" }}>
-      <div className="flex h-8 items-center justify-between border-b border-border/70 px-2.5 text-[11px] font-medium">画布导航<button type="button" className="grid size-6 place-items-center rounded hover:bg-muted" aria-label="关闭小地图" onClick={onClose}><X className="size-3.5" /></button></div>
+    <Card data-canvas-minimap className="absolute left-3 z-30 overflow-hidden gap-0 p-0" style={{ width, bottom: "var(--canvas-dock-clearance)" }}>
+      <div className="flex h-8 items-center justify-between border-b border-border/70 px-2.5 text-[11px] font-medium">画布导航<Button variant="ghost" size="icon-sm" type="button" className="grid place-items-center" aria-label="关闭小地图" onClick={onClose}><X  /></Button></div>
       <div ref={containerRef} aria-label="拖动小地图定位画布" className={cn("relative touch-none", dragging ? "cursor-grabbing" : "cursor-grab")} style={{ height }} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)}>
         {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-primary" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
-        <span className="pointer-events-none absolute border border-brand bg-brand-soft" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
+        <span className="pointer-events-none absolute border border-primary bg-muted" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
       </div>
-    </div>
+    </Card>
   );
 }
 
-function CanvasRightClickMenu({ mediaNode, onInfo, onCopyContent, menu, onClose, onDuplicate, onDelete, onAddText, onAddImage, onAddVideo, onAddConfig, onPaste, onExportImage, onExportJSON, onImport, onClear }: {
+function CanvasRightClickMenu({ triggerID, mediaNode, onInfo, onCopyContent, menu, onClose, onDuplicate, onDelete, onAddText, onAddImage, onAddVideo, onAddConfig, onPaste, onExportImage, onExportJSON, onImport, onClear }: {
+  triggerID: string;
   mediaNode?: CanvasNode;
   onInfo: () => void;
   onCopyContent: () => void;
@@ -5388,81 +5713,74 @@ function CanvasRightClickMenu({ mediaNode, onInfo, onCopyContent, menu, onClose,
 }) {
   useEffect(() => {
     const close = () => onClose();
-    window.addEventListener("pointerdown", close);
     window.addEventListener("blur", close);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("blur", close); };
+    return () => window.removeEventListener("blur", close);
   }, [onClose]);
 
-  const menuHeight = menu.type === "canvas" ? 382 : menu.type === "node" ? 164 : 48;
-  const left = Math.max(8, Math.min(menu.x, window.innerWidth - 208));
-  const top = Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight));
-
   return (
-    <OverlaySurface kind="popover" className="fixed w-52 max-w-[calc(100vw-1rem)]" style={{ left, top }}>
-    <ScrollArea data-canvas-context-menu data-canvas-no-pan className="max-h-[calc(100dvh-1rem)] rounded-xl border border-border bg-card py-1.5 shadow-2xl" viewClass="" viewportClassName="overscroll-contain" onPointerDown={(event) => event.stopPropagation()}>
+    <ContextMenuContent
+      data-canvas-context-menu
+      data-canvas-no-pan
+      aria-label="画布右键菜单"
+      collisionPadding={8}
+      className="w-52 max-w-[calc(100vw-1rem)]"
+      onPointerDown={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+    >
       {menu.type === "canvas" ? (
         <>
-          <ContextMenuButton icon={<Type />} onClick={onAddText}>添加文字节点</ContextMenuButton>
-          <ContextMenuButton icon={<ImagePlus />} onClick={onAddImage}>添加图片节点</ContextMenuButton>
-          <ContextMenuButton icon={<Video />} onClick={onAddVideo}>添加视频生成节点</ContextMenuButton>
-          <ContextMenuButton icon={<Settings2 />} onClick={onAddConfig}>添加生成配置节点</ContextMenuButton>
-          <ContextMenuButton icon={<Clipboard />} onClick={onPaste}>粘贴节点</ContextMenuButton>
-          <ContextMenuDivider />
-          <ContextMenuButton icon={<Download />} onClick={onExportImage}>导出画布图片</ContextMenuButton>
-          <ContextMenuButton icon={<FileDown />} onClick={onExportJSON}>导出画布</ContextMenuButton>
-          <ContextMenuButton icon={<FileUp />} onClick={onImport}>导入画布</ContextMenuButton>
-          <ContextMenuDivider />
-          <ContextMenuButton icon={<Trash2 />} danger onClick={onClear}>清空当前画布</ContextMenuButton>
+          <ContextMenuItem onSelect={onAddText}><Type />添加文字节点</ContextMenuItem>
+          <ContextMenuItem onSelect={onAddImage}><ImagePlus />添加图片节点</ContextMenuItem>
+          <ContextMenuItem onSelect={onAddVideo}><Video />添加视频生成节点</ContextMenuItem>
+          <ContextMenuItem onSelect={onAddConfig}><Settings2 />添加生成配置节点</ContextMenuItem>
+          <ContextMenuItem onSelect={onPaste}><Clipboard />粘贴节点</ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={onExportImage}><Download />导出画布图片</ContextMenuItem>
+          <ContextMenuItem onSelect={onExportJSON}><FileDown />导出画布</ContextMenuItem>
+          <ContextMenuItem onSelect={onImport}><FileUp />导入画布</ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => { document.getElementById(triggerID)?.focus({ preventScroll: true }); onClear(); }}><Trash2 />清空当前画布</ContextMenuItem>
         </>
       ) : (
         <>
           {menu.type === "node" ? <>
-            <ContextMenuButton icon={<Info />} onClick={onInfo}>节点详情</ContextMenuButton>
-            {(mediaNode?.type === "panorama" ? mediaNode.panorama_source_prompt || mediaNode.prompt : mediaNode?.prompt)?.trim() ? <ContextMenuButton icon={<Clipboard />} onClick={onCopyContent}>{mediaNode?.type === "text" ? "复制文字" : "复制提示词"}</ContextMenuButton> : null}
-            <ContextMenuDivider />
-            <ContextMenuButton icon={<Copy />} onClick={onDuplicate}>复制节点</ContextMenuButton>
+            <ContextMenuItem onSelect={() => { document.getElementById(triggerID)?.focus({ preventScroll: true }); onInfo(); }}><Info />节点详情</ContextMenuItem>
+            {(mediaNode?.type === "panorama" ? mediaNode.panorama_source_prompt || mediaNode.prompt : mediaNode?.prompt)?.trim() ? <ContextMenuItem onSelect={onCopyContent}><Clipboard />{mediaNode?.type === "text" ? "复制文字" : "复制提示词"}</ContextMenuItem> : null}
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={onDuplicate}><Copy />复制节点</ContextMenuItem>
           </> : null}
-          <ContextMenuButton icon={<Trash2 />} danger onClick={onDelete}>删除</ContextMenuButton>
+          <ContextMenuItem variant="destructive" onSelect={onDelete}><Trash2 />删除</ContextMenuItem>
         </>
       )}
-    </ScrollArea>
-    </OverlaySurface>
+    </ContextMenuContent>
   );
-}
-
-function ContextMenuButton({ icon, danger = false, onClick, children }: { icon: ReactNode; danger?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-muted focus-visible:outline-none focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", danger && "text-destructive")} onClick={onClick}><span className="[&>svg]:size-4">{icon}</span>{children}</button>;
-}
-
-function ContextMenuDivider() {
-  return <div className="my-1 h-px bg-border" />;
 }
 
 function CanvasNodeInfoContent({ node, configInputs }: { node: CanvasNode; configInputs: ReturnType<typeof canvasConfigInputs> }) {
   const [view, setView] = useState<"info" | "json">("info");
   useEffect(() => setView("info"), [node.id]);
   const json = useMemo(() => canvasNodeInfoJSON(node), [node]);
-  const typeLabel = node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "config" ? "生成配置" : node.type === "group" ? "组" : "文字";
+  const typeLabel = node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "script" ? "脚本" : node.type === "config" ? "生成配置" : node.type === "group" ? "组" : "文字";
   const nodeIcon = node.type === "image" ? <ImagePlus /> : node.type === "video" ? <Video /> : node.type === "audio" ? <Music /> : node.type === "panorama" ? <Compass /> : node.type === "director" ? <Camera /> : node.type === "config" ? <Settings2 /> : node.type === "group" ? <Grid2X2 /> : <Type />;
   const statusLabel = node.generation_status ? canvasGenerationStatusLabel(node.generation_status) : "普通节点";
   return (
     <div className="space-y-5 pb-2">
       <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-3">
         <p className="text-xs font-semibold text-muted-foreground">节点数据</p>
-        <div className="flex rounded-lg bg-muted p-1">
-          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "info" && "bg-card text-brand shadow-sm")} onClick={() => setView("info")}>信息</Button>
-          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "json" && "bg-card text-brand shadow-sm")} onClick={() => setView("json")}>JSON</Button>
+        <div className="flex p-1">
+          <Button variant="ghost" size="sm"  onClick={() => setView("info")}>信息</Button>
+          <Button variant="ghost" size="sm"  onClick={() => setView("json")}>JSON</Button>
         </div>
       </div>
       {view === "info" ? (
           <div className="space-y-5 text-sm">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand [&>svg]:size-4.5">{nodeIcon}</span>
+              <ItemMedia variant="icon" className="grid size-10 shrink-0 place-items-center [&>svg]:size-4.5">{nodeIcon}</ItemMedia>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-foreground">{node.title || canvasNodeFallbackTitle(node.type)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{typeLabel} · {statusLabel}</p>
               </div>
-              {node.generation_status ? <span className={cn("shrink-0 rounded-full px-2 py-1 text-[11px] font-medium", node.generation_status === "success" ? statusToneClasses.success.soft : node.generation_status === "error" ? statusToneClasses.danger.soft : node.generation_status === "loading" ? statusToneClasses.info.soft : "bg-muted text-muted-foreground")}>{statusLabel}</span> : null}
+              {node.generation_status ? <Badge variant="secondary" className="shrink-0">{statusLabel}</Badge> : null}
             </div>
             <InfoSection title="基础信息">
               <InfoRow label="节点 ID" value={node.id} mono copyable />
@@ -5490,7 +5808,7 @@ function CanvasNodeInfoContent({ node, configInputs }: { node: CanvasNode; confi
             </InfoSection> : null}
           </div>
         ) : (
-          <ScrollArea className="max-h-[min(60dvh,32rem)] rounded-lg border border-border bg-muted/35" viewportClassName="p-4" viewClass="text-xs leading-5"><pre className="whitespace-pre-wrap break-words font-mono">{json}</pre></ScrollArea>
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(60dvh,32rem)]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 text-xs leading-5 p-4"><CodeBlock><CodeBlockContent wrap>{json}</CodeBlockContent></CodeBlock></div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         )}
     </div>
   );
@@ -5501,15 +5819,7 @@ function InfoSection({ title, children }: { title: string; children: ReactNode }
 }
 
 function InfoRow({ label, value, mono = false, copyable = false }: { label: string; value: string; mono?: boolean; copyable?: boolean }) {
-  const copyValue = async () => {
-    try {
-      await copyClipboardText(value);
-      toast.success("已复制");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "复制失败");
-    }
-  };
-  return <div className="grid min-h-10 grid-cols-[76px_minmax(0,1fr)] items-start gap-3 py-2.5"><span className="text-xs leading-5 text-muted-foreground">{label}</span><span className="flex min-w-0 items-start gap-1.5"><span className={cn("min-w-0 flex-1 break-words leading-5", mono && "font-mono text-xs")}>{value}</span>{copyable ? <Tooltip><TooltipTrigger asChild><button type="button" className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground" aria-label={`复制${label}`} onClick={() => void copyValue()}><Copy className="size-3.5" /></button></TooltipTrigger><TooltipContent>复制{label}</TooltipContent></Tooltip> : null}</span></div>;
+  return <div className="grid min-h-10 grid-cols-[76px_minmax(0,1fr)] items-start gap-3 py-2.5"><span className="text-xs leading-5 text-muted-foreground">{label}</span><span className="flex min-w-0 items-start gap-1.5"><span className={cn("min-w-0 flex-1 break-words leading-5", mono && "font-mono text-xs")}>{value}</span>{copyable ? <Tooltip><TooltipTrigger asChild><CodeBlockCopyButton size="icon-sm" className="shrink-0" aria-label={`复制${label}`} value={value} /></TooltipTrigger><TooltipContent>复制{label}</TooltipContent></Tooltip> : null}</span></div>;
 }
 
 function formatCanvasFileBytes(bytes: number) {

@@ -116,6 +116,7 @@ function outputNodes(nodes: CanvasNode[]) {
 
 function taskType(nodes: CanvasNode[]): CanvasTaskQueueItem["type"] {
   const node = nodes.find((item) => item.type !== "config") || nodes[0];
+  if (node?.type === "script") return "text";
   const type = node?.type === "config" ? node.generation_mode : node?.type;
   return type === "video" || type === "audio" || type === "panorama" || type === "text" ? type : "image";
 }

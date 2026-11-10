@@ -13,7 +13,7 @@ const { flushChanges } = require("./flush-changes.cjs");
 const development = !app.isPackaged;
 app.setName("chatgpt2api");
 app.setPath("userData", path.join(app.getPath("appData"), development ? "chatgpt2api-desktop-development" : "chatgpt2api"));
-const settingsURL = pathToFileURL(path.join(__dirname, "settings", "index.html")).href;
+const settingsURL = pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
 const preferencesFile = path.join(app.getPath("userData"), "connection.json");
 const runtimeRoot = path.join(app.getPath("userData"), "runtime");
 let preferences = { ...defaults };

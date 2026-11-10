@@ -1,5 +1,7 @@
 "use client";
 
+import { ItemMedia } from "@/components/ui/item";
+
 import { KeyRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -34,13 +36,13 @@ export function RelayTokenRequiredDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="w-[min(92vw,440px)]">
-        <DialogHeader className="gap-3 pr-0">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+      <DialogContent showCloseButton={false} className="w-[min(92vw,440px)] sm:max-w-none">
+        <DialogHeader >
+          <ItemMedia variant="icon" className="flex size-11 items-center justify-center">
             <KeyRound className="size-5" />
-          </div>
+          </ItemMedia>
           <DialogTitle>请选择{creationLabel}密钥</DialogTitle>
-          <DialogDescription className="leading-6">
+          <DialogDescription >
             生成前需要先在个人中心选择一枚用于{creationLabel}的可用密钥。如果没有可用密钥，请先创建后再回来生成。
           </DialogDescription>
         </DialogHeader>

@@ -1,3 +1,6 @@
+import { LabeledField } from "@/components/labeled-field";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Item } from "@/components/ui/item";
 import { Camera } from "lucide-react";
 
 import {
@@ -38,12 +41,12 @@ export function CanvasCameraControl({
         <Button
           type="button"
           variant="outline"
-          className={cn("justify-start", value?.enabled && "border-brand text-brand", className)}
+          className={cn("justify-start", className)}
         >
           <Camera />摄像机
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(680px,calc(100vw-1rem))] p-4">
+      <PopoverContent side="top" align="end" className="max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(680px,calc(100vw-1rem))]"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <div className="mb-4 flex items-start justify-between gap-4 border-b border-border pb-3">
           <div className="min-w-0 space-y-1">
             <h3 className="text-sm font-semibold">摄像机控制</h3>
@@ -93,10 +96,10 @@ export function CanvasCameraControl({
             }))}
           />
         </div>
-        <div className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground" aria-live="polite">
+        <Item variant="muted" className="mt-4 px-3 py-2" aria-live="polite">
           {control.enabled ? "已启用" : "未启用"} · {focalMeta?.zhName} · {apertureMeta?.zhName}
-        </div>
-      </PopoverContent>
+        </Item>
+      </ScrollArea></PopoverContent>
     </Popover>
   );
 }
@@ -113,14 +116,11 @@ function CameraSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger><SelectValue /></SelectTrigger>
+    <LabeledField className="grid min-w-0 gap-1.5 text-xs" label={<span className="text-muted-foreground">{label}</span>}>{(fieldId) => <><Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={fieldId}><SelectValue /></SelectTrigger>
         <SelectContent>
           {options.map((option) => <SelectItem key={option.value} value={option.value}><TooltipHint content={option.title}><span className="block w-full">{option.label}</span></TooltipHint></SelectItem>)}
         </SelectContent>
-      </Select>
-    </label>
+      </Select></>}</LabeledField>
   );
 }

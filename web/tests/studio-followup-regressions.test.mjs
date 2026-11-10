@@ -6,6 +6,8 @@ import * as imageOptions from "../src/lib/image-options.ts";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
 import { activeVideoModelContracts, installVideoModelContracts, videoModelContract } from "../src/lib/video-model-contracts.ts";
 import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
+import { videoModelRequiresHTTPSReferences } from "../src/lib/video-model-capabilities.ts";
+import { isPublicHTTPSReferenceURL } from "../src/lib/public-reference-url.ts";
 import { isVideoSaveFailure } from "../src/lib/video-task-error.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
 import { imageConversationHasActiveTurn, canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
@@ -15,6 +17,7 @@ const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/
 
 // Execute source functions with deferred API boundaries to exercise races.
 function extract(name, context, sourceFile = source) {
+  context = { videoModelRequiresHTTPSReferences, isPublicHTTPSReferenceURL, ...context };
   let expression;
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) expression = node.getText(sourceFile);
@@ -183,7 +186,7 @@ test("video submit reports unsupported contracts without rejecting the event han
     selectedConversationId: null, isLoadingHistory: false,
     isSubmitDispatchingRef: { current: false }, referenceUploadPendingCountRef: { current: 0 },
     videoFrameUploadsRef: { current: new Map() }, videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
-    composerMode: "video", imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
+    composerMode: "video", smartContextEnabled: false, imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
     referenceImages: [], videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [],
     videoModel: "missing-contract", videoModelOptions: [{ value: "missing-contract" }], videoSeconds: "4", videoSize: "1280x720",
     videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: {},
@@ -266,6 +269,7 @@ test("first and last frame uploads keep the remaining slot busy", async () => {
   const busy = [];
   let next = 0;
   const upload = extract("handleVideoFrameFileChange", {
+    videoModel: "isolated-video",
     referenceUploadEpochRef: { current: 0 }, pageActiveRef: { current: true }, videoFrameUploadsRef: { current: new Map() },
     setVideoFrameUploading: value => busy.push(value), uploadVideoImageReference: () => uploads[next++].promise,
     setVideoFirstFrameURL: () => {}, setVideoLastFrameURL: () => {}, toast: { error: () => {}, success: () => {} },
@@ -306,6 +310,7 @@ for (const kind of ["video", "audio"]) {
     const busy = [];
     let next = 0;
     const context = {
+      videoModel: "isolated-video",
       pageActiveRef: { current: true }, referenceUploadEpochRef: { current: 0 },
       videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
       pendingAudioReferenceDurationMsRef: { current: 0 }, audioReferenceMetadataRef: { current: new Map() },
@@ -337,6 +342,7 @@ test("delayed audio inspection counts another upload that already completed", as
   let uploads = 0;
   const totals = [];
   const upload = extract("handleAudioReferenceFileChange", {
+    videoModel: "isolated-video",
     referenceUploadEpochRef: { current: 0 }, pageActiveRef: { current: true }, audioReferenceUploadPendingCountRef: { current: 0 },
     pendingAudioReferenceDurationMsRef: { current: 0 }, audioReferenceMetadataRef: metadata,
     videoReferenceAudioURLs: [], videoReferenceAudioURLsRef: { current: [] },

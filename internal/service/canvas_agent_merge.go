@@ -35,6 +35,10 @@ func mergeCanvasAgentDocument(base, edited, current CanvasDocument) CanvasDocume
 			delete(merged, key)
 		}
 	}
+	if sessions, ok := merged["agent_sessions"]; ok {
+		data, _ := json.Marshal(sessions)
+		merged["agent_sessions"] = json.RawMessage(mergeCanvasAgentMessageQueues(data, current.AgentSessions))
+	}
 	data, _ := json.Marshal(merged)
 	var result CanvasDocument
 	_ = json.Unmarshal(data, &result)

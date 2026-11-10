@@ -1,14 +1,14 @@
 # 画布 Codex 与 MCP 本地服务
 
-此目录为独立的 Node.js 本地服务，无 npm 依赖。画布页面通过本机 HTTP 连接服务，再使用 Codex 官方 app-server 的 stdio 协议。当前实现按 Codex CLI 0.154.0 的 schema 校验；动态工具接口属于官方 experimental API，升级 CLI 后应先执行下面的验证。
+此目录为独立的 Node.js 本地服务，无 npm 依赖。画布页面通过本机 HTTP 连接服务，再使用 Codex 官方 app-server 的 stdio 协议。当前实现按 Codex CLI 0.167.0 的 schema 校验；动态工具接口属于官方 experimental API，升级 CLI 后应先执行下面的验证。
 
 ## 运行
 
-需要 Node.js 22 或更高版本，以及已安装并登录的 Codex CLI：
+需要 Node.js 22 或更高版本，以及已安装并使用文件凭据登录的 Codex CLI：
 
 ```bash
 codex --version
-codex login
+codex -c cli_auth_credentials_store=file login
 node canvas-agent/server.mjs --origin http://127.0.0.1:8002
 ```
 
@@ -29,6 +29,8 @@ node canvas-agent/server.mjs --origin http://127.0.0.1:8002 --codex-bin "C:\Tool
 打开画布的 Agent 面板，将引擎切换为 Codex，填写本地服务地址和终端显示的连接密钥。连接后选择 Codex 模型及思考强度，即可使用现有画布工具、Skill、素材引用和媒体生成开关。当前登录画布账号的权限与密钥继续由 Go 后端处理；本地服务不接收网页 Cookie。
 
 连接密钥仅保留在页面内存中，刷新后需要重新连接。同一个本地服务运行期间，原对话会恢复已有 Codex 任务；服务重新启动后会以当前画布、创作状态和记忆摘要开启新任务。Codex 自身负责其任务历史和压缩。切换引擎时，两种引擎各自保留协议历史，不会自动转换另一引擎的全部消息。
+
+画布使用独立的临时 HOME 和 CODEX_HOME，只复制当前登录的 `auth.json`，不继承个人配置、历史、Skill、插件、MCP、钩子或业务密钥环境变量。凭据只保存在当前用户可访问的临时目录，本地服务正常退出后连同临时对话记录一起删除。已有登录只存于系统钥匙串时，先运行上面的文件凭据登录命令；重新登录后重启本地服务以加载新凭据。画布禁用 Codex 内置命令、本地图片读取、浏览器、电脑操作和子 Agent，仅开放当前画布声明的工具；命令或文件变更的审批请求由桥接服务直接拒绝。用户选择的画布 Skill 仍通过画布工具读取。
 
 关闭页面、退出账号或断开连接会停止对应的 Codex 子进程及待确认工具；已提交的媒体生成任务仍由现有后端处理。结束使用后在运行服务的终端按 Ctrl+C。
 

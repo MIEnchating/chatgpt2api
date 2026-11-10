@@ -21,8 +21,10 @@ const CANVAS_AGENT_ACTION_NAMES = [
   "ask_user_question",
   "update_plan",
   "create_primary_script_node",
+  "create_script_node",
   "create_text_node",
   "update_text_node",
+  "update_script_node",
   "update_node",
   "delete_node",
   "create_connection",
@@ -122,9 +124,15 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
     case "get_generation_task":
     case "get_media_task_status":
     case "generate_node":
-    case "delete_node":
       normalized = { nodeId: requiredString(input.nodeId, "nodeId") };
       break;
+    case "delete_node": {
+      const nodeIds = stringArray(input.nodeIds);
+      if (Boolean(input.nodeId) === Boolean(nodeIds.length)) throw new Error("删除必须提供 nodeId 或 nodeIds，且只能提供其中一个");
+      if (nodeIds.length && nodeIds.length !== (input.nodeIds as string[]).length) throw new Error("待删除节点不得重复或为空");
+      normalized = nodeIds.length ? { nodeIds } : { nodeId: requiredString(input.nodeId, "nodeId") };
+      break;
+    }
     case "delete_connection":
       normalized = { connectionId: requiredString(input.connectionId, "connectionId") };
       break;
@@ -135,7 +143,14 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
       normalized = { title: requiredString(input.title, "title"), content: requiredString(input.content, "content"), sourceNodeIds: stringArray(input.sourceNodeIds), projectTitle: requiredString(input.projectTitle, "projectTitle") };
       break;
     case "create_text_node":
+    case "create_script_node":
       normalized = { title: requiredString(input.title, "title"), content: requiredString(input.content, "content"), sourceNodeIds: stringArray(input.sourceNodeIds) };
+      break;
+    case "update_script_node":
+      normalized = { nodeId: requiredString(input.nodeId, "nodeId"), scriptProject: input.scriptProject,
+        ...(typeof input.title === "string" ? { title: input.title } : {}),
+        ...(typeof input.content === "string" ? { content: input.content } : {}),
+      };
       break;
     case "update_text_node": {
       const title = optionalString(input.title);
@@ -145,7 +160,8 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
       break;
     }
     case "update_node":
-      normalized = { nodeId: requiredString(input.nodeId, "nodeId"), title: requiredString(input.title, "title") };
+      if (Object.keys(input).every((key) => key === "nodeId")) throw new Error("update_node 缺少要修改的字段");
+      normalized = { ...input, nodeId: requiredString(input.nodeId, "nodeId") };
       break;
     case "set_agent_state": {
       const phase = requiredString(input.phase, "phase") as CanvasAgentPhase;

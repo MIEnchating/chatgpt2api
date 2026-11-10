@@ -71,11 +71,11 @@ var apiPermissionCatalog = []APIPermission{
 	apiPermission("POST", "/api/proxy/test", "测试代理", "设置", false),
 	apiPermission("GET", "/api/storage/info", "查看存储状态", "设置", false),
 	apiPermission("GET", "/api/admin/users", "查看用户", "用户管理", true),
-	apiPermission("POST", "/api/admin/users", "创建/修改用户", "用户管理", true),
+	apiPermission("POST", "/api/admin/users", "修改用户（创建和角色分配仅管理员）", "用户管理", true),
 	apiPermission("DELETE", "/api/admin/users", "删除用户", "用户管理", true),
 	apiPermission("GET", "/api/admin/roles", "查看角色", "权限管理", true),
-	apiPermission("POST", "/api/admin/roles", "创建/修改角色", "权限管理", true),
-	apiPermission("DELETE", "/api/admin/roles", "删除角色", "权限管理", true),
+	apiPermission("POST", "/api/admin/roles", "创建/修改角色（仅管理员）", "权限管理", true),
+	apiPermission("DELETE", "/api/admin/roles", "删除角色（仅管理员）", "权限管理", true),
 	apiPermission("GET", "/api/admin/permissions", "查看权限目录", "权限管理", false),
 }
 

@@ -1,3 +1,7 @@
+import { LabeledField } from "@/components/labeled-field";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { useEffect, useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -50,8 +54,8 @@ export function AutoDLWorkflowFields({ tokenName, model, value, onChange, disabl
     return () => controller.abort();
   }, [tokenName, model]);
   if (!tokenName.startsWith("__custom_relay__:") || active === false) return children;
-  if (loading) return <p className="text-xs leading-5 text-muted-foreground">正在读取 AutoDL 工作流参数…</p>;
-  if (error) return <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs leading-5 text-destructive [overflow-wrap:anywhere]">{error}</p>;
+  if (loading) return <LoadingState compact label="正在读取 AutoDL 工作流参数…" />;
+  if (error) return <Alert variant="destructive" role="alert">{error}</Alert>;
   if (!workflow) return null;
   const update = (key: string, next: string | number | boolean | undefined) => {
     const fields = { ...value };
@@ -59,18 +63,15 @@ export function AutoDLWorkflowFields({ tokenName, model, value, onChange, disabl
     else fields[key] = next;
     onChange(fields);
   };
-  return <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-muted/15 p-3">
+  return <Card className="grid min-w-0 gap-3 p-3">
     <div className="text-sm font-medium [overflow-wrap:anywhere]">{workflow.name || workflow.uuid}</div>
     <p className="text-xs leading-5 text-muted-foreground">{workflow.kind === "video" ? "参数来自工作流规则。提示词、时长与参考素材使用画布和视频设置中的值。" : "参数来自工作流规则。提示词与连线音频会自动传入；音频也可填写公开 URL。"}</p>
     {Object.entries(workflow.input_rules || {}).filter(([key]) => key !== "prompt" && key !== "prompt_text" && !(workflow.kind === "video" && (key === "duration" || /^(first_frame|last_frame|ref_image(?:_\d+)?|ref_audio(?:_\d+)?|ref_video(?:_\d+)?)$/.test(key)))).map(([key, rule]) => {
       const mediaRule = ["image", "audio", "video"].includes(rule.type);
       const current = value[key] ?? (mediaRule ? undefined : rule.default);
-      return <label key={key} className="grid min-w-0 gap-2 text-xs leading-5 [overflow-wrap:anywhere]">
-        <span>{parameterLabels[key] || key}{rule.required ? " *" : ""}</span>
-        {rule.type === "boolean" ? <Checkbox disabled={disabled} checked={current === true} onCheckedChange={(checked) => update(key, checked === true)} />
-          : rule.options?.length ? <Select value={typeof current === "string" ? current : ""} disabled={disabled} onValueChange={(next) => update(key, next)}><SelectTrigger><SelectValue placeholder="选择参数值" /></SelectTrigger><SelectContent>{rule.options.map((item) => <SelectItem key={item.label} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select>
-            : <Input disabled={disabled} type={["integer", "number", "float"].includes(rule.type) ? "number" : mediaRule ? "url" : "text"} min={rule.min} max={rule.max} minLength={rule.min_length} maxLength={rule.max_length} placeholder={mediaRule ? "https:// 或通过连线提供素材" : undefined} step={rule.type === "integer" ? 1 : "any"} value={typeof current === "string" || typeof current === "number" ? current : ""} onChange={(event) => update(key, event.target.value === "" ? undefined : ["integer", "number", "float"].includes(rule.type) ? Number(event.target.value) : event.target.value)} />}
-      </label>;
+      return <LabeledField key={key} className="grid min-w-0 gap-2 text-xs leading-5 [overflow-wrap:anywhere]" label={<span>{parameterLabels[key] || key}{rule.required ? " *" : ""}</span>}>{(fieldId) => <>{rule.type === "boolean" ? <Checkbox id={fieldId} disabled={disabled} checked={current === true} onCheckedChange={(checked) => update(key, checked === true)} />
+          : rule.options?.length ? <Select value={typeof current === "string" ? current : ""} disabled={disabled} onValueChange={(next) => update(key, next)}><SelectTrigger id={fieldId}><SelectValue placeholder="选择参数值" /></SelectTrigger><SelectContent>{rule.options.map((item) => <SelectItem key={item.label} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select>
+            : <Input id={fieldId} disabled={disabled} type={["integer", "number", "float"].includes(rule.type) ? "number" : mediaRule ? "url" : "text"} min={rule.min} max={rule.max} minLength={rule.min_length} maxLength={rule.max_length} placeholder={mediaRule ? "https:// 或通过连线提供素材" : undefined} step={rule.type === "integer" ? 1 : "any"} value={typeof current === "string" || typeof current === "number" ? current : ""} onChange={(event) => update(key, event.target.value === "" ? undefined : ["integer", "number", "float"].includes(rule.type) ? Number(event.target.value) : event.target.value)} />}</>}</LabeledField>;
     })}
-  </div>;
+  </Card>;
 }

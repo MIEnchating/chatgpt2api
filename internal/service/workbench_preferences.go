@@ -30,6 +30,8 @@ type VideoWorkbenchSettings struct {
 
 func applyWorkbenchSettings(preferences *ImageGenerationPreferences, previous, next CreationWorkbenchPreferences) {
 	previous.ComposerMode = next.ComposerMode
+	previous.SmartContextEnabled = next.SmartContextEnabled
+	previous.ContextTextModel = next.ContextTextModel
 	if next.ComposerMode == "image" {
 		previous.ImageModel = next.ImageModel
 		previous.ImageSize = next.ImageSize

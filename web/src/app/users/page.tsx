@@ -1,25 +1,17 @@
 "use client";
 
+import { LabeledField } from "@/components/labeled-field";
+import { Spinner } from "@/components/ui/spinner";
+import { Card } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+
+import { PasswordInput } from "@/components/password-input";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  Ban,
-  CheckCircle2,
-  KeyRound,
-  LoaderCircle,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  TriangleAlert,
-  Trash2,
-  UserRound,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Ban, CheckCircle2, KeyRound, Plus, RefreshCw, ShieldCheck, TriangleAlert, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
+import { ManagementHeader, ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loading-state";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TooltipHint } from "@/components/ui/tooltip";
@@ -243,12 +235,10 @@ function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
 
   if (safePoints.length === 0) {
     return (
-      <div
-        className="flex h-16 w-[230px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-xs text-muted-foreground"
+      <EmptyState compact title="暂无调用"
+        className="h-16 min-h-0 w-[230px] p-2"
         aria-label="调用曲线暂无数据"
-      >
-        暂无调用
-      </div>
+      />
     );
   }
 
@@ -288,7 +278,7 @@ function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
 
   return (
     <div className="w-[180px] space-y-1.5" aria-label={label}>
-      <div className="h-16 overflow-hidden rounded-lg border border-border/70 bg-background">
+      <Card className="h-16 overflow-hidden gap-0 p-0">
         <svg viewBox={`0 0 ${width} ${height}`} role="img" className="h-full w-full">
           <title>{label}</title>
           <line x1={paddingX} x2={width - paddingX} y1={paddingTop} y2={paddingTop} className="stroke-border/70" strokeDasharray="3 5" />
@@ -311,7 +301,7 @@ function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
             );
           })}
         </svg>
-      </div>
+      </Card>
       <div className="flex items-center justify-between gap-2 text-[11px] leading-4 text-muted-foreground">
         <span>{formatUsageDate(safePoints[0].date)}-{formatUsageDate(latestPoint.date)}</span>
         <span>峰值 {formatCompactNumber(peakPoint.calls)}</span>
@@ -527,9 +517,9 @@ function UsersContent() {
       className={className}
       aria-sort={sortBy === field ? (sortOrder === "asc" ? "ascending" : "descending") : "none"}
     >
-      <button
+      <Button variant="ghost"
         type="button"
-        className="-ml-1 inline-flex h-8 items-center gap-1 rounded-md px-1 text-left font-semibold transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex items-center text-left justify-start px-0"
         onClick={() => handleSort(field)}
         disabled={field === "call_count" && !usageStatsAvailable}
         title={field === "call_count" && !usageStatsAvailable ? "使用统计暂时不可用" : undefined}
@@ -537,7 +527,7 @@ function UsersContent() {
       >
         <span>{label}</span>
         {sortIcon(field)}
-      </button>
+      </Button>
     </TableHead>
   );
 
@@ -665,6 +655,7 @@ function UsersContent() {
 
   return (
     <ManagementPage data-users-layout aria-label="用户管理">
+      <ManagementHeader title="用户管理" description="查看账号、访问权限与创作额度。" />
       <ManagementPanel className="flex-1">
           <ManagementToolbar>
             <div data-user-toolbar className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(12rem,1fr)_140px_140px_auto_auto]">
@@ -688,7 +679,7 @@ function UsersContent() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="h-10 rounded-lg">
+                <SelectTrigger aria-label="筛选登录来源">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -703,7 +694,7 @@ function UsersContent() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="h-10 rounded-lg">
+                <SelectTrigger aria-label="筛选用户状态">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -715,7 +706,7 @@ function UsersContent() {
               <Button
                 type="button"
                 variant="outline"
-                className="col-span-2 h-10 rounded-lg px-3 sm:col-span-1"
+                className="col-span-2 sm:col-span-1"
                 disabled={!hasActiveFilters}
                 onClick={() => {
                   setSearchInput("");
@@ -725,22 +716,22 @@ function UsersContent() {
                   setPage(1);
                 }}
               >
-                <X className="size-4" />
+                <X  />
                 清除
               </Button>
               <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 sm:col-span-3 xl:col-span-1">
-                <Button variant="outline" onClick={() => void loadUsers()} disabled={isLoading} className="h-10 rounded-lg">
-                  <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                <Button variant="outline" onClick={() => void loadUsers()} disabled={isLoading} >
+                  {isLoading ? <Spinner /> : <RefreshCw />}
                   刷新
                 </Button>
-                <Button onClick={openCreateDialog} className="h-10 rounded-lg">
-                  <Plus className="size-4" />
+                <Button onClick={openCreateDialog} >
+                  <Plus  />
                   创建用户
                 </Button>
               </div>
             </div>
           </ManagementToolbar>
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
             <Table aria-label="用户列表" aria-busy={isLoading} className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>
@@ -763,7 +754,7 @@ function UsersContent() {
                 {items.map((user) => {
                   const isPending = pendingIds.has(user.id);
                   return (
-                    <TableRow key={user.id} className="text-muted-foreground">
+                    <TableRow key={user.id} >
                       <TableCell>
                         <Checkbox
                           checked={selectedUserIds.has(user.id)}
@@ -775,7 +766,7 @@ function UsersContent() {
                         <div className="min-w-0 space-y-1.5">
                           <div className="flex min-w-0 items-center gap-2">
                             <div className="truncate font-medium text-foreground">{user.name || "普通用户"}</div>
-                            <Badge variant={user.enabled ? "success" : "danger"} className="shrink-0 rounded-md">
+                            <Badge variant={user.enabled ? "default" : "destructive"} className="shrink-0">
                               {user.enabled ? "启用" : "禁用"}
                             </Badge>
                           </div>
@@ -786,7 +777,7 @@ function UsersContent() {
                                 <span className="truncate">{user.username}</span>
                               </>
                             ) : null}
-                            <Badge variant="secondary" className="rounded-md px-1.5 py-0 text-[11px]">
+                            <Badge variant="secondary" >
                               {userSourceLabel(user)}
                             </Badge>
                           </div>
@@ -799,7 +790,7 @@ function UsersContent() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col items-start gap-1">
-                          <Badge variant="secondary" className="max-w-[170px] rounded-md">
+                          <Badge variant="secondary" className="max-w-[170px]">
                             <span className="truncate">{roleLabel(user, roles)}</span>
                           </Badge>
                           <code className="max-w-[170px] truncate font-mono text-[11px] text-muted-foreground">
@@ -818,16 +809,14 @@ function UsersContent() {
                             </div>
                           </div>
                         ) : (
-                          <div
-                            className="flex h-16 w-[230px] items-center gap-2 rounded-lg border border-dashed border-amber-300/80 bg-amber-50/60 px-3 text-xs text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/20 dark:text-amber-200"
+                          <Alert variant="destructive"
+                            className="h-16 w-[230px] px-3"
                             role="status"
                           >
-                            <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-                            <div>
-                              <div className="font-medium">统计暂时不可用</div>
-                              <div className="mt-0.5 text-[11px] opacity-80">用户数据与操作不受影响</div>
-                            </div>
-                          </div>
+                            <TriangleAlert aria-hidden="true" />
+                            <AlertTitle>统计暂时不可用</AlertTitle>
+                            <AlertDescription>用户数据与操作不受影响</AlertDescription>
+                          </Alert>
                         )}
                       </TableCell>
                       <TableCell>
@@ -842,27 +831,27 @@ function UsersContent() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="min-w-[74px] rounded-lg px-3 text-xs"
+                            className="min-w-[74px]"
                             onClick={() => openRoleDialog(user)}
                             disabled={isPending}
                           >
-                            <ShieldCheck className="size-4" />
+                            <ShieldCheck  />
                             角色
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="min-w-[74px] rounded-lg px-3 text-xs"
+                            className="min-w-[74px]"
                             onClick={() => void handleToggle(user)}
                             disabled={isPending}
                           >
                             {isPending ? (
-                              <LoaderCircle className="size-4 animate-spin" />
+                              <Spinner />
                             ) : user.enabled ? (
-                              <Ban className="size-4" />
+                              <Ban  />
                             ) : (
-                              <CheckCircle2 className="size-4" />
+                              <CheckCircle2  />
                             )}
                             {user.enabled ? "禁用" : "启用"}
                           </Button>
@@ -870,11 +859,11 @@ function UsersContent() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="min-w-[74px] rounded-lg border-destructive/30 px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            className="min-w-[74px]"
                             onClick={() => setDeletingUser(user)}
                             disabled={isPending}
                           >
-                            <Trash2 className="size-4" />
+                            <Trash2  />
                             删除
                           </Button>
                         </div>
@@ -886,7 +875,7 @@ function UsersContent() {
             </Table>
             {isLoading && items.length === 0 ? <LoadingState label="正在加载用户" /> : null}
             {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
-          </ScrollArea>
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           <ManagementPagination
             page={safePage}
             totalPages={totalPages}
@@ -904,10 +893,10 @@ function UsersContent() {
 
       <Dialog open={isCreateDialogOpen} onOpenChange={closeCreateDialog}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader className="gap-2">
+          <DialogHeader >
             <DialogTitle>创建用户</DialogTitle>
-            <DialogDescription className="text-sm leading-6">创建本地登录用户并绑定角色。</DialogDescription>
-          </DialogHeader>
+            <DialogDescription >创建本地登录用户并绑定角色。</DialogDescription>
+          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
           <form
             id="create-managed-user-form"
             className="grid gap-4"
@@ -917,71 +906,58 @@ function UsersContent() {
             }}
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">用户名</label>
-                <div className="relative">
+              <LabeledField className="gap-2" label="用户名">{(fieldId) => <><div className="relative">
                   <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
+                  <Input id={fieldId}
                     value={createForm.username}
                     disabled={isCreating}
                     onChange={(event) => updateCreateField("username", event.target.value.toLowerCase())}
                     placeholder="例如：operator_01"
                     autoComplete="username"
-                    className="h-10 rounded-lg pl-9"
+                    className="pl-9"
                     aria-invalid={Boolean(createErrors.username)}
                   />
                 </div>
-                {createErrors.username ? <p className="text-xs leading-5 text-destructive">{createErrors.username}</p> : null}
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">显示名称</label>
-                <Input
+                {createErrors.username ? <p className="text-xs leading-5 text-destructive">{createErrors.username}</p> : null}</>}</LabeledField>
+              <LabeledField className="gap-2" label="显示名称">{(fieldId) => <><Input id={fieldId}
                   value={createForm.name}
                   disabled={isCreating}
                   onChange={(event) => updateCreateField("name", event.target.value)}
                   placeholder="例如：运营账号"
-                  className="h-10 rounded-lg"
-                />
-              </div>
+
+                /></>}</LabeledField>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">密码</label>
-                <div className="relative">
+              <LabeledField className="gap-2" label="密码">{(fieldId) => <><div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
+                  <PasswordInput id={fieldId}
                     value={createForm.password}
                     disabled={isCreating}
                     onChange={(event) => updateCreateField("password", event.target.value)}
                     placeholder="至少 8 位"
                     type="password"
                     autoComplete="new-password"
-                    className="h-10 rounded-lg pl-9"
+
+                    inputClassName="pl-9"
                     aria-invalid={Boolean(createErrors.password)}
                   />
                 </div>
-                {createErrors.password ? <p className="text-xs leading-5 text-destructive">{createErrors.password}</p> : null}
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">确认密码</label>
-                <Input
+                {createErrors.password ? <p className="text-xs leading-5 text-destructive">{createErrors.password}</p> : null}</>}</LabeledField>
+              <LabeledField className="gap-2" label="确认密码">{(fieldId) => <><PasswordInput id={fieldId}
                   value={createForm.confirmPassword}
                   disabled={isCreating}
                   onChange={(event) => updateCreateField("confirmPassword", event.target.value)}
                   placeholder="再次输入密码"
                   type="password"
                   autoComplete="new-password"
-                  className="h-10 rounded-lg"
+
                   aria-invalid={Boolean(createErrors.confirmPassword)}
                 />
-                {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}
-              </div>
+                {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}</>}</LabeledField>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">角色</label>
-                <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)} disabled={isCreating}>
-                  <SelectTrigger className="h-10 rounded-lg">
+              <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)} disabled={isCreating}>
+                  <SelectTrigger id={fieldId} >
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
                   <SelectContent>
@@ -991,28 +967,24 @@ function UsersContent() {
                       </SelectItem>
                     ))}
                   </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">状态</label>
-                <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")} disabled={isCreating}>
-                  <SelectTrigger className="h-10 rounded-lg">
+                </Select></>}</LabeledField>
+              <LabeledField className="gap-2" label="状态">{(fieldId) => <><Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")} disabled={isCreating}>
+                  <SelectTrigger id={fieldId} >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="true">已启用</SelectItem>
                     <SelectItem value="false">已禁用</SelectItem>
                   </SelectContent>
-                </Select>
-              </div>
+                </Select></>}</LabeledField>
             </div>
           </form>
-          <DialogFooter>
+          </ScrollArea><DialogFooter>
             <Button type="button" variant="secondary" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
               取消
             </Button>
             <Button type="submit" form="create-managed-user-form" disabled={isCreating}>
-              {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {isCreating ? <Spinner /> : <Plus  />}
               创建
             </Button>
           </DialogFooter>
@@ -1021,19 +993,17 @@ function UsersContent() {
 
       <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(roleUser?.id || "") ? setRoleUser(null) : null)}>
         <DialogContent>
-          <DialogHeader className="gap-2">
-            <DialogTitle className="flex items-center gap-2">
+          <DialogHeader >
+            <DialogTitle className="flex items-center">
               <ShieldCheck className="size-5 text-primary" />
               分配角色
             </DialogTitle>
-            <DialogDescription className="truncate text-sm">
+            <DialogDescription className="truncate">
               {roleUser?.name || "普通用户"} · {roleUser?.id}
             </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">角色</label>
-            <Select value={selectedRoleId} onValueChange={setSelectedRoleId} disabled={isSavingRole}>
-              <SelectTrigger className="h-10 rounded-lg">
+          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+          <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={selectedRoleId} onValueChange={setSelectedRoleId} disabled={isSavingRole}>
+              <SelectTrigger id={fieldId} >
                 <SelectValue placeholder="选择角色" />
               </SelectTrigger>
               <SelectContent>
@@ -1043,13 +1013,12 @@ function UsersContent() {
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
+            </Select></>}</LabeledField>
+          </ScrollArea><DialogFooter>
             <Button
               type="button"
               variant="secondary"
-             
+
               onClick={() => setRoleUser(null)}
               disabled={isSavingRole}
             >
@@ -1057,11 +1026,11 @@ function UsersContent() {
             </Button>
             <Button
               type="button"
-             
+
               onClick={() => void handleSaveRole()}
               disabled={isSavingRole || !roleUser || !selectedRoleId}
             >
-              {isSavingRole ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+              {isSavingRole ? <Spinner /> : <ShieldCheck  />}
               保存
             </Button>
           </DialogFooter>

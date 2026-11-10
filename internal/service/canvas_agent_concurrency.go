@@ -1,7 +1,9 @@
 package service
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"chatgpt2api/internal/util"
@@ -84,35 +86,36 @@ func (w *canvasAgentWorker) canvasChangedResult(message string) map[string]any {
 
 // Check the target and its upstream dependencies again after asynchronous work.
 func canvasAgentGenerationChanged(before, after CanvasDocument, id string) bool {
-	dependency := func(doc CanvasDocument) CanvasDocument {
-		ids := map[string]bool{}
-		var visit func(string)
-		visit = func(id string) {
-			if ids[id] {
-				return
-			}
-			ids[id] = true
-			for _, c := range doc.Connections {
-				if c.ToNodeID == id {
-					visit(c.FromNodeID)
-				}
-			}
+	return canvasAgentContentChanged(canvasAgentGenerationContext(before, id), canvasAgentGenerationContext(after, id))
+}
+
+func canvasAgentGenerationContext(doc CanvasDocument, id string) CanvasDocument {
+	ids := map[string]bool{}
+	var visit func(string)
+	visit = func(id string) {
+		if ids[id] {
+			return
 		}
-		visit(id)
-		out := CanvasDocument{}
-		for _, n := range doc.Nodes {
-			if ids[n.ID] {
-				out.Nodes = append(out.Nodes, n)
-			}
-		}
+		ids[id] = true
 		for _, c := range doc.Connections {
-			if ids[c.ToNodeID] {
-				out.Connections = append(out.Connections, c)
+			if c.ToNodeID == id {
+				visit(c.FromNodeID)
 			}
 		}
-		return out
 	}
-	return canvasAgentContentChanged(dependency(before), dependency(after))
+	visit(id)
+	out := CanvasDocument{}
+	for _, n := range doc.Nodes {
+		if ids[n.ID] {
+			out.Nodes = append(out.Nodes, n)
+		}
+	}
+	for _, c := range doc.Connections {
+		if ids[c.ToNodeID] {
+			out.Connections = append(out.Connections, c)
+		}
+	}
+	return out
 }
 
 // The final optimistic save must also reject results whose inputs changed after
@@ -164,4 +167,27 @@ func canvasAgentDiscardedGenerationTasks(base, edited, saved CanvasDocument) []s
 		}
 	}
 	return tasks
+}
+
+// Persist intent boundaries so restoring an approved SDK call cannot overwrite
+// edits made while its worker was offline. Agent progress does not affect them.
+func canvasAgentIntentFingerprints(doc CanvasDocument) (string, string) {
+	nodes := map[string]CanvasNode{}
+	layout := map[string][7]float64{}
+	edges := map[string]CanvasConnection{}
+	for _, node := range doc.Nodes {
+		nodes[node.ID] = canvasAgentContentNode(node)
+		layout[node.ID] = [7]float64{node.X, node.Y, node.Width, node.Height, node.ScaleX, node.ScaleY, node.Angle}
+	}
+	for _, edge := range doc.Connections {
+		edges[edge.ID] = edge
+	}
+	content := fmt.Sprintf("%x", sha256.Sum256([]byte(agentJSON(map[string]any{"nodes": nodes, "connections": edges}))))
+	positions := fmt.Sprintf("%x", sha256.Sum256([]byte(agentJSON(layout))))
+	return content, positions
+}
+
+func canvasAgentGenerationInputFingerprint(doc CanvasDocument, id string) string {
+	content, _ := canvasAgentIntentFingerprints(canvasAgentGenerationContext(doc, id))
+	return content
 }

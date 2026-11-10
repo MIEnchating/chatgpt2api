@@ -13,7 +13,7 @@ import (
 
 func TestCanvasAgentQuestionResumeRestoresLabeledImagesWithoutNewAttachments(t *testing.T) {
 	var turns atomic.Int32
-	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r CanvasAgentModelRequest) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
 		turn := turns.Add(1)
 		images := 0
 		for _, message := range r.Messages {
@@ -92,23 +92,27 @@ func TestCanvasAgentQuestionResumeRestoresLabeledImagesWithoutNewAttachments(t *
 
 func TestCanvasAgentCanFindAndViewHistoricalReferenceWithoutAskingUserForID(t *testing.T) {
 	w := memoryWorker(t, nil)
-	w.session["messages"] = []map[string]any{{"role": "user", "references": []map[string]any{{"id": "photo", "source": "attachment", "type": "image", "title": "正面关门", "url": "/api/files/photo/content"}}}}
+	assistant := w.assistant()
+	w.session["messages"] = []map[string]any{{"role": "user", "references": []map[string]any{{"id": "photo", "source": "attachment", "type": "image", "title": "正面关门", "url": "/api/files/photo/content"}}}, assistant}
 	w.messages = []map[string]any{{"role": "user", "content": "继续制作"}}
 	index, err := w.tool(map[string]any{"name": "list_references", "arguments": map[string]any{}})
 	if err != nil || len(util.AsMapSlice(index["references"])) != 1 {
 		t.Fatal(index, err)
 	}
 	for i := 0; i < 2; i++ {
-		result, err := w.tool(map[string]any{"name": "get_reference", "arguments": map[string]any{"referenceId": "photo"}})
-		if err != nil || result["ok"] != true {
+		call := map[string]any{"id": fmt.Sprintf("lookup-%d", i), "name": "get_reference", "arguments": map[string]any{"referenceId": "photo"}}
+		w.batchCalls = []map[string]any{call}
+		response, err := w.sdkRequest("tool", call)
+		result := agentMap(response)
+		if err != nil || agentMap(result["result"])["ok"] != true {
 			t.Fatal(result, err)
 		}
+		parts := util.AsMapSlice(result["visuals"])
+		if len(parts) != 2 || !strings.Contains(util.Clean(parts[0]["text"]), "ID=photo") || parts[1]["image"] != "/api/files/photo/content" {
+			t.Fatal("SDK tool result did not include exactly one labeled reference image")
+		}
 	}
-	parts := util.AsMapSlice(w.messages[0]["content"])
-	if len(parts) != 3 || !strings.Contains(util.Clean(parts[1]["text"]), "ID=photo") || agentMap(parts[2]["image_url"])["url"] != "/api/files/photo/content" {
-		t.Fatal("lookup did not supply the actual image exactly once")
-	}
-	if len(util.AsMapSlice(w.session["messages"])) != 1 {
+	if len(util.AsMapSlice(w.session["messages"])) != 2 {
 		t.Fatal("lookup added a visible user message")
 	}
 }

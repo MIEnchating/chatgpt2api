@@ -34,6 +34,7 @@ type relayBufferedReadCloser struct {
 }
 
 type relayCredential struct {
+	PricingGroup         string
 	ParameterTranslation string
 	APIKey               string
 	BaseURL              string
@@ -87,7 +88,7 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		if config.BaseURL == "" || config.APIKey == "" {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}
 		}
-		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true, Protocol: config.Protocol}, nil
+		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true, Protocol: config.Protocol, PricingGroup: config.PricingGroup}, nil
 	}
 	reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()

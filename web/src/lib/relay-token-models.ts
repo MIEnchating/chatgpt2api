@@ -1,4 +1,18 @@
 import type { RelayTokenModels } from "./relay-token-selection";
+import type { SettingsConfig } from "./api";
+
+export const RELAY_MODEL_CONFIG_CHANGED_EVENT = "chatgpt2api:relay-model-config-changed";
+
+export function relayModelSettingsSignature(config: SettingsConfig) {
+  return JSON.stringify([
+    config.relay_base_url, config.proxy, config.allow_user_custom_relay_config,
+    config.relay_database_type, config.relay_database_driver,
+    config.relay_database_host, config.relay_database_port,
+    config.relay_database_name, config.relay_database_user,
+    config.relay_text_group, config.relay_image_group,
+    config.relay_video_group, config.relay_audio_group,
+  ]);
+}
 
 export type RelayTokenModelSnapshot = {
   modelsByToken: RelayTokenModels;

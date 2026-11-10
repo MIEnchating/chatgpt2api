@@ -6,10 +6,9 @@ import test from "node:test";
 const source = readFileSync(new URL("../src/components/channel-parameter-editor.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const helper = readFileSync(new URL("../src/lib/clipboard-text.ts", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 
-test("copy instructions go through the shared clipboard helper", () => {
-  // The helper wraps the async clipboard call, so a missing clipboard API surfaces as the failure toast.
-  assert.match(source, /copyWithToast\(/);
-  assert.match(source, /"已复制说明"/);
+test("copy instructions use the shared copy control", () => {
+  assert.match(source, /<CodeBlockCopyButton[^>]*value=/);
+  assert.match(source, /复制说明<\/CodeBlockCopyButton>/);
   assert.doesNotMatch(source, /navigator\.clipboard/);
 });
 

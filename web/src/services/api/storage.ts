@@ -24,11 +24,12 @@ export async function uploadStorageObject<T>(
   filename: string,
   fallbackMessage: string,
   signal?: AbortSignal,
+  temporary = false,
 ): Promise<T> {
   signal?.throwIfAborted();
   const formData = new FormData();
   formData.append("file", blob, filename);
-  const response = await fetch("/api/files", { method: "POST", credentials: "include", body: formData, signal });
+  const response = await fetch(temporary ? "/api/files/temporary" : "/api/files", { method: "POST", credentials: "include", body: formData, signal });
   signal?.throwIfAborted();
   const payload = await response.json().catch(() => null) as StorageObjectResponse<T> | null;
   signal?.throwIfAborted();

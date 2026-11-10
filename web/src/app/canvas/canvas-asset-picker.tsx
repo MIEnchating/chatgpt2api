@@ -1,4 +1,8 @@
-import { AudioLines, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, LoaderCircle, Plus, Search, Video } from "lucide-react";
+import { LoadingState } from "@/components/ui/loading-state";
+import { ItemMedia } from "@/components/ui/item";
+import { Badge } from "@/components/ui/badge";
+import { Toggle } from "@/components/ui/toggle";
+import { AudioLines, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Plus, Search, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,13 +12,13 @@ import { assetLabels, assetMatchesGroup } from "@/app/assets/asset-filters";
 import { useMyAssets } from "@/lib/use-my-assets";
 import { canvasInsertPayloadFromMyAsset } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-types";
-import { AuthenticatedImage } from "@/components/authenticated-image";
+import { ImagePreview } from "@/components/image-preview";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { fetchAssetGroups, type AssetGroup } from "@/lib/asset-groups";
 import { fetchManagedImages } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind } from "@/lib/my-assets";
@@ -47,7 +51,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   const [createOpen, setCreateOpen] = useState(false);
   const [groups, setGroups] = useState<AssetGroup[]>([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
-  const [groupFilter, setGroupFilter] = useState("all");
+  const [groupFilters, setGroupFilters] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +59,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
     setQuery("");
     setKind("all");
     setPage(1);
-    setGroupFilter("all");
+    setGroupFilters([]);
     setGroups([]);
     setGroupsLoaded(false);
     setSharedAssets([]);
@@ -104,16 +108,16 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
     const keyword = query.trim().toLowerCase();
     return tabAssets.filter((asset) => {
       if (kind !== "all" && asset.kind !== kind) return false;
-      if (!assetMatchesGroup(asset, groups, groupFilter)) return false;
+      if (groupFilters.length && !groupFilters.some(group => assetMatchesGroup(asset, groups, group))) return false;
       return !keyword || [asset.title, asset.content, asset.source, ...(asset.tags || [])]
         .some((value) => String(value || "").toLowerCase().includes(keyword));
     });
-  }, [groupFilter, groups, kind, query, tabAssets]);
+  }, [groupFilters, groups, kind, query, tabAssets]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => setPage(1), [groupFilter, kind, query, tab]);
-  useEffect(() => { setGroupFilter("all"); }, [tab]);
+  useEffect(() => setPage(1), [groupFilters, kind, query, tab]);
+  useEffect(() => { setGroupFilters([]); }, [tab]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
 
   const insert = (asset: MyAsset) => {
@@ -126,48 +130,45 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent scrollable={false} className="flex h-[min(760px,92dvh)] w-[min(94vw,960px)] max-w-none flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 gap-1 border-b border-border/60 px-4 py-4 pr-12 sm:px-6 sm:pr-14">
-            <DialogTitle className="text-lg">选择素材</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">选择文本、图片、视频或音频，点击即可插入画布。</DialogDescription>
+        <DialogContent className={cn("sm:max-w-none", cn("h-[min(760px,92dvh)]", "flex w-[min(94vw,960px)] max-w-none flex-col overflow-hidden"))}>
+          <DialogHeader className="shrink-0">
+            <DialogTitle >选择素材</DialogTitle>
+            <DialogDescription >选择文本、图片、视频或音频，点击即可插入画布。</DialogDescription>
           </DialogHeader>
           <div className="shrink-0 space-y-3 border-b border-border/60 px-4 py-3 sm:px-6">
             <div className="flex items-center justify-between gap-3">
-              <div role="group" aria-label="素材来源" className="inline-flex shrink-0 gap-1 rounded-xl bg-muted/60 p-1">
+              <div role="group" aria-label="素材来源" className="inline-flex shrink-0 gap-1 p-1">
                 {([{"value":"my-assets","label":"我的素材"},{"value":"library","label":"素材库"}] as const).map((item) => (
-                  <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("h-8 rounded-lg px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", tab === item.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>{item.label}</button>
+                  <Toggle  key={item.value} type="button" pressed={tab === item.value} onClick={() => setTab(item.value)} >{item.label}</Toggle>
                 ))}
               </div>
-              {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs" onClick={() => setCreateOpen(true)}><Plus className="size-3.5" />新增素材</Button> : null}
+              {tab === "my-assets" ? <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setCreateOpen(true)}><Plus  />新增素材</Button> : null}
             </div>
             <div className="flex min-w-0 items-center gap-2">
-              <SearchInput containerClassName="min-w-0 flex-1" className="h-10 rounded-lg" value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
-              <Select value={groupFilter} onValueChange={setGroupFilter} disabled={!groupsLoaded}>
-                <SelectTrigger className="h-10 w-28 shrink-0 rounded-lg text-xs sm:w-36" aria-label="筛选素材标签"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="ungrouped">未标签</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchInput containerClassName="min-w-0 flex-1"  value={query} onValueChange={setQuery} placeholder="搜索名称、内容或标签" aria-label="搜索素材" />
+              <MultiSelect className="w-36 shrink-0 sm:w-48" value={groupFilters} onValueChange={setGroupFilters} disabled={!groupsLoaded} placeholder="全部标签" options={[{ value: "ungrouped", label: "未标签" }, ...groups.map(group => ({ value: group.id, label: group.name }))]} />
             </div>
-            <ScrollArea role="group" ariaLabel="素材类型" className="max-w-full" viewClass="flex w-max min-w-full gap-1">
-              {kinds.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => setKind(item.value)} className={cn("h-7 shrink-0 rounded-lg px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", kind === item.value ? "bg-brand-soft text-brand" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>{item.label}</button>)}
-            </ScrollArea>
+            <ScrollAreaRoot role="group" data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-w-full" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain" aria-label="素材类型"><div className="min-w-0 flex w-max min-w-full gap-1">
+              {kinds.map((item) => <Toggle  key={item.value} type="button" pressed={kind === item.value} onClick={() => setKind(item.value)} className="shrink-0">{item.label}</Toggle>)}
+            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           </div>
-          <ScrollArea className="min-h-0 flex-1 bg-muted/15" viewportClassName="overscroll-contain px-4 py-4 sm:px-6">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 px-4 sm:px-6 py-4">
             {(loading || remoteLoading) && !tabAssets.length ? (
-              <div className="grid h-72 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
+              <LoadingState className="h-72" label="正在加载素材" />
             ) : visible.length ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {visible.map((asset) => <CanvasAssetCard key={assetListKey(asset)} asset={asset} onInsert={() => insert(asset)} />)}
               </div>
             ) : (
-              <EmptyState icon={Search} title={query || kind !== "all" || groupFilter !== "all" ? "没有匹配的素材" : "暂无可用素材"} description={query || kind !== "all" || groupFilter !== "all" ? "调整关键词、类型或标签后再试。" : "新增素材后，可以从这里插入画布。"} action={query || kind !== "all" || groupFilter !== "all" ? <Button variant="outline" size="sm" onClick={() => { setQuery(""); setKind("all"); setGroupFilter("all"); }}>清除筛选</Button> : tab === "my-assets" ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : undefined} />
+              <EmptyState icon={Search} title={query || kind !== "all" || groupFilters.length > 0 ? "没有匹配的素材" : "暂无可用素材"} description={query || kind !== "all" || groupFilters.length > 0 ? "调整关键词、类型或标签后再试。" : "新增素材后，可以从这里插入画布。"} action={query || kind !== "all" || groupFilters.length > 0 ? <Button variant="outline" size="sm" onClick={() => { setQuery(""); setKind("all"); setGroupFilters([]); }}>清除筛选</Button> : tab === "my-assets" ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : undefined} />
             )}
-          </ScrollArea>
-          <DialogFooter flush className="min-h-14 flex-row items-center justify-between gap-2 px-4 py-2.5 text-xs text-muted-foreground sm:justify-between sm:px-6">
+          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+          <DialogFooter className="m-0 shrink-0 min-h-14 flex-row items-center justify-between sm:justify-between">
             <span className="shrink-0 tabular-nums" role="status">{filtered.length} 个结果</span>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="上一页" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft className="size-4" /></Button>
+              <Button type="button" variant="ghost" size="icon"  aria-label="上一页" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft  /></Button>
               <span className="min-w-14 text-center tabular-nums">第 {page} / {totalPages} 页</span>
-              <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" aria-label="下一页" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}><ChevronRight className="size-4" /></Button>
+              <Button type="button" variant="ghost" size="icon"  aria-label="下一页" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}><ChevronRight  /></Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -178,7 +179,6 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         onClose={() => setCreateOpen(false)}
         onSave={async (asset) => {
           await upsertAsset(asset);
-          setCreateOpen(false);
         }}
       />
     </>
@@ -190,20 +190,20 @@ function CanvasAssetCard({ asset, onInsert }: { asset: MyAsset; onInsert: () => 
   const preview = asset.coverUrl || asset.url || "";
   const kindLabel = { text: "文本", image: "图片", video: "视频", audio: "音频" }[asset.kind];
   return (
-    <button type="button" aria-label={`插入素材：${asset.title}`} title={asset.title} className="group min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card text-left outline-none transition-[border-color,box-shadow] hover:border-brand/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring" onClick={onInsert}>
+    <Button variant="outline" type="button" aria-label={`插入素材：${asset.title}`} title={asset.title} className="block h-auto justify-start whitespace-normal p-0 group min-w-0 overflow-hidden text-left" onClick={onInsert}>
       <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden border-b border-border/40 bg-muted/35">
         {asset.kind === "image" && preview ? <PickerMediaPreview key={preview} src={preview} kind="image" title={asset.title} /> : null}
         {asset.kind === "video" && asset.coverUrl && asset.coverUrl !== asset.url ? <PickerMediaPreview key={asset.coverUrl} src={asset.coverUrl} kind="image" title={asset.title} /> : null}
         {asset.kind === "video" && (!asset.coverUrl || asset.coverUrl === asset.url) && asset.url ? <PickerMediaPreview key={asset.url} src={asset.url} kind="video" title={asset.title} /> : null}
         {asset.kind === "text" ? <p className="line-clamp-4 w-full whitespace-pre-wrap break-words px-3 text-xs leading-5 text-muted-foreground">{asset.content || "暂无文本内容"}</p> : null}
-        {asset.kind === "audio" || (!preview && asset.kind !== "text") ? <span className="grid size-12 place-items-center rounded-2xl bg-brand-soft text-brand"><Icon className="size-6" /></span> : null}
-        <span className="pointer-events-none absolute right-2 top-2 grid size-6 place-items-center rounded-full bg-card/90 text-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Plus className="size-3.5" /></span>
+        {asset.kind === "audio" || (!preview && asset.kind !== "text") ? <ItemMedia variant="icon" className="grid size-12 place-items-center"><Icon  /></ItemMedia> : null}
+        <Badge variant="secondary" className="pointer-events-none absolute right-2 top-2 size-6 p-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Plus /></Badge>
       </div>
       <div className="space-y-1.5 p-2.5 sm:p-3">
         <span className="line-clamp-2 min-h-8 break-words text-xs font-medium leading-4">{asset.title || "未命名素材"}</span>
-        <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Icon className="size-3" />{kindLabel}</span>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Icon  />{kindLabel}</span>
       </div>
-    </button>
+    </Button>
   );
 }
 
@@ -211,9 +211,7 @@ function PickerMediaPreview({ src, kind, title }: { src: string; kind: "image" |
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const mediaClass = cn("absolute inset-0 size-full object-cover", status !== "loaded" && "opacity-0");
   return <>
-    {status !== "loaded" ? <span role="status" aria-label={status === "loading" ? "正在加载缩略图" : "缩略图加载失败"} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/35 text-muted-foreground">
-      {status === "loading" ? <><span className="absolute inset-0 animate-pulse bg-muted/40 motion-reduce:animate-none" /><LoaderCircle className="relative size-5 animate-spin text-brand motion-reduce:animate-none" /><span className="relative text-[10px]">加载中</span></> : <><ImageIcon className="size-5" /><span className="text-[10px]">缩略图加载失败</span></>}
-    </span> : null}
-    {kind === "image" ? <AuthenticatedImage src={src} alt={title} loading="lazy" onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} /> : <video src={`${src}#t=0.1`} muted playsInline preload="metadata" onLoadedData={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} />}
+    {status === "loading" ? <LoadingState label="正在加载缩略图" className="absolute inset-0 min-h-0 gap-2 p-2" /> : status === "error" ? <EmptyState compact role="status" title="缩略图加载失败" className="absolute inset-0 min-h-0 p-2" /> : null}
+    {kind === "image" ? <ImagePreview src={src} alt={title} loading="lazy" onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} /> : <video src={`${src}#t=0.1`} muted playsInline preload="metadata" onLoadedData={() => setStatus("loaded")} onError={() => setStatus("error")} className={mediaClass} />}
   </>;
 }

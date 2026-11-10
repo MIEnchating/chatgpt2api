@@ -1,19 +1,41 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+
+import { Badge } from "@/components/ui/badge";
+import { Attachment, AttachmentGroup, AttachmentMedia, AttachmentTrigger } from "@/components/ui/attachment";
+import { Checkbox } from "@/components/ui/checkbox";
+import { MessageScrollerItem } from "@/components/ui/message-scroller";
+import { Message, MessageContent, MessageFooter, MessageHeader } from "@/components/ai-elements/message";
+import { RunStatus } from "@/components/ai-elements/run-status";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { LoadingState } from "@/components/ui/loading-state";
+import { Skeleton } from "@/components/ui/skeleton";
+
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+
+
+
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowUpRight, Brush, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles, UserRound } from "lucide-react";
+import { AlertCircle, Brush, ChevronDown, CircleStop, Clock3, Download, Eye, Globe2, Lock, PencilLine, Plus, RotateCcw, Sparkles } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { ImagePreview } from "@/components/image-preview";
 import { MediaVideoPlayer } from "@/components/media-video-player";
 import { GenerationProgress } from "@/components/generation/generation-progress";
 import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { isVideoSaveFailure, videoTaskErrorMessage } from "@/lib/video-task-error";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
+import { StudioAgentProcess } from "./studio-agent-process";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { statusToneClasses } from "@/components/ui/status-tone";
+import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
-import type { ImagePromptPreset } from "@/app/image/image-presets";
 import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/lib/image-options";
 import type { ImageVisibility } from "@/lib/api";
 import {
@@ -56,20 +78,19 @@ type DownloadableImage = {
 };
 
 type ImageResultsProps = {
+  conversationId: string | null;
   selectedConversation: ImageConversation | null;
   isLoadingHistory: boolean;
-  isLoadingConversationDetail: boolean;
   conversationDetailError: string;
   onRetryConversationDetail: () => void;
   progressByTurnKey: Record<string, ImageTurnProgress>;
   progressNow: number;
-  promptPresets: readonly ImagePromptPreset[];
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
-  onApplyPromptPreset: (preset: ImagePromptPreset) => void | Promise<void>;
   onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
   onMaskEdit: (conversationId: string, turnId: string, sourceURL: string) => void;
   onEditTurn: (conversationId: string, turnId: string) => void;
   onCancelTurn: (conversationId: string, turnId: string) => void | Promise<void>;
+  onResumeAgent: (conversationId: string, turnId: string) => void;
   onRegenerateTurn: (conversationId: string, turnId: string) => void | Promise<void>;
   onRetryImage: (conversationId: string, turnId: string, imageIndex: number) => void | Promise<void>;
   onImageVisibilityChange: (
@@ -151,14 +172,6 @@ function imageQualityCheckLabel(image: StoredImage) {
   return check.actual_size || check.actual_output_format ? "已检测" : "";
 }
 
-function imageQualityCheckClass(image: StoredImage) {
-  const check = image.qualityCheck;
-  if (check?.size_matched === false || check?.output_format_matched === false) {
-    return cn("ring-1", statusToneClasses.warning.chip);
-  }
-  return cn("ring-1", statusToneClasses.success.chip);
-}
-
 function imageQualityCheckTitle(image: StoredImage) {
   const check = image.qualityCheck;
   if (!check) {
@@ -188,18 +201,6 @@ function getLongTaskHint(turn: ImageTurn) {
 
 function imageVisibilityLabel(visibility?: ImageVisibility) {
   return visibility === "public" ? "已公开" : "私有";
-}
-
-function imageVisibilityPillClass(visibility?: ImageVisibility) {
-  return visibility === "public"
-    ? "bg-brand-soft text-brand ring-1 ring-[var(--brand-6)]/25"
-    : "bg-[#181e25]/82 text-white ring-1 ring-white/20";
-}
-
-function imageVisibilityActionClass(visibility?: ImageVisibility) {
-  return visibility === "public"
-    ? "bg-card/95 text-brand hover:bg-brand-soft"
-    : "bg-card/95 text-foreground hover:bg-muted";
 }
 
 function blurFocusedElementInContainer(container: HTMLElement) {
@@ -303,24 +304,23 @@ async function fetchImageSizeLabel(src: string) {
 function GeneratedVideoPlayer({ src, aspectRatio, title }: { src: string; aspectRatio: string; title: string }) {
   // Saving a durable copy must not reset playback of this result.
   const [playbackSrc] = useState(src);
-  return <MediaVideoPlayer src={playbackSrc} aspectRatio={aspectRatio} title={title} className="rounded-none" />;
+  return <MediaVideoPlayer src={playbackSrc} aspectRatio={aspectRatio} title={title} embedded />;
 }
 
 export function ImageResults({
+  conversationId,
   selectedConversation,
   isLoadingHistory,
-  isLoadingConversationDetail,
   conversationDetailError,
   onRetryConversationDetail,
   progressByTurnKey,
   progressNow,
-  promptPresets,
   onOpenLightbox,
-  onApplyPromptPreset,
   onContinueEdit,
   onMaskEdit,
   onEditTurn,
   onCancelTurn,
+  onResumeAgent,
   onRegenerateTurn,
   onRetryImage,
   onImageVisibilityChange,
@@ -333,6 +333,11 @@ export function ImageResults({
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [resolvedStorageURLs, setResolvedStorageURLs] = useState<Record<string, string>>({});
   const pendingImageSizeIdsRef = useRef<Set<string>>(new Set());
+  const hasConversationDetail = Boolean(selectedConversation && !selectedConversation.historySummaryOnly);
+
+  useEffect(() => {
+    setSelectedImageIds({});
+  }, [conversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -345,7 +350,7 @@ export function ImageResults({
         : await resolveImageURL(storageKey, fallback);
       return [storageKey, url] as const;
     })).then((entries) => {
-      if (!cancelled) setResolvedStorageURLs(Object.fromEntries(entries.filter((entry) => entry[1])));
+      if (!cancelled) setResolvedStorageURLs((current) => ({ ...current, ...Object.fromEntries(entries.filter((entry) => entry[1])) }));
     }).catch(() => undefined);
     return () => {
       cancelled = true;
@@ -414,95 +419,36 @@ export function ImageResults({
 
   if (isLoadingHistory) {
     return (
-      <div role="status" className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-brand" />
-          正在读取历史记录
-        </div>
-      </div>
+      <LoadingState className="min-h-0 flex-1" label="正在读取历史记录" />
     );
   }
 
-  if (conversationDetailError) {
+  if (conversationDetailError && !hasConversationDetail) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
-        <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <span className="flex size-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span>
-          <p className="text-sm font-semibold">暂时无法读取会话</p>
-          <ScrollArea className="max-h-36 w-full text-sm leading-6 text-muted-foreground" viewClass="[overflow-wrap:anywhere]" tag="p">{conversationDetailError}</ScrollArea>
-          <Button type="button" variant="outline" onClick={onRetryConversationDetail}>重试读取</Button>
-        </div>
+        <Card className="flex w-full max-w-xs flex-col items-center gap-3 p-6">
+          <EmptyState compact role="alert" icon={AlertCircle} title="暂时无法读取会话" className="min-h-0 p-0" description={<ScrollArea className="max-h-36">{conversationDetailError}</ScrollArea>} action={<Button type="button" variant="outline" onClick={onRetryConversationDetail}>重试读取</Button>} />
+        </Card>
       </div>
     );
   }
 
-  if (isLoadingConversationDetail || selectedConversation?.historySummaryOnly === true) {
+  if (conversationId && !hasConversationDetail) {
     return (
-      <div data-image-conversation-detail-loading role="status" className="flex min-h-0 flex-1 items-center justify-center px-4 py-8 text-center">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-brand" />
-          正在读取会话详情
-        </div>
-      </div>
+      <LoadingState data-image-conversation-detail-loading className="min-h-0 flex-1" label="正在读取会话详情" />
     );
   }
 
-  if (!selectedConversation) {
-    return (
-      <div className="studio-welcome flex flex-1 items-center justify-center py-3 sm:py-5">
-        <div className="studio-welcome-content mx-auto flex w-full min-w-0 max-w-[1120px] flex-col gap-5 sm:gap-7">
-          <div className="studio-welcome-intro space-y-2 text-center">
-            <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">今天，想创作什么？</h2>
-            <p className="text-xs leading-6 text-muted-foreground sm:text-sm">写下你的想法，或选择一个灵感开始。</p>
-          </div>
-          <div className="space-y-3">
-            <div className="studio-preset-heading flex items-center justify-between px-1 text-[11px] text-muted-foreground"><span className="font-medium">灵感起点</span><span>选择预设，开启创作</span></div>
-            <ScrollArea viewportClassName="snap-x snap-mandatory" viewClass="flex w-max min-w-full gap-3 px-1 pb-2 text-left sm:grid sm:w-full sm:grid-cols-3 lg:grid-cols-3">
-              {promptPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="group w-[220px] shrink-0 snap-start overflow-hidden rounded-xl border border-border/70 bg-card text-left transition-[border-color,box-shadow] hover:border-brand-border hover:shadow-[var(--shadow-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:w-auto"
-                  onClick={() => void onApplyPromptPreset(preset)}
-                  aria-label={`套用预设：${preset.title}`}
-                >
-                  <div className="studio-preset-preview relative aspect-[16/9] overflow-hidden bg-muted">
-                    <img
-                      src={preset.previewSrc}
-                      alt={preset.title}
-                      loading="lazy"
-                      decoding="async"
-                      className="h-full w-full object-cover transition-transform duration-300 motion-safe:group-hover:scale-[1.03]"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
-                      <span className="rounded-full bg-card/95 px-2 py-0.5 text-[11px] font-medium text-foreground shadow-sm">
-                        {preset.size || "自动"}
-                      </span>
-                      <span className="rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm backdrop-blur">
-                        {preset.count} 张
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 p-3 sm:p-3.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{preset.title}</span>
-                      <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-brand" />
-                    </div>
-                    <div className="studio-preset-hint line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{preset.hint}</div>
-                    <div className="studio-preset-action mt-1 text-[11px] font-medium text-brand">套用预设</div>
-                  </div>
-                </button>
-              ))}
-            </ScrollArea>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  if (!selectedConversation) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-8 sm:gap-10">
+    <>
+      {conversationDetailError ? (
+        <Card role="alert" className="flex flex-row items-center justify-between gap-3 p-3">
+          <span className="text-sm">会话更新失败：{conversationDetailError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={onRetryConversationDetail}>重试读取</Button>
+        </Card>
+      ) : null}
       {selectedConversation.turns.map((turn, turnIndex) => {
         const progress = progressByTurnKey[turnProgressKey(selectedConversation.id, turn.id)];
         const displayedReferenceImages = [
@@ -610,7 +556,8 @@ export function ImageResults({
         const turnBusy = effectiveStatus === "queued" || effectiveStatus === "generating";
         const isVideoTurn = turn.mode === "video";
         const turnFrameAspectRatio = generationFrameAspectRatio(turn);
-        const turnVideoFrameMaxWidth = videoFrameMaxWidth(turnFrameAspectRatio);
+        const [videoWidth, videoHeight] = turnFrameAspectRatio.split(" / ").map(Number);
+        const turnVideoFrameMaxWidth = `min(${videoFrameMaxWidth(turnFrameAspectRatio)}, max(14rem, ${(22 * videoWidth / videoHeight).toFixed(3)}rem))`;
         const videoResolutionLabel = turn.videoResolution || "默认清晰度";
         const videoDurationLabel = turn.videoSeconds === -1 ? "智能时长" : turn.videoSeconds ? `${turn.videoSeconds} 秒` : "默认时长";
         const videoAudioLabel = turn.videoGenerateAudio === false ? "静音" : turn.videoGenerateAudio === true ? "含声音" : "默认音频";
@@ -627,34 +574,19 @@ export function ImageResults({
         const elapsedClock = isRunning ? formatElapsedClock(elapsedSeconds) : "";
         const progressMessage =
           isQueued
-            ? "等待任务开始"
+            ? progress?.message || "等待任务开始"
             : progress?.message || (turnBusy ? turn.mode === "video" ? "正在处理视频" : "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
         const longTaskHint = getLongTaskHint(turn);
         const downloadActions = downloadableImages.length > 0
-          ? isVideoTurn ? downloadableImages.length > 1 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 rounded-md px-3 text-xs"
-                disabled={downloadingKey !== null}
-                onClick={() => void downloadItems(`all:${selectedConversation.id}:${turn.id}`, downloadableImages)}
-              >
-                {downloadingKey === `all:${selectedConversation.id}:${turn.id}` ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : (
-                  <Download className="size-3.5" />
-                )}
-                下载全部视频
-              </Button>
-            ) : null : (
+          ? (
             <>
+              {selectedDownloadableImages.length > 0 ? (
               <Button
                 type="button"
                 size="sm"
-                className="h-8 rounded-full bg-primary px-2.5 text-[11px] text-primary-foreground shadow-sm hover:bg-primary/90"
-                disabled={selectedDownloadableImages.length === 0 || downloadingKey !== null}
+
+                disabled={downloadingKey !== null}
                 onClick={() =>
                   void downloadItems(
                     `selected:${selectedConversation.id}:${turn.id}`,
@@ -663,17 +595,18 @@ export function ImageResults({
                 }
               >
                 {downloadingKey === `selected:${selectedConversation.id}:${turn.id}` ? (
-                  <LoaderCircle className="size-3 animate-spin" />
+                  <Spinner />
                 ) : (
-                  <Download className="size-3" />
+                  <Download  />
                 )}
                 下载已选 ({selectedDownloadableImages.length})
               </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 rounded-full border-border bg-card px-2.5 text-[11px] text-muted-foreground shadow-sm hover:bg-muted"
+
                 disabled={downloadingKey !== null}
                 onClick={() =>
                   void downloadItems(
@@ -683,219 +616,209 @@ export function ImageResults({
                 }
               >
                 {downloadingKey === `all:${selectedConversation.id}:${turn.id}` ? (
-                  <LoaderCircle className="size-3 animate-spin" />
+                  <Spinner />
                 ) : (
-                  <Download className="size-3" />
+                  <Download  />
                 )}
-                下载全部
+                {downloadableImages.length === 1 ? "下载" : "下载全部"}
               </Button>
             </>
           ) : null;
 
         return (
-          <div key={turn.id} data-conversation-turn className={cn("flex min-w-0 flex-col gap-6 sm:gap-7", isVideoTurn && "mx-auto w-full max-w-[960px]")}>
-            <section data-message-role="user" aria-label="你的消息" className="flex min-w-0 flex-col items-end gap-2 pl-6 sm:pl-16">
-              <div className="flex max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                <span>第 {turnIndex + 1} 轮 · {formatConversationTime(turn.createdAt)}</span>
-                <span className="font-semibold text-foreground">你</span>
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><UserRound className="size-4" /></span>
-              </div>
-              <article className="w-fit min-w-0 max-w-full rounded-2xl rounded-tr-sm border border-brand-border bg-brand-soft px-4 py-3 text-left text-sm leading-7 text-foreground sm:max-w-[760px] sm:px-5 sm:text-[15px]">
-                <div>
-                  <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.prompt}</div>
-                  {displayedReferenceImages.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap justify-start gap-2">
-                      {displayedReferenceImages.map((image, index) => (
-                        <button
-                          key={`${turn.id}-${image.name}-${index}`}
-                          type="button"
-                          onClick={() => onOpenLightbox(referenceLightboxImages, index)}
-                          className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-border/80 bg-muted/60 text-left transition hover:border-border sm:size-24"
-                          aria-label={`预览参考图 ${image.name || index + 1}`}
-                        >
-                          <AuthenticatedImage
-                            src={image.dataUrl}
-                            alt={image.name || `参考图 ${index + 1}`}
-                            className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
-                            placeholderClassName="min-h-0"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-brand-border/60 pt-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-muted-foreground">
-                    <span>{getTurnModeLabel(turn)}</span>
-                    {turn.workflowName ? <span className="text-brand [overflow-wrap:anywhere]">工作流 {turn.workflowName}</span> : null}
-                    {isVideoTurn ? <span>{videoResolutionLabel} · {videoDurationLabel} · {videoAudioLabel}</span> : null}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {turnBusy ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-8 rounded-full border-amber-200 bg-amber-500/10 text-amber-700 dark:text-amber-300 shadow-none hover:bg-amber-100 dark:border-amber-800/70 dark:bg-amber-950/35 dark:text-amber-300 dark:hover:bg-amber-950/35"
-                        onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}
-                        aria-label="终止生成任务"
-                        title="终止"
-                      >
-                        <CircleStop className="size-4" />
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="size-8 rounded-full border-border bg-card text-muted-foreground shadow-none hover:bg-muted"
-                          onClick={() => onEditTurn(selectedConversation.id, turn.id)}
-                          aria-label="编辑生成设置"
-                          title="编辑"
-                        >
-                          <PencilLine className="size-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="size-8 rounded-full border-border bg-card text-muted-foreground shadow-none hover:bg-muted"
-                          disabled={turnBusy || !turn.prompt.trim()}
-                          onClick={() => void onRegenerateTurn(selectedConversation.id, turn.id)}
-                          aria-label="重新生成"
-                          title="重新生成"
-                        >
-                          <RotateCcw className="size-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </article>
+          <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor data-conversation-turn className="mx-auto flex w-full max-w-4xl flex-col gap-4 [content-visibility:visible] sm:gap-5">
+            <section data-message-role="user" aria-label="你的消息" className="min-w-0">
+              <Message from="user">
+                <MessageContent className="max-w-[min(90%,42rem)]">
+                  <MessageHeader className="flex-wrap justify-end gap-x-2 px-0">
+                    <span>你</span>
+                    <span>第 {turnIndex + 1} 轮 · {formatConversationTime(turn.createdAt)}</span>
+                  </MessageHeader>
+                  <Bubble align="end" variant="secondary" className="max-w-full">
+                    <BubbleContent>
+                      <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.prompt}</p>
+                      {displayedReferenceImages.length > 0 ? (
+                        <AttachmentGroup className="mt-2 flex-wrap gap-2 overflow-visible">
+                          {displayedReferenceImages.map((image, index) => (
+                            <Attachment key={`${turn.id}-${image.name}-${index}`} orientation="vertical" size="xs" className="w-10">
+                              <AttachmentMedia variant="image">
+                                <AuthenticatedImage src={image.dataUrl} alt={image.name || `参考图 ${index + 1}`} className="size-full object-cover" placeholderClassName="min-h-0" />
+                              </AttachmentMedia>
+                              <AttachmentTrigger onClick={() => onOpenLightbox(referenceLightboxImages, index)} aria-label={`预览参考图 ${image.name || index + 1}`} />
+                            </Attachment>
+                          ))}
+                        </AttachmentGroup>
+                      ) : null}
+                    </BubbleContent>
+                  </Bubble>
+                  <Collapsible className="flex max-w-full flex-col items-end gap-2">
+                    <MessageFooter className="flex-wrap gap-1 px-0">
+                      <Badge variant="outline">{getTurnModeLabel(turn)}</Badge>
+                      {turn.workflowName ? <span>{turn.workflowName}</span> : null}
+                      {turn.promptContext ? (
+                        <CollapsibleTrigger asChild>
+                          <Button type="button" variant="ghost" size="sm">
+                            生图提示词<ChevronDown />
+                          </Button>
+                        </CollapsibleTrigger>
+                      ) : null}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {turnBusy ? (
+                          <TooltipHint content={"终止"}><Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+
+                            onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}
+                            aria-label="终止生成任务"
+                          >
+                            <CircleStop  />
+                          </Button></TooltipHint>
+                        ) : (
+                          <>
+                            <TooltipHint content={"编辑"}><Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+
+                              onClick={() => onEditTurn(selectedConversation.id, turn.id)}
+                              aria-label="编辑生成设置"
+                            >
+                              <PencilLine  />
+                            </Button></TooltipHint>
+                            <TooltipHint content={"重新生成"}><Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+
+                              disabled={turnBusy || !turn.prompt.trim()}
+                              onClick={() => void onRegenerateTurn(selectedConversation.id, turn.id)}
+                              aria-label="重新生成"
+                            >
+                              <RotateCcw  />
+                            </Button></TooltipHint>
+                          </>
+                        )}
+                      </div>
+                    </MessageFooter>
+                    {turn.promptContext ? (
+                      <CollapsibleContent forceMount className="w-full data-[state=closed]:hidden">
+                        <Bubble variant="outline" className="w-full max-w-full">
+                          <BubbleContent className="w-full">
+                            <p className="text-muted-foreground">文本模型：{turn.promptContext.model}</p>
+                            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{turn.promptContext.preparedPrompt || "结合历史要求和相关图片整理后生成。"}</p>
+                          </BubbleContent>
+                        </Bubble>
+                      </CollapsibleContent>
+                    ) : null}
+                  </Collapsible>
+                </MessageContent>
+              </Message>
             </section>
 
-            <div className="flex justify-start">
-              <section data-message-role="assistant" aria-label="模型回复" className={cn("w-full min-w-0", isVideoTurn && "max-w-[960px]")}>
-                <div className="mb-3 flex min-w-0 items-start gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-foreground" aria-hidden="true"><Sparkles className="size-4" /></span>
-                  <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-                    <span className="text-sm font-semibold text-foreground">模型回复</span>
-                    <span className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">{turn.model}</span>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[11px]", getStatusChipClass(effectiveStatus))}>{getTurnStatusLabel(effectiveStatus)}</span>
-                  </div>
-                </div>
-                {showResultSummary ? (
-                  <div
-                    data-video-result-summary={isVideoTurn || undefined}
-                    className="mb-3 flex flex-wrap items-center gap-3 border-b border-border/60 pb-3 sm:mb-4"
-                  >
-                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-muted-foreground sm:text-xs">
-                      {isVideoTurn ? (
-                        <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                          <Clapperboard className="size-4 text-primary" />
-                          视频结果
-                        </span>
+            <section data-message-role="assistant" aria-label="模型回复" className="w-full min-w-0">
+              <Message from="assistant">
+                <MessageContent>
+                {turn.studioAgent ? <StudioAgentProcess runId={turn.studioAgent.runId} needsResult={turn.status !== "success" && turn.status !== "message"} onResume={() => onResumeAgent(selectedConversation.id, turn.id)} /> : null}
+                <div className="mb-2" data-video-result-summary={isVideoTurn || undefined}>
+                  <MessageHeader data-result-header className="min-h-7 flex-wrap gap-x-2 gap-y-1 px-0">
+                    <Sparkles className="size-4 shrink-0" aria-hidden="true" />
+                    <span>模型回复</span>
+                    <TooltipHint content={turn.model}><span className="min-w-0 max-w-full break-all sm:max-w-48 sm:truncate">{turn.model}</span></TooltipHint>
+                    <Badge variant={effectiveStatus === "error" ? "destructive" : "secondary"}>{getTurnStatusLabel(effectiveStatus)}</Badge>
+                    {showResultSummary ? <span>{resultCount}{turnBusy || turn.count !== resultCount ? ` / ${turn.count}` : ""} {isVideoTurn ? "个视频" : "张"}</span> : null}
+                    {isRunning ? <span className="tabular-nums">{elapsedClock}</span> : null}
+                    {mismatchedImages.length > 0 ? <Badge variant="destructive">{resultQualityCheckLabel}</Badge> : null}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {downloadActions}
+                      {showResultSummary ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button type="button" variant="ghost" size="sm" aria-label="查看生成详情">
+                              详情<ChevronDown />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent align="start" className="w-[min(calc(100vw-2rem),20rem)]">
+                            <PopoverHeader><PopoverTitle>生成详情</PopoverTitle></PopoverHeader>
+                            <div className="min-w-0 space-y-2">
+                              {isVideoTurn ? <p className="text-xs text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel} · {videoAudioLabel}</p> : null}
+                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-muted-foreground sm:text-xs">
+                          {requestedSizeLabel ? (
+                            <span>
+                              {isVideoTurn ? "画幅" : "请求"}：<strong className="font-semibold text-foreground">{requestedSizeLabel}</strong>
+                            </span>
+                          ) : null}
+                          {resultDimensionsLabel ? (
+                            <span>
+                              返回：<strong className="font-semibold text-foreground">{resultDimensionsLabel}</strong>
+                            </span>
+                          ) : null}
+                          {!isVideoTurn && successfulVisualImages.length > 0 ? (
+                            <TooltipHint content={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}><Badge variant="secondary"
+                              className="inline-flex items-center"
+                            >
+                              检测：{resultQualityCheckLabel || "未检测"}
+                            </Badge></TooltipHint>
+                          ) : null}
+                          {resultGenerationDuration ? (
+                            <span className="font-mono font-medium tabular-nums text-primary">
+                              {resultGenerationDuration}
+                            </span>
+                          ) : null}
+                          {resultSizeLabel ? (
+                            <span>大小：<strong className="font-semibold text-foreground">{resultSizeLabel}</strong></span>
+                          ) : null}
+                          {resultFormatLabel ? (
+                            <Badge variant="default">
+                              {resultFormatLabel}
+                            </Badge>
+                          ) : null}
+                          {resultCompletedAt ? <span>{resultCompletedAt}</span> : null}
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       ) : null}
-                      {turnBusy ? (
-                        <span>
-                          已完成 <strong className="font-semibold text-foreground">{resultCount}</strong>
-                          {" / "}目标 <strong className="font-semibold text-foreground">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}
-                        </span>
-                      ) : (
-                        <span>
-                          {isVideoTurn ? "已完成 " : "生成结果："}<strong className="font-semibold text-foreground">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
-                        </span>
-                      )}
-                      {!turnBusy && turn.count !== resultCount ? (
-                        <span>目标 <strong className="font-semibold text-foreground">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}</span>
-                      ) : null}
-                      {requestedSizeLabel ? (
-                        <span>
-                          {isVideoTurn ? "画幅" : "请求"}：<strong className="font-semibold text-foreground">{requestedSizeLabel}</strong>
-                        </span>
-                      ) : null}
-                      {resultDimensionsLabel ? (
-                        <span>
-                          返回：<strong className="font-semibold text-foreground">{resultDimensionsLabel}</strong>
-                        </span>
-                      ) : null}
-                      {!isVideoTurn && successfulVisualImages.length > 0 ? (
-                        <TooltipHint content={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}><span
-                          className={cn(
-                            "inline-flex items-center rounded-md px-2 py-0.5 font-medium",
-                            resultQualityCheckImage
-                              ? imageQualityCheckClass(resultQualityCheckImage)
-                              : "bg-muted text-muted-foreground ring-1 ring-border",
-                          )}
-                        >
-                          检测：{resultQualityCheckLabel || "未检测"}
-                        </span></TooltipHint>
-                      ) : null}
-                      {resultGenerationDuration ? (
-                        <span className="font-mono font-medium tabular-nums text-primary">
-                          {resultGenerationDuration}
-                        </span>
-                      ) : null}
-                      {resultSizeLabel ? (
-                        <span>大小：<strong className="font-semibold text-foreground">{resultSizeLabel}</strong></span>
-                      ) : null}
-                      {resultFormatLabel ? (
-                        <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                          {resultFormatLabel}
-                        </span>
-                      ) : null}
-                      {resultCompletedAt ? <span>{resultCompletedAt}</span> : null}
                     </div>
-                    {turnBusy || downloadActions ? (
-                      <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
-                        {turnBusy ? (
-                          <span className="flex max-w-full flex-col gap-0.5 rounded-xl bg-brand-soft px-3 py-1.5 text-[11px] leading-5 text-brand sm:text-xs">
-                            <span className="w-fit font-medium [overflow-wrap:anywhere]">{progressMessage}</span>
-                            {longTaskHint ? <span className="max-w-[20rem] text-[11px] leading-5">{longTaskHint}</span> : null}
-                          </span>
-                        ) : null}
-                        {downloadActions}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                  </MessageHeader>
+                  {turnBusy && isVideoTurn ? <p role="status" className="mt-1 text-sm text-muted-foreground">{progressMessage}{longTaskHint ? ` · ${longTaskHint}` : ""}</p> : null}
+                </div>
 
                 {textReplyImages.length > 0 ? (
                   <div className="mb-3 flex flex-col gap-2">
                     {textReplyImages.map(({ image, index }) => (
-                      <div
+                      <Bubble variant="outline"
                         key={image.id}
-                        className="w-full max-w-[min(94%,760px)] rounded-[20px] border border-border bg-card px-4 py-3 text-left text-sm leading-6 text-muted-foreground shadow-[var(--shadow-card)]"
-                      >
+                        className="w-full max-w-[min(94%,760px)]"
+                      ><BubbleContent className="w-full">
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                            <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
-                              模型文本回复
-                            </span>
+                            <Badge variant="secondary" className="max-w-full [overflow-wrap:anywhere]">
+                              {turn.studioAgent ? "Agent 回复" : "模型文本回复"}
+                            </Badge>
                           </div>
-                          {turn.mode !== "chat" ? (
+                          {turn.mode !== "chat" && !turn.studioAgent ? (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 rounded-full border-border bg-card px-3 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+
                               disabled={turnBusy || !turn.prompt.trim()}
                               onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                             >
-                              <RotateCcw className="size-3.5" />
+                              <RotateCcw  />
                               重试生成
                             </Button>
                           ) : null}
                         </div>
                         <ChatMarkdown>{image.text_response || ""}</ChatMarkdown>
-                      </div>
+                      </BubbleContent></Bubble>
                     ))}
                   </div>
                 ) : null}
 
                 {visualImages.length > 0 ? (
-                  <div className={cn(turn.mode === "video" ? "grid min-w-0 grid-cols-1 items-start gap-4" : "columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3")}>
+                  <div className={turn.mode === "video" ? "grid min-w-0 grid-cols-1 items-start gap-4" : "grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] items-start gap-3 sm:gap-4"}>
                     {visualImages.map(({ image, index }) => {
                     const imageSrc = getStoredImageSrc(image, resolvedStorageURLs);
                     const video = isStoredVideo(image) || turn.mode === "video";
@@ -907,12 +830,14 @@ export function ImageResults({
                       (image.status === "error" || image.status === "cancelled") && Boolean(imageSrc);
                     const isPreview = isProcessingPreview || isTerminalPreview;
                     if (video && image.status === "success" && imageSrc) {
-                      const downloadItem = downloadableImages.find((item) => item.id === image.id);
+                      const selectionKey = imageSelectionKey(selectedConversation.id, turn.id, image.id);
+                      const selected = Boolean(selectedImageIds[selectionKey]);
                       return (
-                        <figure
+                        <Card
                           key={image.id}
                           data-video-result-card
-                          className="group relative mx-auto w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm"
+                          size="sm"
+                          className="group relative w-full min-w-0 overflow-hidden gap-0 p-0"
                           style={{ maxWidth: turnVideoFrameMaxWidth }}
                         >
                           <GeneratedVideoPlayer
@@ -921,31 +846,13 @@ export function ImageResults({
                             src={imageSrc}
                             title={`生成视频 ${index + 1}`}
                           />
-                          <figcaption className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
-                            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                              <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                                <Clapperboard className="size-3.5 text-primary" />
-                                视频 {index + 1}
-                              </span>
-                              <span className="uppercase">{(image.mimeType || "video/mp4").replace("video/", "")}</span>
-                              <span>{videoResolutionLabel}</span>
-                              <span>{videoDurationLabel} · {videoAudioLabel}</span>
-                            </div>
-                            {downloadItem ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 shrink-0 rounded-md px-3 text-xs"
-                                disabled={downloadingKey !== null}
-                                onClick={() => void downloadItems(`video:${selectedConversation.id}:${turn.id}:${image.id}`, [downloadItem])}
-                              >
-                                {downloadingKey === `video:${selectedConversation.id}:${turn.id}:${image.id}` ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                                下载视频
-                              </Button>
-                            ) : null}
-                          </figcaption>
-                        </figure>
+                          <Checkbox
+                            checked={selected}
+                            onCheckedChange={() => toggleImageSelection(selectionKey)}
+                            className={cn("absolute top-2 left-2 z-10", !selected && "sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100")}
+                            aria-label={selected ? `取消选择视频 ${index + 1}` : `选择视频 ${index + 1}`}
+                          />
+                        </Card>
                       );
                     }
                     if (video && image.status !== "success") {
@@ -957,51 +864,46 @@ export function ImageResults({
                       const waitingForVideoResult = running && normalizeGenerationProgress(image.taskProgress) === 100;
                       const errorMessage = videoTaskErrorMessage(image.error);
                       return (
-                        <div key={image.id} data-video-task-state={image.status} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs" role={failed ? "alert" : undefined}>
-                          <div className={cn("flex items-center gap-3 border-b border-border/60 px-4 py-3", failed ? "bg-destructive/5" : "bg-muted/20")}>
-                            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl", failed ? "bg-destructive/10 text-destructive" : cancelled ? "bg-muted text-muted-foreground" : "bg-brand-soft text-brand")}>
-                              {failed ? <AlertCircle className="size-4" /> : cancelled ? <CircleStop className="size-4" /> : running ? <LoaderCircle className="size-4 animate-spin" /> : <Clock3 className="size-4" />}
-                            </span>
-                            <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{saveFailed ? "视频已生成，保存失败" : failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在保存视频" : running ? "正在生成视频" : "视频排队中"}</p><p className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">视频 {index + 1} · {turn.model}</p></div>
-                            {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
-                          </div>
+                        <Card key={image.id} data-video-task-state={image.status} className="min-w-0">
+                          <CardContent>
+                            <RunStatus
+                              status={failed ? "error" : cancelled ? "cancelled" : running ? "running" : "waiting"}
+                              title={saveFailed ? "视频已生成，保存失败" : failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在保存视频" : running ? "正在生成视频" : "视频排队中"}
+                              description={`视频 ${index + 1} · ${turn.model}`}
+                            >
+                              {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
+                            </RunStatus>
+                          </CardContent>
                           {failed || cancelled ? (
-                            <div className="space-y-3 p-4 sm:p-5">
+                            <CardContent className="space-y-3">
                               <p className="text-sm leading-6 text-muted-foreground">{saveFailed ? "上游已生成视频，但成品下载或保存失败。重试保存只获取已有视频，不会重新生成。" : failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
                               {failed ? errorMessage.length > 280 ? (
-                                <details className="group rounded-xl border border-destructive/15 bg-destructive/5 text-xs">
-                                  <summary className="cursor-pointer px-3 py-2.5 font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看完整错误信息</summary>
-                                  <ScrollArea className="max-h-48 border-t border-destructive/10 leading-6 text-muted-foreground" viewClass="whitespace-pre-wrap p-3 [overflow-wrap:anywhere]" tag="p">{errorMessage}</ScrollArea>
-                                </details>
-                              ) : <p className="rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2.5 text-xs leading-6 text-destructive [overflow-wrap:anywhere]">{errorMessage}</p> : image.error ? <ScrollArea className="max-h-36 rounded-xl bg-muted/50 text-xs leading-6 text-muted-foreground" viewClass="whitespace-pre-wrap p-3 [overflow-wrap:anywhere]" tag="p">{image.error}</ScrollArea> : null}
-                            </div>
+                                <Collapsible className="group">
+                                  <CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal cursor-pointer h-auto min-h-8">查看完整错误信息</Button></CollapsibleTrigger><CollapsibleContent forceMount className="data-[state=closed]:hidden">
+                                  <Alert variant="destructive"><AlertDescription><ScrollArea className="max-h-48" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</ScrollArea></AlertDescription></Alert>
+                                </CollapsibleContent></Collapsible>
+                              ) : <Alert variant="destructive"><AlertDescription className="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</AlertDescription></Alert> : image.error ? <ScrollArea className="max-h-36" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{image.error}</ScrollArea> : null}
+                            </CardContent>
                           ) : (
-                            <div className="flex min-h-52 flex-col items-center justify-center gap-3 bg-gradient-to-b from-muted/25 to-transparent px-5 py-7 text-center">
-                              <span className="flex size-14 items-center justify-center rounded-2xl border border-brand/15 bg-brand-soft text-brand"><Clapperboard className="size-6" /></span>
-                              <p className="text-sm font-medium">{waitingForVideoResult ? "上游生成进度已到 100%" : running ? "正在把你的想法变成动态画面" : "等待任务开始"}</p>
-                              <p className="flex min-h-12 max-w-sm items-center text-xs leading-6 text-muted-foreground">{waitingForVideoResult ? "视频仍需返回或保存，就绪后会自动显示播放器。" : running ? "视频生成需要一些时间，结果会自动出现在这里。" : "轮到此任务时将自动开始生成。"}</p>
-                              <div className="mt-1 flex h-10 w-full max-w-64 items-center justify-center">
-                                {waitingForVideoResult ? (
-                                  <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <LoaderCircle className="size-3.5 animate-spin text-brand" />
-                                    正在等待视频结果
-                                  </div>
-                                ) : running ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" /> : null}
-                              </div>
-                            </div>
+                            <CardContent className="space-y-3">
+                              {waitingForVideoResult ? <LoadingState label="正在等待视频结果" description="上游生成进度已到 100%，仍需返回或保存视频，就绪后会自动显示播放器。" /> : running ? <>
+                                <LoadingState label="正在把你的想法变成动态画面" description="视频生成需要一些时间，结果会自动出现在这里。" />
+                                <GenerationProgress className="mx-auto max-w-64" progress={image.taskProgress} label="视频生成进度" />
+                              </> : <EmptyState icon={Clock3} title="等待任务开始" description="轮到此任务时将自动开始生成。" />}
+                            </CardContent>
                           )}
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-4 py-3">
+                          <CardFooter className="flex-wrap justify-between gap-3">
                             <span className="text-[11px] text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel}</span>
                             <div className="flex items-center gap-2">
-                              {failed || cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine className="size-3.5" />调整设置</Button> : null}
-                              {failed ? <Button type="button" size="sm" className="h-8 rounded-lg text-xs" disabled={turnBusy || (!saveFailed && !turn.prompt.trim())} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw className="size-3.5" />{saveFailed ? "重试保存视频" : "重试视频生成"}</Button> : null}
-                              {!failed && !cancelled ? <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-xs" onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop className="size-3.5" />终止生成</Button> : null}
+                              {failed || cancelled ? <Button type="button" variant="outline" size="sm"  disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine  />调整设置</Button> : null}
+                              {failed ? <Button type="button" size="sm"  disabled={turnBusy || (!saveFailed && !turn.prompt.trim())} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw  />{saveFailed ? "重试保存视频" : "重试视频生成"}</Button> : null}
+                              {!failed && !cancelled ? <Button type="button" variant="outline" size="sm"  onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop  />终止生成</Button> : null}
                             </div>
-                          </div>
-                        </div>
+                          </CardFooter>
+                        </Card>
                       );
                     }
-                    if ((image.status === "success" || isPreview) && imageSrc) {
+                    if (image.status === "success" || isPreview) {
                       const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
                       const selectionKey = imageSelectionKey(selectedConversation.id, turn.id, image.id);
                       const selected = !isPreview && Boolean(selectedImageIds[selectionKey]);
@@ -1012,88 +914,68 @@ export function ImageResults({
                       const canUpdateVisibility = image.status === "success" && Boolean(image.path || image.url || image.b64_json);
 
                       return (
-                        <figure
+                        <Attachment
+                          orientation="vertical"
                           key={image.id}
-                          className="group relative mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[22px] bg-muted shadow-[var(--shadow-card)] sm:mb-4"
+                          data-image-result-card
+                          data-selected={selected}
+                          className="group relative w-full min-w-0 max-w-xs overflow-hidden gap-0"
                           onMouseLeave={(event) => blurFocusedElementInContainer(event.currentTarget)}
                         >
-                          {selected ? (
-                            <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-brand/90" />
-                          ) : null}
-                          <div className="relative overflow-hidden">
-                            <button
-                              type="button"
+                          <div className="relative w-full max-h-[max(8rem,min(20rem,calc(100cqh-7rem)))] overflow-hidden" style={{ aspectRatio: image.width && image.height ? `${image.width} / ${image.height}` : turnFrameAspectRatio }}>
+                            {imageSrc ? <ImagePreview
+                              src={imageSrc}
+                              alt={`Generated result ${index + 1}`}
+                              width={image.width || undefined}
+                              height={image.height || undefined}
+                              loading="lazy"
+                              decoding="async"
+                              className="absolute inset-0 size-full min-h-0 object-contain"
+                              onMetadata={(width, height) => {
+                                updateImageDimensions(image.id, width, height);
+                                if (!image.b64_json) {
+                                  ensureImageSizeLabel(image.id, imageSrc);
+                                }
+                              }}
+                            /> : <Skeleton role="status" aria-label="正在加载图片" className="absolute inset-0 size-full" />}
+                            <AttachmentTrigger
                               onClick={(event) => {
                                 toggleImageSelection(selectionKey);
                                 event.currentTarget.blur();
                               }}
-                              disabled={isPreview}
-                              className={cn("block w-full overflow-hidden text-left", isPreview ? "cursor-default" : "cursor-pointer")}
+                              disabled={isPreview || !imageSrc}
                               aria-label={selected ? "取消选择图片" : "选择图片"}
-                            >
-                              <AuthenticatedImage
-                                src={imageSrc}
-                                alt={`Generated result ${index + 1}`}
-                                width={image.width || undefined}
-                                height={image.height || undefined}
-                                loading="lazy"
-                                decoding="async"
-                                className="block h-auto w-full transition duration-200 group-hover:brightness-95"
-                                onLoad={(event) => {
-                                  updateImageDimensions(
-                                    image.id,
-                                    event.currentTarget.naturalWidth,
-                                    event.currentTarget.naturalHeight,
-                                  );
-                                  if (!image.b64_json) {
-                                    ensureImageSizeLabel(image.id, imageSrc);
-                                  }
-                                }}
-                              />
-                            </button>
+                            />
                             {isPreview ? (
-                              <div className={cn(
-                                "pointer-events-none absolute inset-0 z-10 flex items-center justify-center",
-                                isTerminalPreview ? "bg-black/45" : "bg-black/20",
-                              )}>
-                                <ScrollArea className="pointer-events-auto max-h-[80%] max-w-[min(88%,32rem)] rounded-lg bg-black/75 text-white shadow-sm backdrop-blur-sm" viewportClassName="px-3 py-2" viewClass="flex flex-col items-center gap-2 text-center text-xs font-medium">
+                              <div className={cn("pointer-events-none absolute inset-0 z-10 flex items-center justify-center", isTerminalPreview ? "bg-black/45" : "bg-black/20")}>
+                                <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden pointer-events-auto max-h-[80%] max-w-[min(88%,32rem)] backdrop-blur-sm" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 flex flex-col items-center gap-2 text-center text-xs font-medium px-3 py-2">
                                   {isProcessingPreview ? (
-                                    <span className="inline-flex items-center gap-1.5"><LoaderCircle className="size-3.5 animate-spin" />正在处理</span>
+                                    <span className="inline-flex items-center gap-1.5"><Spinner className="size-3.5 animate-spin" />正在处理</span>
                                   ) : (
                                     <span className="whitespace-pre-wrap break-words">{image.error || (image.status === "cancelled" ? "任务已终止" : "生成失败")}</span>
                                   )}
                                   {image.status === "error" ? (
-                                    <button
+                                    <Button variant="ghost"
                                       type="button"
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 transition hover:bg-white/25"
+                                      className="inline-flex shrink-0 items-center transition"
                                       disabled={turnBusy || !turn.prompt.trim()}
                                       onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                                     >
-                                      <RotateCcw className="size-3" />
+                                      <RotateCcw  />
                                       重试
-                                    </button>
+                                    </Button>
                                   ) : null}
-                                </ScrollArea>
+                                </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                               </div>
                             ) : null}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                toggleImageSelection(selectionKey);
-                                event.currentTarget.blur();
-                              }}
-                              className={cn(
-                                "absolute top-2 left-2 z-10 inline-flex size-6 items-center justify-center rounded-full border transition duration-150",
-                                selected
-                                  ? "border-brand bg-primary text-primary-foreground opacity-100 shadow-sm"
-                                  : "pointer-events-none border-white/90 bg-black/20 text-transparent opacity-0 shadow-sm group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-black/30",
-                              )}
-                              disabled={isPreview}
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={() => toggleImageSelection(selectionKey)}
+                              className={cn("absolute top-2 left-2 z-10", !selected && "sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100")}
+                              disabled={isPreview || !imageSrc}
                               aria-label={selected ? "取消选择图片" : "选择图片"}
-                            >
-                              {selected ? <Check className="size-3.5" /> : null}
-                            </button>
-                            {!isPreview ? <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                            />
+                            {!isPreview && imageSrc ? <div data-image-result-actions className="absolute top-2 right-2 z-10 flex items-center gap-1 sm:pointer-events-none sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100">
                               <TooltipButton
                                 type="button"
                                 onClick={(event) => {
@@ -1101,22 +983,23 @@ export function ImageResults({
                                   event.currentTarget.blur();
                                   onOpenLightbox(successfulTurnImages, currentIndex);
                                 }}
-                                className="inline-flex h-7 items-center gap-1 rounded-full bg-card/95 px-2 text-[11px] font-medium text-foreground shadow-sm transition hover:bg-card hover:text-foreground"
+                                className="inline-flex items-center transition"
+                                variant="secondary"
                                 aria-label="查看原图"
                                 tooltip="查看原图"
                               >
-                                <Eye className="size-3" />
-                                查看原图
+                                <Eye  />
                               </TooltipButton>
                               <TooltipButton
                                 type="button"
                                 onClick={() => onMaskEdit(selectedConversation.id, turn.id, imageSrc)}
                                 disabled={turnBusy}
-                                className="inline-flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground shadow-sm transition hover:bg-card disabled:opacity-50"
+                                className="inline-flex items-center justify-center transition disabled:opacity-50"
+                                variant="secondary"
                                 aria-label="局部重绘"
                                 tooltip="局部重绘"
                               >
-                                <Brush className="size-3.5" />
+                                <Brush  />
                               </TooltipButton>
                               <TooltipButton
                                 type="button"
@@ -1125,78 +1008,75 @@ export function ImageResults({
                                   event.currentTarget.blur();
                                   onContinueEdit(selectedConversation.id, image);
                                 }}
-                                className="inline-flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground shadow-sm transition hover:bg-card hover:text-foreground"
+                                className="inline-flex items-center justify-center transition"
+                                variant="secondary"
                                 aria-label="加入编辑"
                                 tooltip="加入编辑"
                               >
-                                <Plus className="size-3.5" />
+                                <Plus  />
                               </TooltipButton>
                             </div> : null}
-                            <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1">
-                              {canUpdateVisibility ? (
-                                <TooltipButton
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    event.currentTarget.blur();
-                                    void onImageVisibilityChange(
-                                      selectedConversation.id,
-                                      turn.id,
-                                      index,
-                                      nextVisibility,
-                                    );
-                                  }}
-                                  disabled={isVisibilityMutating}
-                                  className={cn(
-                                    "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium opacity-0 shadow-sm transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-not-allowed disabled:opacity-70",
-                                    imageVisibilityActionClass(visibility),
-                                  )}
-                                  aria-label={visibility === "public" ? "取消公开图片" : "公开图片"}
-                                  tooltip={visibility === "public" ? "取消公开" : "公开"}
-                                >
-                                  {isVisibilityMutating ? (
-                                    <LoaderCircle className="size-3 animate-spin" />
-                                  ) : visibility === "public" ? (
-                                    <Lock className="size-3" />
-                                  ) : (
-                                    <Globe2 className="size-3" />
-                                  )}
-                                  {visibility === "public" ? "取消公开" : "公开"}
-                                </TooltipButton>
-                              ) : null}
-                              <div
-                                className={cn(
-                                  "pointer-events-none inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium shadow-sm backdrop-blur-sm",
-                                  imageVisibilityPillClass(visibility),
-                                )}
-                              >
-                                {visibility === "public" ? <Globe2 className="size-3" /> : <Lock className="size-3" />}
-                                {imageVisibilityLabel(visibility)}
-                              </div>
-                            </div>
                           </div>
-                        </figure>
+                          <div data-image-result-visibility className="flex w-full items-center justify-between gap-2 px-3 py-2">
+                            <TooltipHint content={visibility === "public" ? "所有用户可见" : "仅自己可见"}>
+                              <Badge aria-live="polite">
+                                {visibility === "public" ? <Globe2 /> : <Lock />}
+                                {imageVisibilityLabel(visibility)}
+                              </Badge>
+                            </TooltipHint>
+                            {canUpdateVisibility ? (
+                              <TooltipButton
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  event.currentTarget.blur();
+                                  void onImageVisibilityChange(
+                                    selectedConversation.id,
+                                    turn.id,
+                                    index,
+                                    nextVisibility,
+                                  );
+                                }}
+                                disabled={isVisibilityMutating}
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0"
+                                aria-label={visibility === "public" ? "取消公开图片" : "公开图片"}
+                                tooltip={visibility === "public" ? "改为私有后仅自己可见" : "公开后所有用户可见"}
+                              >
+                                {isVisibilityMutating ? (
+                                  <Spinner />
+                                ) : visibility === "public" ? (
+                                  <Lock  />
+                                ) : (
+                                  <Globe2  />
+                                )}
+                                {visibility === "public" ? "设为私有" : "公开图片"}
+                              </TooltipButton>
+                            ) : null}
+                          </div>
+                        </Attachment>
                       );
                     }
 
                     if (image.status === "cancelled") {
                       return (
-                        <div
+                        <Card
                           key={image.id}
-                          className="mb-3 inline-block h-[160px] w-full break-inside-avoid overflow-hidden rounded-[18px] border border-amber-200 bg-amber-50 sm:mb-4 dark:border-amber-800/70 dark:bg-amber-950/35"
+                          className="h-[160px] w-full min-w-0 max-w-xs overflow-hidden gap-0 p-0"
                         >
                           <div className="flex h-full min-h-16 items-center justify-center px-4 py-4 text-center text-sm leading-6 text-amber-700 sm:px-6 sm:py-8 dark:text-amber-300">
                             {image.error || "任务已终止"}
                           </div>
-                        </div>
+                        </Card>
                       );
                     }
 
                     if (image.status === "error") {
                       return (
-                        <div
+                        <Card
                           key={image.id}
-                          className="mb-3 inline-flex min-h-[160px] w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 align-top sm:mb-4"
+                          className="min-h-[160px] w-full min-w-0 max-w-xs flex-col overflow-hidden gap-0 p-0"
                         >
                           <div className="flex min-h-[112px] min-w-0 flex-1 flex-col items-start gap-2.5 px-5 py-5 text-left text-sm leading-6 text-destructive sm:px-6">
                             <span className="inline-flex items-center gap-2 font-semibold">
@@ -1212,15 +1092,15 @@ export function ImageResults({
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 rounded-full border-destructive/20 bg-card px-3 text-xs text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+
                               disabled={turnBusy || !turn.prompt.trim()}
                               onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                             >
-                              <RotateCcw className="size-3.5" />
+                              <RotateCcw  />
                               重试
                             </Button>
                           </div>
-                        </div>
+                        </Card>
                       );
                     }
 
@@ -1232,47 +1112,29 @@ export function ImageResults({
                         : "";
 
                     return (
-                      <div
+                      <Card
                         key={image.id}
-                        className={cn(
-                          "mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-border/80 bg-muted/80 sm:mb-4",
-                          video && "mx-auto block",
-                        )}
+                        className={cn("w-full min-w-0 overflow-hidden gap-0 p-0", video ? "mx-auto block" : "max-w-xs")}
                         style={{
                           aspectRatio: turnFrameAspectRatio,
                           ...(video ? { maxWidth: turnVideoFrameMaxWidth } : {}),
                         }}
                       >
-                        <div className="flex h-full flex-col items-center justify-center gap-2 px-5 py-5 text-center text-muted-foreground">
-                          <div className="rounded-full bg-card p-3 shadow-sm">
-                            {imageLoadingPhase === "queued" ? (
-                              <Clock3 className="size-5" />
-                            ) : (
-                              <LoaderCircle className="size-5 animate-spin" />
-                            )}
-                          </div>
-                          <p className="text-sm">
-                            {imageBusyLabel}
-                          </p>
-                          {video && imageLoadingPhase === "running" ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mt-2 max-w-64" /> : null}
-                          {imageLoadingPhase === "running" ? (
-                            <p className="min-w-[7.5rem] rounded-full bg-card/70 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
-                              已运行 {elapsedClock}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
+                        <LoadingState label={imageLoadingPhase === "running" ? progressMessage || imageBusyLabel : imageBusyLabel} className="min-h-0 p-4" />
+                        {video && imageLoadingPhase === "running" ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mx-auto mb-4 max-w-64" /> : null}
+                      </Card>
                     );
                     })}
                   </div>
                 ) : null}
 
-              </section>
-            </div>
-          </div>
+                </MessageContent>
+              </Message>
+            </section>
+          </MessageScrollerItem>
         );
       })}
-    </div>
+    </>
   );
 }
 
@@ -1297,25 +1159,6 @@ function getTurnStatusLabel(status: ImageTurnStatus) {
 
 function turnProgressKey(conversationId: string, turnId: string) {
   return `${conversationId}:${turnId}`;
-}
-
-function getStatusChipClass(status: ImageTurnStatus) {
-  if (status === "queued") {
-    return statusToneClasses.warning.soft;
-  }
-  if (status === "generating") {
-    return statusToneClasses.info.soft;
-  }
-  if (status === "success") {
-    return statusToneClasses.success.soft;
-  }
-  if (status === "message") {
-    return "bg-muted text-muted-foreground";
-  }
-  if (status === "cancelled") {
-    return statusToneClasses.warning.soft;
-  }
-  return statusToneClasses.danger.soft;
 }
 
 function getTurnModeLabel(turn: ImageTurn) {

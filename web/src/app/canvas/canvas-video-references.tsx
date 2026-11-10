@@ -1,3 +1,7 @@
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Toggle } from "@/components/ui/toggle";
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { ChevronDown, ImagePlus, Link2, Music, Video } from "lucide-react";
 import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
@@ -45,12 +49,12 @@ export function CanvasVideoReferences({ node, inputs, mode, supportsMultimodal, 
         : slot === "video" ? { generation_video_reference_urls: values } : { generation_video_reference_audio_urls: values });
   }
   return <div data-canvas-reference-materials className="space-y-4">
-    {supportsMultimodal ? <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/60 bg-muted/30 p-1" role="group" aria-label="参考模式">
-      {([['first-frame', supportsLastFrame ? '首尾帧' : '首帧'], ['reference', '多模态参考']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => onChange({ generation_video_reference_mode: value })} className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-colors", mode === value ? "bg-card text-foreground shadow-sm ring-1 ring-border/60" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>{value === "first-frame" ? <ImagePlus className="size-3.5" /> : <Video className="size-3.5" />}{label}</button>)}
-    </div> : null}
+    {supportsMultimodal ? <Card className="grid grid-cols-2 gap-1 p-1" role="group" aria-label="参考模式">
+      {([['first-frame', supportsLastFrame ? '首尾帧' : '首帧'], ['reference', '多模态参考']] as const).map(([value, label]) => <Toggle  key={value} type="button" pressed={mode === value} onClick={() => onChange({ generation_video_reference_mode: value })} className="flex items-center justify-center">{value === "first-frame" ? <ImagePlus  /> : <Video  />}{label}</Toggle>)}
+    </Card> : null}
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs font-medium">{frameMode ? "画面衔接" : "参考素材"}</span>
-      <button type="button" aria-expanded={linksOpen} onClick={() => setLinksOpen(open => !open)} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Link2 className="size-3" />链接<ChevronDown className={cn("size-3 transition-transform", linksOpen && "rotate-180")} /></button>
+      <Button variant="ghost" type="button" aria-expanded={linksOpen} onClick={() => setLinksOpen(open => !open)} className="flex items-center"><Link2  />链接<ChevronDown className={cn("size-3 transition-transform", linksOpen && "rotate-180")} /></Button>
     </div>
     <div className={cn("grid items-start gap-3", frameMode ? "grid-cols-2" : "grid-cols-[repeat(auto-fit,minmax(104px,1fr))]")}>
       {visibleMaterials.map(material => {
@@ -59,14 +63,14 @@ export function CanvasVideoReferences({ node, inputs, mode, supportsMultimodal, 
         const url = bound?.url || material.url;
         const isFrame = frameMode && (material.slot === "image" || material.slot === "last-frame");
         const icon = kind === "image" ? <ImagePlus className="size-5" /> : kind === "video" ? <Video className="size-5" /> : <Music className="size-5" />;
-        return <section key={material.slot} data-reference-slot={material.slot} className="min-w-0 space-y-2 rounded-xl border border-border/60 bg-muted/15 p-2.5">
+        return <Card key={material.slot} data-reference-slot={material.slot} className="min-w-0 space-y-2 p-2.5 gap-0">
           <div className="flex items-center justify-between gap-1 [&_button]:size-4 [&_span]:whitespace-nowrap"><ImageParameterLabel help={material.help}>{material.label}</ImageParameterLabel>{isFrame ? <span className="text-[10px] text-muted-foreground">{url ? "已添加" : material.slot === "image" ? "起始" : "结束"}</span> : null}</div>
           {url ? <ReferenceMediaCard thumbnailOnly kind={kind} src={url} label={material.label} removeDisabled={material.disabled} onRemove={() => changeURL(material.slot, "")} /> : <ReferenceFileUpload showLabel={false} icon={icon} label={`上传${material.label}`} hint={material.hint} accept={material.accept} loading={uploading === material.slot} disabled={material.disabled || Boolean(uploading)} onFiles={async files => { await onUpload(material.slot, files[0]); }} />}
-          {isFrame && images.length > 0 ? <Select value={material.nodeID || "__upload__"} disabled={material.disabled} onValueChange={id => onChange(material.slot === "last-frame" ? { generation_video_last_frame_node_id: id === "__upload__" ? undefined : id } : { generation_video_first_frame_node_id: id === "__upload__" ? undefined : id })}><SelectTrigger aria-label={`选择${material.label}节点`} className="h-7 border-0 bg-transparent px-1 text-[11px] shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__upload__">上传图片或粘贴链接</SelectItem>{images.map(input => <SelectItem key={input.nodeID} value={input.nodeID}>{input.title}</SelectItem>)}</SelectContent></Select> : null}
-          {linksOpen ? <Input aria-label={`${material.label}链接`} type="url" value={material.url} disabled={material.disabled} onChange={event => changeURL(material.slot, event.target.value)} placeholder="https://…" className="h-8 min-w-0 rounded-lg px-2 text-xs shadow-none" /> : null}
-        </section>;
+          {isFrame && images.length > 0 ? <Select value={material.nodeID || "__upload__"} disabled={material.disabled} onValueChange={id => onChange(material.slot === "last-frame" ? { generation_video_last_frame_node_id: id === "__upload__" ? undefined : id } : { generation_video_first_frame_node_id: id === "__upload__" ? undefined : id })}><SelectTrigger aria-label={`选择${material.label}节点`} ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__upload__">上传图片或粘贴链接</SelectItem>{images.map(input => <SelectItem key={input.nodeID} value={input.nodeID}>{input.title}</SelectItem>)}</SelectContent></Select> : null}
+          {linksOpen ? <Input aria-label={`${material.label}链接`} type="url" value={material.url} disabled={material.disabled} onChange={event => changeURL(material.slot, event.target.value)} placeholder="https://…" className="min-w-0 px-2" /> : null}
+        </Card>;
       })}
     </div>
-    <label className="flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground"><span>排除上游文本</span><Checkbox checked={Boolean(node.exclude_upstream_text)} onCheckedChange={checked => onChange({ exclude_upstream_text: checked === true })} /></label>
+    <Label className="flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground"><span>排除上游文本</span><Checkbox checked={Boolean(node.exclude_upstream_text)} onCheckedChange={checked => onChange({ exclude_upstream_text: checked === true })} /></Label>
   </div>;
 }

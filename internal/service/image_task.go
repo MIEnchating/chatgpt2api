@@ -1529,6 +1529,13 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 			return
 		case <-ticker.C:
 		}
+		// Only tasks already registered before this read can be missing from it.
+		s.mu.Lock()
+		observedTasks := make(map[string]struct{}, len(s.cancels))
+		for key := range s.cancels {
+			observedTasks[key] = struct{}{}
+		}
+		s.mu.Unlock()
 		// The storage read happens outside the service lock.
 		rawRemote, rawErr := loadStoredJSONBounded(s.store, s.docName)
 		if rawErr != nil {
@@ -1548,6 +1555,9 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 		s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 		cancels := make([]context.CancelFunc, 0)
 		for key, cancel := range s.cancels {
+			if _, observed := observedTasks[key]; !observed {
+				continue
+			}
 			remoteTask := remoteTasks[key]
 			if remoteTask != nil && isActiveTaskStatus(util.Clean(remoteTask["status"])) {
 				continue
@@ -2401,4 +2411,12 @@ func parseTaskTime(value any) time.Time {
 		}
 	}
 	return time.Unix(0, 0)
+}
+
+// CheckCreationRequestLimit applies the same account rate limit to direct model
+// calls without creating a background task or a cancellation-monitor entry.
+func (s *ImageTaskService) CheckCreationRequestLimit(identity Identity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checkUserTaskLimitsLocked(identity, ownerID(identity), time.Now())
 }

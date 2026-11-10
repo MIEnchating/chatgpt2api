@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, ScrollText, Settings2, Sparkles } from "lucide-react";
+import { useLayoutEffect, useMemo, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
 import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { SectionNavigation } from "@/components/section-navigation";
+import { SettingsWorkspace } from "@/components/settings-workspace";
+import { getSystemSettingsSections } from "@/lib/settings-navigation";
 
 import { ConfigCard } from "./components/config-card";
 import { AnnouncementsCard } from "./components/announcements-card";
@@ -44,69 +44,40 @@ function SettingsDataController({ children, sessionKey }: { children: ReactNode;
   return activeSessionKey === sessionKey ? children : null;
 }
 
+function settingsSectionFromHash(rawHash: string, items: readonly { id: string }[]) {
+  let hash: string;
+  try { hash = decodeURIComponent(rawHash.slice(1)); }
+  catch { return items[0].id; }
+  if (hash === "database-connection") return "config";
+  if (hash === "image-storage-governance") return "media-storage-governance";
+  return items.some((item) => item.id === hash) ? hash : items[0].id;
+}
+
 function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
-  const settingsItems = useMemo(() => [
-    { id: "config", label: "基础与数据库", icon: Settings2, content: <ConfigCard isAdmin={session.role === "admin"} /> },
-    { id: "model-config", label: "模型配置", icon: Sparkles, content: <ModelConfigCard session={session} /> },
-		...(session.role === "admin" ? [{ id: "video-model-contracts", label: "视频模型契约", icon: Clapperboard, content: <VideoModelContractsCard key={session.key} sessionKey={session.key} /> }] : []),
-		{ id: "image-object-storage", label: "存储配置", icon: Database, content: <StorageProvidersCard /> },
-		{ id: "media-storage-governance", label: "媒体治理", icon: Archive, content: <ImageStorageGovernanceCard /> },
-    ...(session.role === "admin" ? [{ id: "announcements", label: "公告管理", icon: Bell, content: <AnnouncementsCard key={session.key} sessionKey={session.key} /> }] : []),
-    ...(session.role === "admin" ? [{ id: "prompt-sources", label: "提示词来源", icon: ListChecks, content: <PromptSourcesCard /> }] : []),
-    { id: "log-governance", label: "日志治理", icon: ScrollText, content: <LogGovernanceCard /> },
-    { id: "login-page-image", label: "登录页图片", icon: ImageIcon, content: <LoginPageImageCard /> },
-  ], [session]);
-  const sectionFromHash = useCallback(() => {
-    if (typeof window === "undefined") return settingsItems[0].id;
-    let hash: string;
-    try {
-      hash = decodeURIComponent(window.location.hash.slice(1));
-    } catch {
-      return settingsItems[0].id;
-    }
-    if (hash === "database-connection") return "config";
-    if (hash === "image-storage-governance") return "media-storage-governance";
-    return settingsItems.some((item) => item.id === hash) ? hash : settingsItems[0].id;
-  }, [settingsItems]);
-  const [activeSection, setActiveSection] = useState(sectionFromHash);
+  const { hash } = useLocation();
+  const settingsItems = useMemo(() => {
+    const panels: Record<string, ReactNode> = {
+      config: <ConfigCard isAdmin={session.role === "admin"} />,
+      "model-config": <ModelConfigCard session={session} />,
+      "video-model-contracts": <VideoModelContractsCard key={session.key} sessionKey={session.key} />,
+      "image-object-storage": <StorageProvidersCard />,
+      "media-storage-governance": <ImageStorageGovernanceCard />,
+      announcements: <AnnouncementsCard key={session.key} sessionKey={session.key} />,
+      "prompt-sources": <PromptSourcesCard />,
+      "log-governance": <LogGovernanceCard />,
+      "login-page-image": <LoginPageImageCard />,
+    };
+    return getSystemSettingsSections(session).map((item) => ({ ...item, content: panels[item.id] }));
+  }, [session]);
+  if (settingsItems.length === 0) return null;
+  const activeSection = settingsSectionFromHash(hash, settingsItems);
   const activeItem = settingsItems.find((item) => item.id === activeSection) || settingsItems[0];
 
-  useEffect(() => {
-    const handleHashChange = () => setActiveSection(sectionFromHash());
-    handleHashChange();
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, [sectionFromHash]);
-
-  const selectSection = (id: string) => {
-    setActiveSection(id);
-    const nextURL = `${window.location.pathname}${window.location.search}#${encodeURIComponent(id)}`;
-    window.history.replaceState(window.history.state, "", nextURL);
-  };
-
-  return (
-    <SettingsDataController sessionKey={session.key}>
-      <ScrollArea
-        className="h-full min-h-0 min-w-0"
-        viewportClassName="pr-1 lg:pr-0"
-        viewStyle={{ height: "100%", minHeight: "100%" }}
-      >
-        <div data-settings-layout className="h-full min-h-0 w-full">
-          <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-1 2xl:grid-cols-[240px_minmax(0,1fr)]">
-            <SectionNavigation
-              title="系统设置"
-              description="按类别管理站点配置"
-              items={settingsItems}
-              activeId={activeItem.id}
-              ariaLabel="系统设置分类"
-              onSelect={selectSection}
-            />
-            <section id={activeItem.id} aria-label={activeItem.label} className="h-full min-h-0 min-w-0">{activeItem.content}</section>
-          </div>
-        </div>
-      </ScrollArea>
-    </SettingsDataController>
-  );
+  return <SettingsDataController sessionKey={session.key}>
+    <div data-settings-layout className="h-full min-h-0">
+      <SettingsWorkspace items={settingsItems} title="系统设置" activeId={activeItem.id}>{activeItem.content}</SettingsWorkspace>
+    </div>
+  </SettingsDataController>;
 }
 
 export default function SettingsPage() {

@@ -29,15 +29,27 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+test("model bulk selection preserves selections outside the current results", () => {
+  let selected = new Set(["outside", "visible-a"]);
+  const toggle = handler("settings/components/model-config-card.tsx", "toggleVisibleModels", {
+    selectableModels: ["visible-a", "visible-b"],
+    setSelectedModels: (update) => { selected = update(selected); },
+  });
+  toggle(true);
+  assert.deepEqual([...selected], ["outside", "visible-a", "visible-b"]);
+  toggle(false);
+  assert.deepEqual([...selected], ["outside"]);
+});
+
 test("document imports enter plugin generation only after preliminary review and with the switch enabled", async () => {
   for (const [enabled, reviewPassed] of [[false, true], [true, true], [false, false], [true, false]]) {
     let reviewOpen, targets, returnToReview = false;
     let warnings;
     const contracts = [{ name: "First", models: ["video-one"] }, { name: "Second", models: ["video-two"] }];
-    const run = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", {
+    const context = {
       importSourceType: "url", importFile: null, importURL: "https://docs.example.com/video", importModel: "test-model", importTokenName: "",
       importGeneratePlugin: enabled, sessionKey: "session-a", isCurrentSession: () => true,
-      importControllerRef: { current: null }, importStartedAtRef: { current: 0 },
+      importControllerRef: { current: null }, importRunIDRef: { current: "" }, nanoid: () => "isolated-run", importStartedAtRef: { current: 0 },
       importVideoModelContract: async () => ({ contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] }),
       normalizeVideoModelContractCollections: (value) => structuredClone(value), cloneVideoModelContract: structuredClone,
       setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportElapsedSeconds: () => {}, setIsImporting: () => {},
@@ -46,7 +58,9 @@ test("document imports enter plugin generation only after preliminary review and
       setGeneratedDryRun: () => {},
       setGeneratedReviewOpen: value => { reviewOpen = value; }, setPluginReturnToReview: value => { returnToReview = value; },
       setPluginTargets: value => { targets = value; }, toast: { error: message => assert.fail(message) },
-    });
+    };
+    context.acceptImportedContracts = handler("settings/components/video-model-contracts-card.tsx", "acceptImportedContracts", context);
+    const run = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", context);
     await run();
     const generatePlugin = enabled && reviewPassed;
     assert.equal(reviewOpen, !generatePlugin);
@@ -134,6 +148,39 @@ test("personal storage saves preserve drafts for each provider independently", a
   assert.equal(currentWebdav.name, "saved dav");
 });
 
+test("model keyboard moves preserve all models and stop at the list boundaries", () => {
+  const move = handler("settings/components/model-config-card.tsx", "moveModel", {});
+  const models = Object.freeze(["first", "second", "third"]);
+  assert.deepEqual(move(models, 1, -1), ["second", "first", "third"]);
+  assert.deepEqual(move(models, 1, 1), ["first", "third", "second"]);
+  assert.deepEqual(move(models, 0, -1), [...models]);
+  assert.deepEqual(move(models, 2, 1), [...models]);
+  assert.deepEqual(move([], 0, -1), []);
+});
+
+test("pin toggles retain the reordered navigation and persist it for the current account", () => {
+  const writes = [];
+  const context = {
+    scope: "account-a",
+    pinnedPaths: ["/logs", "/users", "/rbac"],
+    setPinnedPaths: (next) => { context.pinnedPaths = next; },
+    writeNavigationPins: (scope, next) => { writes.push({ scope, next }); },
+  };
+  const file = "../components/top-nav.tsx";
+  context.reorderPins = handler(file, "reorderPins", context);
+  context.reorderPins(["/rbac", "/logs", "/users"]);
+  assert.deepEqual(context.pinnedPaths, ["/rbac", "/logs", "/users"]);
+  handler(file, "togglePin", context)("/logs");
+  assert.deepEqual(context.pinnedPaths, ["/rbac", "/users"]);
+  handler(file, "togglePin", context)("/logs");
+  assert.deepEqual(context.pinnedPaths, ["/logs", "/rbac", "/users"]);
+  assert.deepEqual(writes, [
+    { scope: "account-a", next: ["/rbac", "/logs", "/users"] },
+    { scope: "account-a", next: ["/rbac", "/users"] },
+    { scope: "account-a", next: ["/logs", "/rbac", "/users"] },
+  ]);
+});
+
 test("custom relay deletion cannot update the next account token selection", async () => {
   const request = deferred();
   let active = true, callbacks = 0;
@@ -203,7 +250,7 @@ function assetContext(onSave) {
       title: "updated", content: "new text", coverUrl: "", source: "", note: "",
       kind: "text", visibility: "private", mediaMetadata: {}, mediaStorageKey: "",
       asset: { id: "one", kind: "image", url: "/old.png", coverUrl: "/cover.png", source: "old", note: "old", storageKey: "old-storage", width: 100, height: 200, bytes: 999, mimeType: "image/png", durationMs: 4000 },
-      onSave, isBlobURL: () => false, formControllerRef: { current: new AbortController() }, savePendingRef: { current: false }, setIsSaving: () => {},
+      onSave, onClose: () => {}, isBlobURL: () => false, formControllerRef: { current: new AbortController() }, savePendingRef: { current: false }, setIsSaving: () => {},
       toast: { success: (message) => messages.push(["success", message]), error: (message) => messages.push(["error", message]) },
     },
   };
@@ -278,8 +325,8 @@ test("storage measurement preserves concurrent changes and never resurrects dele
 
 test("malformed URL fragments do not crash settings or profile navigation", () => {
   const window = { location: { hash: "#%E0%A4%A" } };
-  assert.equal(handler("settings/page.tsx", "sectionFromHash", { window, settingsItems: [{ id: "config" }] })(), "config");
-  assert.equal(handler("profile/page.tsx", "profileSectionFromHash", { window })(), "account");
+  assert.equal(handler("settings/page.tsx", "settingsSectionFromHash", {})(window.location.hash, [{ id: "config" }]), "config");
+  assert.equal(handler("profile/page.tsx", "profileSectionFromHash", {})(window.location.hash), "account");
 });
 
 test("video contract bulk mutations stop when their authenticated session is invalidated", async () => {
@@ -408,5 +455,51 @@ test("account invalidation cancels management work before React cleanup", () => 
     else if (kind === "mutationTrackerRef") assert.equal(lifecycle.isCurrent(ticket), false, file);
     else assert.equal(ref.current.signal.aborted, true, file);
     cleanup();
+  }
+});
+
+test("workflow editors use addressable pages for existing workflows and new templates", () => {
+  const selected = [];
+  const routes = [];
+  const resolved = [];
+  const context = {
+    items: [{ id: "existing" }], searchParams: new URLSearchParams("filter=brand"),
+    workflowEditorGenerationRef: { current: 0 }, setResolvedEditorRoute: key => resolved.push(key),
+    setEditing: value => selected.push(value),
+    setSearchParams: (params, options) => routes.push([new URLSearchParams(params), options]),
+  };
+  const open = handler("workflows/creative-workflow-workspace.tsx", "replaceEditor", context);
+  open({ id: "existing", mode: "single_image" });
+  assert.equal(routes[0][0].get("editor"), "existing");
+  assert.equal(routes[0][0].get("filter"), "brand");
+  assert.equal(routes[0][1].replace, false);
+  open({ id: "", mode: "multi_image_series" }, "product_detail");
+  assert.equal(routes[1][0].get("editor"), "new");
+  assert.equal(routes[1][0].get("template"), "product_detail");
+  assert.equal(resolved[1], "new:product_detail");
+  open(null);
+  assert.equal(routes[2][0].has("editor"), false);
+  assert.equal(routes[2][0].has("template"), false);
+  assert.equal(routes[2][1].replace, true);
+  assert.equal(selected[2], null);
+  assert.equal(context.workflowEditorGenerationRef.current, 3);
+});
+
+test("asset editor returns to its library only after a successful save in the same session", async () => {
+  for (const outcome of ["success", "failure", "aborted"]) {
+    const request = deferred();
+    const fixture = assetContext(() => request.promise);
+    let closed = 0;
+    fixture.context.onClose = () => closed++;
+    const pending = handler("assets/asset-form.tsx", "submit", fixture.context)();
+    assert.equal(closed, 0);
+    if (outcome === "failure") request.reject(new Error("save failed"));
+    else {
+      if (outcome === "aborted") fixture.context.formControllerRef.current.abort();
+      request.resolve();
+    }
+    await pending;
+    assert.equal(closed, outcome === "success" ? 1 : 0);
+    assert.equal(fixture.messages.filter(([kind]) => kind === "success").length, outcome === "success" ? 1 : 0);
   }
 });

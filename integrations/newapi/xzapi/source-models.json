@@ -1,0 +1,121 @@
+{
+  "source": "https://api.xzapi.vip/api/pricing",
+  "read_on": "2026-11-07",
+  "models": [
+    {
+      "model_name": "ch1308-sd-2.0-720p",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，720p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "1403-seedance-2-5-480p",
+      "description": "(按次计费) 9图片，3音频，3视频，480p，4s-12s",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "1403-seedance-2-5-720p",
+      "description": "(按次计费) 9图片，3音频，3视频，720p，4s-12s",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "ch0102-sd-2.0-720p",
+      "description": "(按秒计费) 9图片，3音频，3视频，合计≤12，720p，4s-15s，过人脸，满血，官转",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0107-sd-2.5-480p",
+      "description": "(按秒计费) 30图片，10音频，10视频，合计≤50，480p，4s-30s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch1307-sd-2.5-720p",
+      "description": "(按秒计费) 30 图片， 10 音频， 10视频，合计≤ 50，720p，4s - 30s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0102-sd-2.0-1080p",
+      "description": "(按秒计费) 9图片，3音频，3视频，合计≤12，1080p，4s-15s，过人脸",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0101-sd-2.0-480p",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，480p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0107-sd-2.5-720p",
+      "description": "(按秒计费) 30图片，10音频，10视频，合计≤50，720p，4s-30s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0113-sd-2.0-480p-mini",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，480p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch1306-sd-2.0-720p",
+      "description": "(按次计费) 9图片，3音频，0视频，合计≤12，720p，4s-15s，可真人",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "1402-seedance-2-0-480p",
+      "description": "(按次计费) 9图片，3音频，3视频，480p，4s-15s",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "1402-seedance-2-0-720p",
+      "description": "(按次计费) 9图片，3音频，3视频，720p，4s-15s",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "ch0101-sd-2.0-720p",
+      "description": "(按秒计费) 9图片，3音频，3视频，合计≤12，720p，5s-15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0112-sd-2.0-720p-fast",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，720p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0112-sd-2.0-480p-fast",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，480p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch1309-sd-2.0-720p",
+      "description": "(按秒计费) 9图片，3音频，0视频，合计≤12，720p，4s-15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "1311-seedance-2-5-480p",
+      "description": "(按秒计费) 30图片，10音频，0视频，480p，4s-30s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "1311-seedance-2-5-720p",
+      "description": "(按秒计费) 30图片，10音频，0视频，720p，4s-30s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0108-sd-2.5-720p",
+      "description": "(按秒计费) 30图片，10音频，0视频，合计≤40，720p，4s-30s，可真人,满血，官转",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch1306-sd-2.0-480p",
+      "description": "(按次计费) 9图片，3音频，0视频，合计≤12，480p，4s-15s，可真人",
+      "billing_mode": "per_request"
+    },
+    {
+      "model_name": "ch1309-sd-2.0-480p",
+      "description": "(按秒计费) 9图片，3音频，0视频，合计≤12，480p，4s-15s，可真人",
+      "billing_mode": "per_second"
+    },
+    {
+      "model_name": "ch0113-sd-2.0-720p-mini",
+      "description": "(按秒计费) 9 图片， 3 音频， 3视频，合计≤ 12，720p，4s - 15s，可真人",
+      "billing_mode": "per_second"
+    }
+  ]
+}

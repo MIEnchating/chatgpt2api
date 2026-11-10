@@ -124,3 +124,10 @@ func BenchmarkExtractChatContextImagesLongHistory(b *testing.B) {
 		}
 	}
 }
+
+func TestHTTPErrorExposesStatusWithoutChangingMessage(t *testing.T) {
+	err := HTTPError{Status: 400, Message: "invalid parameter"}
+	if err.HTTPStatusCode() != 400 || err.Error() != "invalid parameter" {
+		t.Fatalf("unexpected HTTP error: %v", err)
+	}
+}

@@ -31,6 +31,16 @@ archives:
       - docker-compose.yml
       - src: agent-runtime/worker.mjs
         dst: agent-runtime/worker.mjs
+      - src: agent-runtime/graph.mjs
+        dst: agent-runtime/graph.mjs
+      - src: agent-runtime/migrate-state.mjs
+        dst: agent-runtime/migrate-state.mjs
+      - src: agent-runtime/history.mjs
+        dst: agent-runtime/history.mjs
+      - src: agent-runtime/memory.mjs
+        dst: agent-runtime/memory.mjs
+      - src: agent-runtime/context-policy.mjs
+        dst: agent-runtime/context-policy.mjs
       - src: agent-runtime/package.json
         dst: agent-runtime/package.json
       - src: agent-runtime/package-lock.json
@@ -50,6 +60,11 @@ dockers_v2:
     dockerfile: Dockerfile.release
     extra_files:
       - agent-runtime/worker.mjs
+      - agent-runtime/graph.mjs
+      - agent-runtime/migrate-state.mjs
+      - agent-runtime/history.mjs
+      - agent-runtime/memory.mjs
+      - agent-runtime/context-policy.mjs
       - agent-runtime/package.json
       - agent-runtime/package-lock.json
     images:

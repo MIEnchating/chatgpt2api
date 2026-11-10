@@ -5,6 +5,7 @@ import {
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
   canvasGridMetrics,
+  canvasConnectionInViewport,
   canvasNodesInViewport,
   clampCanvasZoom,
   resetCanvasViewport,
@@ -79,4 +80,12 @@ test("canvas only renders nodes near the visible world bounds", () => {
     canvasNodesInViewport(nodes, { zoom: 0.5, x: 0, y: 0 }, { width: 1000, height: 700 }).map((node) => node.id),
     ["visible", "near", "far"],
   );
+});
+
+test("connection culling retains curves crossing the viewport and removes remote curves", () => {
+  const viewport = { x: 0, y: 0, zoom: 1 };
+  const size = { width: 800, height: 600 };
+  assert.equal(canvasConnectionInViewport({ x: -500, y: 100 }, { x: 1400, y: 100 }, viewport, size), true);
+  assert.equal(canvasConnectionInViewport({ x: -500, y: -1000 }, { x: 1400, y: -1000 }, viewport, size), false);
+  assert.equal(canvasConnectionInViewport({ x: 2000, y: 100 }, { x: 3000, y: 100 }, viewport, size), false);
 });

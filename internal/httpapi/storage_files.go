@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/service"
@@ -104,7 +105,7 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/files"), "/")
-	if len(parts) == 1 && parts[0] == "" {
+	if len(parts) == 1 && parts[0] == "" || r.URL.Path == "/api/files/temporary" {
 		a.handleStorageFileUpload(w, r, identity)
 		return
 	}
@@ -194,6 +195,23 @@ func (a *App) handleStorageFileUpload(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	contentType := normalizedUploadedContentType(header.Header.Get("Content-Type"))
+	if r.URL.Path == "/api/files/temporary" {
+		if !strings.HasPrefix(contentType, "image/") && !strings.HasPrefix(contentType, "video/") && !strings.HasPrefix(contentType, "audio/") {
+			util.WriteError(w, http.StatusBadRequest, "临时上传仅支持图片、视频和音频")
+			return
+		}
+		if header.Size > 100<<20 {
+			util.WriteError(w, http.StatusRequestEntityTooLarge, "临时上传不能超过 100 MB")
+			return
+		}
+		link, err := service.UploadTemporaryMedia(r.Context(), service.SafeOutboundHTTPClient(2*time.Minute), header.Filename, file, header.Size)
+		if err != nil {
+			util.WriteError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"object": service.UploadedStorageObject{URL: link, Bytes: header.Size, MIMEType: contentType}})
+		return
+	}
 	var provider *service.StorageObjectProviderInput
 	if raw := strings.TrimSpace(r.FormValue("provider")); raw != "" {
 		var parsed service.StorageObjectProviderInput

@@ -30,6 +30,14 @@ func normalizeVideoContractInput(body map[string]any, contract protocol.VideoMod
 	if err := protocol.ValidateVideoContractModeMaterials(contract, kind, counts); err != nil {
 		return err
 	}
+	if err := protocol.ValidateVideoPrompt(contract.Capability, body["prompt"]); err != nil {
+		return err
+	}
+	return normalizeVideoContractParameters(body, contract, kind)
+}
+
+// Parameter editing does not require selecting generation materials yet.
+func normalizeVideoContractParameters(body map[string]any, contract protocol.VideoModelContract, kind string) error {
 	seconds := contract.Capability.DefaultSeconds
 	if value, present := body["seconds"]; present {
 		var valid bool
@@ -39,8 +47,8 @@ func normalizeVideoContractInput(body map[string]any, contract protocol.VideoMod
 		}
 	}
 	body["seconds"] = seconds
-	body["size"] = firstNonEmpty(util.Clean(body["size"]), contract.Capability.DefaultSize)
-	body["resolution"] = firstNonEmpty(util.Clean(body["resolution"]), contract.Capability.DefaultResolution)
+	body["size"] = protocol.VideoContractCanonicalOption(contract.Capability.Sizes, util.Clean(body["size"]), contract.Capability.DefaultSize)
+	body["resolution"] = protocol.VideoContractCanonicalOption(contract.Capability.Resolutions, util.Clean(body["resolution"]), contract.Capability.DefaultResolution)
 	body["generate_audio"] = contract.Capability.AudioControl == "always" || contract.Capability.AudioControl == "toggle" && util.ToBool(body["generate_audio"])
 	body["watermark"] = contract.Capability.Watermark && util.ToBool(body["watermark"])
 	values := videoContractRuleValues(body, contract)
@@ -59,9 +67,6 @@ func normalizeVideoContractInput(body map[string]any, contract protocol.VideoMod
 		"generate_audio": "generate_audio", "watermark": "watermark",
 	} {
 		body[bodyField] = values[field]
-	}
-	if err := protocol.ValidateVideoPrompt(contract.Capability, body["prompt"]); err != nil {
-		return err
 	}
 	var parameterInput map[string]any
 	if raw, exists := body["parameters"]; exists {

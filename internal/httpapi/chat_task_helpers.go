@@ -19,14 +19,16 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 }
 
 func (a *App) runLoggedChatTaskWithContext(ctx context.Context, identity service.Identity, payload map[string]any, endpoint, summary string) (map[string]any, error) {
+	return a.runLoggedChatTaskCaptured(ctx, identity, payload, endpoint, summary, payloadAuditCapture(payload))
+}
+
+// runLoggedChatTaskCaptured lets sensitive agent inputs use a metadata-only audit record.
+func (a *App) runLoggedChatTaskCaptured(ctx context.Context, identity service.Identity, payload map[string]any, endpoint, summary string, requestCapture auditRequestCapture) (map[string]any, error) {
 	ctx, _ = protocol.WithAccountUsageTracker(ctx)
 	start := time.Now()
-	requestCapture := payloadAuditCapture(payload)
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	if len(util.AsMapSlice(payload["tools"])) > 0 {
-		payload["stream"] = false
-	} else {
+	if _, set := payload["stream"]; !set {
 		payload["stream"] = true
 	}
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultChatModel())
@@ -145,10 +147,10 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 		}
 	}
 	if err := <-stream.Err; err != nil {
-		return nil, err
+		return nil, service.AgentModelStreamError{Err: err}
 	}
 	if finishReason == "" {
-		return nil, errors.New("upstream chat stream ended without a finish reason")
+		return nil, service.AgentModelStreamError{Err: errors.New("upstream chat stream ended without a finish reason")}
 	}
 	content := text.String()
 	data := map[string]any{}

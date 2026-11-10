@@ -55,7 +55,7 @@ function canvasNodeInput(node: CanvasNode): CanvasConfigInput | null {
     return { nodeID: node.id, type: node.type, title: node.title || (node.type === "video" ? "视频" : "音频"), url };
   }
   const text = String(node.prompt || "").trim();
-  if (node.type === "text" && text) {
+  if ((node.type === "text" || node.type === "script") && text) {
     return { nodeID: node.id, type: "text", title: node.title || "文字", text };
   }
   return null;

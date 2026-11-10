@@ -2,6 +2,22 @@ package protocol
 
 import "testing"
 
+func TestArkVideoContentUsesDeclaredBase64Format(t *testing.T) {
+	for _, sample := range []struct{ format, value string }{
+		{"data_url", "data:image/png;base64,YQ=="}, {"raw", "YQ=="},
+	} {
+		content, err := ArkVideoContent("scene", ArkVideoReferences{Base64Format: sample.format, FirstFrame: sample.value})
+		if err != nil || len(content) != 2 || content[1]["image_url"].(map[string]any)["url"] != sample.value {
+			t.Fatalf("base64 format %s: content=%v err=%v", sample.format, content, err)
+		}
+	}
+	for _, value := range []string{"data:video/mp4;base64,YQ==", "data:image/png;base64,@@@", "https://cdn.example/image.png"} {
+		if _, err := ArkVideoContent("scene", ArkVideoReferences{Base64Format: "data_url", FirstFrame: value}); err == nil {
+			t.Fatalf("invalid base64 image accepted: %s", value)
+		}
+	}
+}
+
 func TestArkVideoContentMapsReferenceRoles(t *testing.T) {
 	content, err := ArkVideoContent("scene", ArkVideoReferences{Images: []string{"https://cdn.example/image.png"}, Videos: []string{"https://cdn.example/video.mp4"}, Audio: []string{"https://cdn.example/audio.mp3"}})
 	if err != nil {

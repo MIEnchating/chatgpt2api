@@ -70,6 +70,8 @@ func (a *App) routes() []appRoute {
 		subtree("/api/workflows", a.handleWorkflows),
 		exact("", "/api/canvas", a.handleCanvasDocument),
 		exact("", "/api/canvas/agent-runs", a.handleCanvasAgent),
+		exact("", "/api/agent-runs", a.handleAgentExecution),
+		exact(http.MethodPost, "/api/creation-tasks/agent", a.handleStudioAgent),
 		exact(http.MethodPost, "/api/canvas/agent-tools", a.handleCanvasAgentTool),
 		exact(http.MethodPost, "/api/canvas/agent-tools/review-answers", a.handleCanvasAgentTool),
 		exact("", "/api/canvas/shares", a.handleCanvasShare),
@@ -133,6 +135,9 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request, routes []appRout
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if isAPISpace(r.URL.Path) && requestAuthCookieToken(r) != "" && !validateSessionMutation(w, r) {
+		return
+	}
 	if isAPISpace(r.URL.Path) && r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
 		if r.ContentLength > maxAPIRequestBodyBytes {
 			util.WriteError(w, http.StatusRequestEntityTooLarge, "request body is too large")
@@ -149,6 +154,24 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request, routes []appRout
 		return
 	}
 	a.serveWeb(w, r)
+}
+
+// Browser cookies are ambient credentials; CORS response headers alone do not
+// stop an untrusted page from causing a state change.
+func validateSessionMutation(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return true
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin != "" {
+		if isAllowedCredentialedOrigin(origin, r) {
+			return true
+		}
+	} else if site := r.Header.Get("Sec-Fetch-Site"); site == "" || site == "same-origin" {
+		return true
+	}
+	util.WriteError(w, http.StatusForbidden, "请求来源不可信")
+	return false
 }
 
 func matchAppRoute(routes []appRoute, method, path string) *appRoute {
@@ -181,7 +204,7 @@ const (
 	corsAllowedOriginsEnv = "CORS_ALLOWED_ORIGINS"
 	devModeEnv            = "DEV_MODE"
 	corsAllowedMethods    = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS"
-	corsAllowedHeaders    = "Content-Type, Accept"
+	corsAllowedHeaders    = "Content-Type, Accept, X-Agent-Run-ID"
 )
 
 func applyCORS(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +245,7 @@ func corsPreflightAllowed(r *http.Request) bool {
 // Loopback cross-port interop is limited to DEV_MODE.
 func isAllowedCredentialedOrigin(origin string, r *http.Request) bool {
 	originURL, err := url.Parse(origin)
-	if err != nil || originURL.Hostname() == "" || originURL.User != nil || originURL.Path != "" ||
+	if err != nil || originURL.Hostname() == "" || originURL.User != nil || originURL.Path != "" || originURL.RawQuery != "" || originURL.ForceQuery || originURL.Fragment != "" ||
 		originURL.Scheme != "http" && originURL.Scheme != "https" {
 		return false
 	}

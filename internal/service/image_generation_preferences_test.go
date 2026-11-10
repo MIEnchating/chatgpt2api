@@ -294,8 +294,8 @@ func TestInitializeRelayTokensPreservesExplicitChoicesAndEmptySelections(t *test
 	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName("alice"), map[string]any{"default_text_relay_token_names": []string{"chosen"}, "default_image_relay_token_names": []string{}, "system_prompt": "keep"}); err != nil {
 		t.Fatal(err)
 	}
-	groups, err := s.UnconfiguredRelayGroups("alice", map[string]string{"text": "shared", "image": "shared", "video": "shared"})
-	if err != nil || len(groups) != 1 || groups["video"] != "shared" {
+	groups, err := s.UnconfiguredRelayGroups("alice", map[string][]string{"text": {"shared"}, "image": {"shared"}, "video": {"shared"}})
+	if err != nil || len(groups) != 1 || !reflect.DeepEqual(groups["video"], []string{"shared"}) {
 		t.Fatalf("groups=%v err=%v", groups, err)
 	}
 	defaults := map[string][]string{"text": {"first", "second"}, "image": {"first", "second"}, "video": {"first", "second"}}

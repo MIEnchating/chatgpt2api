@@ -6,6 +6,8 @@ import { CodexClient } from "../codex-client.mjs";
 import { readJSONLines } from "../json-lines.mjs";
 import { createCanvasMCP } from "../mcp.mjs";
 
+const isolatedEnvironment = { HOME: "/tmp/canvas-test", USERPROFILE: "/tmp/canvas-test", CODEX_HOME: "/tmp/canvas-test/.codex" };
+
 function fakeChild(received) {
   const child = new EventEmitter();
   child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.exitCode = null;
@@ -14,12 +16,12 @@ function fakeChild(received) {
     if (message.method === "initialize") queueMicrotask(() => child.stdout.write(JSON.stringify({ id: message.id, result: {} }) + "\n"));
     done();
   } });
-  child.kill = () => { child.exitCode = 0; return true; };
+  child.kill = () => { child.exitCode = 0; child.emit("exit", 0); return true; };
   return child;
 }
 test("uses the current app-server handshake and pairs responses by request ID", async () => {
   const received = []; const events = []; const child = fakeChild(received);
-  const client = new CodexClient({ cwd: "/tmp/canvas-test", onMessage: (message) => events.push(message), spawnProcess: (command, args, options) => {
+  const client = new CodexClient({ cwd: "/tmp/canvas-test", env: isolatedEnvironment, onMessage: (message) => events.push(message), spawnProcess: (command, args, options) => {
     assert.equal(command, "codex"); assert.deepEqual(args, ["app-server"]); assert.equal(options.cwd, "/tmp/canvas-test"); assert.equal(options.env.CANVAS_AGENT_TOKEN, undefined); return child;
   } });
   try {
@@ -38,7 +40,7 @@ test("uses the current app-server handshake and pairs responses by request ID", 
 });
 test("closing Codex rejects pending requests and removes resolved server requests", async () => {
   const received = []; const child = fakeChild(received);
-  const client = new CodexClient({ cwd: "/tmp/canvas-test", onMessage() {}, spawnProcess: () => child });
+  const client = new CodexClient({ cwd: "/tmp/canvas-test", env: isolatedEnvironment, onMessage() {}, spawnProcess: () => child });
   await client.ready;
   child.stdout.write('{"id":"call","method":"item/tool/call","params":{}}\n{"method":"serverRequest/resolved","params":{"requestId":"call"}}\n');
   assert.throws(() => client.reply("call", {}), /失效/);

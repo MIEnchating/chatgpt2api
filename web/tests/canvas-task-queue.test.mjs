@@ -182,3 +182,11 @@ test("unchanged task synchronization preserves terminal retention and still remo
     resetCanvasTaskQueueForTests();
   }
 });
+
+test("script generation is reported as a text task with its text model", () => {
+  startQueueSession();
+  syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", [imageNode("script-a", "script-task", "loading", { type: "script", generation_text_model: "script-model" })]);
+  assert.equal(getCanvasTaskQueueSnapshot()[0].type, "text");
+  assert.equal(getCanvasTaskQueueSnapshot()[0].model, "script-model");
+  resetCanvasTaskQueueForTests();
+});

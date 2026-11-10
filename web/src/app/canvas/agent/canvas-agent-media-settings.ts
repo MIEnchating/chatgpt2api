@@ -2,12 +2,15 @@ import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_QUALITY_OPTIONS, parseImageSizeDimens
 import { configuredImageModel } from "@/lib/image-model-definitions";
 import { imageOutputCountLimit, imageReferenceImageLimit, supportsImageAspectRatio, supportsImageQualityValue, supportsImageExactDimensions, supportsImageResolution } from "@/lib/image-model-capabilities";
 import { videoAudioControl, videoDefaultResolution, videoDefaultSize, videoResolutionOptions, videoSizeOptions } from "@/lib/video-model-capabilities";
+import { videoMaterialTransports, videoModelContract } from "@/lib/video-model-contracts";
 import type { CanvasNode } from "@/services/api/canvas";
 import { canvasAgentVideoDurationHint } from "./canvas-agent-generation";
 import type { CanvasAgentAction } from "./canvas-agent-tools";
 
 export function canvasAgentMediaCapabilities(imageModel: string, videoModel: string) {
   const image = configuredImageModel(imageModel);
+  const video = videoModelContract(videoModel);
+  const transports = video ? videoMaterialTransports(video.transport) : [];
   return {
     image: {
       aspectRatios: image?.aspect_ratios || IMAGE_ASPECT_RATIO_OPTIONS.map((item) => item.value).filter((value) => value && supportsImageAspectRatio(imageModel, value)),
@@ -22,6 +25,15 @@ export function canvasAgentMediaCapabilities(imageModel: string, videoModel: str
       resolutions: videoResolutionOptions(videoModel),
       duration: canvasAgentVideoDurationHint(videoModel),
       audioControl: videoAudioControl(videoModel),
+      referenceMaterials: video ? {
+        transport: transports[0],
+        transports,
+        multipartRepeatable: video.transport.multipart_repeatable,
+        multipartMixedURLs: video.transport.multipart_mixed_urls,
+        base64: transports.includes("base64"),
+        dataURL: transports.includes("base64") && video.transport.base64_format !== "raw",
+        modes: video.generation.modes,
+      } : undefined,
     },
   };
 }

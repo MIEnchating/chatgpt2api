@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -55,7 +56,11 @@ func loadStoredJSONBounded(store storage.JSONDocumentBackend, name string) (any,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(taskStorageTimeout.Load()))
 	defer cancel()
-	return contextStore.LoadJSONDocumentContext(ctx, name)
+	value, err := contextStore.LoadJSONDocumentContext(ctx, name)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("数据库读取超时，请稍后继续执行: %w", err)
+	}
+	return value, err
 }
 
 // saveStoredJSONBounded writes a document with taskStorageTimeout when the backend supports cancellation.
@@ -69,5 +74,9 @@ func saveStoredJSONBounded(store storage.JSONDocumentBackend, name string, value
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(taskStorageTimeout.Load()))
 	defer cancel()
-	return contextStore.SaveJSONDocumentContext(ctx, name, value)
+	err := contextStore.SaveJSONDocumentContext(ctx, name, value)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("数据库写入超时，本次保存未确认完成；请核对已保存进度后继续: %w", err)
+	}
+	return err
 }

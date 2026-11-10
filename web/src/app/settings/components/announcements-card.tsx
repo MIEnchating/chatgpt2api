@@ -1,7 +1,19 @@
 "use client";
 
+import { LoadingState } from "@/components/ui/loading-state";
+
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+import { Card } from "@/components/ui/card";
+
+import { Item } from "@/components/ui/item";
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Edit3, LoaderCircle, Megaphone, Plus, Trash2 } from "lucide-react";
+import { Edit3, Megaphone, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +47,8 @@ import {
   type ScopedMutationToken,
 } from "@/lib/scoped-mutation-lifecycle";
 
-import {
-  SettingsCard,
-  SettingsEmptyState,
-  settingsDialogInputClassName,
-  settingsListItemClassName,
-} from "./settings-ui";
+import { SettingsEmptyState } from "./settings-ui";
+import { SettingsPanel } from "@/components/settings-panel";
 
 const emptyForm: AnnouncementInput = {
   title: "",
@@ -287,22 +295,18 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
 
   return (
     <>
-      <SettingsCard
-        icon={Megaphone}
-        tone="amber"
-        title="公告管理"
+      <SettingsPanel
+        title="公告发布"
         description="向所有已登录用户发布系统通知。"
         action={
           <Button type="button" size="sm" onClick={openCreate}>
-            <Plus className="size-4" />
+            <Plus  />
             添加公告
           </Button>
         }
       >
         {isLoading ? (
-          <div className="flex items-center justify-center py-10">
-            <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-          </div>
+          <LoadingState className="h-auto" label="正在加载公告" />
         ) : items.length === 0 ? (
           <SettingsEmptyState
             icon={Megaphone}
@@ -314,23 +318,23 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
             {items.map((item) => {
               const pending = pendingIds.has(item.id);
               return (
-                <div key={item.id} className={settingsListItemClassName}>
+                <Card key={item.id} className="p-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <TooltipHint content={item.enabled ? "停用公告" : "启用公告"}>
-                      <Checkbox
+                      <span className="inline-flex shrink-0"><Checkbox
                         checked={item.enabled}
                         disabled={pending}
                         onCheckedChange={() => void toggleEnabled(item)}
                         aria-label={item.enabled ? "停用公告" : "启用公告"}
                         className="mt-0.5"
-                      />
+                      /></span>
                     </TooltipHint>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="truncate text-sm font-semibold text-foreground">
                           {item.title || "系统公告"}
                         </h3>
-                        <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
+                        <Badge variant={item.enabled ? "default" : "secondary"} >
                           {item.enabled ? "展示中" : "已停用"}
                         </Badge>
                       </div>
@@ -342,45 +346,43 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button
+                      <TooltipHint content={"编辑公告"}><Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8"
+
                         disabled={pending}
                         onClick={() => openEdit(item)}
                         aria-label="编辑公告"
-                        title="编辑公告"
                       >
-                        <Edit3 className="size-4" />
-                      </Button>
-                      <Button
+                        <Edit3  />
+                      </Button></TooltipHint>
+                      <TooltipHint content={"删除公告"}><Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+
                         disabled={pending}
                         onClick={() => setDeletingItem(item)}
                         aria-label="删除公告"
-                        title="删除公告"
                       >
-                        <Trash2 className="size-4" />
-                      </Button>
+                        <Trash2  />
+                      </Button></TooltipHint>
                     </div>
                   </div>
-                </div>
+                </Card>
               );
             })}
           </div>
         )}
-      </SettingsCard>
+      </SettingsPanel>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingItem ? "编辑公告" : "添加公告"}</DialogTitle>
             <DialogDescription>公告将显示在所有已登录用户的导航下方。</DialogDescription>
-          </DialogHeader>
+          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
           <div className="flex flex-col gap-4">
             <Field>
               <FieldLabel htmlFor="announcement-title">标题</FieldLabel>
@@ -389,7 +391,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                 value={form.title}
                 maxLength={80}
                 placeholder="系统公告"
-                className={settingsDialogInputClassName}
+
                 onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
               />
               <FieldDescription>不填写时使用“系统公告”。</FieldDescription>
@@ -407,54 +409,36 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                 {Array.from(form.content).length}/2000
               </FieldDescription>
             </Field>
-            <label className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground">
+            <Item variant="outline" asChild><Label className="flex min-h-11 items-center gap-3 px-3 py-2.5">
               <Checkbox
                 checked={form.enabled}
                 onCheckedChange={(checked) => setForm((current) => ({ ...current, enabled: Boolean(checked) }))}
               />
               保存后立即展示
-            </label>
+            </Label></Item>
           </div>
-          <DialogFooter>
+          </ScrollArea><DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
               取消
             </Button>
             <Button type="button" onClick={() => void save()} disabled={isSaving}>
-              {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {isSaving ? <Spinner /> : null}
               {editingItem ? "保存修改" : "发布公告"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => (!open ? setDeletingItem(null) : undefined)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>删除公告</DialogTitle>
-            <DialogDescription>
-              删除“{deletingItem?.title || "系统公告"}”后，所有用户将立即停止看到这条公告。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeletingItem(null)}>
-              取消
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void remove()}
-              disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}
-            >
-              {deletingItem && pendingIds.has(deletingItem.id) ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={Boolean(deletingItem)}
+        onOpenChange={(open) => (!open ? setDeletingItem(null) : undefined)}
+        title="删除公告"
+        description={<>删除“{deletingItem?.title || "系统公告"}”后，所有用户将立即停止看到这条公告。</>}
+        confirmLabel="删除"
+        busy={Boolean(deletingItem && pendingIds.has(deletingItem.id))}
+        destructive
+        onConfirm={() => void remove()}
+      />
     </>
   );
 }

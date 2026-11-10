@@ -77,7 +77,10 @@ function requestBody(input: NewAPIVideoPluginResult, sample: NewAPIVideoPluginRe
   ]) {
     const count = Number(values[key]);
     if (!count) continue;
-    const url = `https://dry-run.invalid/${key}.${extension}`;
+    const mime = extension === "mp4" ? "video/mp4" : extension === "mp3" ? "audio/mpeg" : "image/png";
+    const url = input.contract.transport.local_material === "base64"
+      ? input.contract.transport.base64_format === "raw" ? "YQ==" : `data:${mime};base64,YQ==`
+      : `https://dry-run.invalid/${key}.${extension}`;
     setPath(body, path, key.startsWith("reference_") && request.reference_value_type !== "scalar" ? Array.from({ length: count }, () => url) : url);
   }
   return body;

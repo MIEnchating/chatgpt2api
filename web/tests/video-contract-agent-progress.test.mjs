@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { VideoContractAgentDetails } from "../src/app/settings/components/video-contract-agent-details.tsx";
 import { updateVideoContractAgentDetails, updateVideoContractImportActivity } from "../src/lib/video-contract-agent-progress.ts";
 
 test("agent details update in place and keep bounded history", () => {
@@ -15,15 +17,38 @@ test("agent details update in place and keep bounded history", () => {
   assert.equal(entries.at(-1).id, "tool-79");
 });
 
-test("execution details follow the run state and render plain text", async () => {
-  const source = await readFile(new URL("../src/app/settings/components/video-contract-agent-details.tsx", import.meta.url), "utf8");
-  assert.match(source, /useState\(running\)/);
-  assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
-  assert.match(source, /AGENT_STEP_STATUS\.interrupted\.label/); assert.match(await readFile(new URL("../src/components/agent/agent-step-status.ts", import.meta.url), "utf8"), /interrupted: \{ label: "已中断"/);
-  assert.match(source, /entry\.output \|\|/);
-  assert.match(source, /selected\?\.\[rawTab\]/);
-  assert.doesNotMatch(source, /overflow-auto|overflow-y-auto|max-h-/);
-  assert.match(source, /videoContractToolSummary\(entry\)/);
+test("contract output separates assistant messages, corrections and real tool calls", () => {
+  const html = renderToStaticMarkup(createElement(VideoContractAgentDetails, { running: true, entries: [
+    { id: "reply", kind: "model", name: "model", status: "running", output: "正在整理文档", round: 2, request_attempt: 3 },
+    { id: "correction", kind: "correction", name: "format", status: "completed", summary: "已修正工具参数" },
+    { id: "tool", kind: "tool", name: "validate_contracts", status: "failed", input: "model=test", output: "invalid", error: "schema invalid" },
+  ] }));
+  assert.equal((html.match(/data-ai-element="tool"/g) || []).length, 1);
+  assert.equal((html.match(/data-ai-element="message"/g) || []).length, 1);
+  assert.match(html, /模型第 2 轮/);
+  assert.match(html, /第 3 次请求/);
+  assert.match(html, /正在整理文档/);
+  assert.match(html, /已修正工具参数/);
+  assert.match(html, /复制工具输入/);
+  assert.match(html, /schema invalid/);
+});
+
+test("execution details expose repairable tool data and escape untrusted content", () => {
+  const html = renderToStaticMarkup(createElement(VideoContractAgentDetails, { running: true, entries: [
+    { id: "failed", kind: "tool", name: "validate_contracts", status: "failed", input: "model=test", output: "<script>alert(1)</script>", error: "schema invalid" },
+    { id: "running", kind: "model", name: "model", status: "running", output: "正在整理文档", round: 2 },
+  ] }));
+  assert.match(html, /执行记录/);
+  assert.match(html, /data-ai-element="conversation"/);
+  assert.match(html, /data-message-id="failed"/);
+  assert.match(html, /data-message-id="running"/);
+  assert.match(html, /schema invalid/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /复制工具输入/);
+  assert.match(html, /复制工具输出/);
+  assert.match(html, /模型第 2 轮/);
+  assert.match(html, /正在整理文档/);
 });
 
 test("workflow progress keeps the current operation through heartbeats", () => {

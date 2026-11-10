@@ -1,14 +1,18 @@
-import { CircleHelp, Cloud, Database, Gauge, HardDrive, LoaderCircle, Save } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { LabeledField as StorageField } from "@/components/labeled-field";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { PasswordInput } from "@/components/password-input";
+import { Cloud, Database, Gauge, HardDrive, Save } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { TooltipHint } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import {
   defaultUserStorageProvider,
   defaultUserWebDAVStorageProvider,
@@ -28,9 +32,7 @@ function formatBytes(value: number) {
   return `${value} B`;
 }
 
-function StorageField({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return <label className="min-w-0 space-y-1.5"><span className="flex min-h-4 items-center gap-1.5 text-xs font-medium text-foreground"><span>{label}</span>{hint ? <TooltipHint content={hint}><span tabIndex={0} role="img" aria-label={`${label}说明`} className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><CircleHelp className="size-3.5" aria-hidden="true" /></span></TooltipHint> : null}</span>{children}</label>;
-}
+
 
 export function StorageProviderCard() {
   const [allowed, setAllowed] = useState(false);
@@ -61,8 +63,8 @@ export function StorageProviderCard() {
     return () => { cancelled = true; };
   }, []);
 
-  if (loading) return <Card><CardContent className="flex min-h-48 items-center justify-center p-4 sm:p-5"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></CardContent></Card>;
-  if (!allowed) return <Card><CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 p-4 text-center sm:p-5"><span className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground"><HardDrive className="size-5" /></span><div><p className="text-sm font-semibold text-foreground">使用服务器本机存储</p><p className="mt-1 text-sm text-muted-foreground">管理员暂未开放个人外部存储配置</p></div></CardContent></Card>;
+  if (loading) return <SettingsPanel title="素材存储"><LoadingState label="正在读取存储配置" /></SettingsPanel>;
+  if (!allowed) return <SettingsPanel title="素材存储"><EmptyState icon={HardDrive} title="使用服务器本机存储" description="管理员暂未开放个人外部存储配置" /></SettingsPanel>;
 
   const provider: UserStorageProvider = activeType === "s3" ? s3 : webdav;
 
@@ -103,60 +105,51 @@ export function StorageProviderCard() {
   };
 
   return (
-    <Card className="h-full min-h-0 overflow-hidden">
-      <CardHeader className="shrink-0 border-b border-border p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground ring-1 ring-border"><Cloud className="size-5" /></span>
-            <div className="min-w-0"><CardTitle className="text-lg leading-7">个人素材存储</CardTitle><p className="mt-1 text-sm text-muted-foreground">未启用时使用服务器本机，可选 S3、R2 或 WebDAV</p></div>
-          </div>
-          <Button type="button" onClick={() => void save()} disabled={saving}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}保存</Button>
-        </div>
-      </CardHeader>
-      <ScrollArea className="min-h-0 flex-1">
-      <CardContent className="space-y-5 p-4 sm:p-5">
-        <ScrollArea className="border-b border-border/70 pb-4" viewClass="min-w-full w-max" >
-          <div role="tablist" aria-label="个人素材存储类型" className="inline-flex min-w-max gap-1 rounded-lg bg-muted p-1" onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            const next = event.key === "Home" ? "s3" : event.key === "End" ? "webdav" : activeType === "s3" ? "webdav" : "s3";
-            setActiveType(next);
-            event.currentTarget.querySelector<HTMLButtonElement>(`#storage-tab-${next}`)?.focus();
-          }}>
-            <button type="button" role="tab" id="storage-tab-s3" aria-controls="storage-panel-s3" tabIndex={activeType === "s3" ? 0 : -1} aria-selected={activeType === "s3"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "s3" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("s3")}><Database className="size-4" />S3 / R2</button>
-            <button type="button" role="tab" id="storage-tab-webdav" aria-controls="storage-panel-webdav" tabIndex={activeType === "webdav" ? 0 : -1} aria-selected={activeType === "webdav"} className={cn("flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors", activeType === "webdav" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setActiveType("webdav")}><Cloud className="size-4" />WebDAV</button>
-          </div>
-        </ScrollArea>
-        <div className="flex min-h-16 items-center justify-between gap-4 border-y border-border/70 py-3">
+    <SettingsPanel
+      title="素材存储"
+      description="未启用时使用服务器本机，可选 S3、R2 或 WebDAV。"
+      action={<Button type="button" onClick={() => void save()} disabled={saving}>{saving ? <Spinner /> : <Save />}保存</Button>}
+    >
+      <SettingsSection title="存储配置">
+      <Tabs value={activeType} onValueChange={(value) => setActiveType(value as "s3" | "webdav")} className="grid min-w-0 gap-5">
+        <TabsList aria-label="素材存储设置" className="h-auto">
+          <TabsTrigger value="s3" ><Database className="size-4" />S3 / R2</TabsTrigger>
+          <TabsTrigger value="webdav" ><Cloud className="size-4" />WebDAV</TabsTrigger>
+        </TabsList>
+        <div className="flex min-h-16 items-center justify-between gap-4 border-b py-3">
           <div><p className="text-sm font-medium">启用当前外部存储</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">S3/R2 与 WebDAV 不能同时启用；关闭后使用服务器本机</p></div>
-          <Switch checked={provider.enabled} onCheckedChange={setProviderEnabled} />
+          <Switch aria-label="启用当前外部存储" checked={provider.enabled} onCheckedChange={setProviderEnabled} />
         </div>
         {activeType === "s3" ? (
-          <div role="tabpanel" id="storage-panel-s3" aria-labelledby="storage-tab-s3" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
-            <StorageField label="配置名称"><Input value={s3.name} onChange={(event) => setS3((value) => ({ ...value, name: event.target.value }))} placeholder="我的对象存储" /></StorageField>
-            <StorageField label="S3 / R2 服务地址"><Input value={s3.endpoint} onChange={(event) => setS3((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://account.r2.cloudflarestorage.com" /></StorageField>
-            <StorageField label="存储桶名称"><Input value={s3.bucket} onChange={(event) => setS3((value) => ({ ...value, bucket: event.target.value }))} placeholder="media-assets" /></StorageField>
-            <StorageField label="区域"><Input value={s3.region} onChange={(event) => setS3((value) => ({ ...value, region: event.target.value }))} placeholder="auto" /></StorageField>
-            <StorageField label="素材目录前缀"><Input value={s3.pathPrefix} onChange={(event) => setS3((value) => ({ ...value, pathPrefix: event.target.value }))} placeholder="assets" /></StorageField>
-            <StorageField label="公开访问地址（可选）" hint="仅填写可匿名访问的桶域名或 CDN；私有桶请留空，由本站鉴权代理读取。"><Input value={s3.publicBaseUrl} onChange={(event) => setS3((value) => ({ ...value, publicBaseUrl: event.target.value }))} placeholder="https://cdn.example.com" /></StorageField>
-            <StorageField label="Access Key ID"><Input value={s3.accessKeyId} onChange={(event) => setS3((value) => ({ ...value, accessKeyId: event.target.value }))} placeholder="访问密钥 ID" autoComplete="off" /></StorageField>
-            <StorageField label="Secret Access Key" hint="编辑已有配置时留空表示保持原密钥"><Input type="password" value={s3.secretAccessKey} onChange={(event) => setS3((value) => ({ ...value, secretAccessKey: event.target.value }))} placeholder="访问密钥" autoComplete="new-password" /></StorageField>
-          </div>
+          <TabsContent value="s3" className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+            <StorageField label="配置名称">{(fieldId) => <Input id={fieldId} value={s3.name} onChange={(event) => setS3((value) => ({ ...value, name: event.target.value }))} placeholder="我的对象存储" />}</StorageField>
+            <StorageField label="S3 / R2 服务地址">{(fieldId) => <Input id={fieldId} value={s3.endpoint} onChange={(event) => setS3((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://account.r2.cloudflarestorage.com" />}</StorageField>
+            <StorageField label="存储桶名称">{(fieldId) => <Input id={fieldId} value={s3.bucket} onChange={(event) => setS3((value) => ({ ...value, bucket: event.target.value }))} placeholder="media-assets" />}</StorageField>
+            <StorageField label="区域">{(fieldId) => <Input id={fieldId} value={s3.region} onChange={(event) => setS3((value) => ({ ...value, region: event.target.value }))} placeholder="auto" />}</StorageField>
+            <StorageField label="Access Key ID">{(fieldId) => <Input id={fieldId} value={s3.accessKeyId} onChange={(event) => setS3((value) => ({ ...value, accessKeyId: event.target.value }))} placeholder="访问密钥 ID" autoComplete="off" />}</StorageField>
+            <StorageField label="Secret Access Key" hint="编辑已有配置时留空表示保持原密钥">{(fieldId) => <PasswordInput id={fieldId} type="password" value={s3.secretAccessKey} onChange={(event) => setS3((value) => ({ ...value, secretAccessKey: event.target.value }))} placeholder="访问密钥" autoComplete="new-password" />}</StorageField>
+            <StorageField label="素材目录前缀">{(fieldId) => <Input id={fieldId} value={s3.pathPrefix} onChange={(event) => setS3((value) => ({ ...value, pathPrefix: event.target.value }))} placeholder="assets" />}</StorageField>
+            <StorageField label="公开访问地址（可选）" hint="仅填写可匿名访问的桶域名或 CDN；私有桶请留空，由本站鉴权代理读取。">{(fieldId) => <Input id={fieldId} value={s3.publicBaseUrl} onChange={(event) => setS3((value) => ({ ...value, publicBaseUrl: event.target.value }))} placeholder="https://cdn.example.com" />}</StorageField>
+            <Label className="flex min-w-0 items-center justify-between gap-4 md:col-span-2">
+              <span className="min-w-0"><span className="block text-sm font-medium">Bucket 使用子域名</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">COS / OSS 通常启用，服务地址不含 Bucket；关闭时使用路径模式。</span></span>
+              <Switch checked={s3.bucketInHost} onCheckedChange={(bucketInHost) => setS3((value) => ({ ...value, bucketInHost }))} />
+            </Label>
+          </TabsContent>
         ) : (
-          <div role="tabpanel" id="storage-panel-webdav" aria-labelledby="storage-tab-webdav" className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
-            <StorageField label="配置名称"><Input value={webdav.name} onChange={(event) => setWebDAV((value) => ({ ...value, name: event.target.value }))} placeholder="我的 WebDAV" /></StorageField>
-            <StorageField label="WebDAV 服务器地址"><Input value={webdav.endpoint} onChange={(event) => setWebDAV((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://dav.example.com" /></StorageField>
-            <StorageField label="用户名"><Input value={webdav.username} onChange={(event) => setWebDAV((value) => ({ ...value, username: event.target.value }))} placeholder="WebDAV 用户名" autoComplete="off" /></StorageField>
-            <StorageField label="密码或应用密码" hint="编辑已有配置时留空表示保持原密码"><Input type="password" value={webdav.password} onChange={(event) => setWebDAV((value) => ({ ...value, password: event.target.value }))} placeholder="WebDAV 密码" autoComplete="new-password" /></StorageField>
-            <StorageField label="素材目录前缀"><Input value={webdav.pathPrefix} onChange={(event) => setWebDAV((value) => ({ ...value, pathPrefix: event.target.value }))} placeholder="assets" /></StorageField>
-          </div>
+          <TabsContent value="webdav" className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+            <StorageField label="配置名称">{(fieldId) => <Input id={fieldId} value={webdav.name} onChange={(event) => setWebDAV((value) => ({ ...value, name: event.target.value }))} placeholder="我的 WebDAV" />}</StorageField>
+            <StorageField label="WebDAV 服务器地址">{(fieldId) => <Input id={fieldId} value={webdav.endpoint} onChange={(event) => setWebDAV((value) => ({ ...value, endpoint: event.target.value }))} placeholder="https://dav.example.com" />}</StorageField>
+            <StorageField label="用户名">{(fieldId) => <Input id={fieldId} value={webdav.username} onChange={(event) => setWebDAV((value) => ({ ...value, username: event.target.value }))} placeholder="WebDAV 用户名" autoComplete="off" />}</StorageField>
+            <StorageField label="密码或应用密码" hint="编辑已有配置时留空表示保持原密码">{(fieldId) => <PasswordInput id={fieldId} type="password" value={webdav.password} onChange={(event) => setWebDAV((value) => ({ ...value, password: event.target.value }))} placeholder="WebDAV 密码" autoComplete="new-password" />}</StorageField>
+            <StorageField label="素材目录前缀">{(fieldId) => <Input id={fieldId} value={webdav.pathPrefix} onChange={(event) => setWebDAV((value) => ({ ...value, pathPrefix: event.target.value }))} placeholder="assets" />}</StorageField>
+          </TabsContent>
         )}
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <span className="min-w-0 break-words text-sm text-muted-foreground">已用容量：{usage[activeType] || "尚未统计"}</span>
-          <Button type="button" variant="outline" onClick={() => void measure()} disabled={measuring || !provider.enabled}>{measuring ? <LoaderCircle className="animate-spin" /> : <Gauge />}统计容量</Button>
+          <Button type="button" variant="outline" onClick={() => void measure()} disabled={measuring || !provider.enabled}>{measuring ? <Spinner /> : <Gauge />}统计容量</Button>
         </div>
-      </CardContent>
-      </ScrollArea>
-    </Card>
+      </Tabs>
+      </SettingsSection>
+    </SettingsPanel>
   );
 }

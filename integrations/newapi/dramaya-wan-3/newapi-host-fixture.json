@@ -1,0 +1,379 @@
+{
+  "cases": [
+    {
+      "name": "submit 5s 480p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 5,
+            "resolution": "480p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 5,
+          "resolution": "480p"
+        }
+      }
+    },
+    {
+      "name": "submit 5s 720p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 5,
+            "resolution": "720p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 5,
+          "resolution": "720p"
+        }
+      }
+    },
+    {
+      "name": "submit 5s 1080p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 5,
+            "resolution": "1080p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 5,
+          "resolution": "1080p"
+        }
+      }
+    },
+    {
+      "name": "submit 10s 480p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 10,
+            "resolution": "480p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 10,
+          "resolution": "480p"
+        }
+      }
+    },
+    {
+      "name": "submit 10s 720p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 10,
+            "resolution": "720p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 10,
+          "resolution": "720p"
+        }
+      }
+    },
+    {
+      "name": "submit 10s 1080p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 10,
+            "resolution": "1080p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 10,
+          "resolution": "1080p"
+        }
+      }
+    },
+    {
+      "name": "submit 15s 480p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 15,
+            "resolution": "480p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 15,
+          "resolution": "480p"
+        }
+      }
+    },
+    {
+      "name": "submit 15s 720p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 15,
+            "resolution": "720p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 15,
+          "resolution": "720p"
+        }
+      }
+    },
+    {
+      "name": "submit 15s 1080p without seconds",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 15,
+            "resolution": "1080p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 15,
+          "resolution": "1080p"
+        }
+      }
+    },
+    {
+      "name": "decode preserves duration",
+      "hook": "protocols",
+      "path": [
+        "openai_video",
+        "decodeRequest"
+      ],
+      "args": [
+        {
+          "model": "wan-3",
+          "body": {
+            "kind": "json",
+            "value": {
+              "model": "wan-3",
+              "prompt": "A moving cloud",
+              "duration": 10,
+              "resolution": "480p"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "kind": "submit",
+        "model": "wan-3",
+        "action": "text_to_video",
+        "requestBody": {
+          "model": "wan-3",
+          "prompt": "A moving cloud",
+          "duration": 10,
+          "resolution": "480p"
+        }
+      }
+    },
+    {
+      "name": "seconds is only a usage fact",
+      "hook": "extractUsage",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 10,
+            "resolution": "480p"
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": [],
+          "usagePurpose": "facts"
+        }
+      ],
+      "expected": {
+        "seconds": 10,
+        "resolution": "480p"
+      }
+    },
+    {
+      "name": "submitted seconds is rejected",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "wan-3",
+            "prompt": "A moving cloud",
+            "duration": 10,
+            "resolution": "480p",
+            "seconds": 10
+          },
+          "model": "wan-3",
+          "upstreamModel": "wan-3",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expectedError": "契约未声明字段: seconds"
+    }
+  ]
+}

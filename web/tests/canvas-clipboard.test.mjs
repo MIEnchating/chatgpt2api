@@ -163,3 +163,12 @@ test("clipboard accepts the current automatic video duration value", () => {
   assert.equal(normalizeCanvasClipboard({ nodes: [node("video", { type: "video", generation_video_seconds: -1 })] })?.nodes[0].generation_video_seconds, -1);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("video", { type: "video", generation_video_seconds: -2 })] }), null);
 });
+
+test("script clipboard remaps asset images and rejects malformed script projects", () => {
+  const script = { ...node("script-1"), type: "script", script_project: { step: 0, confirmed: false, shots: [], assets: [{ id: "hero", kind: "character", name: "小雨", description: "红雨衣", image_node_id: "image-1" }] } };
+  assert.ok(normalizeCanvasClipboard({ nodes: [script], connections: [] }));
+  const remapped = remapCanvasNodeReferences(script, new Map([["image-1", "image-copy"]]));
+  assert.equal(remapped.script_project.assets[0].image_node_id, "image-copy");
+  assert.equal(script.script_project.assets[0].image_node_id, "image-1");
+  assert.equal(normalizeCanvasClipboard({ nodes: [{ ...script, script_project: { step: 0 } }], connections: [] }), null);
+});

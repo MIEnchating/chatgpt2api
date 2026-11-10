@@ -1,0 +1,308 @@
+{
+  "checked_at": "2026-11-10",
+  "url": "https://openai.fit/api/pricing",
+  "models": [
+    {
+      "model_name": "minimax H3-self",
+      "description": "MiniMax H3 自部署视频生成；1–15 秒，480p/768p 横竖；支持最多 9 张参考图（ref_image_0–8），可用 URL、Base64 或 multipart 文件引用；不支持参考音频和参考视频（传了 ref_audio_* 会被忽略）；prompt 必填。¥0.05/秒，分组自动计费。",
+      "icon": "Minimax.Color",
+      "tags": "视频生成,MiniMax",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "default",
+        "vip"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"768P\", u(\"seconds\") * 0.006849315068493151)",
+      "billing_usage_schema": {
+        "quality": {
+          "enum": [
+            "480p",
+            "768p"
+          ],
+          "description": {
+            "en": "Resolution",
+            "zh": "清晰度"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "480p竖",
+            "768p竖",
+            "480p横",
+            "768p横"
+          ]
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration",
+            "zh": "视频时长"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "5 秒 768p 视频",
+          "facts": {
+            "quality": "768p",
+            "resolution": "768p竖",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "15 秒 480p 视频",
+          "facts": {
+            "quality": "480p",
+            "resolution": "480p横",
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "minimax H3 768 Spica",
+      "description": "minimax H3 768 Spica 视频生成（MiniMax H3，固定 15 秒、768P）。按次计费 ¥0.58/条，与参考素材数量无关，失败不收费。POST /v1/videos，model、prompt 必填；seconds 固定 15（可不传）；resolution 固定 768P（可不传）；ratio 指定画幅 9:16 或 16:9。参考图用 image_urls（最多 9 张），必须是公网 HTTPS 链接，本地图片可先通过 POST /v1/uploads 托管；可另带 1 段参考音频（audio_urls，公网 HTTPS 链接，需同时带参考图）；暂不支持首尾帧和参考视频（传了直接报错、不扣费）。GET /v1/videos/{task_id} 查询，GET /v1/videos/{task_id}/content 下载。",
+      "icon": "Minimax.Color",
+      "tags": "视频生成,MiniMax",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "default",
+        "vip"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"按次\", 0.07945205479452054)",
+      "billing_usage_schema": {
+        "input_audios": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference audio count",
+            "zh": "参考音频数量"
+          }
+        },
+        "input_images": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference image count",
+            "zh": "参考图数量"
+          }
+        },
+        "input_videos": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference video count",
+            "zh": "参考视频数量"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "768P"
+          ],
+          "description": {
+            "en": "Output video resolution",
+            "zh": "输出视频分辨率"
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration",
+            "zh": "视频时长"
+          }
+        }
+      }
+    },
+    {
+      "model_name": "minimax-h3-chovy",
+      "description": "minimax-h3-chovy 视频生成（MiniMax H3 多模式参考生视频，可带参考音频）。固定 15 秒、有声，按条计费：480P ¥0.75/条、768P ¥0.97/条、1088P ¥1.18/条、1440P ¥1.40/条，失败不收费。POST /v1/videos，model、prompt 必填；resolution 可选 480P / 768P / 1088P / 1440P（不传按 480P）；ratio 可选 9:16 / 16:9（不传按 9:16）；seconds 固定 15，可不传。参考图用 image_urls（最多 9 张公网 HTTPS 链接，本地图片可先通过 POST /v1/uploads 托管），提示词里可用 <Picture 1>…<Picture 9> 指代对应参考图。参考音频用 audio_urls（最多 3 段 mp3 / wav 公网 HTTPS 链接），提示词里可用 <Audio 1>…<Audio 3> 指代；提示词写了 <Audio N> 时要带上对应的音频。不支持首尾帧和参考视频。GET /v1/videos/{task_id} 查询，GET /v1/videos/{task_id}/content 下载。",
+      "icon": "Minimax.Color",
+      "tags": "视频生成,MiniMax",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "vip",
+        "default"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "u(\"resolution\") == \"1440P\" ? tier(\"1440P\", 0.1917808219178082) : u(\"resolution\") == \"1088P\" ? tier(\"1088P\", 0.16164383561643836) : u(\"resolution\") == \"768P\" ? tier(\"768P\", 0.13287671232876713) : tier(\"480P\", 0.10273972602739727)",
+      "billing_usage_schema": {
+        "input_audios": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference audio count",
+            "zh": "参考音频数量"
+          }
+        },
+        "input_images": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference image count",
+            "zh": "参考图数量"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "480P",
+            "768P",
+            "1088P",
+            "1440P"
+          ],
+          "description": {
+            "en": "Output video resolution",
+            "zh": "输出视频分辨率"
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration",
+            "zh": "视频时长"
+          }
+        }
+      }
+    },
+    {
+      "model_name": "minimax H3",
+      "description": "minimax H3 视频生成（MiniMax H3，480P，有声）。按秒计费 ¥0.03/秒（15 秒 ¥0.45），普通与 VIP 同价，失败不收费。POST /v1/videos，model、prompt 必填；seconds 为 4–15 的整数（不传按 15 秒）；resolution 固定 480P（可不传）；ratio 支持 9:16 / 16:9 / 1:1 / 3:4 / 4:3 / 2:3 / 3:2 / 21:9（不传按 9:16，输出 480×864）。可纯文字生成，也可带参考图：image_urls 最多 5 张，必须是公网 HTTPS 链接，本地图片可先通过 POST /v1/uploads 托管；不支持参考视频、参考音频和首尾帧（传了直接报错、不扣费）。GET /v1/videos/{task_id} 查询，GET /v1/videos/{task_id}/content 下载。",
+      "icon": "Minimax.Color",
+      "tags": "视频生成,MiniMax",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "default",
+        "vip"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"480P\", u(\"seconds\") * 0.00410958904109589)",
+      "billing_usage_schema": {
+        "input_images": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference image count",
+            "zh": "参考图数量"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "480P"
+          ],
+          "description": {
+            "en": "Output video resolution",
+            "zh": "输出视频分辨率"
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration",
+            "zh": "视频时长"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "15 秒 480P 三图参考",
+          "facts": {
+            "input_images": 3,
+            "resolution": "480P",
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "minimax-H3-super",
+      "description": "minimax-H3-super 视频生成（MiniMax H3 多模式参考生视频）。固定 15 秒、有声，按条计费：480P ¥0.75/条、768P ¥0.97/条、1088P ¥1.18/条、1440P ¥1.40/条，失败不收费。POST /v1/videos，model、prompt 必填；resolution 可选 480P / 768P / 1088P / 1440P（不传按 480P）；ratio 可选 9:16 / 16:9（不传按 9:16）；seconds 固定 15，可不传。参考图用 image_urls（最多 9 张公网 HTTPS 链接，本地图片可先通过 POST /v1/uploads 托管），提示词里可用 <Picture 1>…<Picture 9> 指代对应参考图。不收参考音频。不支持首尾帧和参考视频。GET /v1/videos/{task_id} 查询，GET /v1/videos/{task_id}/content 下载。",
+      "icon": "Minimax.Color",
+      "tags": "视频生成,MiniMax",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "default",
+        "vip"
+      ],
+      "supported_endpoint_types": [
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "u(\"resolution\") == \"1440P\" ? tier(\"1440P\", 0.1917808219178082) : u(\"resolution\") == \"1088P\" ? tier(\"1088P\", 0.16164383561643836) : u(\"resolution\") == \"768P\" ? tier(\"768P\", 0.13287671232876713) : tier(\"480P\", 0.10273972602739727)",
+      "billing_usage_schema": {
+        "input_audios": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference audio count",
+            "zh": "参考音频数量"
+          }
+        },
+        "input_images": {
+          "type": "number",
+          "unit": "count",
+          "description": {
+            "en": "Reference image count",
+            "zh": "参考图数量"
+          }
+        },
+        "resolution": {
+          "enum": [
+            "480P",
+            "768P",
+            "1088P",
+            "1440P"
+          ],
+          "description": {
+            "en": "Output video resolution",
+            "zh": "输出视频分辨率"
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration",
+            "zh": "视频时长"
+          }
+        }
+      }
+    }
+  ]
+}

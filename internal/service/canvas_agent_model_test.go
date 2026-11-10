@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"chatgpt2api/internal/util"
 )
 
 func TestAgentNodeIndexOmitsBodiesUnlessFull(t *testing.T) {
@@ -41,6 +44,20 @@ func TestAgentNodeFullUsesTextOrPromptKey(t *testing.T) {
 	image := agentNode(CanvasNode{ID: "i", Type: "image", Prompt: "body", GenerationError: "boom"}, true)
 	if image["prompt"] != "body" || image["text"] != nil || image["error"] != "boom" {
 		t.Fatalf("image node entry = %#v", image)
+	}
+}
+
+func TestAgentNodeReadsStructuredScriptWithoutExpandingIndex(t *testing.T) {
+	project := &CanvasScriptProject{Step: 2, Confirmed: true,
+		Shots:  []CanvasScriptShot{{ID: "shot-1", Seconds: 5, Description: "A knock at the door"}},
+		Assets: []CanvasScriptAsset{{ID: "hero", Kind: "character", Name: "Protagonist", ImageNodeID: "existing-reference"}},
+	}
+	node := CanvasNode{ID: "script-1", Type: "script", Prompt: "Approved production script", ScriptProject: project}
+	if _, exists := agentNode(node, false)["scriptProject"]; exists {
+		t.Fatal("node index expanded the complete script")
+	}
+	if full := agentNode(node, true); full["scriptProject"] != project || full["prompt"] != node.Prompt {
+		t.Fatalf("script detail lost the structured storyboard or original script: %#v", full)
 	}
 }
 
@@ -108,5 +125,60 @@ func TestCanvasAgentPromptUsesSelectedSkillsInsteadOfIntentRouting(t *testing.T)
 	}
 	if strings.Contains(prompt, agentPrompts["VIDEO_SKILL"]) {
 		t.Fatal("intent routing must not run when skills are selected")
+	}
+}
+
+func TestCanvasAgentPromptKeepsLiveCanvasOutOfReusableInstructions(t *testing.T) {
+	w := &canvasAgentWorker{doc: CanvasDocument{ID: "cache-project", Nodes: []CanvasNode{{ID: "changing-node", Type: "video", GenerationStatus: "loading"}}}, state: map[string]any{}, req: CanvasAgentRequest{UserText: "继续制作短剧"}}
+	before := w.prompt()
+	if strings.Contains(before, "changing-node") || strings.Contains(before, "cache-project") {
+		t.Fatal("live canvas state changed the reusable instruction prefix")
+	}
+	w.doc.Nodes[0].GenerationStatus = "success"
+	w.state["brief"] = "角色四视图、音频旁白和分镜整理"
+	w.state["plan"] = []map[string]any{{"step": "generate", "status": "completed"}}
+	if after := w.prompt(); after != before {
+		t.Fatal("progress updates changed the instructions during the same run")
+	}
+	if agentJSON(w.canvasContext()) == "" || !strings.Contains(agentJSON(w.canvasContext()), "success") {
+		t.Fatal("latest canvas progress was not available separately")
+	}
+}
+
+func TestCanvasAgentSDKPlanProgressPreservesModelPrefix(t *testing.T) {
+	var first []map[string]any
+	var projectID string
+	turns := 0
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		turns++
+		if key := util.Clean(r.Metadata["prompt_cache_key"]); !strings.HasPrefix(key, "agent-") || len(key) != 54 {
+			t.Errorf("stable prompt cache identity missing: %q", key)
+		}
+		if r.Messages[0]["role"] != "system" || strings.Contains(r.Messages[0]["content"].(string), "当前画布快照") {
+			t.Error("live state moved into leading system instructions")
+		}
+		last := r.Messages[len(r.Messages)-1]
+		if last["role"] != "user" || !strings.Contains(last["content"].(string), projectID) {
+			t.Error("gateway did not receive the live canvas snapshot at the tail")
+		}
+		if turns == 1 {
+			first = r.Messages
+			return agentTurn(agentCall("cache-plan", "update_plan", map[string]any{"steps": []any{map[string]any{"id": "done", "title": "确认需求", "status": "completed"}}})), nil
+		}
+		if agentJSON(r.Messages[:len(first)]) != agentJSON(first) {
+			t.Error("plan progress changed the previous model input prefix")
+		}
+		if !strings.Contains(last["content"].(string), `"status":"completed"`) {
+			t.Error("live snapshot did not reflect the completed plan step")
+		}
+		return agentTurn(), nil
+	}, nil)
+	projectID = doc.ID
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turns != 2 {
+		t.Fatalf("run=%+v turns=%d", done.AgentRun, turns)
 	}
 }

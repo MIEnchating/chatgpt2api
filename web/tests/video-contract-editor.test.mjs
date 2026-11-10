@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyVideoFrameDefaults, getVideoModeMaterials, setVideoMaterialSupport, updateVideoMaterialRange } from "../src/lib/video-contract-editor.ts";
+import { applyVideoFrameDefaults, getVideoModeMaterials, setVideoMaterialSupport, setVideoMaterialTransports, updateVideoMaterialRange } from "../src/lib/video-contract-editor.ts";
+
+test("material transport selection follows upload, Base64, URL priority for every supported combination", () => {
+  for (const methods of [["url"], ["base64"], ["multipart"], ["url", "base64"], ["url", "multipart"], ["base64", "multipart"], ["url", "base64", "multipart"]]) {
+    const transport = { local_material: "url", multipart_file_field: "", multipart_repeatable: false, multipart_mixed_urls: false, create_path: "", query_path: "" };
+    const next = setVideoMaterialTransports(transport, methods);
+    const expected = ["multipart", "base64", "url"].filter(method => methods.includes(method));
+    assert.deepEqual(next.material_transports, expected);
+    assert.equal(next.local_material, expected[0]);
+    if (expected[0] === "multipart") assert.equal(next.multipart_file_field, "input_reference[]");
+    assert.equal(transport.local_material, "url");
+  }
+});
 
 function mode(kind) {
   return {

@@ -17,6 +17,7 @@ const key = 'fixture-key';
 const body = { model, prompt: 'A blue cup' };
 const ctx = requestBody => ({ requestBody, upstreamModel: requestBody.model, model: requestBody.model, baseUrl, apiKey: key, files: [] });
 const plugin = plugins.dramaya;
+const countPlugin = plugins.count;
 const submit = (p, value) => p.buildSubmitRequest(ctx(value));
 const decode = (p, value) => p.protocols.openai_video.decodeRequest({ model: value.model, body: { kind: 'json', value } });
 const defaults = { model, prompt: body.prompt, duration: 8, aspect_ratio: '16:9', resolution: '480p' };
@@ -27,6 +28,8 @@ check('metadata', () => {
   assert.equal(plugin.meta.routes, undefined);
   assert.deepEqual(plugin.meta.usageSchema.resolution.enum, ['480p', '720p']);
   assert.deepEqual(plugin.meta.usageProfiles[0].schema.resolution.enum, ['480p', '720p', '1080p']);
+  assert.equal(countPlugin.meta.usageSchema.count.unit, 'count');
+  assert.equal(countPlugin.meta.usageSchema.seconds, undefined);
 });
 check('optional default URL and channel override', () => {
   assert.equal(Object.hasOwn(plugins['no-base'].meta, 'baseUrl'), false);
@@ -86,6 +89,8 @@ check('reject file upload', () => assert.throws(() => plugin.buildSubmitRequest(
 check('reject missing channel credential', () => assert.throws(() => plugin.buildSubmitRequest({ ...ctx(body), apiKey: '' })));
 check('mapped upstream capability revalidation', () => assert.throws(() => plugin.buildSubmitRequest({ ...ctx({ ...body, model: enhanced, resolution: '1080p' }), upstreamModel: model })));
 check('usage facts', () => assert.deepEqual(plugin.extractUsage({ ...ctx(body), usagePurpose: 'facts' }), { seconds: 8, resolution: '480p' }));
+check('count usage facts', () => assert.deepEqual(countPlugin.extractUsage({ ...ctx(body), usagePurpose: 'facts' }), { count: 1, resolution: '480p' }));
+check('count duration above second limit', () => assert.equal(countPlugin.buildSubmitRequest(ctx({ ...body, duration: 3601 })).body.duration, 3601));
 check('per-call ratios', () => assert.deepEqual(plugin.extractUsage({ ...ctx(body), usagePurpose: 'billing_ratios' }), {}));
 check('submit without status', () => assert.deepEqual(plugin.parseSubmitResponse({}, { body: { id: 'vendor-id' } }), { taskId: 'vendor-id', taskData: { id: 'vendor-id' } }));
 check('submit immediate completion', () => assert.equal(plugin.parseSubmitResponse({}, { body: { id: 'vendor-id', status: 'completed' } }).immediate.status, 'SUCCESS'));

@@ -37,7 +37,7 @@
               "media_generation",
               "workflow_review"
             ],
-            "description": "媒体生成授权使用 media_generation；系列工作流提示词审核使用 workflow_review。"
+            "description": "普通需求、范围、方案确认必须省略此字段。媒体生成授权使用 media_generation；只有工具已返回 requiresUserReview=true 且存在待审核系列提示词时才使用 workflow_review。"
           }
         },
         "required": [
@@ -60,6 +60,7 @@
         "properties": {
           "explanation": {
             "type": "string",
+            "description": "可选的计划说明，无需补充说明时可省略。",
             "maxLength": 500
           },
           "steps": {
@@ -97,7 +98,6 @@
           }
         },
         "required": [
-          "explanation",
           "steps"
         ],
         "additionalProperties": false
@@ -140,7 +140,8 @@
               "director",
               "group",
               "text",
-              "config"
+              "config",
+              "script"
             ]
           },
           "page": {
@@ -379,7 +380,7 @@
     "type": "function",
     "function": {
       "name": "create_primary_script_node",
-      "description": "仅用于新创作流程首次创建正式主剧本或总制作稿，固定使用主剧本节点尺寸。",
+      "description": "新创作首次创建原生脚本节点，保存正式故事并可打开分镜编辑器；随后用 update_script_node 保存结构化镜头和资产。已有主稿应原位 update_script_node，不重复创建。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -404,6 +405,36 @@
           "title",
           "content",
           "projectTitle"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_script_node",
+      "description": "创建新的原生脚本版本或分支，不修改项目标题；已有主稿整理优先 update_script_node 原位转换，避免重复创建。随后用 update_script_node 保存镜头、资产和已有素材关联。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "title",
+          "content"
         ],
         "additionalProperties": false
       }
@@ -467,8 +498,212 @@
   {
     "type": "function",
     "function": {
+      "name": "update_script_node",
+      "description": "保存脚本内的结构化分镜、角色/场景资产与提示词；也可原位把已有文本主稿转换为脚本，保持 nodeId、正文和连线。先 get_node 读取原稿、镜头及素材，再将分镜整理到 scriptProject；source_node_id 记录原镜头文本，image_node_id/video_node_id 关联已有素材。保留已有 shot/asset ID 和媒体绑定，不创建或重提生成任务。来源文本不会自动删除；删除仍使用原删除确认流程。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 12000
+          },
+          "scriptProject": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2
+              },
+              "confirmed": {
+                "type": "boolean"
+              },
+              "assets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "character",
+                        "scene",
+                        "prop"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "image_node_id": {
+                      "type": "string",
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "name",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 120
+              },
+              "shots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "seconds": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 60
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "framing": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "lighting": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "sound": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "camera": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "image_prompt": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "video_prompt": {
+                      "type": "string",
+                      "maxLength": 12000
+                    },
+                    "dialogue": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "dialogue",
+                              "narration"
+                            ]
+                          },
+                          "asset_id": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 12000
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    },
+                    "asset_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "maxItems": 120
+                    },
+                    "color": {
+                      "type": "string",
+                      "enum": [
+                        "",
+                        "#ef6b68",
+                        "#f5c542",
+                        "#52c99b",
+                        "#4bb7ef",
+                        "#bdbdbd"
+                      ]
+                    },
+                    "source_node_id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "image_node_id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "video_node_id": {
+                      "type": "string",
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seconds",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 200
+              }
+            },
+            "required": [
+              "assets",
+              "shots"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "nodeId",
+          "scriptProject"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "update_node",
-      "description": "只更新现有节点标题；不允许任意字段覆盖。",
+      "description": "原位编辑已有节点的标题、正文/媒体提示词、生成参数及来源引用，保留节点 ID、脚本关联、已有媒体和任务记录，不创建节点或提交生成。先 get_node 核对；修复已有镜头优先用本工具，再按用户授权 generate_node；只有明确要求新版本才创建新节点。生成中的节点需等待结束。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -477,11 +712,81 @@
           },
           "title": {
             "type": "string"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "现有文本正文、脚本原稿或媒体提示词；结构化分镜用 update_script_node。"
+          },
+          "sourceNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "显式替换该节点的全部上游来源连线，并按顺序重建媒体参考。省略保留连线；空数组解除来源。不得引用自身。"
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "重建媒体参考时使用的当前会话附件 ID，不能填写 URL。未传 sourceNodeIds 时沿用当前上游节点。"
+          },
+          "generation": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "仅保存提供的参数，省略字段保留原值。model 只能使用当前配置的对应类型模型。修改不会清空原任务、错误或成品，重试生成需要用户授权。",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "quality": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 15
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              "generateAudio": {
+                "type": "boolean"
+              },
+              "referenceMode": {
+                "type": "string",
+                "enum": [
+                  "reference",
+                  "first-frame"
+                ]
+              },
+              "voice": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              },
+              "speed": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 4
+              },
+              "instructions": {
+                "type": "string"
+              }
+            }
           }
         },
         "required": [
-          "nodeId",
-          "title"
+          "nodeId"
         ],
         "additionalProperties": false
       }
@@ -491,17 +796,22 @@
     "type": "function",
     "function": {
       "name": "delete_node",
-      "description": "使用画布现有删除链路删除节点及关联连线。",
+      "description": "删除一个节点或一批明确节点及关联连线。多个目标必须一次提供 nodeIds，不要逐个调用或逐个询问；服务端统一展示完整删除范围并只确认一次。nodeId 与 nodeIds 只能提供一个。",
       "parameters": {
         "type": "object",
         "properties": {
           "nodeId": {
             "type": "string"
+          },
+          "nodeIds": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true
           }
         },
-        "required": [
-          "nodeId"
-        ],
+        "required": [],
         "additionalProperties": false
       }
     }
@@ -937,7 +1247,31 @@
                   "type": "boolean"
                 },
                 "defaultValue": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "省略保留已有默认值；空字符串清除。"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "textarea",
+                    "number",
+                    "select",
+                    "boolean"
+                  ],
+                  "description": "新变量默认 text；更新时省略保留原类型。"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 200,
+                  "description": "select 的可选值；省略保留原选项，空数组清除。"
+                },
+                "placeholder": {
+                  "type": "string",
+                  "description": "输入占位文本；省略保留原值，空字符串清除。"
                 }
               },
               "required": [
@@ -1173,6 +1507,26 @@
         },
         "required": [
           "nodeIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "finish_task",
+      "description": "仅在核对真实画布、执行计划和已提交任务后调用。未完成的计划或失败操作会拒绝结束；用户选择暂不生成时保留进度并等待。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 12000
+          }
+        },
+        "required": [
+          "text"
         ],
         "additionalProperties": false
       }

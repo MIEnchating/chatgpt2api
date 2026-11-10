@@ -44,12 +44,16 @@ function turnContext() {
   };
 }
 
-test("editing a turn routes the new model through its own relay key", async () => {
+for (const useSmartContext of [undefined, false, true]) {
+test(`editing a turn routes its model and supports switching off smart context (${useSmartContext})`, async () => {
   const fixture = turnContext();
+  if (useSmartContext !== undefined) fixture.context.conversationsRef.current[0].turns[0].promptContext = {
+    model: "vision-text", tokenName: "text-key", taskId: "previous-text-task", preparedPrompt: "old optimized prompt",
+  };
   const selection = { mode: "auto" };
   const handler = callback("handleSaveEditingTurn", {
     ...fixture.context,
-    editingTurnDraft: { conversationId: "conversation", turnId: "turn", prompt: "new prompt", model: "new-model", mode: "generate", referenceImages: [], count: "1" },
+    editingTurnDraft: { conversationId: "conversation", turnId: "turn", prompt: "new prompt", model: "new-model", mode: "generate", referenceImages: [], count: "1", useSmartContext },
     editReferenceUploadPendingCountRef: { current: 0 }, editFileInputRef: { current: null },
     getComposerConversationMode: () => "generate", usesReferenceImages: () => false,
     imageWorkbenchAcceptsReferenceImages: () => true, imageConversationReferenceLimitMessage: () => "", imageWorkbenchReferenceImageLimit: () => 10,
@@ -63,7 +67,14 @@ test("editing a turn routes the new model through its own relay key", async () =
   assert.deepEqual(fixture.messages, []);
   assert.equal(fixture.saved.turns[0].model, "new-model");
   assert.equal(fixture.saved.turns[0].tokenName, "key-for-new-model");
+  const context = fixture.saved.turns[0].promptContext;
+  if (useSmartContext) {
+    assert.equal(context.model, "vision-text");
+    assert.notEqual(context.taskId, "previous-text-task");
+    assert.equal(context.preparedPrompt, undefined);
+  } else assert.equal(context, undefined);
 });
+}
 
 test("retrying one failed slot removes its previous output storage key", async () => {
   const fixture = turnContext();
@@ -135,7 +146,7 @@ test("IME confirmation does not submit a generation request", () => {
   const composer = ts.createSourceFile("composer.tsx", readFileSync(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
   function visit(node) {
-    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(composer) === "Textarea") {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(composer) === "InputGroupTextarea") {
       const attribute = node.attributes.properties.find(prop => prop.name?.getText(composer) === "onKeyDown");
       expression = attribute.initializer.expression.getText(composer);
     }
@@ -170,3 +181,37 @@ for (const name of ["handleRetryImage", "handleRegenerateTurn"]) {
     assert.equal(fixture.saved, undefined);
   });
 }
+
+test("top media tabs change the composer in place and retain reference upload guards", () => {
+  let tabs;
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(source) === "Tabs") tabs = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const value = tabs.attributes.properties.find(prop => prop.name?.getText(source) === "value");
+  assert.equal(value.initializer.expression.getText(source), "composerMode");
+  const change = tabs.attributes.properties.find(prop => prop.name?.getText(source) === "onValueChange");
+  const compiled = ts.transpile(`const change = ${change.initializer.expression.getText(source)};`, { target: ts.ScriptTarget.ES2022 });
+  for (const scenario of [
+    { mode: "image", pending: 0, references: [], accepts: true, blocked: false },
+    { mode: "video", pending: 0, references: [], accepts: true, blocked: false },
+    { mode: "video", pending: 1, references: [], accepts: true, blocked: true },
+    { mode: "image", pending: 0, references: [{}], accepts: false, blocked: true },
+  ]) {
+    const changes = [], errors = [], saved = [];
+    const handler = callback("handleComposerModeChange", {
+      selectedConversationId: "conversation-a", updateConversation: async (id, updater) => saved.push([id, updater({ id, turns: [] }).composerMode]),
+      referenceUploadPendingCountRef: { current: scenario.pending }, referenceImagesRef: { current: scenario.references },
+      imageModel: "image-model", imageWorkbenchAcceptsReferenceImages: () => scenario.accepts,
+      setComposerMode: mode => changes.push(mode), toast: { error: message => errors.push(message) },
+    });
+    const onChange = new Function("handleComposerModeChange", `${compiled}\nreturn change;`)(handler);
+    onChange(scenario.mode);
+    assert.deepEqual(changes, scenario.blocked ? [] : [scenario.mode]);
+    assert.deepEqual(saved, scenario.blocked ? [] : [["conversation-a", scenario.mode]]);
+    assert.equal(errors.length, scenario.blocked ? 1 : 0);
+    onChange("unknown");
+    assert.equal(changes.length, scenario.blocked ? 0 : 1);
+  }
+});

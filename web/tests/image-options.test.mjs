@@ -5,6 +5,7 @@ import {
   IMAGE_ASPECT_RATIO_PRESET_OPTIONS,
   IMAGE_WORKBENCH_QUALITY_OPTIONS,
   buildCustomImageSize,
+  buildImageSize,
   calculateDefaultImageSize,
   getImageSizeSelectionFromSize,
   imageWorkbenchAcceptsReferenceImages,
@@ -89,6 +90,10 @@ test("arbitrary custom dimensions are preserved while known presets remain ratio
   assert.equal(custom.mode, "custom");
   assert.equal(custom.customWidth, "853");
   assert.equal(custom.customHeight, "1844");
+
+  const resizedPreset = getImageSizeSelectionFromSize("1008x2048", "2k");
+  assert.equal(resizedPreset.mode, "custom");
+  assert.equal(buildImageSize(resizedPreset), "1008x2048");
 
   const preset = getImageSizeSelectionFromSize("2048x1152");
   assert.equal(preset.mode, "ratio");

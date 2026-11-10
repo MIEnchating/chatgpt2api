@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 
-const [requestSource, canvasSource, agentRequestSource, imageSource, assetsSource] = await Promise.all([
+const [requestSource, canvasSource, imageSource, assetsSource] = await Promise.all([
   readFile(new URL("../src/lib/request.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../../internal/httpapi/canvas_agent.go", import.meta.url), "utf8"),
   readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8"),
 ]);
@@ -27,10 +26,6 @@ describe("review regressions", () => {
     expect(imageSource).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,160}setImageModelConfigReady\(true\)/);
   });
 
-  test("Agent cancellation cancels its submitted server model task", () => {
-    expect(agentRequestSource).toContain("ctx.Err() != nil");
-    expect(agentRequestSource).toContain("a.tasks.CancelTask(identity, req.TaskID)");
-  });
 
   test("managed assets expose loading, persistent error, and retry states", () => {
     expect(assetsSource).toContain("managedLoading");

@@ -191,6 +191,11 @@ func MaxImageReferenceImages(model string) int {
 	return maxImageReferenceImages
 }
 
+func IsAgnesImageResolutionModel(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(strings.NewReplacer("_", "-", " ", "-").Replace(model)))
+	return name == "agnes-image-2.1" || strings.HasPrefix(name, "agnes-image-2.1-") || name == "agnes-image-2.5" || strings.HasPrefix(name, "agnes-image-2.5-")
+}
+
 // IsGPTImage26 matches the current official Image 2.6 model IDs.
 func IsGPTImage26(model string) bool {
 	value := strings.ToLower(strings.TrimSpace(model))

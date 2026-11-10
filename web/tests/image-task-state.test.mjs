@@ -552,6 +552,8 @@ test("conversation display keeps the last full snapshot while a newer summary lo
 
   assert.equal(imageConversationDisplaySnapshot(summary, full), full);
   assert.equal(imageConversationDisplaySnapshot(summary, null), summary);
+  assert.equal(imageConversationDisplaySnapshot(summary, { ...full, id: "another-conversation" }), summary);
+  assert.equal(imageConversationDisplaySnapshot(summary, { ...full, historySummaryOnly: true }), summary);
   assert.equal(imageConversationDisplaySnapshot(full, summary), full);
   assert.equal(imageConversationDisplaySnapshot(null, full), null);
 });

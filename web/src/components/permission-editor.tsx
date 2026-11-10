@@ -1,12 +1,16 @@
 "use client";
 
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Item } from "@/components/ui/item";
+
 import { useMemo } from "react";
 import { KeyRound, Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { statusToneClasses } from "@/components/ui/status-tone";
+import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import type { ApiPermission, PermissionMenu } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -48,22 +52,6 @@ function toggleListValues(values: string[], targets: string[], checked: boolean)
   return Array.from(current).sort();
 }
 
-function apiMethodClass(method: string) {
-  switch (method.toUpperCase()) {
-    case "GET":
-      return statusToneClasses.info.panel;
-    case "POST":
-      return statusToneClasses.success.panel;
-    case "PUT":
-    case "PATCH":
-      return statusToneClasses.warning.panel;
-    case "DELETE":
-      return statusToneClasses.danger.panel;
-    default:
-      return "border-border bg-muted text-muted-foreground";
-  }
-}
-
 type PermissionEditorProps = {
   menus: PermissionMenu[];
   apis: ApiPermission[];
@@ -93,10 +81,7 @@ export function PermissionEditor({
   return (
     <div
       data-permission-editor
-      className={cn(
-        "grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] xl:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)] xl:grid-rows-1",
-        className,
-      )}
+      className={cn("grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] xl:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)] xl:grid-rows-1", className)}
       aria-busy={disabled}
     >
       <section className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
@@ -109,28 +94,28 @@ export function PermissionEditor({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" disabled={disabled || selectedMenuPaths.length === allMenuPaths.length} onClick={() => onMenuPathsChange(allMenuPaths)}>全选</Button>
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" disabled={disabled || selectedMenuPaths.length === 0} onClick={() => onMenuPathsChange([])}>清空</Button>
+            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedMenuPaths.length === allMenuPaths.length} onClick={() => onMenuPathsChange(allMenuPaths)}>全选</Button>
+            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedMenuPaths.length === 0} onClick={() => onMenuPathsChange([])}>清空</Button>
           </div>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
           {menuPermissions.length ? (
             <div className="divide-y divide-border">
               {menuPermissions.map((item) => {
                 const checked = selectedMenuPaths.includes(item.path);
                 return (
-                  <label key={item.path} data-selected={checked} className="flex min-h-[58px] cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring hover:bg-muted/50 data-[selected=true]:bg-primary/[0.045]">
+                  <Item key={item.path} asChild><Label data-selected={checked} className="min-h-[58px] cursor-pointer">
                     <Checkbox checked={checked} disabled={disabled} onCheckedChange={(value) => onMenuPathsChange(toggleListValue(selectedMenuPaths, item.path, Boolean(value)))} />
                     <div className="min-w-0">
                       <div className="break-words text-sm font-medium leading-5 text-foreground">{item.label}</div>
                       <code className="mt-0.5 block font-mono [overflow-wrap:anywhere] text-[11px] text-muted-foreground">{item.path}</code>
                     </div>
-                  </label>
+                  </Label></Item>
                 );
               })}
             </div>
-          ) : <div className="grid min-h-48 place-items-center text-sm text-muted-foreground">暂无菜单权限</div>}
-        </ScrollArea>
+          ) : <EmptyState compact icon={Menu} title="暂无菜单权限" className="min-h-48" />}
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </section>
 
       <section className="flex min-h-0 min-w-0 flex-col">
@@ -143,11 +128,11 @@ export function PermissionEditor({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" disabled={disabled || selectedApiPermissions.length === allApiPermissionKeys.length} onClick={() => onApiPermissionsChange(allApiPermissionKeys)}>全选</Button>
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" disabled={disabled || selectedApiPermissions.length === 0} onClick={() => onApiPermissionsChange([])}>清空</Button>
+            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedApiPermissions.length === allApiPermissionKeys.length} onClick={() => onApiPermissionsChange(allApiPermissionKeys)}>全选</Button>
+            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedApiPermissions.length === 0} onClick={() => onApiPermissionsChange([])}>清空</Button>
           </div>
         </div>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
+        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 p-4 sm:p-5">
           {apiPermissionGroups.length ? (
             <div className="space-y-6">
               {apiPermissionGroups.map((group) => {
@@ -156,27 +141,27 @@ export function PermissionEditor({
                 const groupChecked = selectedCount === groupKeys.length ? true : selectedCount > 0 ? "indeterminate" : false;
                 return (
                   <section key={group.group} className="min-w-0">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-2">
-                      <label className="flex min-w-0 cursor-pointer items-center gap-2.5">
+                    <Item variant="muted" className="mb-3 flex flex-wrap items-center justify-between gap-2 px-2.5 py-2">
+                      <Label className="flex min-w-0 cursor-pointer items-center gap-2.5">
                         <Checkbox checked={groupChecked} disabled={disabled} onCheckedChange={(value) => onApiPermissionsChange(toggleListValues(selectedApiPermissions, groupKeys, Boolean(value)))} />
                         <h4 className="truncate text-xs font-semibold text-foreground">{group.group}</h4>
-                      </label>
+                      </Label>
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{selectedCount} / {group.items.length}</span>
-                    </div>
+                    </Item>
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                       {group.items.map((permission) => {
                         const checked = selectedApiPermissions.includes(permission.key);
                         return (
-                          <label key={permission.key} data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-background/35 px-3.5 py-3 transition-colors hover:border-primary/35 hover:bg-muted/50 hover:shadow-sm focus-within:ring-2 focus-within:ring-ring data-[selected=true]:border-primary/45 data-[selected=true]:bg-primary/[0.06]">
+                          <Item key={permission.key} variant="outline" asChild><Label data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 px-3.5 py-3">
                             <Checkbox checked={checked} disabled={disabled} className="mt-0.5" onCheckedChange={(value) => onApiPermissionsChange(toggleListValue(selectedApiPermissions, permission.key, Boolean(value)))} />
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">
-                                <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none", apiMethodClass(permission.method))}>{permission.method}</span>
+                                <Badge variant="secondary" className="shrink-0 font-mono">{permission.method}</Badge>
                                 <span className="text-xs font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{permission.label}</span>
                               </div>
                               <code className="mt-1.5 block font-mono text-[11px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">{permission.path}{permission.subtree ? "/*" : ""}</code>
                             </div>
-                          </label>
+                          </Label></Item>
                         );
                       })}
                     </div>
@@ -184,8 +169,8 @@ export function PermissionEditor({
                 );
               })}
             </div>
-          ) : <div className="grid min-h-48 place-items-center text-sm text-muted-foreground">暂无功能权限</div>}
-        </ScrollArea>
+          ) : <EmptyState compact icon={KeyRound} title="暂无功能权限" className="min-h-48" />}
+        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </section>
     </div>
   );

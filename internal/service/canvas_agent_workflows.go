@@ -76,9 +76,30 @@ func (w *canvasAgentWorker) workflowTool(name string, args map[string]any) (map[
 		item.Description = util.Clean(args["description"])
 		item.Mode = util.Clean(args["mode"])
 		item.Config.PromptTemplate = util.Clean(args["promptTemplate"])
+		previousVariables := item.Variables
 		item.Variables = []WorkflowVariable{}
 		for _, v := range util.AsMapSlice(args["variables"]) {
-			item.Variables = append(item.Variables, WorkflowVariable{Key: util.Clean(v["key"]), Label: util.Clean(v["label"]), Type: "text", Required: util.ToBool(v["required"]), DefaultValue: util.Clean(v["defaultValue"]), Options: []string{}})
+			variable := WorkflowVariable{Key: util.Clean(v["key"]), Type: "text", Options: []string{}}
+			for _, previous := range previousVariables {
+				if previous.Key == variable.Key {
+					variable = previous
+					break
+				}
+			}
+			variable.Label, variable.Required = util.Clean(v["label"]), util.ToBool(v["required"])
+			if value, ok := v["type"].(string); ok {
+				variable.Type = value
+			}
+			if value, ok := v["defaultValue"].(string); ok {
+				variable.DefaultValue = value
+			}
+			if value, ok := v["placeholder"].(string); ok {
+				variable.Placeholder = value
+			}
+			if value, ok := v["options"]; ok {
+				variable.Options = agentStrings(value)
+			}
+			item.Variables = append(item.Variables, variable)
 		}
 		saved, err := w.service.workflows.Save(canvasAgentOwner(w.identity), item)
 		return map[string]any{"ok": err == nil, "workflowId": saved.ID, "revision": saved.Revision}, err
@@ -290,6 +311,7 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 		default:
 			return nil, fmt.Errorf("不支持此工作流节点类型")
 		}
+		canvasAgentFitEmptyMediaFrame(&n)
 		if kind != "text" {
 			if err := w.validateMedia(n); err != nil {
 				return nil, err

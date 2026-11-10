@@ -32,6 +32,7 @@ export type CanvasAgentQuestion = {
   kind: "clarification" | "confirmation";
   purpose?: "media_generation" | "workflow_review" | "delete_node";
   nodeId?: string;
+  nodeIds?: string[];
   request: string;
 };
 
@@ -71,15 +72,20 @@ export type CanvasAssistantMessageStatus = "thinking" | "running" | "waiting" | 
 
 export type CanvasAgentTraceEntry =
   | { id: string; type: "text"; text: string }
+  | { id: string; type: "reasoning"; text: string; isStreaming: boolean }
   | { id: string; type: "question"; question: string; answer?: string; cancelled?: boolean }
   | {
     id: string;
     type: "operation";
-    kind: "plan" | "workflow" | "read" | "image" | "create" | "edit" | "generate" | "command" | "file" | "tool";
+    kind: "plan" | "workflow" | "read" | "image" | "create" | "edit" | "generate" | "command" | "file" | "tool" | "subagent";
     label: string;
     status: "running" | "success" | "error" | "waiting" | "changed";
     detail: string;
+    resolvedBy?: string;
     nodeId?: string;
+    terminal?: { command: string; output: string; cwd?: string; exitCode?: number };
+    tool?: { name: string; input?: unknown; output?: unknown };
+    subagent?: { prompt?: string; model?: string; agents: { id: string; status: string; message?: string }[] };
   };
 
 export type CanvasAssistantMessage = {
@@ -99,6 +105,11 @@ export type CanvasAssistantMessage = {
   references?: CanvasAssistantReference[];
 };
 
+export type CanvasAgentQueuedMessage = { id: string; text: string; references: CanvasAssistantReference[]; createdAt: string };
+export type CanvasAgentMessageQueue = { messages: CanvasAgentQueuedMessage[]; paused: boolean; steeringId?: string };
+
+export type CanvasAgentContextUsage = { model: string; usedTokens: number; inputTokens?: number; maxTokens: number; compacting: boolean; basis: "compression-budget" };
+
 export type CanvasAssistantSession = {
   engine?: "native" | "codex";
   resumeAssistantMessageId?: string;
@@ -108,6 +119,8 @@ export type CanvasAssistantSession = {
   agentState: CanvasAgentState;
   protocolMessages: CanvasAgentProtocolMessage[];
   contextCheckpoint?: string;
+  messageQueue?: CanvasAgentMessageQueue;
+  contextUsage?: CanvasAgentContextUsage;
   codexThreadId?: string;
   codexServiceId?: string;
   activeSkillIds?: string[];
@@ -116,6 +129,12 @@ export type CanvasAssistantSession = {
 };
 
 export type CanvasAgentConfig = {
+  textModel?: string;
+  imageModel?: string;
+  videoModel?: string;
+  codexModel?: string;
+  codexEffort?: string;
+  contextWindowTokens?: number;
   autoGenerateMedia?: boolean;
   textApiMode?: "chat" | "responses";
   textReasoningEnabled?: boolean;

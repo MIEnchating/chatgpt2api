@@ -1,4 +1,26 @@
 "use client";
+import { Conversation } from "@/components/ai-elements/conversation";
+import { Suggestion } from "@/components/ai-elements/suggestion";
+import { ModelPicker } from "@/components/model-picker";
+
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldError } from "@/components/ui/field";
+import { Alert } from "@/components/ui/alert";
+import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle, AttachmentTrigger } from "@/components/ui/attachment";
+import { Checkbox } from "@/components/ui/checkbox";
+
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupTextarea } from "@/components/ui/input-group";
+import { PromptInput, PromptInputFooter } from "@/components/ai-elements/prompt-input";
+import { Item } from "@/components/ui/item";
+
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+
+import { TooltipHint } from "@/components/ui/tooltip";
 
 import { type ImageGenerationOptions, normalizeImageGenerationOptions, imageOutputSupportsStreaming } from "@/lib/image-generation-options";
 import { isGPTImage26 } from "@/lib/image-model-capabilities";
@@ -9,7 +31,8 @@ import { isVideoSaveFailure } from "@/lib/video-task-error";
 import "./image-workbench.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BookOpenText, ChevronDown, CircleAlert, History, ImagePlus, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
@@ -17,12 +40,10 @@ import { createMaskEditTurn } from "@/lib/image-mask-edit";
 import { CanvasMaskDialog as WorkbenchMaskDialog, type CanvasMaskEditPayload } from "@/app/canvas/canvas-mask-dialog";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
-import { VideoTaskContractsProvider } from "@/app/image/components/video-task-contract";
 import { videoTaskContractReferencesEqual } from "@/lib/video-task-contract";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Switch } from "@/components/ui/switch";
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
-import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
 import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import {
   imageConversationHistoryGenerationChanged,
@@ -59,6 +80,8 @@ import {
   type ImageSizeSelection,
 } from "@/lib/image-options";
 import { IMAGE_PROMPT_PRESETS, type ImagePromptPreset } from "@/app/image/image-presets";
+import { useStudioSidebar } from "@/app/image/use-studio-sidebar";
+import { Input } from "@/components/ui/input";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { useVideoTaskQueue } from "@/app/image/use-video-task-queue";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -84,9 +107,8 @@ import {
 } from "@/lib/image-task-state";
 import { isRetryableTaskPollError, normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoDefaultSize, videoDefaultResolution, videoAudioControl, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
-import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
+import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoDefaultSize, videoDefaultResolution, videoAudioControl, videoModelRequiresHTTPSReferences, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
 import {
   Dialog,
   DialogContent,
@@ -95,17 +117,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+
 import { NumberInput } from "@/components/ui/number-input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+
 import {
   cancelCreationTask,
   createImageEditTask,
@@ -146,6 +160,8 @@ import type { ImageWorkbenchSettings, VideoWorkbenchSettings } from "@/lib/api";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { imageSourceToFile } from "@/lib/image-source-file";
 import { resolveConfiguredModel } from "@/lib/model-config-selection";
+import { conversationComposerMode, startStudioAgent, studioAgentTurnResult, waitStudioAgent, type StudioAgentResult } from "@/lib/studio-agent";
+import { stopAgentExecution } from "@/lib/agent-executions";
 import {
   imageConversationReferenceLimitMessage,
   isImageConversationAssetURL,
@@ -156,7 +172,7 @@ import {
   normalizedImageWorkbenchCount,
 } from "@/lib/image-api-contract";
 import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
-import { isPublicReferenceURL } from "@/lib/public-reference-url";
+import { isPublicHTTPSReferenceURL, isPublicReferenceURL } from "@/lib/public-reference-url";
 import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { getCachedAuthSession } from "@/lib/session";
@@ -212,7 +228,6 @@ type CreationRelayTokenKind = Extract<RelayTokenKind, "image" | "video">;
 
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
-const RESULTS_BOTTOM_STICKY_THRESHOLD = 96;
 const IMAGE_HISTORY_PAGE_SIZE = 24;
 const CREATION_TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
 const CREATION_TASK_POLL_MAX_ERROR_RETRIES = 8;
@@ -290,6 +305,7 @@ type EditingTurnDraft = {
   conversationId: string;
   turnId: string;
   prompt: string;
+  useSmartContext?: boolean;
   model: ImageModel;
   mode: ImageConversationMode;
   count: string;
@@ -378,9 +394,7 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function isNearResultsBottom(element: HTMLElement) {
-  return element.scrollHeight - element.scrollTop - element.clientHeight <= RESULTS_BOTTOM_STICKY_THRESHOLD;
-}
+
 
 async function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
   return imageSourceToFile(dataUrl, fileName, mimeType, fetchAuthenticatedImageBlob);
@@ -1189,6 +1203,7 @@ async function syncConversationCreationTasks(
     }
     let completedActiveTurn = false;
     const turns = conversation.turns.map((turn) => {
+      if (turn.studioAgent) return turn;
       let turnChanged = false;
       const images = turn.images.map((image, imageIndex) => {
         if (image.status !== "loading" || !image.taskId) {
@@ -1296,6 +1311,7 @@ async function recoverConversationHistory(
       return conversation;
     }
     const turns = conversation.turns.map((turn) => {
+      if (turn.studioAgent) return turn;
       let turnChanged = false;
       const recoveredImages = turn.images.map((image, imageIndex) => {
         if (
@@ -1442,9 +1458,15 @@ async function recoverConversationHistory(
 }
 
 function ImagePageContent({ session }: { session: StoredAuthSession }) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [renamingConversation, setRenamingConversation] = useState<{ id: string } | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState("");
   const pageActiveRef = useRef(true);
   const pageSessionEpochRef = useRef(0);
   const activeConversationQueueIdsRef = useRef(new Set<string>());
+  const contextControllersRef = useRef(new Map<string, AbortController>());
   const isSubmitDispatchingRef = useRef(false);
   const retryingImageIdsRef = useRef(new Set<string>());
   const queueingTurnIdsRef = useRef(new Set<string>());
@@ -1466,9 +1488,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const conversationHistoryHasMoreRef = useRef(false);
   const conversationHistoryLoadMoreRef = useRef(false);
   const historySyncErrorShownAtRef = useRef(0);
-  const resultsViewportRef = useRef<HTMLDivElement>(null);
-  const resultsContentRef = useRef<HTMLDivElement>(null);
-  const shouldStickToResultsBottomRef = useRef(true);
   const referenceImagesRef = useRef<StoredReferenceImage[]>([]);
   const referenceUploadEpochRef = useRef(0);
   const referenceUploadPendingCountRef = useRef(0);
@@ -1478,10 +1497,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const audioReferenceMetadataRef = useRef(new Map<string, AudioReferenceFileMetadata>());
   const pendingAudioReferenceDurationMsRef = useRef(0);
   const editReferenceUploadPendingCountRef = useRef(0);
-  const lastResultsScrollTargetRef = useRef<{ conversationId: string | null; turnCount: number }>({
-    conversationId: null,
-    turnCount: 0,
-  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -1513,8 +1528,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageSnapToMultiple16, setImageSnapToMultiple16] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_snap_to_multiple_16);
   const [imageQuality, setImageQuality] = useState<"" | ImageQuality>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_quality);
   const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>({});
-  const [imageMarkup, setImageMarkup] = useState<string>();
-  useEffect(() => setImageMarkup(undefined), [imageModel, session.key]);
   const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_format);
   const [imageOutputCompression, setImageOutputCompression] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_compression);
   const {
@@ -1532,6 +1545,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   currentSessionKeyRef.current = session.key;
   const imageAPIMode = imageGenerationPreferences.api_mode;
   const [videoModel, setVideoModel] = useState("");
+  const [smartContextEnabled, setSmartContextEnabled] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.smart_context_enabled);
+  const [contextTextModel, setContextTextModel] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.context_text_model);
+  const [contextTextModels, setContextTextModels] = useState<string[]>([]);
   const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [videoSize, setVideoSize] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_size);
   const [videoParameters, setVideoParameters] = useState<import("@/lib/video-model-contracts").VideoParameterValues>({});
@@ -1590,6 +1606,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     try {
       const uploaded = await uploadVideoImageReference(file);
       if (!isCurrent()) return;
+      if (videoModelRequiresHTTPSReferences(videoModel) && !isPublicHTTPSReferenceURL(uploaded.url)) {
+        throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+      }
       if (slot === "first") setVideoFirstFrameURL(uploaded.url);
       else setVideoLastFrameURL(uploaded.url);
       toast.success(slot === "first" ? "首帧已上传" : "尾帧已上传");
@@ -1602,7 +1621,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setVideoFrameUploading(videoFrameUploadsRef.current.values().next().value ?? null);
       }
     }
-  }, []);
+  }, [videoModel]);
   const handleVideoReferenceFileChange = useCallback(async (file: File) => {
     const uploadEpoch = referenceUploadEpochRef.current;
     const isCurrent = () => pageActiveRef.current && uploadEpoch === referenceUploadEpochRef.current;
@@ -1620,6 +1639,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     try {
       const uploaded = await uploadVideoReference(file);
       if (!isCurrent()) return;
+      if (videoModelRequiresHTTPSReferences(videoModel) && !isPublicHTTPSReferenceURL(uploaded.url)) {
+        throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+      }
       setVideoReferenceVideoURLs((current) => [...current, uploaded.url].slice(0, 3));
       toast.success("参考视频已上传");
     } catch (error) {
@@ -1631,7 +1653,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setVideoReferenceUploading(videoReferenceUploadPendingCountRef.current > 0);
       }
     }
-  }, []);
+  }, [videoModel]);
   const handleAudioReferenceFileChange = useCallback(async (file: File) => {
     const uploadEpoch = referenceUploadEpochRef.current;
     const isCurrent = () => pageActiveRef.current && uploadEpoch === referenceUploadEpochRef.current;
@@ -1654,6 +1676,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       pendingAudioReferenceDurationMsRef.current += reservedDurationMs;
       const uploaded = await uploadAudioReference(file);
       if (!isCurrent()) return;
+      if (videoModelRequiresHTTPSReferences(videoModel) && !isPublicHTTPSReferenceURL(uploaded.url)) {
+        throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+      }
       audioReferenceMetadataRef.current.set(uploaded.url, inspectedMetadata);
       const nextURLs = [...videoReferenceAudioURLsRef.current, uploaded.url].slice(0, 3);
       videoReferenceAudioURLsRef.current = nextURLs;
@@ -1667,7 +1692,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setAudioReferenceUploading(audioReferenceUploadPendingCountRef.current > 0);
       }
     }
-  }, []);
+  }, [videoModel]);
   const handleVideoModelChange = (model: string) => {
     // Keep the previous model's async upload from racing with the new model.
     // References stay in the draft; each model restores its own settings.
@@ -1676,7 +1701,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setVideoModel(model);
   };
   const { refreshTokenModels, routeForModel, nextTokenNameForModel } = useRelayTokenPreferences();
-  const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
+  const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     [...IMAGE_CREATION_MODEL_OPTIONS],
   );
@@ -1696,6 +1721,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     composerSubmissionStateRef.current = composerSubmissionState;
   });
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const sidebar = useStudioSidebar(session.key, conversations, selectedConversationId, !isLoadingHistory);
   const [conversationDetailId, setConversationDetailId] = useState<string | null>(null);
   const [conversationDetailError, setConversationDetailError] = useState("");
   const [conversationDetailRetryVersion, setConversationDetailRetryVersion] = useState(0);
@@ -1711,7 +1737,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [progressByTurnKey, setProgressByTurnKey] = useState<Record<string, ImageTurnProgress>>(
     getImageTurnProgressSnapshot,
   );
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [visibilityMutatingImageKey, setVisibilityMutatingImageKey] = useState("");
   const [publishImageTarget, setPublishImageTarget] = useState<PublishImageTarget | null>(null);
   const [publishRecipeOptions, setPublishRecipeOptions] = useState<PublishRecipeOptions>({
@@ -1732,6 +1757,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const deactivatePage = () => {
       pageSessionEpochRef.current += 1;
       pageActiveRef.current = false;
+      for (const controller of contextControllersRef.current.values()) controller.abort();
+      contextControllersRef.current.clear();
       promptApplyRequestIdRef.current += 1;
       resetReferenceUploads();
       activeQueueIds.clear();
@@ -1865,6 +1892,31 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const conversationViewportRef = useRef<HTMLDivElement>(null);
+  const previousConversationIdRef = useRef(selectedConversationId);
+  useLayoutEffect(() => {
+    const previousId = previousConversationIdRef.current;
+    previousConversationIdRef.current = selectedConversationId;
+    const viewport = conversationViewportRef.current;
+    if (previousId === selectedConversationId || !selectedConversationId || !viewport
+      || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let animation: Animation | undefined;
+    const startAnimation = () => {
+      if (viewport.hasAttribute("data-pending-scroll")) return;
+      observer.disconnect();
+      animation = viewport.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 240,
+        easing: "ease-out",
+      });
+    };
+    const observer = new MutationObserver(startAnimation);
+    observer.observe(viewport, { attributes: true, attributeFilter: ["data-pending-scroll"] });
+    startAnimation();
+    return () => {
+      observer.disconnect();
+      animation?.cancel();
+    };
+  }, [selectedConversationId]);
   const selectedConversationNeedsDetail = Boolean(
     selectedConversationId && (!selectedConversation || isImageConversationHistorySummaryOnly(selectedConversation)),
   );
@@ -1875,14 +1927,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     selectedConversation,
     selectedConversationId ? fullConversationSnapshotsRef.current.get(selectedConversationId) ?? null : null,
   );
-  const displayedTurnCount = displayedConversation && !isImageConversationHistorySummaryOnly(displayedConversation)
-    ? displayedConversation.turns.length
-    : 0;
   useLayoutEffect(() => {
     if (selectedConversation && !isImageConversationHistorySummaryOnly(selectedConversation)) {
       fullConversationSnapshotsRef.current.set(selectedConversation.id, selectedConversation);
     }
   }, [selectedConversation]);
+  const selectedConversationComposerMode = conversationComposerMode(selectedConversation);
+  useEffect(() => {
+    if (!workbenchPreferencesReady || !selectedConversationId || selectedConversationNeedsDetail) return;
+    setComposerMode(selectedConversationComposerMode);
+  }, [selectedConversationId, selectedConversationNeedsDetail, selectedConversationComposerMode, workbenchPreferencesReady]);
+
   const activeRelayTokenKind: CreationRelayTokenKind = composerMode === "video" ? "video" : "image";
   const activeModelRoute = routeForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
   const submitDisabledReason = isSubmitDispatching
@@ -1901,7 +1956,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ? "所选 Key 的模型列表中未找到当前模型，请刷新列表或切换模型、Key"
                 : "";
   const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => nextTokenNameForModel(kind, model), [nextTokenNameForModel]);
-  const requireRelayToken = useCallback((kind: CreationRelayTokenKind, model: string) => {
+  const requireRelayToken = useCallback((kind: RelayTokenKind, model: string) => {
     const route = routeForModel(kind, model);
     if (route.status === "ready") return true;
     if (route.status === "loading") {
@@ -1943,53 +1998,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   useEffect(() => {
     referenceImagesRef.current = referenceImages;
   }, [referenceImages]);
-
-  const scrollResultsToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    const viewport = resultsViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    viewport.scrollTo({
-      top: viewport.scrollHeight,
-      behavior,
-    });
-    shouldStickToResultsBottomRef.current = true;
-    setShowScrollToBottom(false);
-  }, []);
-
-  const handleResultsViewportScroll = useCallback(() => {
-    const viewport = resultsViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    const nearBottom = isNearResultsBottom(viewport);
-    shouldStickToResultsBottomRef.current = nearBottom;
-    setShowScrollToBottom(Boolean(selectedConversationId) && !nearBottom && viewport.scrollHeight > viewport.clientHeight + RESULTS_BOTTOM_STICKY_THRESHOLD);
-  }, [selectedConversationId]);
-
-  useEffect(() => {
-    const content = resultsContentRef.current;
-    if (!content || !selectedConversationId || typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
-      if (!shouldStickToResultsBottomRef.current) {
-        handleResultsViewportScroll();
-        return;
-      }
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => scrollResultsToBottom("auto"));
-    });
-
-    observer.observe(content);
-    if (resultsViewportRef.current) observer.observe(resultsViewportRef.current);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [handleResultsViewportScroll, scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2244,45 +2252,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     };
   }, [creationTaskRequestOptions, session.key]);
 
-  useLayoutEffect(() => {
-    const turnCount = displayedTurnCount;
-    const previousTarget = lastResultsScrollTargetRef.current;
-    const conversationChanged = previousTarget.conversationId !== selectedConversationId;
-    const turnAdded = !conversationChanged && turnCount > previousTarget.turnCount;
 
-    lastResultsScrollTargetRef.current = {
-      conversationId: selectedConversationId,
-      turnCount,
-    };
-
-    if (!selectedConversationId) {
-      shouldStickToResultsBottomRef.current = false;
-      resultsViewportRef.current?.scrollTo({ top: 0, behavior: "instant" });
-      setShowScrollToBottom(false);
-      return;
-    }
-    if (!conversationChanged && !turnAdded) {
-      return;
-    }
-
-    shouldStickToResultsBottomRef.current = true;
-    setShowScrollToBottom(false);
-    const frame = window.requestAnimationFrame(() => scrollResultsToBottom("instant"));
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [displayedTurnCount, scrollResultsToBottom, selectedConversationId]);
-
-  useLayoutEffect(() => {
-    if (!selectedConversationId || !shouldStickToResultsBottomRef.current) {
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => scrollResultsToBottom("auto"));
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [displayedConversation, progressByTurnKey, scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2343,6 +2313,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           return;
         }
         const preferences = modelConfigPreferencesRef.current;
+        setContextTextModels(result.config.text_models);
+        setContextTextModel(current => resolveConfiguredModel(result.config.text_models, current, preferences.workbench.context_text_model, preferences.default_text_model, result.config.default_text_model));
         const imageOptions = modelOptionsFromNames(result.config.image_models);
         const nextImageDefault = resolveConfiguredModel(
           result.config.image_models,
@@ -2417,6 +2389,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     applyImageWorkbenchSettings(imageModelSettingsRef.current[imageModel] || imageWorkbenchSettings(workbench.image_model === imageModel ? workbench : DEFAULT_CREATION_WORKBENCH_PREFERENCES));
     applyVideoWorkbenchSettings(videoModelSettingsRef.current[videoModel] || (workbench.video_model === videoModel ? videoWorkbenchSettings(workbench) : defaultVideoWorkbenchSettings(videoModel)));
     setComposerMode(workbench.composer_mode);
+    setSmartContextEnabled(workbench.smart_context_enabled);
     currentWorkbenchSignatureRef.current = "";
     workbenchBaselinePendingRef.current = true;
     setWorkbenchPreferencesReady(true);
@@ -2462,6 +2435,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       || imageGenerationPreferencesSessionKey !== session.key
     ) return;
     const workbench: CreationWorkbenchPreferences = {
+      smart_context_enabled: smartContextEnabled,
+      context_text_model: contextTextModel,
       composer_mode: composerMode === "video" ? "video" : "image",
       video_task_count: videoTaskCount,
       video_parameters: videoParameters,
@@ -2499,7 +2474,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (signature === currentWorkbenchSignatureRef.current) return;
     currentWorkbenchSignatureRef.current = signature;
     workbenchSaverRef.current?.enqueue(workbench);
-  }, [imageOptions, composerMode, imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoParameters, videoTaskCount, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
+  }, [smartContextEnabled, contextTextModel, imageOptions, composerMode, imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoParameters, videoTaskCount, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     setConversationDetailId(selectedConversationId);
@@ -2761,6 +2736,43 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [finishConversationWrite, reportHistorySyncError],
   );
 
+  function openRenameConversation(id: string) {
+    const conversation = conversationsRef.current.find((item) => item.id === id);
+    if (!conversation) return;
+    setRenameTitle(conversation.title);
+    setRenameError("");
+    setRenamingConversation({ id });
+  }
+
+  async function handleRenameConversation() {
+    const title = renameTitle.trim();
+    if (!renamingConversation || !title || renameBusy) return;
+    const id = renamingConversation.id;
+    setRenameBusy(true);
+    setRenameError("");
+    try {
+      const target = conversationsRef.current.find((item) => item.id === id);
+      const detail = isImageConversationHistorySummaryOnly(target) ? await getImageConversation(id) : null;
+      assertPageSessionCurrent();
+      const saved = await updateConversation(id, (current) => {
+        if (!current) throw new Error("会话已删除");
+        const full = isImageConversationHistorySummaryOnly(current) ? detail : current;
+        if (!full || isImageConversationHistorySummaryOnly(full) || Number(current.revision || 0) > Number(full.revision || 0)) {
+          throw new Error("会话记录已更新，请重试重命名");
+        }
+        return { ...full, title };
+      }, { persist: "durable" });
+      if (pageActiveRef.current) {
+        if (saved) setRenamingConversation(null);
+        else setRenameError("会话已删除或发生变化，请重新打开后重试");
+      }
+    } catch (error) {
+      if (pageActiveRef.current) setRenameError(error instanceof Error ? error.message : "重命名失败，请重试");
+    } finally {
+      if (pageActiveRef.current) setRenameBusy(false);
+    }
+  }
+
   const updateTurnProgress = useCallback(
     (conversationId: string, turnId: string, updates: Omit<ImageTurnProgress, "startedAt"> & { startedAt?: number }) => {
       setImageTurnProgress(conversationId, turnId, updates);
@@ -2775,7 +2787,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const clearComposerInputs = useCallback(() => {
     promptApplyRequestIdRef.current += 1;
     setImagePrompt("");
-    setImageMarkup(undefined);
     setImageCount("1");
     setImageOutputFormat(DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression("");
@@ -2954,16 +2965,21 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const handleDeleteConversation = async (id: string) => {
     const targetConversation = conversationsRef.current.find((item) => item.id === id);
     const nextConversations = conversationsRef.current.filter((item) => item.id !== id);
+    try {
+      await Promise.all((targetConversation?.turns || []).filter(turn => turn.studioAgent).map(turn => stopAgentExecution(turn.studioAgent!.runId)));
+    } catch (error) { toast.error(error instanceof Error ? error.message : "停止智能生成失败"); return; }
     deletedConversationIdsRef.current.add(id);
     for (const turn of targetConversation?.turns || []) {
       if (isTurnInProgress(turn)) {
         cancelledTurnIdsRef.current.add(imageTurnProgressKey(id, turn.id));
+        contextControllersRef.current.get(imageTurnProgressKey(id, turn.id))?.abort();
       }
     }
     const taskIds = Array.from(new Set(
-      targetConversation?.turns.flatMap((turn) =>
-        turn.images.flatMap((image) => image.status === "loading" && image.taskId ? [image.taskId] : []),
-      ) || [],
+      targetConversation?.turns.flatMap((turn) => [
+        ...turn.images.flatMap((image) => image.status === "loading" && image.taskId ? [image.taskId] : []),
+        ...(isTurnInProgress(turn) && turn.promptContext && !turn.promptContext.preparedPrompt ? [turn.promptContext.taskId] : []),
+      ]) || [],
     ));
     if (taskIds.length > 0) {
       void Promise.allSettled(taskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)));
@@ -2999,6 +3015,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   const handleClearHistory = async () => {
     const clearingConversations = conversationsRef.current;
+    try {
+      await Promise.all(clearingConversations.flatMap(conversation => conversation.turns.filter(turn => turn.studioAgent).map(turn => stopAgentExecution(turn.studioAgent!.runId))));
+    } catch (error) { toast.error(error instanceof Error ? error.message : "停止智能生成失败"); return; }
     conversationDestructiveEpochRef.current += 1;
     conversationMutationRevisionRef.current += 1;
     for (const conversation of clearingConversations) {
@@ -3006,13 +3025,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       for (const turn of conversation.turns) {
         if (isTurnInProgress(turn)) {
           cancelledTurnIdsRef.current.add(imageTurnProgressKey(conversation.id, turn.id));
+          contextControllersRef.current.get(imageTurnProgressKey(conversation.id, turn.id))?.abort();
         }
       }
     }
     const taskIds = Array.from(new Set(clearingConversations.flatMap((conversation) =>
-      conversation.turns.flatMap((turn) =>
-        turn.images.flatMap((image) => image.status === "loading" && image.taskId ? [image.taskId] : []),
-      ),
+      conversation.turns.flatMap((turn) => [
+        ...turn.images.flatMap((image) => image.status === "loading" && image.taskId ? [image.taskId] : []),
+        ...(isTurnInProgress(turn) && turn.promptContext && !turn.promptContext.preparedPrompt ? [turn.promptContext.taskId] : []),
+      ]),
     )));
     if (taskIds.length > 0) {
       void Promise.allSettled(taskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)));
@@ -3174,7 +3195,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     setComposerMode(mode);
-  }, [imageModel]);
+    if (selectedConversationId) {
+      void updateConversation(selectedConversationId, current => { if (!current) throw new Error("对话不存在"); return { ...current, composerMode: mode }; }).catch(error => toast.error(formatCreationTaskError(error, "保存创作类型失败")));
+    }
+  }, [imageModel, selectedConversationId, updateConversation]);
 
   useEffect(() => { setMaskEdit(null); }, [session.key]);
 
@@ -3400,6 +3424,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       conversationId,
       turnId,
       prompt: targetTurn.prompt,
+      useSmartContext: targetTurn.studioAgent || targetTurn.promptContext ? true : undefined,
       model: imageCreationModelOptions.some((option) => option.value === targetTurn.model)
         ? targetTurn.model
         : defaultImageModel,
@@ -3506,15 +3531,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
 
       const snapshot = conversationsRef.current.find((conversation) => conversation.id === conversationId);
-      const activeTurn = snapshot?.turns.find(
+      const queuedTurn = snapshot?.turns.find(
         (turn) =>
           turn.source !== "workflow" &&
           (turn.status === "queued" || turn.status === "generating") &&
           turn.images.some((image) => image.status === "loading"),
       );
-      if (!snapshot || !activeTurn) {
+      if (!snapshot || !queuedTurn) {
         return;
       }
+      let activeTurn: ImageTurn = queuedTurn;
 
       activeConversationQueueIdsRef.current.add(conversationId);
       const observedTaskIds = new Set<string>();
@@ -3735,6 +3761,49 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           });
         }
 
+        if (activeTurn.studioAgent) {
+          const controller = new AbortController();
+          contextControllersRef.current.set(activeTurnKey, controller);
+          let latestResult: StudioAgentResult | undefined;
+          try {
+            latestResult = (await startStudioAgent(conversationId, activeTurn, controller.signal)).result;
+
+            const result = await waitStudioAgent(activeTurn.studioAgent.runId, controller.signal, run => {
+              latestResult = run.result;
+              assertTaskDispatchAllowed();
+              updateTurnProgress(conversationId, activeTurn.id, {
+                message: run.result?.question ? "等待你回答" : "智能生成执行中",
+                detail: typeof run.events.at(-1)?.message === "string" ? String(run.events.at(-1)?.message) : undefined,
+              });
+            });
+            assertTaskDispatchAllowed();
+            const tasks = result.tasks.length ? (await fetchCreationTasks(result.tasks.map(task => task.id), creationTaskRequestOptions)).items : [];
+            const images = tasks.flatMap(task => (task.data || []).map((_, index) => taskDataToStoredImage({ id: `${task.id}-${index}`, taskId: task.id, status: "loading" }, task, index, activeTurn.visibility)));
+            await updateConversation(conversationId, current => {
+              if (!current) throw new ImageTaskDispatchAbortedError();
+              return { ...current, turns: current.turns.map(turn => turn.id === activeTurn.id ? studioAgentTurnResult(turn, result, images) : turn) };
+            }, { persist: "durable" });
+          } catch (error) {
+            if (latestResult?.tasks.length && taskDispatchIsAllowed() && !controller.signal.aborted) {
+              try {
+                const tasks = (await fetchCreationTasks(latestResult.tasks.map(task => task.id), creationTaskRequestOptions)).items;
+                assertTaskDispatchAllowed();
+                const images = tasks.flatMap(task => Array.from({ length: Math.max(1, task.data?.length || 0) }, (_, index) => taskDataToStoredImage({ id: `${task.id}-${index}`, taskId: task.id, status: "loading" }, task, index, activeTurn.visibility)));
+                if (images.length) await updateConversation(conversationId, current => {
+                  if (!current) throw new ImageTaskDispatchAbortedError();
+                  return { ...current, turns: current.turns.map(turn => turn.id === activeTurn.id ? { ...turn, images } : turn) };
+                }, { persist: "durable" });
+              } catch (recoveryError) {
+                if (recoveryError instanceof ImageTaskDispatchAbortedError) throw recoveryError;
+              }
+            }
+            throw error;
+          } finally {
+            if (contextControllersRef.current.get(activeTurnKey) === controller) contextControllersRef.current.delete(activeTurnKey);
+          }
+          return;
+        }
+
         updateTurnProgress(conversationId, activeTurn.id, {
           message: usesReferenceImages(activeTurn.mode) ? "正在整理参考图" : "正在准备生成请求",
           detail: usesReferenceImages(activeTurn.mode)
@@ -3798,6 +3867,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             }))
           : [];
         assertTaskDispatchAllowed();
+        if (activeTurn.mode === "video" && videoModelRequiresHTTPSReferences(activeTurn.model)) {
+          const referenceURLs = [
+            activeTurn.videoFirstFrameURL,
+            activeTurn.videoLastFrameURL,
+            ...(activeTurn.videoReferenceImageURLs || []),
+            ...(activeTurn.videoReferenceVideoURLs || []),
+            ...(activeTurn.videoReferenceAudioURLs || []),
+            ...uploadedVideoReferenceURLs,
+          ].filter((url): url is string => Boolean(url));
+          if (referenceURLs.some((url) => !isPublicHTTPSReferenceURL(url))) {
+            throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+          }
+        }
         const videoReferenceUrls = activeTurn.mode === "video" && activeTurn.videoReferenceMode !== "reference" && !activeTurn.videoFirstFrameURL && !activeTurn.videoLastFrameURL
           ? [
               ...(activeTurn.videoReferenceImageURLs || []),
@@ -3840,7 +3922,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             return createImageEditTask(
               group.taskId,
               referenceFiles,
-              activeTurn.prompt,
+              activeTurn.promptContext?.preparedPrompt || activeTurn.prompt,
               activeTurn.model,
               activeTurnSizeRequest.upstreamSize,
               activeTurnSizeRequest.size,
@@ -3868,7 +3950,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           }
           return createImageGenerationTask(
             group.taskId,
-            activeTurn.prompt,
+            activeTurn.promptContext?.preparedPrompt || activeTurn.prompt,
             activeTurn.model,
             activeTurnSizeRequest.upstreamSize,
             activeTurnSizeRequest.size,
@@ -4202,7 +4284,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                     status: "error",
                     error: message,
                     images: turn.images.map((image) =>
-                      image.status === "loading" ? { ...image, status: "error", error: message } : image,
+                      image.status === "loading" ? {
+                        ...image, status: "error", error: message,
+                        ...(turn.promptContext && !turn.promptContext.preparedPrompt ? { taskStatus: "error" as const } : {}),
+                      } : image,
                     ),
                   }
                 : turn,
@@ -4298,7 +4383,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       const turnKey = imageTurnProgressKey(conversationId, turnId);
+      if (targetTurn.studioAgent) {
+        try { await stopAgentExecution(targetTurn.studioAgent.runId); }
+        catch (error) { toast.error(error instanceof Error ? error.message : "停止智能生成失败"); return; }
+        cancelledTurnIdsRef.current.add(turnKey);
+        contextControllersRef.current.get(turnKey)?.abort();
+        clearTurnProgress(conversationId, turnId);
+        await updateConversation(conversationId, current => { if (!current) throw new Error("对话不存在"); return { ...current, turns: current.turns.map(turn => turn.id === turnId ? { ...turn, status: "cancelled", images: turn.images.map(image => image.status === "loading" ? { ...image, status: "cancelled", taskStatus: "cancelled", error: "请求已终止" } : image) } : turn) }; });
+        return;
+      }
       cancelledTurnIdsRef.current.add(turnKey);
+      contextControllersRef.current.get(turnKey)?.abort();
       clearTurnProgress(conversationId, turnId);
       if (targetTurn.mode === "chat") {
         await updateConversation(conversationId, (current) => {
@@ -4331,7 +4426,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       const taskIds = Array.from(
-        new Set(targetTurn.images.flatMap((image) => (image.status === "loading" && image.taskId ? [image.taskId] : []))),
+        new Set(targetTurn.promptContext && !targetTurn.promptContext.preparedPrompt
+          ? [targetTurn.promptContext.taskId]
+          : targetTurn.images.flatMap((image) => (image.status === "loading" && image.taskId ? [image.taskId] : []))),
       );
       if (taskIds.length === 0) {
         await updateConversation(conversationId, (current) => {
@@ -4554,6 +4651,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ...turn,
                 ...derived,
                 model: retryModel,
+                studioAgent: undefined,
+                promptContext: turn.promptContext && !turn.promptContext.preparedPrompt
+                  ? { ...turn.promptContext, taskId: `${retryTaskId}-context` } : turn.promptContext,
                 ...retryVideoFields,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
@@ -4661,8 +4761,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               return {
                 ...turn,
                 model: retryModel,
+                studioAgent: turn.studioAgent ? { ...turn.studioAgent, runId: `${turn.id}-${regenerationId}-agent` } : undefined,
                 ...retryVideoFields,
                 count: imageCount,
+                promptContext: turn.promptContext && !turn.promptContext.preparedPrompt
+                  ? { ...turn.promptContext, taskId: `${turn.id}-${regenerationId}-context` } : turn.promptContext,
                 status: "queued",
                 error: undefined,
                 processingStartedAt: undefined,
@@ -4830,6 +4933,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               const baseTurn = {
                 ...turn,
                 prompt,
+                studioAgent: regenerate && draft.useSmartContext !== false && turn.studioAgent ? { ...turn.studioAgent, runId: `${turn.id}-${regenerationId}-agent` } : undefined,
+                promptContext: draft.useSmartContext !== false && turn.promptContext ? {
+                  model: turn.promptContext.model, tokenName: turn.promptContext.tokenName,
+                  taskId: `${turn.id}-${regenerationId}-context`,
+                } : undefined,
                 model: draft.model,
                 mode,
                 referenceImages,
@@ -4991,21 +5099,28 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (!requireRelayToken(videoMode ? "video" : "image", effectiveModel)) {
       return;
     }
+    if (smartContextEnabled) {
+      if (!contextTextModels.includes(contextTextModel)) {
+        toast.error("智能生成需要支持工具调用和图片理解的文本模型，请先配置或切换为直接生成");
+        return;
+      }
+      if (!requireRelayToken("text", contextTextModel)) return;
+    }
     const selectedVideoSeconds = Number(videoSeconds);
     // The shared request normalizer applies the video model contract at submit
     // time. This keeps manual quality input working while snapping fixed
     // model values to the nearest documented duration/size/resolution.
-    if (videoMode && videoRequiresReferenceImage(effectiveModel) && !hasVideoReferenceImage) {
+    if (videoMode && !smartContextEnabled && videoRequiresReferenceImage(effectiveModel) && !hasVideoReferenceImage) {
       toast.error(`模型 ${effectiveModel} 仅支持参考图生成，请上传一张参考图`);
       return;
     }
     const normalizedVideoReferenceVideos = cleanReferenceURLs(videoReferenceVideoURLs).map(absoluteReferenceURL);
     const normalizedVideoReferenceAudios = cleanReferenceURLs(videoReferenceAudioURLs).map(absoluteReferenceURL);
-	if (videoMode && videoRequiresReferenceVideo(effectiveModel) && normalizedVideoReferenceVideos.length === 0) {
+	if (videoMode && !smartContextEnabled && videoRequiresReferenceVideo(effectiveModel) && normalizedVideoReferenceVideos.length === 0) {
 	  toast.error(`模型 ${effectiveModel} 必须提供参考视频`);
 	  return;
 	}
-	if (videoMode && videoRequiresReferenceAudio(effectiveModel) && normalizedVideoReferenceAudios.length === 0) {
+	if (videoMode && !smartContextEnabled && videoRequiresReferenceAudio(effectiveModel) && normalizedVideoReferenceAudios.length === 0) {
 	  toast.error(`模型 ${effectiveModel} 必须提供参考音频`);
 	  return;
 	}
@@ -5019,6 +5134,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     // Local images are persisted separately and uploaded by the queue before
     // dispatch. Only explicit URL inputs belong in the URL list here.
     const normalizedVideoReferenceImages = cleanReferenceURLs(videoReferenceImageURLs).map(absoluteReferenceURL);
+    if (videoMode && !smartContextEnabled && videoModelRequiresHTTPSReferences(effectiveModel)) {
+      const referenceURLs = [
+        normalizedFirstFrameURL,
+        normalizedLastFrameURL,
+        ...normalizedVideoReferenceImages,
+        ...normalizedVideoReferenceVideos,
+        ...normalizedVideoReferenceAudios,
+          ].filter((url): url is string => Boolean(url));
+      if (referenceURLs.some((url) => !isPublicHTTPSReferenceURL(url))) {
+        toast.error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
+        return;
+      }
+    }
     const ordinaryVideoReferenceCount = referenceImages.length + normalizedVideoReferenceImages.length;
     const referenceLimitError = videoMode ? videoWorkbenchReferenceLimitError(
       effectiveModel,
@@ -5030,7 +5158,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(referenceLimitError);
       return;
     }
-    const videoReferenceError = videoMode ? videoReferenceCombinationError({
+    const videoReferenceError = videoMode && !smartContextEnabled ? videoReferenceCombinationError({
       model: effectiveModel,
       size: videoSize,
       seconds: selectedVideoSeconds,
@@ -5050,7 +5178,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(videoReferenceError);
       return;
     }
-    if (videoMode && effectiveVideoReferenceMode === "reference") {
+    if (videoMode && !smartContextEnabled && effectiveVideoReferenceMode === "reference") {
       const referenceImageCount = referenceImages.length + normalizedVideoReferenceImages.length;
       if (referenceImageCount + normalizedVideoReferenceVideos.length + normalizedVideoReferenceAudios.length === 0) {
         toast.error("请至少上传一个参考图、参考视频或参考音频");
@@ -5076,7 +5204,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     let normalizedVideoParameters: ReturnType<typeof normalizeVideoRequest> | undefined;
     try {
-      normalizedVideoParameters = videoMode ? normalizeVideoRequest({
+      normalizedVideoParameters = videoMode && !smartContextEnabled ? normalizeVideoRequest({
           model: effectiveModel,
           size: videoSize,
           seconds: selectedVideoSeconds,
@@ -5096,9 +5224,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(error instanceof Error ? error.message : "视频参数无效");
       return;
     }
-    const normalizedVideoTurnFields = normalizedVideoParameters
-      ? videoTurnFieldsFromNormalizedRequest(normalizedVideoParameters)
-      : undefined;
+    const normalizedVideoTurnFields = videoMode && smartContextEnabled ? {
+      size: videoSize, videoSeconds: selectedVideoSeconds, videoParameters,
+      videoResolution, videoGenerateAudio, videoWatermark,
+      videoReferenceMode: effectiveVideoReferenceMode,
+      videoFirstFrameURL: normalizedFirstFrameURL || undefined,
+      videoLastFrameURL: normalizedLastFrameURL || undefined,
+      videoReferenceImageURLs: normalizedVideoReferenceImages,
+      videoReferenceVideoURLs: normalizedVideoReferenceVideos,
+      videoReferenceAudioURLs: normalizedVideoReferenceAudios,
+    } : normalizedVideoParameters ? videoTurnFieldsFromNormalizedRequest(normalizedVideoParameters) : undefined;
     isSubmitDispatchingRef.current = true;
     setIsSubmitDispatching(true);
     const submittedComposerState = composerSubmissionStateRef.current;
@@ -5159,13 +5294,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const draftTurn: ImageTurn = {
         id: turnId,
         prompt,
+        studioAgent: smartContextEnabled ? {
+          model: contextTextModel,
+          tokenName: nextTokenNameForModel("text", contextTextModel),
+          runId: `${turnId}-agent`,
+        } : undefined,
         model: effectiveModel,
         mode: effectiveImageMode,
         referenceImages: videoMode || usesReferenceImages(effectiveImageMode) ? referenceImages : [],
         count: requestedCount,
         size: videoMode ? normalizedVideoTurnFields?.size || currentImageSize : currentImageSize,
         sizeSelection: currentImageSizeSelection,
-        imageOptions: isGPTImage26(effectiveModel) ? { ...imageOptions, markup: imageMarkup } : undefined,
+        imageOptions: isGPTImage26(effectiveModel) ? imageOptions : undefined,
         quality: effectiveImageQuality === "auto" ? undefined : effectiveImageQuality,
         outputFormat: effectiveOutputFormat,
         outputCompression: effectiveOutputCompression,
@@ -5218,6 +5358,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             createdAt: now,
             updatedAt: now,
             turns: [draftTurn],
+            composerMode: videoMode ? "video" : "image",
           };
 
       draftProgressTarget = { conversationId, turnId };
@@ -5231,7 +5372,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           throw new Error("会话正在同步或生成，请稍后再发送");
         }
         return current
-          ? { ...current, updatedAt: now, turns: [...current.turns, draftTurn] }
+          ? { ...current, composerMode: videoMode ? "video" : "image", updatedAt: now, turns: [...current.turns, draftTurn] }
           : baseConversation;
       }, { persist: "durable" });
       if (!draftPersisted) {
@@ -5266,15 +5407,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
   };
 
+  const isEmptyWorkspace = !displayedConversation && !isLoadingHistory && !selectedConversationNeedsDetail;
+
   return (
-    <VideoTaskContractsProvider
-      key={session.key}
-      session={session}
-      enabled={composerMode === "video"}
-      onPublished={() => setImageModelConfigReloadKey((value) => value + 1)}
-    >
-      <section data-image-workbench-layout aria-label="创作台" className="grid h-full min-h-0 w-full grid-cols-1 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-card)] lg:grid-cols-[232px_minmax(0,1fr)] 2xl:grid-cols-[256px_minmax(0,1fr)]">
-        <div className="hidden h-full min-h-0 border-r border-border/70 bg-muted/25 p-3 lg:block 2xl:p-4">
+    <>
+      <div data-image-workbench-layout aria-label="创作台" className={cn("relative grid h-full min-h-0 w-full grid-cols-1 overflow-hidden transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none lg:grid-cols-[0px_minmax(0,1fr)]", sidebarOpen && "lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[304px_minmax(0,1fr)]")}>
+        <div id="studio-conversation-sidebar" data-studio-sidebar aria-hidden={!sidebarOpen} inert={!sidebarOpen} className="hidden h-full min-h-0 overflow-hidden lg:block">
+          <div className={cn("h-full w-[280px] border-r border-border p-4 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none xl:w-[304px]", !sidebarOpen && "-translate-x-3 opacity-0")}>
+
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
@@ -5286,19 +5426,44 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             onSelectConversation={setSelectedConversationId}
             onDeleteConversation={openDeleteConversationConfirm}
             onLoadMore={handleLoadMoreHistory}
-            formatConversationTime={formatConversationTime}
+            pinnedIds={sidebar.pinnedIds}
+            unreadIds={sidebar.unreadIds}
+            onTogglePin={sidebar.togglePin}
+            onRenameConversation={openRenameConversation}
           />
+          </div>
         </div>
 
+        <Dialog open={renamingConversation !== null} onOpenChange={(open) => { if (!open && !renameBusy) setRenamingConversation(null); }}>
+          <DialogContent showCloseButton={!renameBusy}>
+            <form onSubmit={(event) => { event.preventDefault(); void handleRenameConversation(); }}>
+              <DialogHeader>
+                <DialogTitle>重命名会话</DialogTitle>
+                <DialogDescription>为这段创作起一个容易找到的名字。</DialogDescription>
+              </DialogHeader>
+              <Field className="my-5">
+                <FieldLabel htmlFor="conversation-title">会话标题</FieldLabel>
+                <Input id="conversation-title" value={renameTitle} disabled={renameBusy} onChange={(event) => setRenameTitle(event.target.value)} aria-invalid={Boolean(renameError)} aria-describedby={renameError ? "conversation-title-error" : undefined} />
+                {renameError ? <FieldError id="conversation-title-error">{renameError}</FieldError> : null}
+              </Field>
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={renameBusy} onClick={() => setRenamingConversation(null)}>取消</Button>
+                <Button type="submit" disabled={renameBusy || !renameTitle.trim()}>{renameBusy ? <Spinner /> : null}保存</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-          <DialogContent scrollable={false} className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden border-border bg-card p-0">
-            <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
+          <DialogContent className={cn("sm:max-w-[460px]", cn("h-[min(82dvh,760px)]", "flex w-[92vw] max-w-[460px] flex-col overflow-hidden"))}>
+            <DialogHeader >
+              <DialogTitle className="flex items-center">
                 <History className="size-5" />
                 历史记录
               </DialogTitle>
+              <DialogDescription className="sr-only">查找和管理创作会话。</DialogDescription>
             </DialogHeader>
-            <ScrollArea className="min-h-0 flex-1 px-5 pb-8 sm:px-8">
+            <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1 px-5 pb-8 sm:px-8" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
               <ImageSidebar
                 conversations={conversations}
                 isLoadingHistory={isLoadingHistory}
@@ -5316,17 +5481,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 }}
                 onDeleteConversation={openDeleteConversationConfirm}
                 onLoadMore={handleLoadMoreHistory}
-                formatConversationTime={formatConversationTime}
+                pinnedIds={sidebar.pinnedIds}
+                unreadIds={sidebar.unreadIds}
+                onTogglePin={sidebar.togglePin}
+                onRenameConversation={openRenameConversation}
                 hideActionButtons
               />
-            </ScrollArea>
+            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           </DialogContent>
         </Dialog>
 
         {editingTurnDraft ? (
           <Dialog open onOpenChange={(open) => (!open ? closeEditingTurnDialog() : null)}>
             <DialogContent
-              scrollable={false}
               showCloseButton={editReferenceUploadPendingCount === 0}
               aria-busy={editReferenceUploadPendingCount > 0}
               onEscapeKeyDown={(event) => {
@@ -5339,313 +5506,263 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   event.preventDefault();
                 }
               }}
-              className="flex max-h-[88dvh] w-[min(92vw,640px)] flex-col overflow-hidden rounded-[28px] p-0"
+              className="flex max-h-[88dvh] w-[min(92vw,560px)] flex-col overflow-hidden sm:max-w-none"
             >
-              <DialogHeader className="px-6 pt-6 pb-2">
-                <DialogTitle>编辑生成设置</DialogTitle>
+              <DialogHeader>
+                <DialogTitle>编辑消息</DialogTitle>
                 <DialogDescription>
-                  修改本轮提示词、参考图和生成参数。
+                  修改后保存，或重新生成这一轮。
                 </DialogDescription>
               </DialogHeader>
-              <ScrollArea className="min-h-0 flex-1 px-6 py-4">
-                <div className="flex flex-col gap-5">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-                    提示词
-                    <Textarea
+              <ScrollArea data-slot="dialog-body" className="min-h-0 flex-1" contentClassName="grid gap-4 px-1 py-1">
+                <Field>
+                  <FieldLabel className="sr-only" htmlFor="edit-generation-prompt">提示词</FieldLabel>
+                  <PromptInput>
+                    <InputGroupTextarea
+                      id="edit-generation-prompt"
+                      rows={4}
                       value={editingTurnDraft.prompt}
-                      onChange={(event) =>
-                        setEditingTurnDraft((current) =>
-                          current ? { ...current, prompt: event.target.value } : current,
-                        )
-                      }
-                      className="min-h-[128px] resize-y rounded-2xl border-border bg-card text-sm leading-6 shadow-none"
+                      onChange={(event) => setEditingTurnDraft((current) => current ? { ...current, prompt: event.target.value } : current)}
+                      className="min-h-28 max-h-56 resize-y"
                     />
-                  </label>
-
-                  {editingTurnDraft.mode !== "chat" ? (
-                  <div className="flex flex-col gap-3">
-                    <input
-                      ref={editFileInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      multiple
-                      disabled={editReferenceUploadPendingCount > 0}
-                      className="hidden"
-                      onChange={(event) => {
-                        void handleEditReferenceImageChange(Array.from(event.target.files || []));
-                      }}
-                    />
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium text-foreground">参考图</div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={editReferenceUploadPendingCount > 0}
-                        className="rounded-full border-border bg-card"
-                        onClick={() => editFileInputRef.current?.click()}
-                      >
-                        {editReferenceUploadPendingCount > 0 ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <ImagePlus className="size-4" />
-                        )}
-                        {editReferenceUploadPendingCount > 0 ? "上传中" : "上传图片"}
-                      </Button>
-                    </div>
-                    {editingTurnDraft.referenceImages.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {editingTurnDraft.referenceImages.map((image, index) => (
-                          <div key={`${image.name}-${index}`} className="relative size-20 shrink-0">
-                            <button
-                              type="button"
-                              className="size-20 overflow-hidden rounded-2xl border border-border bg-muted"
-                              onClick={() =>
-                                openLightbox(
-                                  editingTurnDraft.referenceImages.map((item, itemIndex) => ({
-                                    id: `${item.name}-${itemIndex}`,
-                                    src: item.dataUrl,
-                                  })),
-                                  index,
-                                )
-                              }
-                              aria-label={`预览参考图 ${image.name || index + 1}`}
-                            >
-                              <AuthenticatedImage
-                                src={image.dataUrl}
-                                alt={image.name || `参考图 ${index + 1}`}
-                                className="h-full w-full object-cover"
-                                placeholderClassName="min-h-0"
+                    <PromptInputFooter className="flex-col items-stretch gap-2">
+                      {editingTurnDraft.mode !== "chat" && editingTurnDraft.referenceImages.length > 0 ? (
+                        <ScrollArea className="max-h-28 w-full" contentClassName="flex flex-wrap gap-2 p-1" aria-label="本轮参考图">
+                          {editingTurnDraft.referenceImages.map((image, index) => (
+                            <Attachment key={`${image.name}-${index}`} size="xs" className="min-w-0 max-w-48 flex-nowrap">
+                              <AttachmentMedia variant="image">
+                                <AuthenticatedImage src={image.dataUrl} alt={image.name || `参考图 ${index + 1}`} className="size-full object-cover" placeholderClassName="min-h-0" />
+                              </AttachmentMedia>
+                              <AttachmentContent>
+                                <AttachmentTitle title={image.name || `参考图 ${index + 1}`}>{image.name || `参考图 ${index + 1}`}</AttachmentTitle>
+                              </AttachmentContent>
+                              <AttachmentTrigger
+                                aria-label={`预览参考图 ${image.name || index + 1}`}
+                                onClick={() => openLightbox(editingTurnDraft.referenceImages.map((item, itemIndex) => ({ id: `${item.name}-${itemIndex}`, src: item.dataUrl })), index)}
                               />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveEditReferenceImage(index)}
-                              disabled={editReferenceUploadPendingCount > 0}
-                              className="absolute -top-1 -right-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                              aria-label={`移除参考图 ${image.name || index + 1}`}
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  ) : null}
-
-                  <label className="flex max-w-[15rem] flex-col gap-1.5">
-                    <ImageParameterLabel>模型</ImageParameterLabel>
-                    <Select
-                      value={editingDraftModelAvailable ? editingTurnDraft.model : ""}
-                      disabled={editReferenceUploadPendingCount > 0 || editingTurnModelOptions.length === 0}
-                      onValueChange={(value) =>
-                        setEditingTurnDraft((current) =>
-                          current && isImageModel(value) ? { ...current, model: value } : current,
-                        )
-                      }
-                    >
-                      <SelectTrigger className="h-9 rounded-lg text-xs shadow-none">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {editingTurnModelOptions.map((option) => (
-                            <SelectItem
-                              key={option.value}
-                              value={option.value}
-                              disabled={editingTurnDraft.referenceImages.length > 0 && !imageWorkbenchAcceptsReferenceImages(option.value)}
-                            >
-                              {option.label}
-                            </SelectItem>
+                              <AttachmentActions>
+                                <AttachmentAction aria-label={`移除参考图 ${image.name || index + 1}`} disabled={editReferenceUploadPendingCount > 0} onClick={() => handleRemoveEditReferenceImage(index)}>
+                                  <X />
+                                </AttachmentAction>
+                              </AttachmentActions>
+                            </Attachment>
                           ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </label>
-
-                  {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
-                    <div className="flex flex-col gap-3.5 rounded-xl border border-border bg-card p-3.5 dark:border-border dark:bg-card">
-                      <ImageSizePresetControls
-                        className="order-2"
-                        ariaLabelPrefix="编辑图片"
-                        value={{
-                          mode: editingTurnDraft.sizeMode,
-                          aspectRatio: editingTurnDraft.aspectRatio,
-                          resolution: editingTurnDraft.resolution,
-                        }}
-                        previewLabel={editingDraftSizePreviewLabel}
-                        highResolution={editingDraftSizeIsHighResolution}
-                        onChange={(patch) =>
-                          setEditingTurnDraft((current) => current ? {
-                            ...current,
-                            ...(patch.mode !== undefined ? { sizeMode: patch.mode } : {}),
-                            ...(patch.aspectRatio !== undefined ? { aspectRatio: patch.aspectRatio } : {}),
-                            ...(patch.resolution !== undefined ? { resolution: patch.resolution } : {}),
-                          } : current)
-                        }
-                      />
-
-                      {editingDraftQualitySupported ? (
-                        <section className="order-1 space-y-1.5">
-                          <ImageParameterLabel help="质量档位同时参与参考项目的目标尺寸换算；厂商不支持的 quality 字段不会透传。">
-                            质量
-                          </ImageParameterLabel>
-                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70" role="group" aria-label="编辑图片质量">
-                            {editingDraftQualityOptions.map((option) => (
-                              <button
-                                key={option.value || "auto"}
-                                type="button"
-                                aria-pressed={editingTurnDraft.quality === option.value}
-                                className={imageParameterChoiceClass(editingTurnDraft.quality === option.value, "h-7")}
-                                onClick={() =>
-                                  setEditingTurnDraft((current) =>
-                                    current
-                                      ? { ...current, quality: option.value as "" | ImageQuality }
-                                      : current,
-                                  )
-                                }
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </section>
+                        </ScrollArea>
                       ) : null}
-
-                      <section className="order-4 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border">
-                        <ImageParameterLabel help={`当前模型单次请求支持 1-${editingDraftCountLimit} 张图片。`}>
-                          生成数量
-                        </ImageParameterLabel>
-                        <NumberInput
-                          value={editingDraftCount}
-                          min={1}
-                          max={editingDraftCountLimit}
-                          controlsLayout="split"
-                          suffix="张"
-                          aria-label="编辑生成数量"
-                          className="h-8 w-32"
-                          inputClassName="px-0 text-right text-xs font-semibold"
-                          onValueChange={(raw) => {
-                            const next = Number(raw);
-                            if (!Number.isFinite(next)) return;
-                            setEditingTurnDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    count: String(Math.max(1, Math.min(editingDraftCountLimit, Math.round(next)))),
-                                  }
-                                : current,
-                            );
-                          }}
-                        />
-                      </section>
-
-                      <div className="order-3 border-t border-border pt-2.5 dark:border-border">
-                        <div className="space-y-3">
-                          <section className="space-y-1.5">
-                            <div className="flex items-center justify-between gap-3">
-                              <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
-                              <label className="flex items-center gap-2 text-[11px] text-muted-foreground"><span>16倍数对齐</span><Switch checked={imageSnapToMultiple16} aria-label="16倍数对齐" onCheckedChange={setImageSnapToMultiple16} /></label>
-                            </div>
-                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-                              <label
-                                className={cn(
-                                  "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
-                                  editingDraftDimensionsDisabled
-                                    ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
-                                    : "border-border bg-card dark:border-border dark:bg-background/70",
-                                )}
-                              >
-                                <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">W</span>
-                                <Input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="1"
-                                  step="1"
-                                  value={editingDraftDisplayedWidth}
-                                  placeholder="自动"
-                                  disabled={editingDraftDimensionsDisabled}
-                                  onFocus={() =>
-                                    setEditingTurnDraft((current) =>
-                                      current && current.sizeMode !== "custom"
-                                        ? {
-                                            ...current,
-                                            customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
-                                            customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
-                                            sizeMode: "custom",
-                                          }
-                                        : current,
-                                    )
-                                  }
-                                  onChange={(event) =>
-                                    setEditingTurnDraft((current) =>
-                                      current ? { ...current, customWidth: event.target.value, sizeMode: "custom" } : current,
-                                    )
-                                  }
-                                  onBlur={(event) => {
-                                    if (!imageSnapToMultiple16) return;
-                                    const value = Number(event.target.value);
-                                    if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customWidth: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
-                                  }}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
-                                />
-                              </label>
-                              <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                              <label
-                                className={cn(
-                                  "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
-                                  editingDraftDimensionsDisabled
-                                    ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
-                                    : "border-border bg-card dark:border-border dark:bg-background/70",
-                                )}
-                              >
-                                <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">H</span>
-                                <Input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="1"
-                                  step="1"
-                                  value={editingDraftDisplayedHeight}
-                                  placeholder="自动"
-                                  disabled={editingDraftDimensionsDisabled}
-                                  onFocus={() =>
-                                    setEditingTurnDraft((current) =>
-                                      current && current.sizeMode !== "custom"
-                                        ? {
-                                            ...current,
-                                            customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
-                                            customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
-                                            sizeMode: "custom",
-                                          }
-                                        : current,
-                                    )
-                                  }
-                                  onChange={(event) =>
-                                    setEditingTurnDraft((current) =>
-                                      current ? { ...current, customHeight: event.target.value, sizeMode: "custom" } : current,
-                                    )
-                                  }
-                                  onBlur={(event) => {
-                                    if (!imageSnapToMultiple16) return;
-                                    const value = Number(event.target.value);
-                                    if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customHeight: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
-                                  }}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
-                                />
-                              </label>
-                            </div>
-                          </section>
-
+                      <div className="flex min-w-0 items-center gap-2">
+                        {editingTurnDraft.mode !== "chat" ? <>
+                          <input
+                            ref={editFileInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            multiple
+                            disabled={editReferenceUploadPendingCount > 0}
+                            className="hidden"
+                            onChange={(event) => { void handleEditReferenceImageChange(Array.from(event.target.files || [])); }}
+                          />
+                          <InputGroupButton
+                            type="button"
+                            size="sm"
+                            disabled={editReferenceUploadPendingCount > 0}
+                            aria-label={editReferenceUploadPendingCount > 0 ? "上传中" : "上传图片"}
+                            onClick={() => editFileInputRef.current?.click()}
+                          >
+                            {editReferenceUploadPendingCount > 0 ? <Spinner /> : <ImagePlus />}
+                            <span className="hidden sm:inline">{editReferenceUploadPendingCount > 0 ? "上传中" : "参考图"}</span>
+                          </InputGroupButton>
+                        </> : null}
+                        <div className="ml-auto min-w-0 flex-1 max-w-64">
+                          <FieldLabel className="sr-only" htmlFor="edit-generation-model">模型</FieldLabel>
+                          <ModelPicker id="edit-generation-model" label="编辑图片模型"
+                            value={editingTurnDraft.model} options={editingTurnModelOptions}
+                            disabled={editReferenceUploadPendingCount > 0}
+                            isModelDisabled={(value) => editingTurnDraft.referenceImages.length > 0 && !imageWorkbenchAcceptsReferenceImages(value)}
+                            onValueChange={(value) => setEditingTurnDraft((current) => current && isImageModel(value) ? { ...current, model: value } : current)} />
                         </div>
                       </div>
-                    </div>
-                  ) : null}
-                </div>
+                    </PromptInputFooter>
+                  </PromptInput>
+                </Field>
+
+                <Collapsible data-edit-generation-parameters>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    {editingTurnDraft.useSmartContext !== undefined ? (
+                      <Field orientation="horizontal" className="min-w-0 flex-1">
+                        <FieldContent>
+                          <FieldLabel htmlFor="edit-smart-context">使用智能生成</FieldLabel>
+                          <FieldDescription>Agent 读取历史、调整参数并执行创作</FieldDescription>
+                        </FieldContent>
+                        <Switch id="edit-smart-context" className="self-center" checked={editingTurnDraft.useSmartContext} onCheckedChange={checked => setEditingTurnDraft(current => current ? { ...current, useSmartContext: checked } : current)} />
+                      </Field>
+                    ) : null}
+                    {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
+                      <CollapsibleTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" aria-label="编辑生成参数">生成参数<ChevronDown /></Button>
+                      </CollapsibleTrigger>
+                    ) : null}
+                  </div>
+                  <CollapsibleContent className="pt-4">
+                    {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
+                      <FieldGroup className="gap-4">
+                        <ImageSizePresetControls
+                          className="order-2"
+                          ariaLabelPrefix="编辑图片"
+                          value={{
+                            mode: editingTurnDraft.sizeMode,
+                            aspectRatio: editingTurnDraft.aspectRatio,
+                            resolution: editingTurnDraft.resolution,
+                          }}
+                          previewLabel={editingDraftSizePreviewLabel}
+                          highResolution={editingDraftSizeIsHighResolution}
+                          onChange={(patch) =>
+                            setEditingTurnDraft((current) => current ? {
+                              ...current,
+                              ...(patch.mode !== undefined ? { sizeMode: patch.mode } : {}),
+                              ...(patch.aspectRatio !== undefined ? { aspectRatio: patch.aspectRatio } : {}),
+                              ...(patch.resolution !== undefined ? { resolution: patch.resolution } : {}),
+                            } : current)
+                          }
+                        />
+
+                        {editingDraftQualitySupported ? (
+                          <section className="order-1 space-y-1.5">
+                            <ImageParameterLabel help="质量档位同时参与参考项目的目标尺寸换算；厂商不支持的 quality 字段不会透传。">
+                              质量
+                            </ImageParameterLabel>
+                            <ToggleGroup type="single" value={editingTurnDraft.quality || "auto"} onValueChange={(quality) => { if (quality) setEditingTurnDraft((current) => current ? { ...current, quality: quality === "auto" ? "" : quality as ImageQuality } : current); }} aria-label="编辑图片质量" className="w-full grid grid-cols-4">
+                              {editingDraftQualityOptions.map((option) => (
+                                <ToggleGroupItem key={option.value || "auto"} value={option.value || "auto"} className="min-w-0">
+                                  {option.label}
+                                </ToggleGroupItem>
+                              ))}
+                            </ToggleGroup>
+                          </section>
+                        ) : null}
+
+                        <section className="order-4 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border">
+                          <ImageParameterLabel help={`当前模型单次请求支持 1-${editingDraftCountLimit} 张图片。`}>
+                            生成数量
+                          </ImageParameterLabel>
+                          <NumberInput
+                            value={editingDraftCount}
+                            min={1}
+                            max={editingDraftCountLimit}
+                            controlsLayout="split"
+                            suffix="张"
+                            aria-label="编辑生成数量"
+                            className="w-32"
+                            inputClassName="px-0 text-right text-xs font-semibold"
+                            onValueChange={(raw) => {
+                              const next = Number(raw);
+                              if (!Number.isFinite(next)) return;
+                              setEditingTurnDraft((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      count: String(Math.max(1, Math.min(editingDraftCountLimit, Math.round(next)))),
+                                    }
+                                  : current,
+                              );
+                            }}
+                          />
+                        </section>
+
+                        <div className="order-3 border-t border-border pt-2.5 dark:border-border">
+                          <div className="space-y-3">
+                            <section className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
+                                <Label className="flex items-center gap-2 text-[11px] text-muted-foreground"><span>16倍数对齐</span><Switch checked={imageSnapToMultiple16} aria-label="16倍数对齐" onCheckedChange={setImageSnapToMultiple16} /></Label>
+                              </div>
+                              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+                                <InputGroup
+                                  className="min-w-0"
+                                >
+                                  <InputGroupAddon align="inline-start">W</InputGroupAddon>
+                                  <InputGroupInput
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
+                                    step="1"
+                                    value={editingDraftDisplayedWidth}
+                                    placeholder="自动"
+                                    disabled={editingDraftDimensionsDisabled}
+                                    onFocus={() =>
+                                      setEditingTurnDraft((current) =>
+                                        current && current.sizeMode !== "custom"
+                                          ? {
+                                              ...current,
+                                              customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
+                                              customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
+                                              sizeMode: "custom",
+                                            }
+                                          : current,
+                                      )
+                                    }
+                                    onChange={(event) =>
+                                      setEditingTurnDraft((current) =>
+                                        current ? { ...current, customWidth: event.target.value, sizeMode: "custom" } : current,
+                                      )
+                                    }
+                                    onBlur={(event) => {
+                                      if (!imageSnapToMultiple16) return;
+                                      const value = Number(event.target.value);
+                                      if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customWidth: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
+                                    }}
+                                    className="px-0 disabled:opacity-100"
+                                  />
+                                </InputGroup>
+                                <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                                <InputGroup
+                                  className="min-w-0"
+                                >
+                                  <InputGroupAddon align="inline-start">H</InputGroupAddon>
+                                  <InputGroupInput
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
+                                    step="1"
+                                    value={editingDraftDisplayedHeight}
+                                    placeholder="自动"
+                                    disabled={editingDraftDimensionsDisabled}
+                                    onFocus={() =>
+                                      setEditingTurnDraft((current) =>
+                                        current && current.sizeMode !== "custom"
+                                          ? {
+                                              ...current,
+                                              customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
+                                              customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
+                                              sizeMode: "custom",
+                                            }
+                                          : current,
+                                      )
+                                    }
+                                    onChange={(event) =>
+                                      setEditingTurnDraft((current) =>
+                                        current ? { ...current, customHeight: event.target.value, sizeMode: "custom" } : current,
+                                      )
+                                    }
+                                    onBlur={(event) => {
+                                      if (!imageSnapToMultiple16) return;
+                                      const value = Number(event.target.value);
+                                      if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customHeight: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
+                                    }}
+                                    className="px-0 disabled:opacity-100"
+                                  />
+                                </InputGroup>
+                              </div>
+                            </section>
+
+                          </div>
+                        </div>
+                      </FieldGroup>
+                    ) : null}
+                  </CollapsibleContent>
+                </Collapsible>
               </ScrollArea>
-              <DialogFooter flush>
+              <DialogFooter className="shrink-0 flex-row flex-wrap justify-end">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   disabled={editReferenceUploadPendingCount > 0}
                   onClick={closeEditingTurnDialog}
                 >
@@ -5669,127 +5786,99 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           </Dialog>
         ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
+        <section data-studio-main aria-label="创作工作区" className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
           {imageModelConfigError ? (
-            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4">
+            <Alert variant="destructive" className="mx-1 flex w-auto items-center gap-2 sm:mx-4">
               <CircleAlert className="size-4 shrink-0" />
               <span className="min-w-0 flex-1 break-words">模型配置加载失败：{imageModelConfigError}</span>
               <Button type="button" variant="outline" size="sm" onClick={() => setImageModelConfigReloadKey((value) => value + 1)}>
-                <RefreshCw className="size-4" />重试
+                <RefreshCw  />重试
               </Button>
-            </div>
+            </Alert>
           ) : null}
-          <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2 sm:px-6 sm:py-3" aria-label="当前会话">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="hidden size-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand sm:flex"><Sparkles className="size-4" /></span>
-              <div className="min-w-0">
-                <h1 className="truncate text-sm font-semibold" title={displayedConversation?.title}>{displayedConversation?.title || "新建创作"}</h1>
-                <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">{displayedConversation ? `${displayedConversation.turns.length} 轮创作 · 继续探索你的想法` : "让每一个想法，都有画面"}</p>
-              </div>
+          <header className="grid min-h-20 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-3 sm:px-6" aria-label="当前会话">
+            <div className="flex min-w-0 items-center gap-2">
+              <TooltipHint content={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"}><Button variant="ghost" size="icon" className="hidden lg:inline-flex" aria-label={sidebarOpen ? "收起会话侧栏" : "展开会话侧栏"} aria-expanded={sidebarOpen} aria-controls="studio-conversation-sidebar" onClick={() => setSidebarOpen((open) => !open)}>{sidebarOpen ? <PanelLeftClose className="size-5" /> : <PanelLeftOpen className="size-5" />}</Button></TooltipHint>
+              <TooltipHint content="历史记录"><Button variant="ghost" size="icon" className="lg:hidden" aria-label={`历史记录 (${conversations.length})`} onClick={() => setIsHistoryOpen(true)}><History /></Button></TooltipHint>
+              <TooltipHint content="新建对话"><Button variant="ghost" size="icon" className="lg:hidden" aria-label="新建对话" onClick={handleCreateDraft}><Plus /></Button></TooltipHint>
+              {displayedConversation ? <h1 className="hidden min-w-0 truncate text-sm font-medium xl:block" title={displayedConversation.title}>{displayedConversation.title}</h1> : null}
             </div>
-            <div className="flex shrink-0 items-center gap-1.5 lg:hidden" aria-label="会话操作">
-              <Button
-                variant="outline"
-                className="size-8 rounded-lg border-border/70 bg-card p-0 text-xs text-muted-foreground shadow-none sm:h-9 sm:w-auto sm:px-3"
-                aria-label={`历史记录 (${conversations.length})`}
-                onClick={() => setIsHistoryOpen(true)}
-              >
-                <History className="size-4" />
-                <span className="hidden sm:inline">历史记录 ({conversations.length})</span>
-              </Button>
-              <Button
-                className="size-8 rounded-lg p-0 text-xs shadow-none sm:h-9 sm:w-auto sm:px-3"
-                aria-label="新建对话"
-                onClick={handleCreateDraft}
-              >
-                <Plus className="size-4" />
-                <span className="hidden sm:inline">新建对话</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="size-8 rounded-lg border-border/70 bg-card p-0 text-muted-foreground shadow-none sm:size-9"
-                aria-label="清空会话记录"
-                onClick={openClearHistoryConfirm}
-                disabled={conversations.length === 0}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
+            <Tabs value={composerMode} onValueChange={(mode) => { if (mode === "image" || mode === "video") handleComposerModeChange(mode); }}>
+              <TabsList aria-label="创作类型" className="w-30 group-data-horizontal/tabs:h-9 sm:w-60 sm:group-data-horizontal/tabs:h-10">
+                <TabsTrigger value="image" className="h-full px-2 sm:px-4">图片</TabsTrigger>
+                <TabsTrigger value="video" className="h-full px-2 sm:px-4">视频</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div aria-hidden="true" />
           </header>
+
+          <div data-studio-workspace data-empty={isEmptyWorkspace} className={cn("flex min-h-0 flex-1 flex-col", isEmptyWorkspace && "justify-center py-6")}>
+          {isEmptyWorkspace ? <div className="mx-auto w-full max-w-4xl px-6 pb-6 text-center sm:pb-8">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{composerMode === "video" ? "让想象，动起来" : "把想法，变成画面"}</h1>
+            <p className="mt-3 text-sm text-muted-foreground">{composerMode === "video" ? "描述一个场景，开启你的下一段故事。" : "从一句描述、一张参考图，开始新的创作。"}</p>
+          </div> : null}
 
           <div
             data-creation-results
-            className="studio-results relative min-h-0 flex-1 px-3 pt-4 sm:px-6 sm:pt-6"
+            className={cn("studio-results relative min-h-0 min-w-0 flex-1 [container-type:size]", isEmptyWorkspace && "hidden")}
           >
-            <ScrollArea
-              viewportRef={resultsViewportRef}
-              className="size-full"
-              viewClass="flex flex-col"
-              viewStyle={{ minHeight: "100%" }}
-              onScroll={handleResultsViewportScroll}
-            >
-              <div ref={resultsContentRef} className="flex min-h-full flex-1 flex-col pb-4">
+            <Conversation key={`${session.key}:${selectedConversationId ?? "draft"}:${Boolean(displayedConversation && !displayedConversation.historySummaryOnly)}`} ref={conversationViewportRef} aria-label="创作对话" className="size-full" contentClassName="gap-8 px-3 py-4 sm:gap-10 sm:px-6 sm:py-6" onWheel={(event) => { event.stopPropagation(); }}>
                 <ImageResults
+                  conversationId={selectedConversationId}
                   selectedConversation={displayedConversation}
                   isLoadingHistory={isLoadingHistory}
-                  isLoadingConversationDetail={selectedConversationNeedsDetail}
                   conversationDetailError={conversationDetailId === selectedConversationId ? conversationDetailError : ""}
                   onRetryConversationDetail={() => setConversationDetailRetryVersion((version) => version + 1)}
                   progressByTurnKey={progressByTurnKey}
                   progressNow={progressNow}
-                  promptPresets={IMAGE_PROMPT_PRESETS}
                   onOpenLightbox={openLightbox}
-                  onApplyPromptPreset={handleApplyPromptPreset}
                   onContinueEdit={handleContinueEdit}
                   onMaskEdit={handleOpenMaskEdit}
                   onEditTurn={openEditTurnDialog}
                   onCancelTurn={handleCancelTurn}
+                  onResumeAgent={(conversationId, turnId) => {
+                    cancelledTurnIdsRef.current.delete(imageTurnProgressKey(conversationId, turnId));
+                    void updateConversation(conversationId, current => { if (!current) throw new Error("对话不存在"); return { ...current, turns: current.turns.map(turn => turn.id === turnId && !isTurnInProgress(turn) ? { ...turn, status: "queued", error: undefined, images: [...turn.images.filter(image => image.status === "success" || image.status === "message"), { id: `${turn.id}-agent-observer`, status: "loading", taskStatus: "queued" }] } : turn) }; });
+                  }}
                   onRegenerateTurn={handleRegenerateTurn}
                   onRetryImage={handleRetryImage}
                   onImageVisibilityChange={handleImageVisibilityChange}
                   visibilityMutatingImageKey={visibilityMutatingImageKey}
                   formatConversationTime={formatConversationTime}
                 />
-              </div>
-            </ScrollArea>
-
-            {showScrollToBottom ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="absolute bottom-3 left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-brand-border bg-card/95 text-brand shadow-[var(--shadow-elevated)] backdrop-blur hover:bg-brand-soft dark:bg-card/95"
-                onClick={() => scrollResultsToBottom("smooth")}
-                aria-label="滚动到底部"
-                title="滚动到底部"
-              >
-                <ArrowDownToLine className="size-4" />
-              </Button>
-            ) : null}
+            </Conversation>
 
           </div>
 
+          {/* Match the results viewport's global scrollbar gutter. */}
           <div
             data-creation-composer
-            className="relative z-30 shrink-0 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-5"
+            className={cn("relative z-30 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-5", !isEmptyWorkspace && "pr-6 sm:pr-9")}
           >
-            <div className="mx-auto w-full max-w-[900px] xl:max-w-[1080px] 2xl:max-w-[1180px]">
+            <div className="relative mx-auto w-full max-w-4xl">
               {submitDisabledReason && !isLoadingHistory && !selectedConversationNeedsDetail && !selectedConversationHasActiveTurn ? (
-                <div role="status" className={cn("mb-2 flex items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3 py-2 text-xs text-muted-foreground", activeModelRoute.status === "model-list-error" && "border-destructive/20 text-destructive")}>
-                  {isSubmitDispatching || isLoadingHistory ? <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand" /> : <CircleAlert className="size-3.5 shrink-0" />}
+                <Alert role="status" className="flex flex-wrap items-center gap-2">
+                  {isSubmitDispatching || isLoadingHistory ? <Spinner className="size-3.5 shrink-0 animate-spin text-primary" /> : <CircleAlert className="size-3.5 shrink-0" />}
                   <span className="min-w-0 flex-1 leading-5">{submitDisabledReason}</span>
                   {activeModelRoute.status === "model-list-error" || activeModelRoute.status === "model-unavailable" ? (
                     <Button type="button" size="sm" variant="outline" onClick={refreshTokenModels}>
                       {activeModelRoute.status === "model-list-error" ? "重试连接" : "刷新模型列表"}
                     </Button>
                   ) : null}
-                </div>
+                </Alert>
               ) : null}
               <ImageComposer
                 submitDisabled={Boolean(submitDisabledReason)}
                 submitDisabledReason={submitDisabledReason}
                 composerMode={composerMode}
                 prompt={imagePrompt}
+                contextSettingsReady={workbenchPreferencesReady}
+                smartContextEnabled={smartContextEnabled}
+                contextTextModel={contextTextModel}
+                contextTextModels={contextTextModels}
+                onSmartContextEnabledChange={setSmartContextEnabled}
+                onContextTextModelChange={setContextTextModel}
+                onConfigureContextKey={() => setRelayTokenDialogKind("text")}
                 imageCount={imageCount}
                 imageModel={imageModel}
                 imageModelOptions={composerModelOptions}
@@ -5800,9 +5889,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageCustomWidth={imageCustomWidth}
                 imageCustomHeight={imageCustomHeight}
                 imageSnapToMultiple16={imageSnapToMultiple16}
-                imageOptions={{ ...imageOptions, markup: imageMarkup }}
+                imageOptions={imageOptions}
                 imageOutputFormat={imageOutputFormat}
-                onImageOptionsChange={(options) => { setImageMarkup(options.markup); setImageOptions({ ...options, markup: undefined }); }}
+                onImageOptionsChange={setImageOptions}
                 onImageOutputFormatChange={setImageOutputFormat}
                 imageQuality={imageQuality}
                 videoModel={videoModel}
@@ -5834,7 +5923,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onImageCustomHeightChange={setImageCustomHeight}
                 onImageSnapToMultiple16Change={setImageSnapToMultiple16}
                 onImageQualityChange={setImageQuality}
-                onComposerModeChange={handleComposerModeChange}
                 onVideoModelChange={handleVideoModelChange}
                 onVideoSizeChange={(value) => {
                   setVideoSize(value);
@@ -5871,8 +5959,30 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               />
             </div>
           </div>
-        </div>
-      </section>
+          {isEmptyWorkspace ? <section data-studio-suggestions aria-label={composerMode === "video" ? "视频灵感" : "图片灵感"} className="mx-auto w-full max-w-4xl px-3 pt-5 sm:px-6">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium">{composerMode === "video" ? "试试这些场景" : "从灵感开始"}</h2>
+              <Button variant="ghost" size="sm" onClick={() => setIsPromptMarketOpen(true)}><span>提示词库</span><BookOpenText /></Button>
+            </div>
+            {composerMode === "video" ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                { title: "电影感运镜", prompt: "黄昏的海边，一位旅人缓缓走向海岸，镜头从背后平稳推进，暖色逆光，海风轻轻吹动衣角，电影质感。" },
+                { title: "产品展示", prompt: "一瓶香水置于石质台面上，镜头缓慢环绕，柔和的自然光透过玻璃瓶身，水面反光轻轻流动，简洁高级的产品短片。" },
+                { title: "自然风景", prompt: "山谷中的晨雾缓缓散去，阳光穿过树林，镜头平稳升高，展现远处的群山与河流，安静自然的氛围。" },
+              ].map((idea) => <Suggestion key={idea.title} suggestion={idea.prompt} className="h-auto min-h-24 items-start justify-start gap-3 whitespace-normal p-4 text-left sm:min-h-32 sm:flex-col" onClick={() => { setImagePrompt(idea.prompt); textareaRef.current?.focus(); }} aria-label={`使用视频灵感：${idea.title}`}>
+                <Video className="shrink-0" />
+                <span className="flex min-w-0 flex-col gap-2"><span className="text-sm font-medium">{idea.title}</span><span className="line-clamp-2 text-xs leading-5 text-muted-foreground">{idea.prompt}</span></span>
+              </Suggestion>)}
+            </div> : <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {IMAGE_PROMPT_PRESETS.map((preset) => <Suggestion key={preset.id} suggestion={preset.prompt} className="h-auto w-full flex-col items-stretch justify-start gap-0 overflow-hidden whitespace-normal p-0 text-left" onClick={() => void handleApplyPromptPreset(preset)} aria-label={`套用预设：${preset.title}`}>
+                <img src={preset.previewSrc} alt="" loading="lazy" className="hidden h-32 w-full object-cover sm:block" />
+                <span className="flex min-w-0 flex-col gap-1.5 p-3.5"><span className="text-sm font-medium">{preset.title}</span><span className="line-clamp-2 text-xs leading-5 text-muted-foreground">{preset.hint}</span></span>
+              </Suggestion>)}
+            </div>}
+          </section> : null}
+          </div>
+        </section>
+      </div>
 
       <ImagePromptMarket
         open={isPromptMarketOpen}
@@ -5911,16 +6021,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       />
 
       {publishImageTarget ? (
-        <Dialog open onOpenChange={(open) => (!open && !visibilityMutatingImageKey ? setPublishImageTarget(null) : null)}>
-          <DialogContent showCloseButton={false} className="p-6">
-            <DialogHeader className="gap-2">
-              <DialogTitle>公开图片</DialogTitle>
-              <DialogDescription className="text-sm leading-6">
-                将这张图片加入公开图库。
-              </DialogDescription>
-            </DialogHeader>
+        <ConfirmDialog
+        open
+        onOpenChange={(open) => (!open && !visibilityMutatingImageKey ? setPublishImageTarget(null) : null)}
+        title="公开图片"
+        description="将这张图片加入公开图库。"
+        confirmLabel="公开"
+        busy={visibilityMutatingImageKey !== ""}
+        onConfirm={() => void handleConfirmPublishImage()}
+      ><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
             <div className="grid gap-3 py-1">
-              <label className="flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-3 text-sm">
+              <Item variant="outline" asChild><Label className="flex items-start gap-3 px-3 py-3">
                 <Checkbox
                   className="mt-0.5"
                   checked={publishRecipeOptions.sharePromptParameters}
@@ -5935,8 +6046,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   <span className="block font-medium text-foreground">公开原始提示词和生成参数</span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">公开图库会展示可复用的 prompt、模型、尺寸和输出设置。</span>
                 </span>
-              </label>
-              <label className="flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-3 text-sm">
+              </Label></Item>
+              <Item variant="outline" asChild><Label className="flex items-start gap-3 px-3 py-3">
                 <Checkbox
                   className="mt-0.5"
                   checked={publishRecipeOptions.shareReferenceImages}
@@ -5952,42 +6063,23 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   <span className="block font-medium text-foreground">公开原始参考图用于同款生成</span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">其他用户复用时可以读取这些参考图；不勾选时会改用公开成品图。</span>
                 </span>
-              </label>
+              </Label></Item>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPublishImageTarget(null)} disabled={visibilityMutatingImageKey !== ""}>
-                取消
-              </Button>
-              <Button onClick={() => void handleConfirmPublishImage()} disabled={visibilityMutatingImageKey !== ""}>
-                {visibilityMutatingImageKey ? <LoaderCircle className="size-4 animate-spin" /> : <Globe2 className="size-4" />}
-                公开
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </ScrollArea></ConfirmDialog>
       ) : null}
 
       {deleteConfirm ? (
-        <Dialog open onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}>
-          <DialogContent showCloseButton={false} className="p-6">
-            <DialogHeader className="gap-2">
-              <DialogTitle>{deleteConfirmTitle}</DialogTitle>
-              <DialogDescription className="text-sm leading-6">
-                {deleteConfirmDescription}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
-                取消
-              </Button>
-              <Button variant="destructive" onClick={() => void handleConfirmDelete()}>
-                确认删除
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+        open
+        onOpenChange={(open) => (!open ? setDeleteConfirm(null) : null)}
+        title={deleteConfirmTitle}
+        description={<>{deleteConfirmDescription}</>}
+        confirmLabel="确认删除"
+        destructive
+        onConfirm={() => void handleConfirmDelete()}
+      />
       ) : null}
-    </VideoTaskContractsProvider>
+    </>
   );
 }
 

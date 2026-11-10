@@ -9,9 +9,16 @@ const options = CONFIG.options;
 const profiles = contract.model_profiles;
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
+function canonicalOption(options, value) {
+  if (typeof value !== "string") return value;
+  const requested = value.trim();
+  return options.find(option => option.toLowerCase() === requested.toLowerCase()) || requested;
+}
 
 function usageSchema(profile) {
-  const schema = { seconds: { type: "number", unit: "second", description: { zh: "视频生成单价", en: "Video generation unit price" } } };
+  const schema = profile.capability.usage_unit === "count"
+    ? { count: { type: "number", unit: "count", unitLabel: { zh: "条", en: "video" }, description: { zh: "视频生成单价", en: "Video generation unit price" } } }
+    : { seconds: { type: "number", unit: "second", description: { zh: "视频生成单价", en: "Video generation unit price" } } };
   if (profile.capability.resolutions.length) {
     schema.resolution = { enum: profile.capability.resolutions, description: { zh: "输出清晰度", en: "Output resolution" } };
   }
@@ -199,6 +206,17 @@ function normalize(body, model, files = []) {
     if (amount < range.min || amount > range.max) throw new Error(mode.label + "的素材数量不符合契约: " + key);
     for (const url of multiple ? values[key] : amount ? [values[key]] : []) {
       if (files.some(file => file.ref === url)) continue;
+      if (contract.transport.local_material === "base64") {
+        let encoded = url;
+        if (contract.transport.base64_format !== "raw") {
+          const kind = key === "reference_video" ? "video" : key === "reference_audio" ? "audio" : "image";
+          const match = typeof url === "string" && url.match(new RegExp("^data:" + kind + "/[a-zA-Z0-9.+-]+;base64,(.+)$"));
+          if (!match) throw new Error("素材必须使用匹配类型的 Base64 Data URL");
+          encoded = match[1];
+        }
+        if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded) || !encoded.length) throw new Error("无效的 Base64 素材");
+        continue;
+      }
       if (typeof url !== "string" || !/^https?:\/\/[^/?#@\s]+(?:[/?#][^\s]*)?$/.test(url)) {
         throw new Error("素材必须使用不含凭据的公网 HTTP(S) URL");
       }
@@ -214,8 +232,8 @@ function normalize(body, model, files = []) {
   values.duration = duration === undefined ? cap.default_seconds : Number(duration);
   const size = read(body, fields.aspect_ratio_field);
   const resolution = read(body, fields.resolution_field);
-  values.size = size === undefined ? cap.default_size : size;
-  values.resolution = resolution === undefined ? cap.default_resolution : resolution;
+  values.size = canonicalOption(cap.sizes, size === undefined ? cap.default_size : size);
+  values.resolution = canonicalOption(cap.resolutions, resolution === undefined ? cap.default_resolution : resolution);
   for (const key of ["generate_audio", "watermark"]) {
     const value = read(body, fields[key + "_field"]);
     if (value !== undefined && typeof value !== "boolean") throw new Error(key + " 必须是布尔值");
@@ -241,7 +259,7 @@ function normalize(body, model, files = []) {
       || Object.keys(rule.limits || {}).some(key => count(values[key]) > rule.limits[key])) throw new Error(rule.message);
   }
   if (!Number.isSafeInteger(values.duration) || (cap.seconds_range ? values.duration < cap.seconds_range.min || cap.seconds_range.max != null && values.duration > cap.seconds_range.max || (values.duration - cap.seconds_range.min) % cap.seconds_range.step !== 0 : !cap.seconds.includes(values.duration))) throw new Error("当前模型不支持所选时长");
-  if (values.duration > 3600) throw new Error("New API 的视频秒数用量上限为 3600 秒");
+  if (cap.usage_unit !== "count" && values.duration > 3600) throw new Error("New API 的视频秒数用量上限为 3600 秒");
   if (typeof values.size !== "string" || cap.sizes.length && !cap.sizes.includes(values.size)) throw new Error("当前模型不支持所选画幅");
   if (typeof values.resolution !== "string" || cap.resolutions.length && !cap.resolutions.includes(values.resolution)) throw new Error("当前模型不支持所选清晰度");
   const result = { model, ...(body.prompt === undefined ? {} : { prompt: body.prompt }) };
@@ -427,7 +445,9 @@ export function extractUsage(ctx) {
   const model = capabilityModel(ctx);
   const values = normalize(ctx.requestBody, model, ctx.files || []).values;
   if (ctx.usagePurpose === "billing_ratios") return {};
-  const usage = { seconds: values.duration };
+  const usage = profileFor(model).capability.usage_unit === "count"
+    ? { count: 1 }
+    : { seconds: values.duration };
   if (profileFor(model).capability.resolutions.length) usage.resolution = values.resolution;
   return usage;
 }

@@ -54,7 +54,7 @@ func TestPersonalChannelSkipsDefaultTranslationAndFreezesCredentials(t *testing.
 	if _, err := app.config.Update(map[string]any{relayTranslationSourceKey: `{models:{custom:{POST:{url:"/default-only"}}}}`}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := app.customRelayConfigs.Create(identityScope(identity), "image", "channel", "http://translate.example/v1", "old-key", "openai")
+	saved, err := app.customRelayConfigs.Create(identityScope(identity), "image", "channel", "http://translate.example/v1", "old-key", "openai", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestPersonalChannelSkipsDefaultTranslationAndFreezesCredentials(t *testing.
 	if err := app.freezeRelayCredentialForTask(context.Background(), identity, body); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.customRelayConfigs.Update(identityScope(identity), saved.ID, "changed", "http://changed.example", "new-key", "openai"); err != nil {
+	if _, err := app.customRelayConfigs.Update(identityScope(identity), saved.ID, "changed", "http://changed.example", "new-key", "openai", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.attachRelayAPIKeyForIdentity(context.Background(), identity, body); err != nil {

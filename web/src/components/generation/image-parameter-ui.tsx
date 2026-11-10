@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { CircleHelp } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -10,13 +11,13 @@ export function ImageParameterLabel({ children, help }: { children: ReactNode; h
       {help ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button variant="ghost" size="icon-xs"
               type="button"
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex shrink-0 items-center justify-center"
               aria-label={`${String(children)}说明`}
             >
-              <CircleHelp className="size-3.5" />
-            </button>
+              <CircleHelp  />
+            </Button>
           </TooltipTrigger>
           <TooltipContent>{help}</TooltipContent>
         </Tooltip>

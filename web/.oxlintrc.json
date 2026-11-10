@@ -18,7 +18,18 @@
             "warn",
             {
                 "allowConstantExport": true,
-                "allowExportNames": ["badgeVariants", "buttonVariants"]
+                "allowExportNames": [
+                    "badgeVariants",
+                    "buttonVariants",
+                    "buttonGroupVariants",
+                    "toggleVariants",
+                    "tabsListVariants",
+                    "popoverContentClassName",
+                    "useComboboxAnchor",
+                    "useMessageScroller",
+                    "useMessageScrollerScrollable",
+                    "useMessageScrollerVisibility"
+                ]
             }
         ]
     }

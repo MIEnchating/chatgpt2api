@@ -12,17 +12,18 @@ const logsSource = readFileSync(new URL("../src/app/logs/page.tsx", import.meta.
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
 test("pages share the full-width shell while the canvas owns its navigation", () => {
-  assert.match(appShellSource, /w-full max-w-none flex-col/);
-  assert.match(appShellSource, /!canvasEditor && "gap-\[var\(--page-section-gap\)\]/);
+  assert.match(appShellSource, /w-full min-w-0 flex-col md:flex-row/);
+  assert.match(appShellSource, /data-app-workspace/);
   assert.match(appShellSource, /!canvasEditor \? <TopNav/);
   assert.doesNotMatch(appShellSource, /max-w-\[1480px\]/);
   assert.doesNotMatch(appShellSource, /useLocation/);
 });
 
-test("navigation and content sections share one vertical spacing token", () => {
+test("navigation and content sections use the shared management layout", () => {
   assert.match(globalStylesSource, /--page-section-gap: 1rem/);
-  assert.match(source, /flex h-full min-h-0(?: min-w-0)? flex-col gap-\[var\(--page-section-gap\)\]/);
-  assert.match(managementPageSource, /<ScrollArea[^>]+viewClass="flex min-h-full flex-col gap-\[var\(--page-section-gap\)\]"/);
+  assert.match(source, /<ManagementHeader title="无限画布"/);
+  assert.match(source, /<ManagementPanel className="flex-1">/);
+  assert.match(managementPageSource, /data-management-page/);
   for (const pageSource of [assetsSource, usersSource, rbacSource]) {
     assert.match(pageSource, /<ManagementPage/);
   }
@@ -39,7 +40,7 @@ test("management pages use navigation labels without duplicate page headers", ()
 
 test("canvas project actions and counts stay inside the search toolbar", () => {
   assert.doesNotMatch(source, /PageHeader|data-page-header/);
-  const toolbar = source.slice(source.indexOf("data-canvas-project-toolbar"), source.indexOf('<ScrollArea className="min-h-0 flex-1">'));
+  const toolbar = source.slice(source.indexOf("data-canvas-project-toolbar"), source.indexOf('<ScrollAreaRoot[^>]*className="[^"]*min-h-0[^"]*flex-1"'));
   assert.match(toolbar, /min-w-0 shrink-0 flex-wrap/);
   assert.match(toolbar, /placeholder="搜索画布名称"/);
   assert.match(toolbar, /共 \$\{visibleProjects.length\} 个画布/);
@@ -50,7 +51,7 @@ test("canvas project actions and counts stay inside the search toolbar", () => {
 });
 
 test("canvas project cards use a stable responsive four-column wide-screen grid", () => {
-  assert.match(source, /data-canvas-project-content className="w-full p-4 sm:p-5"/);
+  assert.match(source, /data-canvas-project-content className="w-full p-4 sm:p-6"/);
   assert.doesNotMatch(source, /max-w-\[1600px\]/);
   assert.match(source, /data-canvas-project-grid/);
   assert.match(source, /grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
@@ -60,10 +61,7 @@ test("canvas project cards use a stable responsive four-column wide-screen grid"
 test("canvas project card content keeps compact explicit spacing", () => {
   assert.match(source, /data-canvas-project-card/);
   assert.match(source, /data-selected=\{selectedProjectIDs\.has\(project\.id\)\}/);
-  assert.match(source, /data-interaction="trigger"/);
-  assert.match(source, /className="interactive-card group/);
-  assert.match(source, /className="interactive-card-trigger min-w-0 flex-1/);
-  assert.match(source, /className="selection-control"/);
+  assert.match(source, /<Checkbox checked=\{selectedProjectIDs\.has\(project\.id\)\}/);
   assert.match(source, /mb-3 flex min-h-5/);
   assert.match(source, /mt-3 flex min-w-0 flex-wrap/);
   assert.match(source, /mt-4 flex items-center justify-end/);

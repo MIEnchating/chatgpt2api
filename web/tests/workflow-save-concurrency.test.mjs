@@ -39,10 +39,7 @@ test("workflow saves use a synchronous gate and keep the editor locked while pen
     /finally \{\s*workflowSaveBusyRef\.current = false;\s*if \(workspaceActiveRef\.current\) setWorkflowSaving\(false\)/,
   );
   assert.match(workspaceSource, /saving=\{workflowSaving\}/);
-  assert.match(workspaceSource, /onOpenChange=\{\(open\) => !open && !saving && onClose\(\)\}/);
-  assert.match(workspaceSource, /showCloseButton=\{!saving\}/);
-  assert.match(workspaceSource, /aria-busy=\{saving\}/);
-  assert.match(workspaceSource, /<fieldset disabled=\{saving\} className="contents space-y-6">/);
-  assert.match(workspaceSource, /variant="outline" disabled=\{saving\} onClick=\{onClose\}>取消/);
+  assert.match(workspaceSource, /busy=\{saving\}/);
+  assert.match(workspaceSource, /<FieldSet disabled=\{saving\}/);
   assert.match(workspaceSource, /disabled=\{saving \|\| referenceBusy \|\| !workflow\.name\.trim\(\)/);
 });

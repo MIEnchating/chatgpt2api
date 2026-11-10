@@ -1,3 +1,4 @@
+import { inspectImageBlobMetadata } from "./image-storage";
 import { nanoid } from "nanoid";
 
 import { inspectAudioReferenceFile } from "@/lib/audio-reference-file";
@@ -184,4 +185,11 @@ export function inspectVideoBlobMetadata(
       settle({});
     }
   });
+}
+
+export async function uploadTemporaryMedia(file: File, signal?: AbortSignal): Promise<UploadedFile> {
+  if (file.size === 0 || file.size > 100 * 1024 * 1024) throw new Error("临时上传文件必须在 1 字节到 100 MB 之间");
+  const uploaded = await uploadStorageObject<UploadedFile>(file, file.name, "临时上传失败", signal, true);
+  if (file.type.startsWith("image/")) return { ...uploaded, ...await inspectImageBlobMetadata(file) };
+  return withMediaMetadata(uploaded, file);
 }

@@ -89,3 +89,48 @@ func TestAdminRoleAndUserMutationsRejectMalformedJSONWithoutStateChanges(t *test
 		})
 	}
 }
+
+func TestDelegatedManagementCannotEscalatePermissions(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	owner, token := createPasswordUserSession(t, app, "delegated-manager", "Password123!", "Manager")
+	role, err := app.auth.CreateRole(map[string]any{
+		"name": "Manager role",
+		"api_permissions": []string{
+			service.APIPermissionKey(http.MethodPost, "/api/admin/roles"),
+			service.APIPermissionKey(http.MethodPost, "/api/admin/users"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleID := util.Clean(role["id"])
+	if _, err := app.auth.UpdateUser(owner.OwnerID, map[string]any{"role_id": roleID}); err != nil {
+		t.Fatal(err)
+	}
+	privilegedRole, err := app.auth.CreateRole(map[string]any{"name": "Privileged", "api_permissions": []string{service.APIPermissionKey(http.MethodGet, "/api/settings")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ path, body string }{
+		{"/api/admin/roles", `{"name":"Escalation"}`},
+		{"/api/admin/users/" + owner.OwnerID, `{"role_id":"` + util.Clean(privilegedRole["id"]) + `"}`},
+		{"/api/admin/users", `{"username":"escalation","password":"Password123!"}`},
+		{"/api/admin/roles/" + roleID, `{"api_permissions":["get/api/settings"]}`},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		setRequestAuthCookie(req, token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusForbidden {
+			t.Errorf("%s: status %d, body %s", tc.path, res.Code, res.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/"+owner.OwnerID, strings.NewReader(`{"name":"Updated"}`))
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("delegated user update: %d %s", res.Code, res.Body.String())
+	}
+}

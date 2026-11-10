@@ -65,9 +65,16 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		return a.relayAutoDLTask(ctx, payload, "video", time.Duration(contract.Polling.TimeoutSeconds)*time.Second)
 	}
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
+	kind, _ := videoContractGenerationKind(payload, contract)
+	if err := validateVideoReferencePayloadURLs(request, contract, kind); err != nil {
+		return nil, err
+	}
+	if err := a.encodeVideoContractBase64Materials(request, contract, kind); err != nil {
+		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
 	if util.Clean(payload["relay_protocol"]) == "ark" || contract.Driver == protocol.VideoContractDriverArk {
+		request, err = arkVideoRequestFromCanonical(payload, request, contract)
 		contract = arkVideoPollingContract(contract)
-		request, err = arkVideoRequest(payload, contract)
 		if err != nil {
 			return nil, err
 		}
@@ -78,10 +85,6 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		createPath, queryPath = "/contents/generations/tasks", "/contents/generations/tasks/{task_id}"
 	}
 	if err != nil {
-		return nil, err
-	}
-	kind, _ := videoContractGenerationKind(payload, contract)
-	if err := validateVideoReferencePayloadURLs(request, contract, kind); err != nil {
 		return nil, err
 	}
 	if contract.Driver == protocol.VideoContractDriverVolcengine && util.Clean(payload["relay_protocol"]) != "ark" {
@@ -243,7 +246,7 @@ func videoContractTaskPath(template, taskID string) string {
 }
 
 func validateVideoReferencePayloadURLs(request map[string]any, contract protocol.VideoModelContract, kind string) error {
-	allowLocalMaterial := contract.Transport.LocalMaterial == "multipart"
+	allowLocalMaterial := contract.Transport.LocalMaterial == "multipart" || contract.Transport.LocalMaterial == "base64"
 	fields := videoContractMaterialFields(contract, kind)
 	seen := make(map[string]struct{}, len(fields))
 	for _, material := range fields {
@@ -695,10 +698,6 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 	if err := validateAuthenticatedVideoArtifactURL(videoURL, baseURL, allowedHosts); err != nil {
 		return "", err
 	}
-	req, err := protocol.NewRelayBearerGetRequest(ctx, videoURL, apiKey, "video/*, application/octet-stream, application/json;q=0.9")
-	if err != nil {
-		return "", err
-	}
 	client := a.relayHTTPClientForContext(ctx)
 	redirectPolicy := client.CheckRedirect
 	clientCopy := *client
@@ -714,14 +713,36 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 		}
 		return nil
 	}
-	resp, err := clientCopy.Do(req)
-	if err != nil {
-		return "", err
+	const maxAttempts = 3
+	var resp *http.Response
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		req, err := protocol.NewRelayBearerGetRequest(ctx, videoURL, apiKey, "video/*, application/octet-stream, application/json;q=0.9")
+		if err != nil {
+			return "", err
+		}
+		resp, err = clientCopy.Do(req)
+		if err != nil {
+			return "", err
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+		retry := attempt+1 < maxAttempts && videoContentRetryableStatus(resp.StatusCode)
+		if !retry {
+			err := videoContentResponseError(resp)
+			resp.Body.Close()
+			return "", err
+		}
+		resp.Body.Close()
+		timer := time.NewTimer(time.Duration(attempt+1) * 500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", videoContentResponseError(resp)
-	}
 	const maxVideoBytes int64 = 512 << 20
 	if resp.ContentLength > maxVideoBytes {
 		return "", fmt.Errorf("video content exceeds 512 MB")
@@ -732,6 +753,10 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 		return "", err
 	}
 	return "/videos/" + name, nil
+}
+
+func videoContentRetryableStatus(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
 func storeRelayVideoStream(directory, name string, source io.Reader, maxBytes int64) error {
