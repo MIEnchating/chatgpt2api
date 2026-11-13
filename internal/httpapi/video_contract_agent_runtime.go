@@ -40,7 +40,7 @@ type videoContractAgentSnapshot struct {
 	Links            []videoContractAgentLinkState
 }
 type videoContractAgentInput struct {
-	URL             string
+	URLs            []string
 	Model           string
 	TokenName       string
 	Source          videoContractImportSource
@@ -123,9 +123,9 @@ func (a *App) executeVideoContractAgent(ctx context.Context, identity service.Id
 		_ = json.Unmarshal([]byte(agentJSONValue(event)), &record)
 		saveErr = worker.Event(record)
 	}
-	if input.URL != "" && !snapshot.Prepared {
+	if len(input.URLs) > 0 && !snapshot.Prepared {
 		state.emit(videoContractImportProgressEvent{Stage: "reading_document", Message: "正在读取入口页面并发现相关文档"})
-		content, source, err := fetchVideoContractDocument(ctx, input.URL)
+		content, source, err := fetchVideoContractDocuments(ctx, input.URLs)
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func (a *App) generateVideoModelContracts(ctx context.Context, identity service.
 	if err := ctx.Err(); err != nil {
 		return videoContractImportResponse{}, err
 	}
-	input := videoContractAgentInput{URL: source.URL, Model: model, TokenName: tokenName, Source: source, Warnings: source.Warnings, IncludeProvider: includeProvider, State: captureVideoContractAgentState(&videoContractAgentState{source: source, content: content, read: map[int]string{}, documentPrepared: source.URL == ""})}
+	input := videoContractAgentInput{URLs: source.URLs, Model: model, TokenName: tokenName, Source: source, Warnings: source.Warnings, IncludeProvider: includeProvider, State: captureVideoContractAgentState(&videoContractAgentState{source: source, content: content, read: map[int]string{}, documentPrepared: len(source.URLs) == 0})}
 	run, err := a.agentExecutions.Start(identity, agentExecutionID(ctx), "video_contract", input)
 	if err != nil {
 		return videoContractImportResponse{}, err

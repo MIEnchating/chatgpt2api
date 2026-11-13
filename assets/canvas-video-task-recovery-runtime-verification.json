@@ -1,0 +1,22 @@
+{
+  "before": {
+    "sessionsSHA256": "c500431842823474f2c3db3e0a77270b217d972b81f68f6de409dc1ca2abb7b3",
+    "nodesSHA256": "0ad7177b556766415c54d81542e8ae1483d41a3ac4af1af123337f7dc0e0a5cc",
+    "connectionsSHA256": "66899d505cf04bf475915d207cbb55623fbdfc3f4f90a82806d471181939bfea",
+    "messages": 16,
+    "activeOwnedTasks": 0
+  },
+  "after": {
+    "sessionsSHA256": "c500431842823474f2c3db3e0a77270b217d972b81f68f6de409dc1ca2abb7b3",
+    "nodesSHA256": "0ad7177b556766415c54d81542e8ae1483d41a3ac4af1af123337f7dc0e0a5cc",
+    "connectionsSHA256": "66899d505cf04bf475915d207cbb55623fbdfc3f4f90a82806d471181939bfea",
+    "messages": 16,
+    "activeOwnedTasks": 0
+  },
+  "authenticatedReadPassed": true,
+  "unauthenticatedStatus": 401,
+  "successRecoveryIsIdempotent": true,
+  "recoveryRouteUnauthenticatedStatus": 401,
+  "newOwnedTasks": 0,
+  "finishedAt": "2026-11-12T06:46:42.731Z"
+}

@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "script editor is not requested before opening; loading status, editing, saving, closing, cached reopening and refresh work"
+  ],
+  "errors": [],
+  "mediaSubmissions": 0,
+  "workspaceRequests": 1,
+  "movieRequests": 0,
+  "error": "locator.waitFor: Timeout 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('status', { name: '正在加载成片', exact: true }) to be visible\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-optional-canvas-ui.mjs:54:65",
+  "testProjectsDeleted": 2,
+  "originalHistoryUnchanged": true
+}

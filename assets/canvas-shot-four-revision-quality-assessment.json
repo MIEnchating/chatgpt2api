@@ -1,0 +1,18 @@
+{
+  "project_id": "canvas-092fd45e58e8eb1db469bd56",
+  "node_id": "video-d5adc160-4e8c-4bec-aaca-eeccf8ac3743",
+  "method": "Automated operator inspection of actual sampled frames plus independent unprompted ASR; not human approval",
+  "improved": [
+    "第四镜分镜及视频抽帧的窗外均为暗蓝雨夜，未再见白昼转夜景。",
+    "抽帧未见屋内或头上的额外头盔，汤袋保持在桌左侧。",
+    "无预置台词提示的整段转录与两句目标对白逐句一致。"
+  ],
+  "remaining": [
+    "10秒与14秒抽帧仍有中文字幕，违反当前脚本的无字幕要求。",
+    "动作主体漂移：4秒与6秒由儿子持汤罐并倒汤，原脚本要求母亲盛汤。",
+    "说话人与口型尚未完成独立验收。"
+  ],
+  "result": "continuity_improved_subtitles_and_action_assignment_require_correction",
+  "manual_quality_pass": false,
+  "original_results_preserved": true
+}

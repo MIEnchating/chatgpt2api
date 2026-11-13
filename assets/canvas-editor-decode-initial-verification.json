@@ -1,0 +1,1389 @@
+{
+  "phase": "editor-decode-before",
+  "checks": [
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 0,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 7494,
+      "calls": 40,
+      "characters": 346720,
+      "longTasks": [
+        {
+          "start": 847,
+          "duration": 105
+        },
+        {
+          "start": 956,
+          "duration": 55
+        },
+        {
+          "start": 2481,
+          "duration": 235
+        },
+        {
+          "start": 4401,
+          "duration": 75
+        },
+        {
+          "start": 4485,
+          "duration": 307
+        },
+        {
+          "start": 4793,
+          "duration": 287
+        },
+        {
+          "start": 5097,
+          "duration": 101
+        },
+        {
+          "start": 6754,
+          "duration": 616
+        }
+      ],
+      "optionalModules": [],
+      "resources": [
+        {
+          "path": "/api/profile/image-generation-preferences",
+          "start": 1188,
+          "duration": 13,
+          "transferBytes": 4359,
+          "encodedBytes": 4059,
+          "decodedBytes": 4059
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1208,
+          "duration": 222,
+          "transferBytes": 2567,
+          "encodedBytes": 2267,
+          "decodedBytes": 2267
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1209,
+          "duration": 244,
+          "transferBytes": 2195,
+          "encodedBytes": 1895,
+          "decodedBytes": 1895
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1210,
+          "duration": 221,
+          "transferBytes": 4345,
+          "encodedBytes": 4045,
+          "decodedBytes": 4045
+        },
+        {
+          "path": "/api/model-config",
+          "start": 2526,
+          "duration": 202,
+          "transferBytes": 62386,
+          "encodedBytes": 62086,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2529,
+          "duration": 200,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2537,
+          "duration": 1940,
+          "transferBytes": 9272386,
+          "encodedBytes": 9272086,
+          "decodedBytes": 9272086
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 4904,
+          "duration": 1367,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 4907,
+          "duration": 2396,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 6876,
+          "duration": 524,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 6908,
+          "duration": 479,
+          "transferBytes": 1975,
+          "encodedBytes": 1675,
+          "decodedBytes": 1675
+        }
+      ],
+      "cpuSelf": [
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3571
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1125
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "ms": 107
+        },
+        {
+          "name": "applyDocument",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1734,
+          "ms": 78
+        },
+        {
+          "name": "react_stack_bottom_frame",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 12860,
+          "ms": 75
+        },
+        {
+          "name": "onloadend",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 2488,
+          "ms": 57
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 47
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 47
+        },
+        {
+          "name": "worker.onmessage",
+          "file": "/src/app/canvas/use-canvas-agent-token-estimate.ts",
+          "line": 37,
+          "ms": 46
+        },
+        {
+          "name": "lheading",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 35898,
+          "ms": 45
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1258,
+          "ms": 44
+        },
+        {
+          "name": "appendChild",
+          "file": "",
+          "line": 0,
+          "ms": 44
+        },
+        {
+          "name": "updateMemo",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4941,
+          "ms": 44
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 43
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 42
+        },
+        {
+          "name": "performWorkOnRootViaSchedulerTask",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9047,
+          "ms": 40
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 104,
+          "ms": 40
+        },
+        {
+          "name": "addObjectToProperties",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 2331,
+          "ms": 40
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 40
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 39
+        },
+        {
+          "name": "CanvasWorkspaceControls",
+          "file": "/src/app/canvas/canvas-workspace-controls.tsx",
+          "line": 185,
+          "ms": 39
+        },
+        {
+          "name": "bubbleProperties",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6257,
+          "ms": 39
+        },
+        {
+          "name": "getTaskName",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 64,
+          "ms": 38
+        },
+        {
+          "name": "getComponentNameFromType",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 15,
+          "ms": 38
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 36
+        },
+        {
+          "name": "raw",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 9980,
+          "ms": 36
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 34
+        },
+        {
+          "name": "a",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 39456,
+          "ms": 33
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 32
+        },
+        {
+          "name": "transformResponse",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 1961,
+          "ms": 24
+        }
+      ],
+      "cpuInclusive": [
+        {
+          "name": "(root)",
+          "file": "",
+          "line": 0,
+          "ms": 7671
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3571
+        },
+        {
+          "name": "performWorkUntilDeadline",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 16,
+          "ms": 2469
+        },
+        {
+          "name": "performWorkOnRootViaSchedulerTask",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9047,
+          "ms": 2418
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 2376
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1125
+        },
+        {
+          "name": "commitRootWhenReady",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8057,
+          "ms": 1029
+        },
+        {
+          "name": "commitRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8530,
+          "ms": 1028
+        },
+        {
+          "name": "workLoopConcurrentByScheduler",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8422,
+          "ms": 958
+        },
+        {
+          "name": "renderRootConcurrent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8325,
+          "ms": 958
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 957
+        },
+        {
+          "name": "performSyncWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9061,
+          "ms": 870
+        },
+        {
+          "name": "flushSyncWorkAcrossRoots_impl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8966,
+          "ms": 870
+        },
+        {
+          "name": "flushSpawnedWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8685,
+          "ms": 870
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 857
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 845
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 795
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 693
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 692
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 692
+        },
+        {
+          "name": "updateFunctionComponent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 5559,
+          "ms": 654
+        },
+        {
+          "name": "renderWithHooks",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4199,
+          "ms": 632
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 614
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 611
+        },
+        {
+          "name": "react_stack_bottom_frame",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 12860,
+          "ms": 456
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 381
+        },
+        {
+          "name": "updateFunctionComponent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 5559,
+          "ms": 381
+        },
+        {
+          "name": "renderWithHooks",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4199,
+          "ms": 378
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 377
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 375
+        }
+      ],
+      "cpuApp": [
+        {
+          "name": "applyDocument",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1734,
+          "ms": 92
+        },
+        {
+          "name": "applyWorkspace",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1902,
+          "ms": 92
+        },
+        {
+          "name": "loadWorkspace",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 7009,
+          "ms": 92
+        },
+        {
+          "name": "CanvasAgentTaskItem",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 231,
+          "ms": 52
+        },
+        {
+          "name": "CodeBlockCopyButton",
+          "file": "/src/components/ui/code-block.tsx",
+          "line": 69,
+          "ms": 48
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 48
+        },
+        {
+          "name": "worker.onmessage",
+          "file": "/src/app/canvas/use-canvas-agent-token-estimate.ts",
+          "line": 37,
+          "ms": 46
+        },
+        {
+          "name": "Button",
+          "file": "/src/components/ui/button.tsx",
+          "line": 34,
+          "ms": 45
+        },
+        {
+          "name": "TooltipContent",
+          "file": "/src/components/ui/tooltip.tsx",
+          "line": 90,
+          "ms": 42
+        },
+        {
+          "name": "CanvasWorkspaceControls",
+          "file": "/src/app/canvas/canvas-workspace-controls.tsx",
+          "line": 185,
+          "ms": 41
+        },
+        {
+          "name": "PopoverContent",
+          "file": "/src/components/ui/popover.tsx",
+          "line": 33,
+          "ms": 39
+        },
+        {
+          "name": "CanvasAgentPanelContent",
+          "file": "/src/app/canvas/canvas-agent-panel.tsx",
+          "line": 177,
+          "ms": 39
+        },
+        {
+          "name": "TooltipTrigger",
+          "file": "/src/components/ui/tooltip.tsx",
+          "line": 71,
+          "ms": 36
+        },
+        {
+          "name": "Button",
+          "file": "/src/components/ui/button.tsx",
+          "line": 34,
+          "ms": 23
+        },
+        {
+          "name": "Button",
+          "file": "/src/components/ui/button.tsx",
+          "line": 34,
+          "ms": 22
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 19
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/globals.css",
+          "line": 1,
+          "ms": 19
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/canvas/canvas-agent-panel.tsx",
+          "line": 308,
+          "ms": 16
+        },
+        {
+          "name": "CanvasAgentConversationContent",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 93,
+          "ms": 14
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 12
+        },
+        {
+          "name": "storedCanvasAgentSessions",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 225,
+          "ms": 12
+        },
+        {
+          "name": "CodeBlockCopyButton",
+          "file": "/src/components/ui/code-block.tsx",
+          "line": 69,
+          "ms": 12
+        },
+        {
+          "name": "TooltipHint",
+          "file": "/src/components/ui/tooltip.tsx",
+          "line": 124,
+          "ms": 12
+        },
+        {
+          "name": "getCanvasAgentContext",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 2315,
+          "ms": 10
+        },
+        {
+          "name": "getAgentContext",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 8927,
+          "ms": 10
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/lib/use-stable-callback.ts",
+          "line": 6,
+          "ms": 10
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/canvas/canvas-agent-panel.tsx",
+          "line": 268,
+          "ms": 10
+        },
+        {
+          "name": "Task",
+          "file": "/src/components/ai-elements/task.tsx",
+          "line": 10,
+          "ms": 10
+        },
+        {
+          "name": "isCanvasAgentSession",
+          "file": "/src/app/canvas/agent/canvas-agent-sessions.ts",
+          "line": 3,
+          "ms": 10
+        },
+        {
+          "name": "parseCanvasAgentSessions",
+          "file": "/src/app/canvas/agent/canvas-agent-sessions.ts",
+          "line": 108,
+          "ms": 10
+        }
+      ]
+    },
+    {
+      "readyMs": 7084,
+      "calls": 40,
+      "characters": 346720,
+      "longTasks": [
+        {
+          "start": 1180,
+          "duration": 83
+        },
+        {
+          "start": 2569,
+          "duration": 275
+        },
+        {
+          "start": 2910,
+          "duration": 52
+        },
+        {
+          "start": 4405,
+          "duration": 66
+        },
+        {
+          "start": 4551,
+          "duration": 300
+        },
+        {
+          "start": 4851,
+          "duration": 329
+        },
+        {
+          "start": 5197,
+          "duration": 143
+        },
+        {
+          "start": 6620,
+          "duration": 367
+        },
+        {
+          "start": 6988,
+          "duration": 66
+        }
+      ],
+      "optionalModules": [],
+      "resources": [
+        {
+          "path": "/api/profile/image-generation-preferences",
+          "start": 1356,
+          "duration": 44,
+          "transferBytes": 4359,
+          "encodedBytes": 4059,
+          "decodedBytes": 4059
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1417,
+          "duration": 121,
+          "transferBytes": 2567,
+          "encodedBytes": 2267,
+          "decodedBytes": 2267
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1418,
+          "duration": 119,
+          "transferBytes": 2195,
+          "encodedBytes": 1895,
+          "decodedBytes": 1895
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1419,
+          "duration": 122,
+          "transferBytes": 4345,
+          "encodedBytes": 4045,
+          "decodedBytes": 4045
+        },
+        {
+          "path": "/api/model-config",
+          "start": 2584,
+          "duration": 285,
+          "transferBytes": 62386,
+          "encodedBytes": 62086,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2586,
+          "duration": 276,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2589,
+          "duration": 1930,
+          "transferBytes": 9272386,
+          "encodedBytes": 9272086,
+          "decodedBytes": 9272086
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 4984,
+          "duration": 2406,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 6696,
+          "duration": 358,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 6767,
+          "duration": 439,
+          "transferBytes": 1975,
+          "encodedBytes": 1675,
+          "decodedBytes": 1675
+        }
+      ],
+      "cpuSelf": [
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3629
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1252
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "ms": 80
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 70
+        },
+        {
+          "name": "transformResponse",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 1961,
+          "ms": 63
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 48
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 47
+        },
+        {
+          "name": "reconcileChildFibersImpl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 3775,
+          "ms": 43
+        },
+        {
+          "name": "worker.onmessage",
+          "file": "/src/app/canvas/use-canvas-agent-token-estimate.ts",
+          "line": 37,
+          "ms": 41
+        },
+        {
+          "name": "applyDocument",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1734,
+          "ms": 40
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 40
+        },
+        {
+          "name": "parseClassName",
+          "file": "/node_modules/.vite/deps/tailwind-merge.js",
+          "line": 129,
+          "ms": 39
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 39
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/@shadcn_react_message-scroller.js",
+          "line": 725,
+          "ms": 39
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/lucide-react.js",
+          "line": 0,
+          "ms": 39
+        },
+        {
+          "name": "toResult",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 478,
+          "ms": 38
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 38
+        },
+        {
+          "name": "jsxDEVImpl",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 148,
+          "ms": 38
+        },
+        {
+          "name": "element$5",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 1919,
+          "ms": 38
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 104,
+          "ms": 35
+        },
+        {
+          "name": "exports.cloneElement",
+          "file": "/node_modules/.vite/deps/react-CR84W5JX.js",
+          "line": 546,
+          "ms": 34
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 104,
+          "ms": 31
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 104,
+          "ms": 31
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 26
+        },
+        {
+          "name": "onloadend",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 2488,
+          "ms": 23
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 16
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 16
+        },
+        {
+          "name": "setAttribute",
+          "file": "",
+          "line": 0,
+          "ms": 16
+        },
+        {
+          "name": "appendChild",
+          "file": "",
+          "line": 0,
+          "ms": 15
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 14
+        }
+      ],
+      "cpuInclusive": [
+        {
+          "name": "(root)",
+          "file": "",
+          "line": 0,
+          "ms": 7175
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3629
+        },
+        {
+          "name": "performWorkUntilDeadline",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 16,
+          "ms": 1890
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 1857
+        },
+        {
+          "name": "performWorkOnRootViaSchedulerTask",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9047,
+          "ms": 1857
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1252
+        },
+        {
+          "name": "commitRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8530,
+          "ms": 800
+        },
+        {
+          "name": "commitRootWhenReady",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8057,
+          "ms": 800
+        },
+        {
+          "name": "performSyncWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9061,
+          "ms": 719
+        },
+        {
+          "name": "flushSyncWorkAcrossRoots_impl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8966,
+          "ms": 719
+        },
+        {
+          "name": "flushSpawnedWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8685,
+          "ms": 719
+        },
+        {
+          "name": "renderRootConcurrent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8325,
+          "ms": 664
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 663
+        },
+        {
+          "name": "workLoopConcurrentByScheduler",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8422,
+          "ms": 663
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 625
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 574
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 570
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 570
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 570
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 565
+        },
+        {
+          "name": "run",
+          "file": "",
+          "line": 0,
+          "ms": 552
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 551
+        },
+        {
+          "name": "run",
+          "file": "",
+          "line": 0,
+          "ms": 485
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 482
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 392
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 391
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 391
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 375
+        },
+        {
+          "name": "run",
+          "file": "",
+          "line": 0,
+          "ms": 373
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 372
+        }
+      ],
+      "cpuApp": [
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 70
+        },
+        {
+          "name": "SelectItem",
+          "file": "/src/components/ui/select.tsx",
+          "line": 191,
+          "ms": 49
+        },
+        {
+          "name": "CanvasAgentTaskItem",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 231,
+          "ms": 49
+        },
+        {
+          "name": "applyDocument",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1734,
+          "ms": 47
+        },
+        {
+          "name": "applyWorkspace",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1902,
+          "ms": 47
+        },
+        {
+          "name": "loadWorkspace",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 7009,
+          "ms": 47
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 47
+        },
+        {
+          "name": "renderMessage",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 239,
+          "ms": 46
+        },
+        {
+          "name": "CodeBlockCopyButton",
+          "file": "/src/components/ui/code-block.tsx",
+          "line": 69,
+          "ms": 42
+        },
+        {
+          "name": "worker.onmessage",
+          "file": "/src/app/canvas/use-canvas-agent-token-estimate.ts",
+          "line": 37,
+          "ms": 41
+        },
+        {
+          "name": "cn",
+          "file": "/src/lib/utils.ts",
+          "line": 3,
+          "ms": 39
+        },
+        {
+          "name": "Button",
+          "file": "/src/components/ui/button.tsx",
+          "line": 34,
+          "ms": 38
+        },
+        {
+          "name": "PopoverContent",
+          "file": "/src/components/ui/popover.tsx",
+          "line": 33,
+          "ms": 31
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 16
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/globals.css",
+          "line": 0,
+          "ms": 15
+        },
+        {
+          "name": "CanvasPage",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 999,
+          "ms": 13
+        },
+        {
+          "name": "CanvasEngine",
+          "file": "/src/app/canvas/canvas-engine.tsx",
+          "line": 58,
+          "ms": 13
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/route-config.tsx",
+          "line": 45,
+          "ms": 12
+        },
+        {
+          "name": "CanvasAgentPanelContent",
+          "file": "/src/app/canvas/canvas-agent-panel.tsx",
+          "line": 177,
+          "ms": 11
+        },
+        {
+          "name": "CanvasAgentPanelContent",
+          "file": "/src/app/canvas/canvas-agent-panel.tsx",
+          "line": 177,
+          "ms": 11
+        },
+        {
+          "name": "UserMessageContent",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 571,
+          "ms": 9
+        },
+        {
+          "name": "CanvasAgentConversationContent",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 93,
+          "ms": 8
+        },
+        {
+          "name": "renderMessage",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 239,
+          "ms": 7
+        },
+        {
+          "name": "CanvasAgentTaskItem",
+          "file": "/src/app/canvas/canvas-agent-conversation.tsx",
+          "line": 231,
+          "ms": 7
+        },
+        {
+          "name": "ControlButton",
+          "file": "/src/app/canvas/canvas-workspace-controls.tsx",
+          "line": 967,
+          "ms": 7
+        },
+        {
+          "name": "Tooltip",
+          "file": "/src/components/ui/tooltip.tsx",
+          "line": 60,
+          "ms": 7
+        },
+        {
+          "name": "storedCanvasAgentSessions",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 225,
+          "ms": 7
+        },
+        {
+          "name": "TooltipContent",
+          "file": "/src/components/ui/tooltip.tsx",
+          "line": 90,
+          "ms": 6
+        },
+        {
+          "name": "isCanvasAgentSession",
+          "file": "/src/app/canvas/agent/canvas-agent-sessions.ts",
+          "line": 3,
+          "ms": 6
+        },
+        {
+          "name": "parseCanvasAgentSessions",
+          "file": "/src/app/canvas/agent/canvas-agent-sessions.ts",
+          "line": 108,
+          "ms": 6
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "apiReads": [
+    {
+      "durationMs": 1016,
+      "transcriptEqual": true
+    },
+    {
+      "durationMs": 1215,
+      "transcriptEqual": true
+    },
+    {
+      "durationMs": 933,
+      "transcriptEqual": true
+    }
+  ],
+  "canvasReadRequests": 4,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "afterLoadingEarlier": {
+    "calls": 120,
+    "characters": 1040160
+  },
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true,
+  "limitation": "Initial direct API samples used an unrecognized query parameter, so they read complete project history. Retained for transparency; active-history API samples are rerun with history=active."
+}

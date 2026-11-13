@@ -1,0 +1,63 @@
+{
+  "startedAt": "2026-11-12T13:28:38.278Z",
+  "checks": [
+    {
+      "name": "real_tool_and_saved_history_include_ordered_current_state_and_measured_durations",
+      "passed": true
+    },
+    {
+      "name": "fresh_read_reports_outdated_video_and_does_not_guess_measured_total",
+      "passed": true
+    },
+    {
+      "name": "actual_model_uses_one_script_read_and_preserves_all_nodes_and_quality_records",
+      "passed": true
+    },
+    {
+      "name": "desktop_mobile_refresh_preserve_history_without_media_submissions_or_page_errors",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-a94e2d1571d8d9118a495969",
+  "summary": {
+    "totalShots": 4,
+    "plannedDurationSeconds": 60,
+    "actualDurationMS": 60332,
+    "canMerge": true,
+    "quality": [
+      "unchecked",
+      "unchecked",
+      "unchecked",
+      "unchecked"
+    ]
+  },
+  "modelProjectID": "canvas-02a0957d80c4e7e0acf4e430",
+  "runID": "2GGBAISlftgumjQqb1_dP",
+  "runStatus": "success",
+  "calls": [
+    {
+      "name": "get_node",
+      "arguments": {
+        "nodeId": "script-canvas-57f40ada890cc88876873a0b"
+      }
+    },
+    {
+      "name": "finish_task",
+      "arguments": {
+        "text": "已只读核对《留一盏灯》，按脚本顺序：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**，脚本计划为60秒。四镜均无人工验收记录；含音轨并不代表对白清晰度、说话人、口型或画面连续性已通过验收。本次未修改节点、未合并、未生成媒体，也未填写质量记录。"
+      }
+    }
+  ],
+  "reply": "已只读核对《留一盏灯》，按脚本顺序：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**，脚本计划为60秒。四镜均无人工验收记录；含音轨并不代表对白清晰度、说话人、口型或画面连续性已通过验收。本次未修改节点、未合并、未生成媒体，也未填写质量记录。",
+  "publicToolJournal": {
+    "detailsOmitted": true,
+    "nodeId": "script-canvas-57f40ada890cc88876873a0b",
+    "ok": true
+  },
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-12T13:29:24.173Z"
+}

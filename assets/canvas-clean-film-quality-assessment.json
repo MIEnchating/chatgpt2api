@@ -1,0 +1,33 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "qualityApproved": false,
+  "scope": "Automated visual observations, independent full-waveform ASR; no human quality approval",
+  "shots": [
+    {
+      "shotID": "shot-01",
+      "nodeID": "video-a0266161-b32e-4e16-ad58-9cda1c2b49a9",
+      "continuity": "needs_fix",
+      "notes": "自动化抽帧复核，非人工通过：4秒仍有对白字幕，车牌仍有文字，未满足无字幕及无字牌要求；抽帧中雨衣品牌标志已改善。整段独立转录与目标对白一致，仍未完整验收说话人与口型。"
+    },
+    {
+      "shotID": "shot-02",
+      "nodeID": "video-c438835b-7e36-408a-98f8-6d549a36261b",
+      "continuity": "needs_fix",
+      "notes": "自动化抽帧复核，非人工通过：画面底部持续出现乱码/文字，未满足无字幕要求。对白独立转录只出现一次目标句，存在她/他、着/著等同音转写差异，不能据此判为发音错误；仍未完整验收说话人与口型。"
+    },
+    {
+      "shotID": "shot-03",
+      "nodeID": "video-c7d887fe-c727-48c8-b6bb-d74a767010dd",
+      "continuity": "needs_fix",
+      "notes": "自动化抽帧复核，非人工通过：4秒出现双层字幕，6秒有乱码，头盔仍新增白色图案。完整波形无预置台词转录识别到母亲台词及儿子的“妈”，仍未完整验收说话人与口型。"
+    },
+    {
+      "shotID": "shot-04",
+      "nodeID": "video-df2ea6eb-a640-4415-99ac-86624ba3029c",
+      "continuity": "unchecked",
+      "notes": "自动化抽帧复核，非人工通过：母亲开盖后从罐口倒汤，14.0和14.9秒原尺寸帧确认仅两只碗，儿子双手端一碗；母亲也端起另一碗，未完全执行本次运动提示词的母亲手留袋边要求。样本未见字幕，不能据此认定逐帧无字幕或口型通过。两句独立转录一致；继续待验收。"
+    }
+  ],
+  "captionControlPresentInCurrentContract": false,
+  "additionalMediaSubmissions": 0
+}

@@ -1,0 +1,43 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "startedAt": "2026-11-12T03:36:59.377Z",
+  "qualityApproved": false,
+  "prompt": "A single photorealistic live-action film still, portrait 9:16. Opening composition for a mother and son reunion at an old Chinese apartment doorway on a rainy evening. Reference image 1 fixes the young Chinese son identity and plain navy raincoat. Reference image 2 fixes the mother identity, beige sweater and dark blue apron. Reference image 3 fixes the plain solid orange half helmet. Reference image 4 fixes the upright tan kraft insulated bag with black handles and closed steel flask inside. Reference image 5 fixes the warm old corridor, wooden door, shelf and stool. Camera stays in the corridor looking toward the doorway. The same door has just opened inward. The mother stands inside the doorway on the RIGHT side of the composition, looking gently at her son. The son stands outside on the LEFT side. CRITICAL COMPOSITION: his body and head are in a clear right-facing three-quarter SIDE PROFILE toward the mother, rather than showing the back of his head. His nose, lips, mouth opening and chin must all be plainly visible to the camera, unobstructed by the helmet, throughout their eye contact. The mother face and mouth are also fully visible in a left-facing three-quarter view. Both faces appear together, large enough to read the coming spoken dialogue. Medium-full view includes their faces, hands, one bag and the empty low stool at the LEFT of the door. He wears exactly one solid orange helmet, holds the same upright bag in his RIGHT hand by his side, and keeps his LEFT hand relaxed and empty. The helmet shell is plain orange with natural lamp reflections only. The old white paper airplane remains on its fixed shelf to the RIGHT of the door. The stool is empty; he has not yet removed his helmet or entered the room. Preserve warm steady hallway light, the same people and clothing, realistic hands and calm emotion. This is a clean single camera frame, with no written text, logos, subtitles, collage or graphical annotations.",
+  "promptSHA256": "df1c24070202ec24d2c9dee59cb6d2a49bd3fc4c87e2a28504cddb2e0e321c45",
+  "requests": [
+    {
+      "path": "/api/creation-tasks/image-edits",
+      "encoding": "multipart/form-data"
+    }
+  ],
+  "checks": [
+    {
+      "name": "submitted_through_script_ui",
+      "passed": true
+    },
+    {
+      "name": "submitted_through_script_ui",
+      "passed": true
+    }
+  ],
+  "originalBoardID": "image-canvas-2ffb759d0fe48d96e5decd66",
+  "originalVideoID": "video-c7d887fe-c727-48c8-b6bb-d74a767010dd",
+  "originalSessionSHA256": "c500431842823474f2c3db3e0a77270b217d972b81f68f6de409dc1ca2abb7b3",
+  "originalMessages": 16,
+  "interruptedAttempt": {
+    "taskID": "canvas-edit-32f8c25d-e5b2-4ce0-b0aa-c9f59b73289e",
+    "nodeID": "image-26a014c9-aa8a-4655-9702-01f955cf3aec",
+    "taskLookup": {
+      "status": 200,
+      "items": 0,
+      "missing": true
+    },
+    "cause": "Browser request logging threw while reading multipart request; process exited before an accepted server task was observed. Supplier task failure is not established.",
+    "recovery": "Removed only this empty revision node and its incident connections, restored original board binding through revision-checked canvas PUT. Authored revised prompt retained. No generation endpoint called during cleanup."
+  },
+  "nodeID": "image-dcd1c6e2-fe6d-4765-8c98-720c48270075",
+  "status": "error",
+  "error": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond.",
+  "taskID": "canvas-edit-495aa212-91bd-4b5a-b3d5-74aa29e70921",
+  "observationError": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+}

@@ -2,6 +2,41 @@
 
 审计日期：2026-11-10。组件选型和开发规范以 [web/AGENTS.md](../web/AGENTS.md) 为准。
 
+## 2026-11-10：并行改动后的最终复验
+
+收尾核对发现上一轮验证后画布指针交互和消息渲染缓存有并行修改，予以保留并重新验证。新增的 Checkpoint 禁用属性使旧回归因要求 `editing` 必须是第一个属性而误报；本轮仅将该断言改为检查 Checkpoint 的编辑状态绑定，不依赖属性顺序，禁用行为继续由已有行为测试保护。组件覆盖复核未发现新的明确遗漏。
+
+修正后相关 3 个测试文件的 176 项全部通过；当前 `npm run build`、`npm run lint` 通过，Lint 为 0 错误、0 警告；最终全量前端回归 189 个文件、1,513 项全部通过。最终构建前至测试完成后核对 660 个源码及测试文件，内容一致。日志为 `/tmp/chatgpt2api-component-handoff-{build,lint,focused,tests-final}.log`，快照为 `/tmp/chatgpt2api-component-handoff-snapshot-{start,result}.json`。未运行后端、桌面安装包或真实上游验证，本轮改动仍保留在工作区。
+
+## 2026-11-10：当前前端整体验证
+
+继续复核应用页面、共享组件和桌面入口的 347 个 TypeScript 文件（其中 235 个 TSX），对照当前官方 Prompt Input 与 Message 组合，并检查模型选择、附件、问答、推理、工具、任务、执行结果、来源和复制入口。本轮未发现新的明确替代点，未为增加组件导入而改写现有界面。
+
+节点引用需区分用途：输入和消息附件已使用 Attachment；`CanvasAgentNodeChip` 用于 Markdown 句内的节点定位和执行结果导航，保留共享 Button，避免将含块级结构的附件卡插入段落。素材候选网格、普通配置编辑、画布坐标操作和第三方图形产物继续保留各自语义。素材预览复制失败后的文本选中仍是独立业务行为，未删除其手动复制入口。
+
+本次 `npm run build`、`npm run lint` 执行通过，Lint 为 0 错误、0 警告；全量前端回归 189 个文件、1,512 项全部通过。构建前后及测试完成后核对 660 个源码和测试文件，内容保持一致。记录为 `/tmp/chatgpt2api-component-final-{build,lint,tests}.log` 和 `/tmp/chatgpt2api-component-final-snapshot-{start,result}.json`。本轮没有新增 UI 修改或浏览器截图，没有运行后端、桌面安装包或真实上游验证；此前浏览器结果按各轮记录保留。
+
+## 2026-11-10：补齐问答消息和删除确认组合
+
+- 历史问答记录原先只有 Bubble，现补齐共享 AI Elements `Message from="user"` 与 `MessageContent`。问题与回答继续显示在同一个用户气泡中，保留已回答、等待回答和已取消三种状态，取消时不制造回答。
+- Agent 删除确认原先在 Confirmation 内用独立布局容器放置按钮，现通过共享 `actions` 接入 ItemActions。确认和取消仍调用原回调；共享组件允许仅含标题、说明和操作区的确认，不再要求空内容占位。
+
+本轮 `npm run build`、`npm run lint` 执行通过；5 个相关回归文件共 134 项通过。复用既有 Vite 8002，以隔离数据完成 1440×960、320×740、844×390 与深浅主题共 6 组浏览器检查，每组覆盖普通容器及父 Dialog，验证长问题和长节点名、回答换行、等待与取消状态、Enter / Space 操作、模态视口和横向溢出。浏览器已关闭，未启动额外服务或执行真实删除。初次临时 HTML 缺少 UTF-8 声明造成中文测试数据乱码，补齐声明后完整复跑通过，未因此改动产品代码。
+
+记录为 `/tmp/chatgpt2api-message-composition-{build,lint,tests,browser-final}.log`，截图为 `assets/ai-elements-message-composition-*.png`。工作区期间仍有其他前后端同步修改，本轮只报告相关组件的实际验证，不沿用此前全量结果作为当前整个工作区的验收。
+
+## 2026-11-10：补齐 Codex 操作确认
+
+再次对照 [官方 Confirmation 组合](https://ui.shadcn.com/docs/ai-elements/radix/confirmation) 检查执行审批。画布 Codex 的命令、文件和工具操作请求原先仍由 Dialog 和按钮独立拼装，现复用共享 `Confirmation` 的 Item、标题和操作区；Dialog 保留焦点管理和模态边界。操作说明与代码详情使用共享 `ScrollArea`，问题请求继续使用已有问答组件和独立草稿，不自动同意任何请求。
+
+浏览器检查复现共享 Confirmation 的长标题截断与窄屏文字列过窄问题。标题现在完整换行，图标顶部对齐，确认和拒绝按钮可换行至下一行；保留官方外观，仅补充内容和操作区的布局约束。
+
+聚焦回归先复现审批未使用共享 Confirmation，再验证显式确认、拒绝、关闭、AbortSignal 取消，以及多问题独立草稿和全部回答后继续的行为。审批浏览器验证覆盖 1440×960、320×740、844×390 与深浅主题，共 6 组，检查 Enter / Space、Escape、焦点返回、取消、长标题与详情滚动、多问题选择，以及视口边界。复用既有 Vite 8002，使用隔离组件与数据，验证结束后关闭浏览器，未启动额外服务。
+
+工作区同期的视频任务状态改动予以保留，并按当前结构完成普通容器和 Dialog 的另外 6 组浏览器验证，覆盖排队、生成、0% 进度、100% 等待保存、终止、失败与保存重试及长错误滚动。早期视频脚本在源码同步变化时仍依赖旧 RunStatus 结构，不能作为当前版本结果；更新脚本并完成复跑后，以 `/tmp/chatgpt2api-video-status-browser-current.log` 为准。审批记录为 `/tmp/chatgpt2api-approval-browser-final.log`，截图为 `assets/ai-elements-approval-*.png` 和 `assets/ai-elements-video-status-*.png`。
+
+本轮 `npm run build`、`npm run lint` 执行通过；5 个相关回归文件的 178 项全部通过。全量前端回归两次执行均为 189 个文件、1,502 项通过。最终一次测试期间检测到其他前端源文件同步变化（包含创作台侧栏），因此该结果表示实际执行通过，不表示冻结后的最终工作区快照已全部验收；本轮审批相关实现与测试在该期间未变化。随后按当前工作区重新构建与 Lint，均通过。记录为 `/tmp/chatgpt2api-approval-{build-delivery,lint-delivery,focused,all-tests-final}.log` 与 `/tmp/chatgpt2api-approval-test-snapshot.json`。未修改后端或桌面入口，未运行这些入口及真实上游认证的验证。
+
 ## 2026-11-10：补查组件内部与文档审核
 
 继续检查共享组件内部的交互和实际调用，补齐四处遗漏：

@@ -23,7 +23,7 @@ export function CanvasAgentAnswerInput({ options, value, onChange, onSelect, onI
           // A label forwards a second click to its input; submit only that activation.
           if ((event.target as HTMLElement).tagName === "INPUT") choose(option.label);
         }} onKeyDown={event => {
-          if (event.nativeEvent.isComposing || event.key !== "Enter") return;
+          if (event.nativeEvent.isComposing || event.keyCode === 229 || event.key !== "Enter") return;
           event.preventDefault();
           choose(option.label);
         }}>
@@ -31,9 +31,12 @@ export function CanvasAgentAnswerInput({ options, value, onChange, onSelect, onI
           {option.description ? <QuestionnaireChoiceDescription className="break-words">{option.description}</QuestionnaireChoiceDescription> : null}
         </QuestionnaireChoice>)}
       </QuestionnaireChoices> : null}
-      <PromptInput>
+      <PromptInput onClick={(event) => {
+        if (event.defaultPrevented || disabled || (event.target as HTMLElement).closest("button, textarea")) return;
+        event.currentTarget.querySelector("textarea")?.focus();
+      }}>
         <InputGroupTextarea rows={1} aria-label={label} placeholder={options.length ? "或自行撰写回复" : "输入你的回答…"} disabled={disabled} value={value} onCompositionStart={onInteract} onChange={(event) => { onInteract?.(); onChange(event.target.value); }} onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.key !== "Enter" || event.shiftKey) return;
+          if (event.nativeEvent.isComposing || event.keyCode === 229 || event.key !== "Enter" || event.shiftKey) return;
           event.preventDefault();
           choose(value);
         }} className="min-h-9 max-h-36 resize-none" />

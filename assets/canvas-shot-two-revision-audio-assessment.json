@@ -1,0 +1,81 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "shot-02-revision-01",
+      "expected_dialogue": "三年了，她还留着。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-23.3",
+      "max_volume_db": "-0.5",
+      "segments": [
+        {
+          "start": 5.62,
+          "end": 6.68,
+          "text": "三年了",
+          "words": [
+            {
+              "start": 5.62,
+              "end": 6.18,
+              "text": "三",
+              "probability": 0.8234
+            },
+            {
+              "start": 6.18,
+              "end": 6.42,
+              "text": "年",
+              "probability": 0.9987
+            },
+            {
+              "start": 6.42,
+              "end": 6.68,
+              "text": "了",
+              "probability": 0.9952
+            }
+          ]
+        },
+        {
+          "start": 7.44,
+          "end": 8.48,
+          "text": "他還留著",
+          "words": [
+            {
+              "start": 7.44,
+              "end": 7.92,
+              "text": "他",
+              "probability": 0.4061
+            },
+            {
+              "start": 7.92,
+              "end": 8.1,
+              "text": "還",
+              "probability": 0.7405
+            },
+            {
+              "start": 8.1,
+              "end": 8.28,
+              "text": "留",
+              "probability": 0.9954
+            },
+            {
+              "start": 8.28,
+              "end": 8.48,
+              "text": "著",
+              "probability": 0.9773
+            }
+          ]
+        }
+      ],
+      "transcript": "三年了他還留著",
+      "character_error_rate": 0.2857142857142857,
+      "dialogue_lines": [
+        {
+          "expected": "三年了，她还留着。",
+          "status": "not_fully_transcribed"
+        }
+      ],
+      "status": "requires_review"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import test, { after } from 'node:test';
 
-const source = readFileSync(new URL('./xzapi-video-1.0.0.js', import.meta.url));
+const source = readFileSync(new URL('./xzapi-video-1.1.0.js', import.meta.url));
 const plugin = await import(`data:text/javascript;base64,${source.toString('base64')}`);
 const models = JSON.parse(readFileSync(new URL('./source-models.json', import.meta.url))).models;
 const document = JSON.parse(readFileSync(new URL('./contract.json', import.meta.url)));
@@ -19,11 +19,12 @@ function checkSubmit(name, input, output) {
 
 test('all 23 exact pricing models have embedded, model-specific contracts', () => {
   assert.equal(plugin.meta.key, 'xzapi-video');
-  assert.equal(plugin.meta.version, '1.0.0');
+  assert.equal(plugin.meta.version, '1.1.0');
   assert.equal(plugin.meta.baseUrl, 'https://api.xzapi.vip');
   assert.equal(plugin.meta.auth, 'api_key');
   assert.deepEqual(plugin.meta.protocols, ['openai_video']);
   assert.deepEqual([...plugin.meta.models].sort(), models.map(row => row.model_name).sort());
+  assert.equal(document.contracts.length, 1);
   assert.equal(profiles.length, 23);
   for (const row of models) {
     const cap = profiles.find(profile => profile.model === row.model_name).capability;

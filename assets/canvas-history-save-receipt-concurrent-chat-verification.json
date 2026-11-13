@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {
+      "name": "real_ui_conflict_prevents_destructive_save_and_model_submission",
+      "passed": true
+    },
+    {
+      "name": "separate_complete_versions_survive_save_reload_and_history_switch",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "interceptedModelSubmissions": [
+    0
+  ],
+  "mediaSubmissions": 0,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

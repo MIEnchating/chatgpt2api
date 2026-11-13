@@ -6,28 +6,46 @@ import (
 )
 
 type CanvasScriptProject struct {
-	Step      int                 `json:"step"`
-	Confirmed bool                `json:"confirmed"`
-	Shots     []CanvasScriptShot  `json:"shots"`
-	Assets    []CanvasScriptAsset `json:"assets"`
+	MergedVideoNodeID      string              `json:"merged_video_node_id,omitempty"`
+	MergedVideoFingerprint string              `json:"merged_video_fingerprint,omitempty"`
+	MergedVideoOutdated    bool                `json:"merged_video_outdated,omitempty"`
+	Step                   int                 `json:"step"`
+	Confirmed              bool                `json:"confirmed"`
+	Shots                  []CanvasScriptShot  `json:"shots"`
+	Assets                 []CanvasScriptAsset `json:"assets"`
+}
+
+type CanvasScriptQualityReview struct {
+	MediaURL     string `json:"media_url"`
+	Continuity   string `json:"continuity"`
+	Dialogue     string `json:"dialogue"`
+	Speaker      string `json:"speaker"`
+	LipSync      string `json:"lip_sync"`
+	TextOnScreen string `json:"text_on_screen,omitempty"`
+	Notes        string `json:"notes"`
 }
 
 type CanvasScriptShot struct {
-	ID           string                 `json:"id"`
-	Seconds      int                    `json:"seconds"`
-	Description  string                 `json:"description"`
-	Framing      string                 `json:"framing"`
-	Lighting     string                 `json:"lighting"`
-	Dialogue     []CanvasScriptDialogue `json:"dialogue"`
-	Sound        string                 `json:"sound"`
-	Camera       string                 `json:"camera"`
-	AssetIDs     []string               `json:"asset_ids"`
-	ImagePrompt  string                 `json:"image_prompt"`
-	VideoPrompt  string                 `json:"video_prompt"`
-	Color        string                 `json:"color"`
-	SourceNodeID string                 `json:"source_node_id,omitempty"`
-	ImageNodeID  string                 `json:"image_node_id,omitempty"`
-	VideoNodeID  string                 `json:"video_node_id,omitempty"`
+	QualityReview       *CanvasScriptQualityReview `json:"quality_review,omitempty"`
+	ImageOutdated       bool                       `json:"image_outdated,omitempty"`
+	VideoOutdated       bool                       `json:"video_outdated,omitempty"`
+	ImagePromptOutdated bool                       `json:"image_prompt_outdated,omitempty"`
+	VideoPromptOutdated bool                       `json:"video_prompt_outdated,omitempty"`
+	ID                  string                     `json:"id"`
+	Seconds             int                        `json:"seconds"`
+	Description         string                     `json:"description"`
+	Framing             string                     `json:"framing"`
+	Lighting            string                     `json:"lighting"`
+	Dialogue            []CanvasScriptDialogue     `json:"dialogue"`
+	Sound               string                     `json:"sound"`
+	Camera              string                     `json:"camera"`
+	AssetIDs            []string                   `json:"asset_ids"`
+	ImagePrompt         string                     `json:"image_prompt"`
+	VideoPrompt         string                     `json:"video_prompt"`
+	Color               string                     `json:"color"`
+	SourceNodeID        string                     `json:"source_node_id,omitempty"`
+	ImageNodeID         string                     `json:"image_node_id,omitempty"`
+	VideoNodeID         string                     `json:"video_node_id,omitempty"`
 }
 
 type CanvasScriptAsset struct {
@@ -61,6 +79,9 @@ func validateCanvasScript(node CanvasNode) error {
 	if node.Type != "script" || project.Step < 0 || project.Step > 2 || len(project.Shots) > 200 || len(project.Assets) > 120 {
 		return invalidCanvasDocument("script project is invalid")
 	}
+	if len(project.MergedVideoNodeID) > 128 || len(project.MergedVideoFingerprint) > 64 {
+		return invalidCanvasDocument("script merged video reference is invalid")
+	}
 	encoded, err := json.Marshal(project)
 	if err != nil || len(encoded) > 512<<10 {
 		return invalidCanvasDocument("script project is too large")
@@ -82,6 +103,19 @@ func validateCanvasScript(node CanvasNode) error {
 	for _, shot := range project.Shots {
 		if shot.ID == "" || len(shot.ID) > 128 || shots[shot.ID] || shot.Seconds < 1 || shot.Seconds > 60 || len(shot.Dialogue) > 100 || len(shot.AssetIDs) > 120 {
 			return invalidCanvasDocument("script shot is invalid")
+		}
+		if review := shot.QualityReview; review != nil {
+			if len(review.MediaURL) > canvasDocumentMaxURL || review.MediaURL == "" || len(review.Notes) > 4000 {
+				return invalidCanvasDocument("script quality review is invalid")
+			}
+			for _, status := range []string{review.Continuity, review.Dialogue, review.Speaker, review.LipSync} {
+				if status != "unchecked" && status != "passed" && status != "needs_fix" {
+					return invalidCanvasDocument("script quality status is invalid")
+				}
+			}
+			if status := review.TextOnScreen; status != "" && status != "unchecked" && status != "passed" && status != "needs_fix" {
+				return invalidCanvasDocument("script text on screen review status is invalid")
+			}
 		}
 		shots[shot.ID] = true
 		if len(shot.SourceNodeID) > 128 || len(shot.ImageNodeID) > 128 || len(shot.VideoNodeID) > 128 {

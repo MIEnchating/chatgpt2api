@@ -3,7 +3,7 @@ import { afterAll, mock, test } from "bun:test";
 const actual = { ...await import("../src/lib/request.ts") };
 let calls = [], handler;
 mock.module("@/lib/request", () => ({ ...actual, httpRequest: async (path, options = {}) => { calls.push({ path, options }); return handler(path, options); } }));
-const { runBackendCanvasAgent, fetchCanvasAgentRun, runBackendCanvasTool, answerBackendWorkflowReview, CanvasAgentStopError } = await import("../src/app/canvas/agent/canvas-agent-backend.ts");
+const { runBackendCanvasAgent, fetchCanvasAgentRun, runBackendCanvasTool, answerBackendWorkflowReview, CanvasAgentStopError, CanvasAgentObservationError } = await import("../src/app/canvas/agent/canvas-agent-backend.ts");
 afterAll(() => mock.module("@/lib/request", () => actual));
 const snapshot = (status) => ({ document: { id: "project", revision: 2, agent_run: { id: "run", status } } });
 test("closing the page detaches without cancelling the backend run", async () => {
@@ -12,6 +12,72 @@ test("closing the page detaches without cancelling the backend run", async () =>
   assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
   assert.equal(calls.some((call) => call.options.method === "DELETE"), false);
 });
+
+test("rejected accepted-run snapshots are observation errors and never cancel or resubmit work", async () => {
+  for (const status of ["running", "success"]) {
+    calls = []; handler = () => snapshot(status);
+    await assert.rejects(() => runBackendCanvasAgent("project", { id: "run", references: [] }, () => { throw new Error("对话记录数据无效"); }, new AbortController().signal), error => error instanceof CanvasAgentObservationError && error.cause?.message === "对话记录数据无效");
+    assert.equal(calls.filter(call => call.options.method === "POST").length, 1);
+    assert.equal(calls.some(call => call.options.method === "DELETE"), false);
+  }
+});
+
+test("an invalid first acknowledgement keeps observing the same run until a valid terminal snapshot", async () => {
+  calls = []; let reads = 0;
+  handler = (_path, options) => options.method === "POST" ? snapshot("running") : { document: { ...snapshot("success").document, valid: ++reads > 1 } };
+  const errors = [], accepted = [];
+  const result = await runBackendCanvasAgent("project", { id: "run", references: [] }, document => {
+    if (!document.valid) throw new Error("invalid transcript snapshot");
+    accepted.push(document.agent_run.status);
+  }, new AbortController().signal, error => errors.push(error));
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every(error => error instanceof CanvasAgentObservationError));
+  assert.deepEqual(accepted, ["success"]);
+  assert.equal(result.agent_run.id, "run");
+  assert.equal(calls.filter(call => call.options.method === "POST").length, 1);
+  assert.equal(calls.some(call => call.options.method === "DELETE"), false);
+});
+
+test("observation transport errors remain visible and recover the accepted run without changing messages", async () => {
+  calls = []; let reads = 0;
+  handler = (_path, options) => {
+    if (options.method === "POST") return snapshot("running");
+    if (++reads === 1) throw new Error("network denied");
+    return snapshot("success");
+  };
+  const errors = [], statuses = [];
+  await runBackendCanvasAgent("project", { id: "run", references: [] }, document => statuses.push(document.agent_run.status), new AbortController().signal, error => errors.push(error.message));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /network denied/);
+  assert.deepEqual(statuses, ["running", "success"], "a failed fetch cannot republish old state and clear the visible sync error");
+  assert.equal(calls.filter(call => call.options.method === "POST").length, 1);
+});
+test("detaching releases a pending submission without waiting for its acknowledgement", async () => {
+  calls = []; let releaseStart;
+  handler = () => new Promise(resolve => { releaseStart = resolve; });
+  const controller = new AbortController();
+  const execution = runBackendCanvasAgent("project", { id: "run", references: [] }, () => assert.fail("A detached page must not receive snapshots"), controller.signal);
+  controller.abort("canvas-detached");
+  let timer;
+  try {
+    assert.equal(await Promise.race([execution.then(() => "detached"), new Promise(resolve => { timer = setTimeout(() => resolve("waiting"), 100); })]), "detached");
+    assert.equal(calls.filter(call => call.options.method === "POST").length, 1);
+    assert.equal(calls.some(call => call.options.method === "DELETE"), false);
+  } finally {
+    clearTimeout(timer);
+    releaseStart(snapshot("running"));
+    await execution;
+  }
+});
+for (const reason of [undefined, "canvas-detached"]) {
+  test(`an already ${reason ? "detached" : "stopped"} page cannot submit a new backend run`, async () => {
+    calls = []; handler = () => snapshot("success");
+    const controller = new AbortController();
+    controller.abort(reason);
+    await runBackendCanvasAgent("project", { id: "run", references: [] }, () => assert.fail("Cancelled snapshot"), controller.signal);
+    assert.deepEqual(calls, []);
+  });
+}
 test("explicit stop cancels the same run and receives its final snapshot", async () => {
   calls = []; let status = "running"; handler = (_path, options) => { if (options.method === "DELETE") status = "cancelled"; return snapshot(status); };
   const controller = new AbortController(); const seen = [];
@@ -115,19 +181,22 @@ test("Codex tool dispatch shares persisted backend progress and returns its resu
   const response = await runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "run_canvas_workflow", arguments: { nodeIds: ["video"] } }, doc => seen.push(doc.agent_run.status), new AbortController().signal);
   assert.deepEqual(response.result, result);
   assert.deepEqual(seen, ["running", "success"]);
-  assert.equal(calls[0].path, "/api/canvas/agent-tools?project_id=project");
+  assert.equal(calls[0].path, "/api/canvas/agent-tools?history=active&project_id=project");
   assert.equal(calls[0].options.body.call.name, "run_canvas_workflow");
-  assert.equal(calls[1].path, "/api/canvas/agent-runs?project_id=project");
+  assert.equal(calls[1].path, "/api/canvas/agent-runs?history=active&project_id=project");
 });
 test("workflow approval sends the user's actual answer and reviewed fingerprints separately", async () => {
   calls = []; handler = () => snapshot("success");
   await answerBackendWorkflowReview("project", "session", { poster: "fingerprint" }, "暂不生成，先修改颜色");
-  assert.equal(calls[0].path, "/api/canvas/agent-tools/review-answers?project_id=project");
+  assert.equal(calls[0].path, "/api/canvas/agent-tools/review-answers?history=active&project_id=project");
   assert.deepEqual(calls[0].options.body, { sessionId: "session", prompts: { poster: "fingerprint" }, answer: "暂不生成，先修改颜色" });
 });
 test("missing or replaced tool results never masquerade as successful execution", async () => {
+  calls = []; handler = () => ({ document: { agent_run: { id: "run", status: "error", error: "服务已重启，执行已暂停；请检查已有结果后继续。" } } });
+  await assert.rejects(() => runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "get_canvas_summary", arguments: {} }, () => {}, new AbortController().signal), /服务已重启，执行已暂停/);
+
   calls = []; handler = () => snapshot("error");
-  await assert.rejects(() => runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "get_canvas_summary", arguments: {} }, () => {}, new AbortController().signal), /未返回结果/);
+  await assert.rejects(() => runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "get_canvas_summary", arguments: {} }, () => {}, new AbortController().signal), /执行状态待核实.*未返回执行结果/);
 });
 
 test("backend requests contain reference IDs without duplicate pixels, text or node copies", async () => {

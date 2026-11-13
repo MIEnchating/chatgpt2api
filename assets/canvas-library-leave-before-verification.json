@@ -1,0 +1,15 @@
+{
+  "phase": "before",
+  "errors": [],
+  "checks": [
+    "returning to library after a rejected save discarded the edit"
+  ],
+  "mediaSubmissions": 0,
+  "saveAttempts": 2,
+  "dialogs": [],
+  "leftWithRejectedSave": true,
+  "attemptsOnLeave": 0,
+  "backWithRejectedSaveLeft": true,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

@@ -25,14 +25,21 @@ export function expandCanvasGroupNodeIDs(ids: ReadonlySet<string>, nodes: readon
 export function findCanvasGroupDropTarget(movedIDs: ReadonlySet<string>, nodes: readonly CanvasNode[]) {
   if (nodes.some((node) => movedIDs.has(node.id) && node.type === "group")) return null;
   const movingNodes = nodes.filter((node) => movedIDs.has(node.id) && node.type !== "group");
-  return [...nodes].reverse().find((group) => {
-    if (group.type !== "group" || movedIDs.has(group.id)) return false;
-    return movingNodes.some((node) => {
+  return findCanvasGroupDropTargetForNodes(movingNodes, nodes, movedIDs);
+}
+
+export function findCanvasGroupDropTargetForNodes(movingNodes: readonly CanvasNode[], groups: readonly CanvasNode[], movedIDs: ReadonlySet<string> = new Set()) {
+  if (groups.some((group) => group.type === "group" && movedIDs.has(group.id))) return null;
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index];
+    if (group.type !== "group" || movedIDs.has(group.id)) continue;
+    if (movingNodes.some((node) => {
       const centerX = node.x + node.width / 2;
       const centerY = node.y + node.height / 2;
       return centerX >= group.x && centerX <= group.x + group.width && centerY >= group.y && centerY <= group.y + group.height;
-    });
-  }) || null;
+    })) return group;
+  }
+  return null;
 }
 
 export function snapCanvasNodesIntoGroup(movedIDs: ReadonlySet<string>, nodes: readonly CanvasNode[], group: CanvasNode) {
@@ -55,11 +62,11 @@ export function snapCanvasNodesIntoGroup(movedIDs: ReadonlySet<string>, nodes: r
 export function findContainingCanvasGroupID(node: CanvasNode, nodes: readonly CanvasNode[]) {
   const centerX = node.x + node.width / 2;
   const centerY = node.y + node.height / 2;
-  return [...nodes].reverse().find((group) => group.type === "group"
-    && centerX >= group.x
-    && centerX <= group.x + group.width
-    && centerY >= group.y
-    && centerY <= group.y + group.height)?.id;
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const group = nodes[index];
+    if (group.type === "group" && centerX >= group.x && centerX <= group.x + group.width && centerY >= group.y && centerY <= group.y + group.height) return group.id;
+  }
+  return undefined;
 }
 
 export function expandCanvasRemovalNodeIDs(ids: ReadonlySet<string>, nodes: readonly CanvasNode[]) {

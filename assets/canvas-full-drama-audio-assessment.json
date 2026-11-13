@@ -1,0 +1,387 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; exact per-sentence text screening, no human speaker, lip-sync or quality approval",
+  "clips": [
+    {
+      "shot_id": "shot-01",
+      "expected_dialogue": "最后一单……怎么是家里的地址。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-14.1",
+      "max_volume_db": "-0.4",
+      "segments": [
+        {
+          "start": 1.07,
+          "end": 2.09,
+          "text": "最後一單",
+          "words": [
+            {
+              "start": 1.07,
+              "end": 1.65,
+              "text": "最後",
+              "probability": 0.8761
+            },
+            {
+              "start": 1.65,
+              "end": 1.89,
+              "text": "一",
+              "probability": 0.9938
+            },
+            {
+              "start": 1.89,
+              "end": 2.09,
+              "text": "單",
+              "probability": 0.7416
+            }
+          ]
+        },
+        {
+          "start": 3.31,
+          "end": 4.81,
+          "text": "怎麼是家裡的地址",
+          "words": [
+            {
+              "start": 3.31,
+              "end": 3.69,
+              "text": "怎麼",
+              "probability": 0.56
+            },
+            {
+              "start": 3.69,
+              "end": 4.07,
+              "text": "是",
+              "probability": 0.9847
+            },
+            {
+              "start": 4.07,
+              "end": 4.25,
+              "text": "家",
+              "probability": 0.9973
+            },
+            {
+              "start": 4.25,
+              "end": 4.39,
+              "text": "裡",
+              "probability": 0.914
+            },
+            {
+              "start": 4.39,
+              "end": 4.49,
+              "text": "的",
+              "probability": 0.9876
+            },
+            {
+              "start": 4.49,
+              "end": 4.63,
+              "text": "地",
+              "probability": 0.9935
+            },
+            {
+              "start": 4.63,
+              "end": 4.81,
+              "text": "址",
+              "probability": 0.9185
+            }
+          ]
+        }
+      ],
+      "transcript": "最後一單怎麼是家裡的地址",
+      "character_error_rate": 0.0,
+      "status": "text_consistent",
+      "dialogue_lines": [
+        {
+          "expected": "最后一单……怎么是家里的地址",
+          "status": "transcribed_in_order"
+        }
+      ]
+    },
+    {
+      "shot_id": "shot-02",
+      "expected_dialogue": "三年了，她还留着。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-16.5",
+      "max_volume_db": "-0.4",
+      "segments": [
+        {
+          "start": 4.62,
+          "end": 8.78,
+          "text": "三年了 三年了 他还留着",
+          "words": [
+            {
+              "start": 4.62,
+              "end": 5.3,
+              "text": "三",
+              "probability": 0.8719
+            },
+            {
+              "start": 5.3,
+              "end": 5.54,
+              "text": "年",
+              "probability": 0.997
+            },
+            {
+              "start": 5.54,
+              "end": 5.78,
+              "text": "了",
+              "probability": 0.9664
+            },
+            {
+              "start": 6.7,
+              "end": 7.06,
+              "text": " 三",
+              "probability": 0.9908
+            },
+            {
+              "start": 7.06,
+              "end": 7.26,
+              "text": "年",
+              "probability": 0.9823
+            },
+            {
+              "start": 7.26,
+              "end": 7.48,
+              "text": "了",
+              "probability": 0.5294
+            },
+            {
+              "start": 7.48,
+              "end": 8.2,
+              "text": " 他",
+              "probability": 0.1809
+            },
+            {
+              "start": 8.2,
+              "end": 8.4,
+              "text": "还",
+              "probability": 0.6406
+            },
+            {
+              "start": 8.4,
+              "end": 8.56,
+              "text": "留",
+              "probability": 0.9713
+            },
+            {
+              "start": 8.56,
+              "end": 8.78,
+              "text": "着",
+              "probability": 0.9845
+            }
+          ]
+        }
+      ],
+      "transcript": "三年了 三年了 他还留着",
+      "character_error_rate": 0.5714285714285714,
+      "status": "requires_review",
+      "dialogue_lines": [
+        {
+          "expected": "三年了，她还留着",
+          "status": "not_fully_transcribed"
+        }
+      ]
+    },
+    {
+      "shot_id": "shot-03",
+      "expected_dialogue": "我点的不是外卖，是你。妈。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-19.2",
+      "max_volume_db": "-0.1",
+      "segments": [
+        {
+          "start": 0.98,
+          "end": 2.68,
+          "text": "我点的不是外卖",
+          "words": [
+            {
+              "start": 0.98,
+              "end": 1.46,
+              "text": "我",
+              "probability": 0.9544
+            },
+            {
+              "start": 1.46,
+              "end": 1.64,
+              "text": "点",
+              "probability": 0.5954
+            },
+            {
+              "start": 1.64,
+              "end": 1.78,
+              "text": "的",
+              "probability": 0.9884
+            },
+            {
+              "start": 1.78,
+              "end": 2.0,
+              "text": "不是",
+              "probability": 0.9838
+            },
+            {
+              "start": 2.0,
+              "end": 2.26,
+              "text": "外",
+              "probability": 0.9983
+            },
+            {
+              "start": 2.26,
+              "end": 2.68,
+              "text": "卖",
+              "probability": 0.9868
+            }
+          ]
+        },
+        {
+          "start": 3.2,
+          "end": 3.98,
+          "text": "是你",
+          "words": [
+            {
+              "start": 3.2,
+              "end": 3.72,
+              "text": "是",
+              "probability": 0.4379
+            },
+            {
+              "start": 3.72,
+              "end": 3.98,
+              "text": "你",
+              "probability": 0.9876
+            }
+          ]
+        }
+      ],
+      "transcript": "我点的不是外卖是你",
+      "character_error_rate": 0.1,
+      "status": "requires_review",
+      "dialogue_lines": [
+        {
+          "expected": "我点的不是外卖，是你",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "妈",
+          "status": "not_fully_transcribed"
+        }
+      ]
+    },
+    {
+      "shot_id": "shot-04",
+      "expected_dialogue": "妈，我回来了。回来就好，汤还热着。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-18.0",
+      "max_volume_db": "-0.4",
+      "segments": [
+        {
+          "start": 9.46,
+          "end": 10.88,
+          "text": "妈 我回来了",
+          "words": [
+            {
+              "start": 9.46,
+              "end": 9.94,
+              "text": "妈",
+              "probability": 0.6796
+            },
+            {
+              "start": 9.94,
+              "end": 10.52,
+              "text": " 我",
+              "probability": 0.7254
+            },
+            {
+              "start": 10.52,
+              "end": 10.66,
+              "text": "回",
+              "probability": 0.9994
+            },
+            {
+              "start": 10.66,
+              "end": 10.88,
+              "text": "来了",
+              "probability": 0.9269
+            }
+          ]
+        },
+        {
+          "start": 11.42,
+          "end": 12.42,
+          "text": "回来就好",
+          "words": [
+            {
+              "start": 11.42,
+              "end": 11.86,
+              "text": "回",
+              "probability": 0.9183
+            },
+            {
+              "start": 11.86,
+              "end": 12.02,
+              "text": "来",
+              "probability": 0.9991
+            },
+            {
+              "start": 12.02,
+              "end": 12.16,
+              "text": "就",
+              "probability": 0.9976
+            },
+            {
+              "start": 12.16,
+              "end": 12.42,
+              "text": "好",
+              "probability": 0.9988
+            }
+          ]
+        },
+        {
+          "start": 12.42,
+          "end": 13.54,
+          "text": "汤还热着",
+          "words": [
+            {
+              "start": 12.42,
+              "end": 13.02,
+              "text": "汤",
+              "probability": 0.6637
+            },
+            {
+              "start": 13.02,
+              "end": 13.14,
+              "text": "还",
+              "probability": 0.9901
+            },
+            {
+              "start": 13.14,
+              "end": 13.36,
+              "text": "热",
+              "probability": 0.9979
+            },
+            {
+              "start": 13.36,
+              "end": 13.54,
+              "text": "着",
+              "probability": 0.9896
+            }
+          ]
+        }
+      ],
+      "transcript": "妈 我回来了回来就好汤还热着",
+      "character_error_rate": 0.0,
+      "status": "text_consistent",
+      "dialogue_lines": [
+        {
+          "expected": "妈，我回来了",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "回来就好，汤还热着",
+          "status": "transcribed_in_order"
+        }
+      ]
+    }
+  ],
+  "text_screening_method": "Existing unprompted transcripts rechecked per sentence in order; overall CER alone cannot pass a clip. Unrecognized words require listening review and do not prove absence of speech."
+}

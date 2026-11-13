@@ -1,0 +1,37 @@
+[
+  {
+    "type": "save",
+    "step": 0,
+    "confirmed": false,
+    "home": "image-59668d64-defc-4944-93ee-c577348c70dd",
+    "shot4imagePromptLength": 1249
+  },
+  {
+    "type": "save",
+    "step": 1,
+    "confirmed": true,
+    "home": "image-59668d64-defc-4944-93ee-c577348c70dd",
+    "shot4imagePromptLength": 1249
+  },
+  {
+    "type": "after-confirm",
+    "step": 1,
+    "confirmed": true,
+    "home": "image-59668d64-defc-4944-93ee-c577348c70dd",
+    "shot4imagePromptLength": 1249
+  },
+  {
+    "type": "save",
+    "step": 0,
+    "confirmed": true,
+    "home": "image-59668d64-defc-4944-93ee-c577348c70dd",
+    "shot4imagePromptLength": 1249
+  },
+  {
+    "type": "after-navigation",
+    "step": 0,
+    "confirmed": true,
+    "home": "image-59668d64-defc-4944-93ee-c577348c70dd",
+    "shot4imagePromptLength": 1249
+  }
+]

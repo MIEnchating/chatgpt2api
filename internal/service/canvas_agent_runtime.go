@@ -69,6 +69,7 @@ type canvasAgentWorker struct {
 }
 
 func (w *canvasAgentWorker) save() error {
+	reconcileCanvasScriptDependencies(w.persisted, &w.doc)
 	sessions, _, err := agentSession(w.doc, w.req.SessionID)
 	if err != nil {
 		return err
@@ -86,8 +87,14 @@ func (w *canvasAgentWorker) save() error {
 			sessions[i] = w.session
 		}
 	}
-	persisted := []map[string]any{}
-	_ = json.Unmarshal([]byte(agentJSON(sessions)), &persisted)
+	data, err := json.Marshal(sessions)
+	if err != nil {
+		return fmt.Errorf("encode canvas agent sessions: %w", err)
+	}
+	var persisted []map[string]any
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		return fmt.Errorf("clone canvas agent sessions: %w", err)
+	}
 	for _, session := range persisted {
 		if session["id"] == w.req.SessionID && w.sdk != nil && (w.sdk.State != "" || len(w.sdk.Items) > 0) {
 			omitCanvasAgentResponseCopies(session)
@@ -109,7 +116,11 @@ func (w *canvasAgentWorker) save() error {
 			}
 		}
 	}
-	w.doc.AgentSessions, _ = json.Marshal(persisted)
+	data, err = json.Marshal(persisted)
+	if err != nil {
+		return fmt.Errorf("encode compacted canvas agent sessions: %w", err)
+	}
+	w.doc.AgentSessions = data
 	w.doc.AgentRun.UpdatedAt = util.NowISO()
 	next, err := w.service.canvas.saveAgentChanges(canvasAgentOwner(w.identity), w.persisted, w.doc)
 	if err == nil {
@@ -132,13 +143,18 @@ func (w *canvasAgentWorker) save() error {
 
 // Tool payloads are durable in the private runtime. Public journals retain the
 // receipts needed to render history without duplicating node bodies on every read.
-func compactCanvasAgentToolJournal(session map[string]any) {
+func compactCanvasAgentToolJournal(session map[string]any) bool {
+	changed := false
 	for _, message := range util.AsMapSlice(session["protocolMessages"]) {
-		if message["role"] != "tool" || len(util.Clean(message["content"])) <= 1024 {
+		if message["role"] != "tool" {
+			continue
+		}
+		content := util.Clean(message["content"])
+		if len(content) <= 1024 {
 			continue
 		}
 		result := map[string]any{}
-		if json.Unmarshal([]byte(util.Clean(message["content"])), &result) != nil || result["ok"] != true || result["requiresUserReview"] == true {
+		if json.Unmarshal([]byte(content), &result) != nil || result["ok"] != true || result["requiresUserReview"] == true {
 			continue
 		}
 		summary := map[string]any{"ok": true, "detailsOmitted": true}
@@ -156,14 +172,19 @@ func compactCanvasAgentToolJournal(session map[string]any) {
 		if ref := agentMap(result["reference"]); ref["id"] != nil {
 			summary["referenceId"] = ref["id"]
 		}
-		message["content"] = agentJSON(summary)
+		compacted := agentJSON(summary)
+		if compacted != message["content"] {
+			message["content"] = compacted
+			changed = true
+		}
 	}
+	return changed
 }
 
 // SDK storage owns opaque reasoning and raw response items. Older public
 // entries only need their text and tool journal; keep the latest response until
 // its SDK checkpoint is committed, including the model-to-prepare crash window.
-func omitCanvasAgentResponseCopies(session map[string]any) {
+func omitCanvasAgentResponseCopies(session map[string]any) bool {
 	messages := util.AsMapSlice(session["protocolMessages"])
 	latest := -1
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -172,12 +193,18 @@ func omitCanvasAgentResponseCopies(session map[string]any) {
 			break
 		}
 	}
+	changed := false
 	for i, message := range messages {
 		if i != latest && message["role"] == "assistant" {
-			delete(message, "responseItems")
-			delete(message, "reasoningContent")
+			for _, key := range []string{"responseItems", "reasoningContent"} {
+				if _, exists := message[key]; exists {
+					delete(message, key)
+					changed = true
+				}
+			}
 		}
 	}
+	return changed
 }
 
 func (w *canvasAgentWorker) assistant() map[string]any {
@@ -235,10 +262,7 @@ func (w *canvasAgentWorker) finish(status, reply string) error {
 		latest, readErr := w.service.canvas.Project(canvasAgentOwner(w.identity), w.doc.ID)
 		if readErr == nil && latest.AgentRun != nil && latest.AgentRun.ID == w.req.ID {
 			latest.AgentRun.Status = "error"
-			latest.AgentRun.Error = "执行记录保存失败，已保留上一次成功保存的记录。"
-			if len(w.doc.AgentSessions) > canvasDocumentMaxAgentDataBytes {
-				latest.AgentRun.Error = "会话执行记录超过 512 KB 存储上限，与模型上下文 token 上限无关；已保留上一次成功保存的记录。"
-			}
+			latest.AgentRun.Error = "执行记录保存失败，与模型上下文 token 上限无关；已保留上一次成功保存的记录。"
 			if messageErr := agentSetMessage(&latest, w.req.SessionID, w.req.AssistantID, "error", latest.AgentRun.Error); messageErr == nil {
 				if saved, saveErr := w.service.canvas.saveAgent(canvasAgentOwner(w.identity), latest); saveErr == nil {
 					w.doc = saved
@@ -439,6 +463,14 @@ func agentCalls(raw any) ([]map[string]any, error) {
 }
 func validateAgentValue(v any, s map[string]any, path string) error {
 	invalid := func() error { return fmt.Errorf("%s 参数类型或范围无效", path) }
+	if choices, ok := s["anyOf"].([]any); ok {
+		for _, choice := range choices {
+			if validateAgentValue(v, agentMap(choice), path) == nil {
+				return nil
+			}
+		}
+		return invalid()
+	}
 	switch s["type"] {
 	case "object":
 		m, ok := v.(map[string]any)
@@ -482,10 +514,13 @@ func validateAgentValue(v any, s map[string]any, path string) error {
 		}
 	case "string":
 		text, ok := v.(string)
+		if !ok {
+			return invalid()
+		}
 		if utf8.RuneCountInString(text) > 12000 || (strings.HasSuffix(path, ".title") || strings.HasSuffix(path, ".projectTitle")) && utf8.RuneCountInString(text) > 200 {
 			return invalid()
 		}
-		if !ok {
+		if min, ok := s["minLength"].(float64); ok && utf8.RuneCountInString(text) < int(min) {
 			return invalid()
 		}
 		if max, ok := s["maxLength"].(float64); ok && utf8.RuneCountInString(text) > int(max) {

@@ -1,0 +1,65 @@
+{
+  "method": "Whisper small without expected-text prompting, VAD disabled, full clip and overlapping crops",
+  "human_quality_approval": false,
+  "observations": [
+    {
+      "start": 0,
+      "duration": 15.083,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 4.0,
+          "text": "我点的不是外卖 是你"
+        },
+        {
+          "start": 8.0,
+          "end": 9.0,
+          "text": "妈"
+        }
+      ]
+    },
+    {
+      "start": 4,
+      "duration": 6,
+      "segments": [
+        {
+          "start": 4.0,
+          "end": 6.0,
+          "text": "字幕by索兰娅"
+        }
+      ]
+    },
+    {
+      "start": 5,
+      "duration": 5,
+      "segments": [
+        {
+          "start": 5.0,
+          "end": 8.44,
+          "text": "- 玛-"
+        },
+        {
+          "start": 8.44,
+          "end": 10.0,
+          "text": "玛"
+        }
+      ]
+    },
+    {
+      "start": 6,
+      "duration": 3,
+      "segments": [
+        {
+          "start": 6.0,
+          "end": 8.0,
+          "text": "妈"
+        }
+      ]
+    }
+  ],
+  "assessment": {
+    "short_line": "Both the full clip without VAD and the 6–9 second crop transcribe 妈; the previous VAD-enabled omission is not evidence that the line is absent.",
+    "limitations": "Other crops produce inconsistent text, including a likely transcription hallucination. These results do not verify speaker identity, lip sync or visual quality.",
+    "result": "short_line_detected_requires_audiovisual_review"
+  }
+}

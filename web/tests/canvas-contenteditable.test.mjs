@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { CanvasAgentPromptContent } from "../src/app/canvas/canvas-agent-prompt-chip-input.tsx";
 
 import {
   getContentEditableMentionKeyAction,
@@ -87,4 +90,31 @@ test("serializes browser placeholder lines and block boundaries exactly once", (
     assert.equal(serialize(text("前"), br(), br()), "前\n");
     assert.equal(serialize(block(new Element("SPAN", [], { refLabel: "图片1" })), block(text("说明"))), "图片1\n说明");
   } finally { globalThis.HTMLElement = OriginalHTMLElement; }
+});
+
+
+test("historical prompt text renders complete content without initializing a DOM editor", () => {
+  const value = "第一行中文😀\n第二行 <script> & @未知素材";
+  const html = renderToStaticMarkup(createElement(CanvasAgentPromptContent, { value, references: [] }));
+  assert.ok(html.includes("第一行中文😀\n第二行 &lt;script&gt; &amp; @未知素材"));
+});
+
+test("historical prompt references preserve repeated labels and update with the current reference list", () => {
+  const value = "@图1 与 @图10，再用图1；@隐藏素材；@unknown";
+  const reference = (nodeID, label, active = true) => ({ id: nodeID, nodeID, label, title: label, kind: "image", active });
+  const references = [reference("one", "图1"), reference("ten", "图10"), reference("hidden", "隐藏素材", false)];
+  const render = current => renderToStaticMarkup(createElement(CanvasAgentPromptContent, { value, references: current }));
+  const html = render(references);
+  assert.equal((html.match(/data-ref-node-id="one"/g) || []).length, 2);
+  assert.equal((html.match(/data-ref-node-id="ten"/g) || []).length, 1);
+  assert.ok(html.includes('data-ref-label="@图1"'));
+  assert.ok(html.includes('data-ref-label="图1"'));
+  assert.ok(html.includes("@隐藏素材；@unknown"));
+  assert.ok(!html.includes('data-ref-node-id="hidden"'));
+  const rebound = render([reference("replacement", "图1"), references[1]]);
+  assert.ok(!rebound.includes('data-ref-node-id="one"'));
+  assert.equal((rebound.match(/data-ref-node-id="replacement"/g) || []).length, 2);
+  const plain = render([]);
+  assert.ok(plain.includes(value));
+  assert.ok(!plain.includes("data-ref-node-id"));
 });

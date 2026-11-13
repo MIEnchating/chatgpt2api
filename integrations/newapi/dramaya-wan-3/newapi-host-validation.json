@@ -1,8 +1,8 @@
 {
-  "checked_at": "2026-11-06",
+  "checked_at": "2026-11-10",
   "runtime": "New API pkg/jsplugin.ReplayFixture via RunCLI",
-  "source_revision": "c46cad6e5defebe74240cb1011f22155dea24847",
-  "plugin": "dramaya-wan-3-1.0.0.js",
+  "source_revision": "4ecc40ec0787291e84e236be953f1040c705f993",
+  "plugin": "dramaya-wan-3-1.0.1.js",
   "fixture": "newapi-host-fixture.json",
   "passed": 12,
   "total": 12,

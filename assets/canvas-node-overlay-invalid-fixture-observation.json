@@ -1,0 +1,161 @@
+{
+  "checks": [
+    {
+      "name": "text_1440x1000",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 1440,
+          "bottom": 924,
+          "width": 1440,
+          "height": 924
+        },
+        "toolbar": {
+          "left": 128.5,
+          "top": 72,
+          "right": 331.5,
+          "bottom": 116,
+          "width": 203,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 648,
+          "bottom": 592,
+          "width": 640,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "文本模型",
+            "bottom": 581
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 583
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "text_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 123.5,
+          "top": 72,
+          "right": 326.5,
+          "bottom": 116,
+          "width": 203,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 422,
+          "right": 382,
+          "bottom": 702,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 459
+          },
+          {
+            "label": "文本模型",
+            "bottom": 691
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 693
+          },
+          {
+            "label": "开始生成",
+            "bottom": 693
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "image_320x740",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 320,
+          "bottom": 608,
+          "width": 320,
+          "height": 608
+        },
+        "toolbar": {
+          "left": 188,
+          "top": 262,
+          "right": 312,
+          "bottom": 306,
+          "width": 124,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 318,
+          "right": 312,
+          "bottom": 598,
+          "width": 304,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 355
+          },
+          {
+            "label": "图片模型",
+            "bottom": 587
+          },
+          {
+            "label": "图片参数",
+            "bottom": 589
+          },
+          {
+            "label": "摄像机",
+            "bottom": 589
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 589
+          },
+          {
+            "label": "开始生成",
+            "bottom": 589
+          }
+        ]
+      },
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "error": "AssertionError [ERR_ASSERTION]: {\"detail\":{\"error\":\"invalid canvas document: video node generation model is invalid\"}}\n\n\n400 !== 200\n\n    at api (file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-node-overlay-bounds.mjs:15:10)\n    at async file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-node-overlay-bounds.mjs:45:5",
+  "originalHistoryUnchanged": true,
+  "testProjectDeleted": true
+}

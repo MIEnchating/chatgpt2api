@@ -627,3 +627,11 @@ test("conversation submission stays locked for queued turns and incomplete outpu
     assert.equal(imageConversationHasActiveTurn({ historySummaryOnly: true, historySummary: { queued, running }, turns: [] }), active);
   }
 });
+
+test("explicit video recovery accepts a newer revision and rejects its late original error", () => {
+ const failed={id:"recover",mode:"video",status:"error",revision:4,can_recover_video:true};
+ const queued={...failed,status:"queued",revision:5,can_recover_video:false};
+ assert.equal(mergeCreationTaskSnapshot(failed,queued).status,"queued");
+ assert.equal(mergeCreationTaskSnapshot(queued,failed).status,"queued");
+ assert.equal(mergeCreationTaskSnapshot({...failed,can_recover_video:false},queued).status,"error");
+});

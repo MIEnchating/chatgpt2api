@@ -114,7 +114,7 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
     }
     return unsubscribe;
   };
-  const wait = (id: string, options: { signal?: AbortSignal; timeoutMs?: number; onProgress?: (task: CreationTask) => void } = {}) => new Promise<CreationTask>((resolve, reject) => {
+  const wait = (id: string, options: { signal?: AbortSignal; timeoutMs?: number | null; minRevision?: number; onProgress?: (task: CreationTask) => void } = {}) => new Promise<CreationTask>((resolve, reject) => {
     if (options.signal?.aborted) { reject(options.signal.reason || abortError()); return; }
     let unsubscribe = () => {};
     let settled = false;
@@ -122,13 +122,14 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
     const finish = (task?: CreationTask, error?: unknown) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       options.signal?.removeEventListener("abort", abort);
       unsubscribe();
       if (task) resolve(task); else reject(error);
     };
     const abort = () => finish(undefined, options.signal?.reason || abortError());
-    const timer = setTimeout(() => finish(undefined, new CreationTaskTimeoutError("任务等待超时，请稍后在任务队列中查看结果")), options.timeoutMs ?? 8 * 60_000);
+    // A null deadline follows the server task until completion or cancellation.
+    const timer = options.timeoutMs === null ? undefined : setTimeout(() => finish(undefined, new CreationTaskTimeoutError("任务等待超时，请稍后在任务队列中查看结果")), options.timeoutMs ?? 8 * 60_000);
     options.signal?.addEventListener("abort", abort, { once: true });
     unsubscribe = watch({
       signal: options.signal,
@@ -139,6 +140,7 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
           if (deletedIDs.includes(id)) finish(undefined, new Error("任务记录已被删除"));
           return;
         }
+        if (options.minRevision !== undefined && (Number(task.revision) || 0) < options.minRevision) return;
         if (previousTask !== task) options.onProgress?.(task);
         previousTask = task;
         if (["success", "error", "cancelled"].includes(task.status)) finish(task);

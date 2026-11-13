@@ -1,0 +1,31 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "qualityApproved": false,
+  "startedAt": "2026-11-12T08:45:08.917Z",
+  "generationSubmissions": 0,
+  "pageErrors": [],
+  "checks": [
+    {
+      "name": "all_three_original_tasks_failed_without_result_or_recovery_metadata",
+      "passed": true
+    },
+    {
+      "name": "sixteen_chat_messages_all_old_media_and_shot_three_preserved",
+      "passed": true
+    },
+    {
+      "name": "old_outdated_movie_still_plays_and_downloads",
+      "passed": true,
+      "duration": 60,
+      "time": 1.293995,
+      "width": 768,
+      "height": 1376,
+      "bytes": 14559801
+    },
+    {
+      "name": "refresh_preserves_failed_tasks_old_movie_and_complete_history",
+      "passed": true
+    }
+  ],
+  "finishedAt": "2026-11-12T08:45:46.414Z"
+}

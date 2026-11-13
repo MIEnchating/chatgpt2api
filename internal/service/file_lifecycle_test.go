@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -172,7 +174,7 @@ func TestFileLifecycleCollectsUploadsWithoutAssetRecordsAfterDurableGrace(t *tes
 }
 
 func TestFileLifecycleProtectsAssetWorkflowCanvasAndHistoryReferences(t *testing.T) {
-	for _, domain := range []string{"asset", "workflow", "canvas", "history"} {
+	for _, domain := range []string{"asset", "workflow", "canvas", "canvas agent history", "history"} {
 		t.Run(domain, func(t *testing.T) {
 			f := newFileLifecycleFixture(t)
 			object := f.upload(t)
@@ -187,12 +189,16 @@ func TestFileLifecycleProtectsAssetWorkflowCanvasAndHistoryReferences(t *testing
 				if err := f.backend.SaveJSONDocument("workflows.json", map[string]any{"items": []any{map[string]any{"owner_id": "bob", "template_references": []any{map[string]any{"url": object.URL, "storageKey": object.StorageKey}}}}}); err != nil {
 					t.Fatal(err)
 				}
-			case "canvas":
+			case "canvas", "canvas agent history":
 				document, err := loadCanvas(f.canvas, "alice")
 				if err != nil {
 					t.Fatal(err)
 				}
 				document.Nodes = []CanvasNode{{ID: "video", Type: "video", GenerationVideoModel: "video-test", GenerationVideoSeconds: 5, Title: "video", URL: object.URL, StorageKey: object.StorageKey, Width: 320, Height: 180}}
+				if domain == "canvas agent history" {
+					document.Nodes = nil
+					document.AgentSessions = json.RawMessage(fmt.Sprintf(`[{"id":"history-only","messages":[{"text":"retain attachment","references":[{"storageKey":%q}]}]}]`, "server:"+object.ID))
+				}
 				if _, err := f.canvas.SaveAtRevision("alice", document); err != nil {
 					t.Fatal(err)
 				}

@@ -18,6 +18,9 @@ var videoModelContractsJSON []byte
 
 const VideoContractSnapshotPayloadKey = "video_contract_snapshot"
 
+// MaxVideoContractModels bounds one upstream contract and its generated plugin.
+const MaxVideoContractModels = 100
+
 var (
 	videoContractModelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$`)
 	videoContractRequestPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\]){0,7}$`)
@@ -134,15 +137,16 @@ type VideoModelContractPolling struct {
 }
 
 type VideoModelContractTransport struct {
-	MultipartFields     map[string]string `json:"multipart_fields,omitempty"`
-	LocalMaterial       string            `json:"local_material"`
-	MaterialTransports  []string          `json:"material_transports,omitempty"`
-	Base64Format        string            `json:"base64_format,omitempty"`
-	MultipartFileField  string            `json:"multipart_file_field"`
-	MultipartRepeatable bool              `json:"multipart_repeatable"`
-	MultipartMixedURLs  bool              `json:"multipart_mixed_urls"`
-	CreatePath          string            `json:"create_path"`
-	QueryPath           string            `json:"query_path"`
+	MaterialUpload      *VideoMaterialUpload `json:"material_upload,omitempty"`
+	MultipartFields     map[string]string    `json:"multipart_fields,omitempty"`
+	LocalMaterial       string               `json:"local_material"`
+	MaterialTransports  []string             `json:"material_transports,omitempty"`
+	Base64Format        string               `json:"base64_format,omitempty"`
+	MultipartFileField  string               `json:"multipart_file_field"`
+	MultipartRepeatable bool                 `json:"multipart_repeatable"`
+	MultipartMixedURLs  bool                 `json:"multipart_mixed_urls"`
+	CreatePath          string               `json:"create_path"`
+	QueryPath           string               `json:"query_path"`
 }
 
 type VideoModelContractArtifact struct {
@@ -795,8 +799,8 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	if length := len([]rune(contract.Name)); length < 1 || length > 100 {
 		return fmt.Errorf("契约名称必须为 1-100 个字符")
 	}
-	if len(contract.Models) == 0 || len(contract.Models) > 20 {
-		return fmt.Errorf("每个契约必须配置 1-20 个模型名称")
+	if len(contract.Models) == 0 || len(contract.Models) > MaxVideoContractModels {
+		return fmt.Errorf("每个契约必须配置 1-%d 个模型名称", MaxVideoContractModels)
 	}
 	for _, model := range contract.Models {
 		if !validVideoContractModelPattern(model) {
@@ -814,6 +818,12 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	}
 	if !slices.Contains([]string{"", "data_url", "raw"}, contract.Transport.Base64Format) {
 		return fmt.Errorf("Base64 格式仅支持 data_url 或 raw")
+	}
+	if err := validateVideoMaterialUpload(contract.Transport); err != nil {
+		return err
+	}
+	if contract.Transport.MaterialUpload != nil && contract.Driver == VideoContractDriverAutoDL {
+		return fmt.Errorf("AutoDL 素材上传由工作流管理，不能配置供应商预上传")
 	}
 	if contract.Transport.LocalMaterial == "multipart" {
 		if len(contract.Transport.MultipartFields) == 0 && !videoContractMultipartFieldPattern.MatchString(contract.Transport.MultipartFileField) {
@@ -1254,14 +1264,28 @@ func cloneVideoContracts(contracts []VideoModelContract) []VideoModelContract {
 }
 
 func cloneVideoContract(contract VideoModelContract) VideoModelContract {
+	if contract.Transport.MaterialUpload != nil {
+		upload := *contract.Transport.MaterialUpload
+		contract.Transport.MaterialUpload = &upload
+	}
 	if contract.Provider != nil {
 		provider := *contract.Provider
 		contract.Provider = &provider
 	}
 	contract.ModelProfiles = slices.Clone(contract.ModelProfiles)
 	for index, profile := range contract.ModelProfiles {
-		value := cloneVideoContract(VideoModelContract{Capability: profile.Capability, Generation: profile.Generation, Rules: profile.Rules})
-		contract.ModelProfiles[index] = videoModelProfileFromContract(profile.Model, value)
+		profile.Capability = cloneVideoContract(VideoModelContract{Capability: profile.Capability}).Capability
+		profile.Generation = cloneVideoContract(VideoModelContract{Generation: profile.Generation}).Generation
+		profile.Rules = cloneVideoContract(VideoModelContract{Rules: profile.Rules}).Rules
+		if profile.Transport != nil {
+			value := cloneVideoContract(VideoModelContract{Transport: *profile.Transport}).Transport
+			profile.Transport = &value
+		}
+		if profile.Request != nil {
+			value := *profile.Request
+			profile.Request = &value
+		}
+		contract.ModelProfiles[index] = profile
 	}
 	contract.Transport.MultipartFields = maps.Clone(contract.Transport.MultipartFields)
 	contract.Transport.MaterialTransports = slices.Clone(contract.Transport.MaterialTransports)

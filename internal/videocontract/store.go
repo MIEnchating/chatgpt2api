@@ -31,16 +31,17 @@ type VideoModelContractVersion struct {
 }
 
 type ManagedVideoModelContract struct {
-	ID             string                       `json:"id"`
-	Contract       protocol.VideoModelContract  `json:"contract"`
-	Draft          *protocol.VideoModelContract `json:"draft,omitempty"`
-	DraftEnabled   *bool                        `json:"draft_enabled,omitempty"`
-	Enabled        bool                         `json:"enabled"`
-	Revision       int                          `json:"revision"`
-	Versions       []VideoModelContractVersion  `json:"versions,omitempty"`
-	CreatedAt      string                       `json:"created_at"`
-	UpdatedAt      string                       `json:"updated_at"`
-	DraftUpdatedAt string                       `json:"draft_updated_at,omitempty"`
+	UploadCredentials map[string]string            `json:"upload_credentials,omitempty"`
+	ID                string                       `json:"id"`
+	Contract          protocol.VideoModelContract  `json:"contract"`
+	Draft             *protocol.VideoModelContract `json:"draft,omitempty"`
+	DraftEnabled      *bool                        `json:"draft_enabled,omitempty"`
+	Enabled           bool                         `json:"enabled"`
+	Revision          int                          `json:"revision"`
+	Versions          []VideoModelContractVersion  `json:"versions,omitempty"`
+	CreatedAt         string                       `json:"created_at"`
+	UpdatedAt         string                       `json:"updated_at"`
+	DraftUpdatedAt    string                       `json:"draft_updated_at,omitempty"`
 }
 
 type videoModelContractStoreDocument struct {
@@ -193,10 +194,25 @@ func (s *VideoModelContractService) Import(values []ImportedVideoModelContract) 
 		}
 		created, updated := 0, 0
 		now := util.NowISO()
+		mergeTargets := make(map[string]string)
+		for _, value := range normalized {
+			var targetID string
+			var merged bool
+			items, targetID, merged, err = mergeImportedVideoContractItems(items, value.Contract)
+			if err != nil {
+				return 0, 0, err
+			}
+			if merged {
+				mergeTargets[strings.ToLower(value.Contract.Name)] = targetID
+			}
+		}
 		for _, value := range normalized {
 			index := -1
+			if targetID := mergeTargets[strings.ToLower(value.Contract.Name)]; targetID != "" {
+				index = managedVideoContractIndex(items, targetID)
+			}
 			for current := range items {
-				if strings.EqualFold(items[current].Contract.Name, value.Contract.Name) {
+				if index < 0 && strings.EqualFold(items[current].Contract.Name, value.Contract.Name) {
 					index = current
 					break
 				}
@@ -238,6 +254,102 @@ func (s *VideoModelContractService) Import(values []ImportedVideoModelContract) 
 		return created, updated, nil
 	}
 	return 0, 0, fmt.Errorf("导入视频模型契约失败")
+}
+
+func mergeImportedVideoContractItems(items []ManagedVideoModelContract, incoming protocol.VideoModelContract) ([]ManagedVideoModelContract, string, bool, error) {
+	if len(incoming.Models) < 2 || incoming.Provider == nil {
+		return items, "", false, nil
+	}
+	models := make(map[string]struct{}, len(incoming.Models))
+	for _, model := range incoming.Models {
+		if strings.Contains(model, "*") {
+			return items, "", false, nil
+		}
+		models[strings.ToLower(strings.TrimSpace(model))] = struct{}{}
+	}
+	provider, err := protocol.NormalizeVideoContractProvider(incoming.Provider)
+	if err != nil || provider == nil {
+		return items, "", false, err
+	}
+	candidates := make([]int, 0)
+	covered := make(map[string]struct{}, len(models))
+	for index, item := range items {
+		current := item.Contract
+		if current.Provider == nil || current.Driver != incoming.Driver ||
+			!strings.EqualFold(current.Provider.BaseURL, provider.BaseURL) ||
+			current.Provider.AuthMode != provider.AuthMode || current.Provider.AuthHeader != provider.AuthHeader {
+			continue
+		}
+		contained := len(current.Models) > 0
+		for _, model := range current.Models {
+			key := strings.ToLower(strings.TrimSpace(model))
+			if strings.Contains(model, "*") {
+				contained = false
+				break
+			}
+			if _, ok := models[key]; !ok {
+				contained = false
+				break
+			}
+			covered[key] = struct{}{}
+		}
+		if contained {
+			candidates = append(candidates, index)
+		}
+	}
+	if len(candidates) < 2 || len(covered) != len(models) {
+		return items, "", false, nil
+	}
+	for model := range models {
+		if _, ok := covered[model]; !ok {
+			return items, "", false, nil
+		}
+	}
+	target := candidates[0]
+	credentials := make(map[string]string)
+	var retiredVersions []VideoModelContractVersion
+	for _, index := range candidates {
+		if items[index].Draft != nil || items[index].DraftEnabled != nil {
+			return nil, "", false, fmt.Errorf("同上游契约存在未发布草稿，请先发布或删除草稿再合并")
+		}
+		for address, key := range items[index].UploadCredentials {
+			if previous, exists := credentials[address]; exists && previous != key {
+				return nil, "", false, fmt.Errorf("同上游契约在 %s 配置了不同上传密钥，无法自动合并", address)
+			}
+			credentials[address] = key
+		}
+		if index != target {
+			retiredVersions = append(retiredVersions, items[index].Versions...)
+		}
+	}
+	merged := items[target]
+	merged.UploadCredentials = credentials
+	sort.SliceStable(retiredVersions, func(left, right int) bool {
+		return retiredVersions[left].PublishedAt < retiredVersions[right].PublishedAt
+	})
+	for _, version := range retiredVersions {
+		merged.Revision++
+		version.Revision = merged.Revision
+		merged.Versions = appendVideoContractVersion(merged.Versions, version.Revision, version.Contract, version.PublishedAt)
+	}
+	filtered := make([]ManagedVideoModelContract, 0, len(items)-len(candidates)+1)
+	for index, item := range items {
+		if index == target {
+			filtered = append(filtered, merged)
+			continue
+		}
+		remove := false
+		for _, candidate := range candidates[1:] {
+			if index == candidate {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, merged.ID, true, nil
 }
 
 func (s *VideoModelContractService) Update(id string, contract protocol.VideoModelContract, enabled bool) (*ManagedVideoModelContract, error) {

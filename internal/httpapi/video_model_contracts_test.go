@@ -189,7 +189,8 @@ func TestAdminVideoModelContractPreviewBuildsRequestAndParsesResponses(t *testin
 
 func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 	for _, requirement := range []string{
-		"按真实协议差异拆分", "完整模型 ID", "只声明文档有证据支持的能力",
+		"能用一份契约表达的型号必须合并到一份", "同一 API 服务和鉴权默认只生成一份契约",
+		"不要按产品名、系列、型号前缀或能力差异拆分", "请求字段、传输和规则差异写入 model_profiles", "完整模型 ID", "只声明文档有证据支持的能力",
 		"custom-video", "generation.selection 固定为 infer", "polling", "artifact.mode",
 		"duration_value_type", "必须选择 string", "必须选择 number",
 		"严格按以下互斥矩阵", "image 的 first_frame.max 必须为 1", "reference 的 first_frame、last_frame 全部为 0",
@@ -201,7 +202,7 @@ func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 			t.Errorf("document import prompt is missing requirement %q", requirement)
 		}
 	}
-	if strings.Contains(videoContractImportSystemPrompt, `{"contracts"`) || len(videoContractImportSystemPrompt) >= 9_000 {
+	if strings.Contains(videoContractImportSystemPrompt, `{"contracts"`) || len(videoContractImportSystemPrompt) >= 13_000 {
 		t.Fatal("document import prompt still embeds a verbose contract example")
 	}
 	if strings.Contains(videoContractImportSystemPrompt, "普通 JSON 字段映射使用 custom-video") {
@@ -227,7 +228,7 @@ func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 		`"create_path"`, `"query_path"`, `"artifact"`, `"content_path"`,
 		`"allowed_hosts"`, `"generation"`, `"rules"`, `"model_profiles"`,
 		`"queued_statuses"`, `"processing_statuses"`, `"progress_fields"`, `"generation_mode_field"`,
-		`"when"`, `"require"`, `"require_any"`, `"forbid"`, `"limits"`,
+		`"transport"`, `"request"`, `"when"`, `"require"`, `"require_any"`, `"forbid"`, `"limits"`,
 		`"force_values"`, `"ui"`, `"show"`, `"hide"`, `"disable"`, `"message"`,
 	} {
 		if !bytes.Contains(encoded, []byte(field)) {
@@ -528,6 +529,29 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 	multiple, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`,`+string(secondData)+`]}`, "document/video-v1 document/video-v2")
 	if err != nil || len(multiple) != 1 || !slices.Equal(multiple[0].Models, []string{"document/video-v1", "document/video-v2"}) {
 		t.Fatalf("equivalent contracts = %#v, error = %v", multiple, err)
+	}
+	profileVariant := second
+	profileVariant.Name = "Document video variant"
+	profileVariant.Capability.Resolutions = []string{"720p"}
+	profileVariant.Capability.DefaultResolution = "720p"
+	profileVariant.Request.DurationField = "duration_seconds"
+	profileVariantData, _ := json.Marshal(profileVariant)
+	multiple, err = decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`,`+string(profileVariantData)+`]}`, "model: document/video-v1 document/video-v2")
+	if err != nil || len(multiple) != 1 || len(multiple[0].ModelProfiles) != 2 {
+		t.Fatalf("model-specific variants were not merged into profiles: %#v, error = %v", multiple, err)
+	}
+	for _, test := range []struct {
+		model         string
+		resolution    string
+		durationField string
+	}{
+		{model: "document/video-v1", resolution: contract.Capability.DefaultResolution, durationField: contract.Request.DurationField},
+		{model: "document/video-v2", resolution: "720p", durationField: "duration_seconds"},
+	} {
+		resolved, ok := protocol.ResolveVideoModelContract(multiple[0], test.model)
+		if !ok || resolved.Capability.DefaultResolution != test.resolution || resolved.Request.DurationField != test.durationField {
+			t.Fatalf("merged profile for %s lost model settings: %#v", test.model, resolved)
+		}
 	}
 
 	different := second
@@ -853,6 +877,33 @@ func TestVideoContractImportStreamsDocumentReadFailure(t *testing.T) {
 	}
 	if len(events) != 2 || events[0].Stage != "reading_document" || events[1].Stage != "failed" || events[1].Message == "" {
 		t.Fatalf("expected document reading followed by the actual failure: %#v", events)
+	}
+}
+
+func TestVideoContractImportValidatesEveryDocumentURL(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	for _, targets := range [][]string{
+		{"https://docs.example.com/create", "file:///invalid-document"},
+		{"https://docs.example.com/create", "http://127.0.0.1/private"},
+		{"", "  "},
+	} {
+		var body bytes.Buffer
+		form := multipart.NewWriter(&body)
+		_ = form.WriteField("source_type", "url")
+		for _, target := range targets {
+			_ = form.WriteField("url", target)
+		}
+		_ = form.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import", &body)
+		req.Header.Set("Content-Type", form.FormDataContentType())
+		setRequestAuthCookie(req, token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "文档地址") {
+			t.Fatalf("invalid document set accepted: status=%d body=%s", res.Code, res.Body.String())
+		}
 	}
 }
 

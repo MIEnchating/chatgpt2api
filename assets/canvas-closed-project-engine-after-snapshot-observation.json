@@ -1,0 +1,1931 @@
+{
+  "phase": "after",
+  "checks": [
+    {
+      "name": "six_small_save_receipts_without_transcript_retransmission_or_large_edit_serialization",
+      "passed": true
+    },
+    {
+      "name": "initial_full_transcript_clone_count",
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 8,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 9464,
+      "closedDialogs": {
+        "project": 0,
+        "engine": 0
+      },
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 109.19999992847443,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 85.5,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1104.5,
+          "ms": 234
+        },
+        {
+          "start": 3198.3000000715256,
+          "ms": 65
+        },
+        {
+          "start": 3450.3000000715256,
+          "ms": 235
+        },
+        {
+          "start": 3829.399999976158,
+          "ms": 55
+        },
+        {
+          "start": 5776.800000071526,
+          "ms": 58
+        },
+        {
+          "start": 5835.600000023842,
+          "ms": 334
+        },
+        {
+          "start": 6171.700000047684,
+          "ms": 408
+        },
+        {
+          "start": 6588.300000071526,
+          "ms": 95
+        },
+        {
+          "start": 7120.800000071526,
+          "ms": 76
+        },
+        {
+          "start": 7498.800000071526,
+          "ms": 86
+        },
+        {
+          "start": 7587.399999976158,
+          "ms": 83
+        },
+        {
+          "start": 7779.399999976158,
+          "ms": 60
+        },
+        {
+          "start": 8648.899999976158,
+          "ms": 690
+        },
+        {
+          "start": 9377.800000071526,
+          "ms": 52
+        }
+      ]
+    },
+    {
+      "readyMs": 7790,
+      "closedDialogs": {
+        "project": 0,
+        "engine": 0
+      },
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 74,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0.20000004768371582,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 40.799999952316284,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 288.89999997615814,
+          "ms": 63
+        },
+        {
+          "start": 873.2999999523163,
+          "ms": 86
+        },
+        {
+          "start": 2653.5999999046326,
+          "ms": 226
+        },
+        {
+          "start": 5075.199999928474,
+          "ms": 283
+        },
+        {
+          "start": 5358.699999928474,
+          "ms": 312
+        },
+        {
+          "start": 5678.599999904633,
+          "ms": 96
+        },
+        {
+          "start": 6594.199999928474,
+          "ms": 60
+        },
+        {
+          "start": 7178.299999952316,
+          "ms": 493
+        },
+        {
+          "start": 7672.399999976158,
+          "ms": 68
+        }
+      ]
+    },
+    {
+      "readyMs": 6552,
+      "closedDialogs": {
+        "project": 0,
+        "engine": 0
+      },
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 98.29999995231628,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 78.79999995231628,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 2301,
+          "ms": 220
+        },
+        {
+          "start": 3745.899999976158,
+          "ms": 300
+        },
+        {
+          "start": 4047.399999976158,
+          "ms": 339
+        },
+        {
+          "start": 4393.200000047684,
+          "ms": 64
+        },
+        {
+          "start": 5958.399999976158,
+          "ms": 469
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "saveResponses": [
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 892,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1000
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 9270870,
+      "bodyCount": 1,
+      "summaries": 1,
+      "requestBytes": 9270978
+    }
+  ],
+  "canvasReadRequests": 6,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "editCopies": [
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.20000004768371582,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 818,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    }
+  ],
+  "editSerializations": [],
+  "editLongTasks": [
+    {
+      "start": 9156.200000047684,
+      "ms": 207
+    },
+    {
+      "start": 9363.300000071526,
+      "ms": 983
+    },
+    {
+      "start": 10361.399999976158,
+      "ms": 101
+    },
+    {
+      "start": 10463.100000023842,
+      "ms": 139
+    },
+    {
+      "start": 10710.800000071526,
+      "ms": 157
+    },
+    {
+      "start": 11320.200000047684,
+      "ms": 417
+    },
+    {
+      "start": 11753.899999976158,
+      "ms": 71
+    },
+    {
+      "start": 17063.300000071526,
+      "ms": 150
+    },
+    {
+      "start": 17231.600000023842,
+      "ms": 89
+    },
+    {
+      "start": 17364.100000023842,
+      "ms": 182
+    },
+    {
+      "start": 17546.399999976158,
+      "ms": 165
+    },
+    {
+      "start": 17778.100000023842,
+      "ms": 69
+    },
+    {
+      "start": 22949.700000047684,
+      "ms": 164
+    },
+    {
+      "start": 23130.300000071526,
+      "ms": 107
+    },
+    {
+      "start": 23242.200000047684,
+      "ms": 72
+    },
+    {
+      "start": 23367.800000071526,
+      "ms": 177
+    },
+    {
+      "start": 23545,
+      "ms": 110
+    },
+    {
+      "start": 23775.399999976158,
+      "ms": 79
+    },
+    {
+      "start": 29878.300000071526,
+      "ms": 262
+    },
+    {
+      "start": 30202.200000047684,
+      "ms": 104
+    },
+    {
+      "start": 30350,
+      "ms": 383
+    },
+    {
+      "start": 30811.700000047684,
+      "ms": 142
+    },
+    {
+      "start": 36452.39999997616,
+      "ms": 200
+    },
+    {
+      "start": 36712,
+      "ms": 61
+    }
+  ],
+  "editClosedDialogs": {
+    "project": 0,
+    "engine": 0
+  },
+  "applicationAncestors": [
+    {
+      "function": "CanvasPage",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794491283434",
+      "line": 973,
+      "sampleMs": 262.90899999999993
+    },
+    {
+      "function": "CanvasAgentPanelContent",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794490499926",
+      "line": 177,
+      "sampleMs": 224.18699999999993
+    },
+    {
+      "function": "Tooltip",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 60,
+      "sampleMs": 117.98899999999999
+    },
+    {
+      "function": "TooltipTrigger",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 71,
+      "sampleMs": 108.995
+    },
+    {
+      "function": "Button",
+      "url": "http://127.0.0.1:8002/src/components/ui/button.tsx",
+      "line": 34,
+      "sampleMs": 101.73800000000003
+    },
+    {
+      "function": "rememberCaret",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-prompt-chip-input.tsx?t=1794478207540",
+      "line": 97,
+      "sampleMs": 93.58699999999999
+    },
+    {
+      "function": "TooltipContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 90,
+      "sampleMs": 82.31799999999998
+    },
+    {
+      "function": "TooltipHint",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 124,
+      "sampleMs": 59.94699999999999
+    },
+    {
+      "function": "ResizeHandle",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794490648880",
+      "line": 2069,
+      "sampleMs": 57.619
+    },
+    {
+      "function": "PopoverContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 33,
+      "sampleMs": 46.687000000000005
+    },
+    {
+      "function": "Card",
+      "url": "http://127.0.0.1:8002/src/components/ui/card.tsx",
+      "line": 6,
+      "sampleMs": 39.062
+    },
+    {
+      "function": "renderNodeQuickActions",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794491283434",
+      "line": 6452,
+      "sampleMs": 38.361
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794491283434",
+      "line": 1133,
+      "sampleMs": 37.766
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 36.462999999999994
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-prompt-chip-input.tsx?t=1794478207540",
+      "line": 57,
+      "sampleMs": 35.819
+    },
+    {
+      "function": "canvasDocumentValuesEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 2,
+      "sampleMs": 31.099999999999994
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-conversation.tsx?t=1794483815419",
+      "line": 161,
+      "sampleMs": 30.273000000000003
+    },
+    {
+      "function": "CanvasWorkspaceControls",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 185,
+      "sampleMs": 27.561
+    },
+    {
+      "function": "Conversation",
+      "url": "http://127.0.0.1:8002/src/components/ai-elements/conversation.tsx?t=1794270665748",
+      "line": 5,
+      "sampleMs": 25.139999999999997
+    },
+    {
+      "function": "ModelSelectorName",
+      "url": "http://127.0.0.1:8002/src/components/ai-elements/model-selector.tsx?t=1794269139696",
+      "line": 86,
+      "sampleMs": 24.755
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 171,
+      "sampleMs": 22.171
+    },
+    {
+      "function": "cn",
+      "url": "http://127.0.0.1:8002/src/lib/utils.ts",
+      "line": 3,
+      "sampleMs": 21.97
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794490648880",
+      "line": 1232,
+      "sampleMs": 17.733999999999998
+    },
+    {
+      "function": "CanvasDOMNode",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794490648880",
+      "line": 1198,
+      "sampleMs": 15.706999999999999
+    },
+    {
+      "function": "ScrollBar",
+      "url": "http://127.0.0.1:8002/src/components/ui/scroll-area.tsx",
+      "line": 48,
+      "sampleMs": 15.124
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/overflow-marquee-text.tsx",
+      "line": 16,
+      "sampleMs": 14.660000000000004
+    },
+    {
+      "function": "ConfirmDialog",
+      "url": "http://127.0.0.1:8002/src/components/ui/confirm-dialog.tsx?t=1794262740140",
+      "line": 9,
+      "sampleMs": 14.628000000000002
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 16,
+      "sampleMs": 14.572000000000003
+    },
+    {
+      "function": "ModelPicker",
+      "url": "http://127.0.0.1:8002/src/components/model-picker.tsx?t=1794476799533",
+      "line": 11,
+      "sampleMs": 14.340000000000002
+    },
+    {
+      "function": "CanvasAgentMediaModelPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-media-model-picker.tsx?t=1794487449822",
+      "line": 12,
+      "sampleMs": 14.306000000000001
+    },
+    {
+      "function": "SkillPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-skill-picker.tsx?t=1794487449826",
+      "line": 45,
+      "sampleMs": 13.730999999999998
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/generation/prompt-textarea-frame.tsx?t=1794488247346",
+      "line": 10,
+      "sampleMs": 13.629999999999999
+    },
+    {
+      "function": "CanvasAgentAssetMenu",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-composer.tsx?t=1794276407913",
+      "line": 10,
+      "sampleMs": 12.322
+    },
+    {
+      "function": "PromptInput",
+      "url": "http://127.0.0.1:8002/src/components/ai-elements/prompt-input.tsx",
+      "line": 6,
+      "sampleMs": 11.473
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 97,
+      "sampleMs": 11.307
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 10,
+      "sampleMs": 11.282000000000002
+    },
+    {
+      "function": "DialogContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/dialog.tsx?t=1794261789124",
+      "line": 67,
+      "sampleMs": 11.065999999999999
+    },
+    {
+      "function": "CanvasNodeQuickActions",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-node-actions-panel.tsx",
+      "line": 12,
+      "sampleMs": 10.93
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 162,
+      "sampleMs": 10.758
+    },
+    {
+      "function": "normalizeImageSize",
+      "url": "http://127.0.0.1:8002/src/lib/image-options.ts",
+      "line": 460,
+      "sampleMs": 10.695
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 21746.6609999999
+    },
+    {
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 2264.4429999999984
+    },
+    {
+      "function": "exports.jsxDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 1295.197
+    },
+    {
+      "function": "exports.jsx",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 550.2879999999999
+    },
+    {
+      "function": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 419.592
+    },
+    {
+      "function": "exports.createElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 591,
+      "sampleMs": 275.55
+    },
+    {
+      "function": "createTask",
+      "url": "",
+      "line": 0,
+      "sampleMs": 238.95799999999997
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 150.79499999999996
+    },
+    {
+      "function": "measure",
+      "url": "",
+      "line": 0,
+      "sampleMs": 146.179
+    },
+    {
+      "function": "run",
+      "url": "",
+      "line": 0,
+      "sampleMs": 119.459
+    },
+    {
+      "function": "rememberCaret",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-prompt-chip-input.tsx?t=1794478207540",
+      "line": 97,
+      "sampleMs": 93.58699999999999
+    },
+    {
+      "function": "react_stack_bottom_frame",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 12860,
+      "sampleMs": 88.49600000000001
+    },
+    {
+      "function": "exports.cloneElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 546,
+      "sampleMs": 87.54
+    },
+    {
+      "function": "addObjectDiffToProperties",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2407,
+      "sampleMs": 83.34
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 70.963
+    },
+    {
+      "function": "validateProperty",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 1873,
+      "sampleMs": 69.438
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/radix-ui.js?v=5b2f5e33",
+      "line": 147,
+      "sampleMs": 68.70899999999999
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/lucide-react.js?v=5b2f5e33",
+      "line": 48,
+      "sampleMs": 66.65899999999999
+    },
+    {
+      "function": "renderWithHooks",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 4199,
+      "sampleMs": 61.674
+    },
+    {
+      "function": "runWithFiberInDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 845,
+      "sampleMs": 59.443000000000005
+    },
+    {
+      "function": "createWorkInProgress",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2726,
+      "sampleMs": 56.920000000000016
+    },
+    {
+      "function": "areHookInputsEqual",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 4192,
+      "sampleMs": 53.415
+    },
+    {
+      "function": "getComponentNameFromFiber",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 482,
+      "sampleMs": 51.248000000000005
+    },
+    {
+      "function": "commitPassiveMountOnFiber",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 7608,
+      "sampleMs": 51.175999999999995
+    },
+    {
+      "function": "logComponentRender",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2459,
+      "sampleMs": 51.13799999999999
+    },
+    {
+      "function": "updateFunctionComponent",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 5559,
+      "sampleMs": 50.32200000000001
+    },
+    {
+      "function": "useComposedRefs",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/dist-GNI1psu2.js?v=5b2f5e33",
+      "line": 33,
+      "sampleMs": 47.291999999999994
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/rolldown-runtime-SbdDWaPq.js?v=5b2f5e33",
+      "line": 22,
+      "sampleMs": 47.136
+    },
+    {
+      "function": "CanvasAgentPanelContent",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794490499926",
+      "line": 177,
+      "sampleMs": 47.016000000000005
+    },
+    {
+      "function": "updateWorkInProgressHook",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 4315,
+      "sampleMs": 43.043
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/lucide-react.js?v=5b2f5e33",
+      "line": 67,
+      "sampleMs": 42.593
+    },
+    {
+      "function": "exports.unstable_now",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 126,
+      "sampleMs": 41.207
+    },
+    {
+      "function": "reconcileChildFibersImpl",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 3775,
+      "sampleMs": 40.83700000000001
+    },
+    {
+      "function": "commitUpdate",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 10556,
+      "sampleMs": 37.85
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794491283434",
+      "line": 1133,
+      "sampleMs": 37.766
+    },
+    {
+      "function": "prepareFreshStack",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 8136,
+      "sampleMs": 37.564
+    },
+    {
+      "function": "mergeProps",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/dist-Cvya3_Fp.js?v=5b2f5e33",
+      "line": 70,
+      "sampleMs": 35.995
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-prompt-chip-input.tsx?t=1794478207540",
+      "line": 57,
+      "sampleMs": 35.819
+    },
+    {
+      "function": "updateProperties",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 9924,
+      "sampleMs": 34.309000000000005
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 34.211999999999996
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'codex' !== 'native'\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-closed-project-engine.mjs:191:85",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

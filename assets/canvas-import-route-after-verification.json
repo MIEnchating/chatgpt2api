@@ -1,0 +1,10 @@
+{
+  "phase": "after",
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "urlSelectsImportedAfterImport": true,
+  "activeImportedAfterRefresh": true,
+  "activeSourceAfterRefresh": false,
+  "completeHistoryInBothProjects": true,
+  "originalProjectsUnchanged": true
+}

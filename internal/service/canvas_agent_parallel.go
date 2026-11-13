@@ -13,7 +13,7 @@ import (
 const canvasAgentGenerationConcurrency = 4
 
 func canvasAgentWorkflowNodeReady(node CanvasNode) bool {
-	return node.Type == "text" || node.URL != "" && node.GenerationStatus != "loading" && node.GenerationStatus != "error"
+	return node.Type == "text" || node.Type == "script" || node.URL != "" && node.GenerationStatus != "loading" && node.GenerationStatus != "error"
 }
 
 // Only media I/O is concurrent. The worker owns all document and session writes.
@@ -26,7 +26,12 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 		task map[string]any
 		err  error
 	}
+	type mediaProgress struct {
+		job   *canvasAgentGeneration
+		value int
+	}
 	completed := make(chan completion, canvasAgentGenerationConcurrency)
+	updates := make(chan mediaProgress, canvasAgentGenerationConcurrency)
 	done, started := map[string]bool{}, map[string]bool{}
 	results := []map[string]any{}
 	var failure map[string]any
@@ -51,7 +56,7 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 					failure = w.canvasChangedResult("工作流节点已被移除，后续步骤未执行")
 					break
 				}
-				if canvasAgentWorkflowNodeReady(*n) {
+				if n.Type != "script" && canvasAgentWorkflowNodeReady(*n) {
 					started[id], done[id] = true, true
 					continue
 				}
@@ -63,6 +68,10 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 					}
 				}
 				if !ready {
+					continue
+				}
+				if n.Type == "script" {
+					started[id], done[id] = true, true
 					continue
 				}
 				if err := w.bindWorkflowReferences(id); err != nil {
@@ -98,7 +107,14 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 								err = fmt.Errorf("media generation panicked: %v", recovered)
 							}
 						}()
-						task, err = w.service.media(ctx, w.identity, job.node, job.metadata)
+						task, err = w.service.media(ctx, w.identity, job.node, job.metadata, func(progress int) error {
+							select {
+							case updates <- mediaProgress{job: job, value: progress}:
+								return nil
+							case <-ctx.Done():
+								return ctx.Err()
+							}
+						})
 					}()
 					completed <- completion{job: job, task: task, err: err}
 				}(job)
@@ -117,6 +133,11 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 		select {
 		case <-w.ctx.Done():
 			return results, failure, w.ctx.Err()
+		case progress := <-updates:
+			if err := w.generationProgress(progress.job, progress.value); err != nil {
+				return results, failure, err
+			}
+			continue
 		case next = <-completed:
 		}
 		active--
@@ -165,7 +186,7 @@ func (w *canvasAgentWorker) bindWorkflowReferences(id string) error {
 		if source == nil {
 			return fmt.Errorf("来源节点已被移除")
 		}
-		if source.Type == "text" {
+		if source.Type == "text" || source.Type == "script" {
 			continue
 		}
 		if source.URL == "" {

@@ -1,0 +1,20 @@
+{
+  "method": "Actual smart-synthesis UI on a temporary copy; text request intercepted before provider, original media generation untouched",
+  "checks": [
+    {
+      "name": "global_story_selected_shot_and_reference_identity_reach_actual_request_without_old_outputs",
+      "imageCount": 7,
+      "selectedShots": 1,
+      "promptSHA256": "faac28822760597351ea3f7c1c123703b5f8005d0ad67f173491cb5c2f8445a3",
+      "passed": true
+    },
+    {
+      "name": "intercepted_rejection_keeps_existing_prompts_bindings_media_and_sixteen_messages",
+      "mediaSubmissions": 0,
+      "passed": true
+    }
+  ],
+  "supplierSubmissions": 0,
+  "qualityApproved": false,
+  "testProjectDeleted": true
+}

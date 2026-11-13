@@ -26,7 +26,7 @@ import { type ImageGenerationOptions, normalizeImageGenerationOptions, imageOutp
 import { isGPTImage26 } from "@/lib/image-model-capabilities";
 
 import { videoModelContract } from "@/lib/video-model-contracts";
-import { isVideoSaveFailure } from "@/lib/video-task-error";
+import { canRecoverVideoTask } from "@/lib/video-task-error";
 
 import "./image-workbench.css";
 
@@ -129,7 +129,7 @@ import {
   uploadVideoReference,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
-  recoverVideoContent,
+  recoverVideoTask,
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
   isImageModel,
@@ -670,6 +670,7 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "taskRevision",
   "taskStatus",
   "taskProgress",
+  "canRecoverVideo",
   "videoContract",
   "status",
   "path",
@@ -803,7 +804,8 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
   if (
     sameTask &&
     isTaskActive(task.status) &&
-    imageIsTerminal
+    imageIsTerminal &&
+    !(task.mode === "video" && image.canRecoverVideo === true && Number(task.revision) > Number(image.taskRevision || 0))
   ) {
     return image;
   }
@@ -1933,8 +1935,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
   }, [selectedConversation]);
   const selectedConversationComposerMode = conversationComposerMode(selectedConversation);
+  const restoredComposerConversationRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!workbenchPreferencesReady || !selectedConversationId || selectedConversationNeedsDetail) return;
+    if (!selectedConversationId) {
+      restoredComposerConversationRef.current = null;
+      return;
+    }
+    if (!workbenchPreferencesReady || selectedConversationNeedsDetail
+      || restoredComposerConversationRef.current === selectedConversationId) return;
+    // Restore on entry; queued saves must not overwrite a newer local choice.
+    restoredComposerConversationRef.current = selectedConversationId;
     setComposerMode(selectedConversationComposerMode);
   }, [selectedConversationId, selectedConversationNeedsDetail, selectedConversationComposerMode, workbenchPreferencesReady]);
 
@@ -4004,7 +4014,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           assertTaskDispatchAllowed(groups.map((group) => group.taskId));
           let submission: { submitted: CreationTask[]; failed: Array<{ group: { taskId: string; count: number }; error: unknown }> };
           if (activeTurn.mode === "video") {
-            submission = await submitVideoTaskGroups(groups, {
+            const trackedIDs = new Set(activeTurn.images.filter((image) => image.taskId && (Number(image.taskRevision) > 0 || image.taskCreatedAt)).map((image) => image.taskId));
+            const trackedGroups = groups.filter((group) => trackedIDs.has(group.taskId));
+            const observed = trackedGroups.length
+              ? await fetchCreationTasks(trackedGroups.map((group) => group.taskId), creationTaskRequestOptions)
+              : { items: [], missing_ids: [] };
+            submission = await submitVideoTaskGroups(groups.filter((group) => !trackedIDs.has(group.taskId)), {
               prompt: activeTurn.prompt,
               model: activeTurn.model,
               size: activeTurn.size || undefined,
@@ -4023,6 +4038,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               relayTokenName: activeTurnRelayTokenName,
               assertDispatchAllowed: (taskIds) => assertTaskDispatchAllowed(taskIds),
             });
+            submission.submitted.push(...observed.items);
+            for (const group of trackedGroups) {
+              if (!observed.items.some((task) => task.id === group.taskId)) {
+                submission.failed.push({ group, error: new Error("原视频任务记录暂时不可用，未重新生成，请稍后同步") });
+              }
+            }
           } else {
             const results = await Promise.allSettled(groups.map(submitTaskGroupWithRetry));
             submission = {
@@ -4177,6 +4198,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           }
           const latestAfterApply = conversationsRef.current.find((conversation) => conversation.id === conversationId);
           const latestTurnAfterApply = latestAfterApply?.turns.find((turn) => turn.id === activeTurn.id);
+          if (taskList.missing_ids.length > 0 && latestTurnAfterApply?.mode === "video") {
+            pollingUnavailable = true;
+            updateTurnProgress(conversationId, activeTurn.id, { message: "原视频任务暂时不可用", detail: "保留原任务，稍后同步结果" });
+            break;
+          }
           if (taskList.missing_ids.length > 0 && latestTurnAfterApply) {
             updateTurnProgress(conversationId, activeTurn.id, {
               message: "正在恢复生成任务",
@@ -4522,32 +4548,63 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到对应的图片记录");
         return;
       }
-      if (targetTurn.mode === "video" && isVideoSaveFailure(targetImage)) {
+      let originalVideoTask: CreationTask | undefined;
+      if (targetTurn.mode === "video" && targetImage.taskId && !canRecoverVideoTask(targetImage)) {
+        const lookupSessionKey = currentSessionKeyRef.current;
+        try {
+          const response = await fetchCreationTasks([targetImage.taskId], creationTaskRequestOptions);
+          if (!pageActiveRef.current || currentSessionKeyRef.current !== lookupSessionKey) return;
+          originalVideoTask = response.items.find((task) => task.id === targetImage.taskId);
+          if (!originalVideoTask) { toast.error("原任务暂时不可用，请稍后同步，未重新生成"); return; }
+        } catch (error) {
+          if (pageActiveRef.current && currentSessionKeyRef.current === lookupSessionKey) toast.error(formatCreationTaskError(error, "原任务查询失败，未重新生成"));
+          return;
+        }
+      }
+      if (targetTurn.mode === "video" && (canRecoverVideoTask(targetImage) || originalVideoTask?.can_recover_video || originalVideoTask && originalVideoTask.status !== "error" && originalVideoTask.status !== "cancelled")) {
         const recoverySessionKey = currentSessionKeyRef.current;
         retryingImageIdsRef.current.add(retryKey);
-        const notice = toast.loading("正在保存已生成视频，不会重新生成");
+        const notice = toast.loading("正在恢复原视频任务");
         try {
-          const task = await recoverVideoContent(targetImage.taskId || targetImage.id, creationTaskRequestOptions);
-          if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
-          const recoveredConversation = await updateConversation(conversationId, (conversation) => {
-            if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) {
-              throw new DOMException("Session changed", "AbortError");
+          let task = await recoverVideoTask(targetImage.taskId || targetImage.id, creationTaskRequestOptions);
+          const deadline = Date.now() + CREATION_TASK_POLL_MAX_DURATION_MS;
+          while (true) {
+            if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
+            const recoveredConversation = await updateConversation(conversationId, (conversation) => {
+              if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) {
+                throw new DOMException("Session changed", "AbortError");
+              }
+              if (!conversation) throw new DOMException("Conversation removed", "AbortError");
+              const current = conversation;
+              return {
+                ...current,
+                turns: current.turns.map((turn) => {
+                  if (turn.id !== turnId) return turn;
+                  const images = turn.images.map((image, index) => index === imageIndex && (image.taskId || image.id) === task.id ? taskDataToStoredImage({ ...image, canRecoverVideo: true }, task) : image);
+                  return { ...turn, images, ...deriveGenerationTaskStatus(images) };
+                }),
+              };
+            });
+            if (!recoveredConversation || !pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
+            if (!isTaskActive(task.status)) {
+              if (task.status === "success") toast.success("视频任务已恢复");
+              else toast.error(task.error || "原任务尚未恢复，可稍后再次尝试");
+              break;
             }
-            const current = conversation || targetConversation;
-            return {
-              ...current,
-              turns: current.turns.map((turn) => {
-                if (turn.id !== turnId) return turn;
-                const images = turn.images.map((image, index) => index === imageIndex && (image.taskId || image.id) === task.id ? taskDataToStoredImage(image, task) : image);
-                return { ...turn, images, ...deriveGenerationTaskStatus(images) };
-              }),
-            };
-          });
-          if (!recoveredConversation || !pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
-          toast.success("视频已保存");
+            if (Date.now() >= deadline) {
+              toast.info("原任务仍在处理中，可稍后查看结果");
+              break;
+            }
+            await sleep(1500);
+            if (!pageActiveRef.current || currentSessionKeyRef.current !== recoverySessionKey) return;
+            const tasks = await fetchCreationTasks([task.id], creationTaskRequestOptions);
+            const next = tasks.items.find((item) => item.id === task.id);
+            if (!next) throw new Error("原任务暂时不可用，请稍后同步");
+            task = next;
+          }
         } catch (error) {
           if (pageActiveRef.current && currentSessionKeyRef.current === recoverySessionKey) {
-            toast.error(formatCreationTaskError(error, "视频保存失败，未重新生成"));
+            toast.error(formatCreationTaskError(error, "原任务同步失败，未重新生成"));
           }
         } finally {
           toast.dismiss(notice);
@@ -5184,7 +5241,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("请至少上传一个参考图、参考视频或参考音频");
         return;
       }
-      if (![...normalizedVideoReferenceImages, ...normalizedVideoReferenceVideos, ...normalizedVideoReferenceAudios].every(isPublicReferenceURL)) {
+      const transport = videoModelContract(effectiveModel)?.transport;
+      if (transport?.local_material === "url" && !transport.material_upload && ![...normalizedVideoReferenceImages, ...normalizedVideoReferenceVideos, ...normalizedVideoReferenceAudios].every(isPublicReferenceURL)) {
         toast.error("多模态参考必须使用公网可访问的 http:// 或 https:// URL");
         return;
       }
@@ -5804,9 +5862,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               {displayedConversation ? <h1 className="hidden min-w-0 truncate text-sm font-medium xl:block" title={displayedConversation.title}>{displayedConversation.title}</h1> : null}
             </div>
             <Tabs value={composerMode} onValueChange={(mode) => { if (mode === "image" || mode === "video") handleComposerModeChange(mode); }}>
-              <TabsList aria-label="创作类型" className="w-30 group-data-horizontal/tabs:h-9 sm:w-60 sm:group-data-horizontal/tabs:h-10">
-                <TabsTrigger value="image" className="h-full px-2 sm:px-4">图片</TabsTrigger>
-                <TabsTrigger value="video" className="h-full px-2 sm:px-4">视频</TabsTrigger>
+              <TabsList aria-label="创作类型" className="w-30 rounded-full group-data-horizontal/tabs:h-9 sm:w-60 sm:group-data-horizontal/tabs:h-10">
+                <TabsTrigger value="image" className="h-full rounded-full px-2 sm:px-4">图片</TabsTrigger>
+                <TabsTrigger value="video" className="h-full rounded-full px-2 sm:px-4">视频</TabsTrigger>
               </TabsList>
             </Tabs>
             <div aria-hidden="true" />

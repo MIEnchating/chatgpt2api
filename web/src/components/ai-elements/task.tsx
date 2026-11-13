@@ -34,9 +34,9 @@ export function Task({
     <TraceLine status={running ? "running" : status === "error" ? "error" : undefined}>
       <TraceIcon>{running ? <Spinner aria-hidden="true" /> : <Icon />}</TraceIcon>
       <TraceTitle>{label}</TraceTitle>
-      <TraceDescription className="flex items-center gap-1">
+      {timing !== undefined && timing !== null ? <TraceDescription className="flex items-center gap-1">
         {timingLabel || (complete ? "用时" : "已处理")}{timing}
-      </TraceDescription>
+      </TraceDescription> : null}
     </TraceLine>
   );
   return (

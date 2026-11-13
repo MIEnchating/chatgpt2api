@@ -1,0 +1,34 @@
+{
+  "method": "Isolated imported fixture: backend material replacement, real UI storyboard replacement and regeneration; intercepted paid submission",
+  "checks": [
+    {
+      "name": "backend_material_reference_slot_updated",
+      "passed": true
+    },
+    {
+      "name": "ui_storyboard_slot_updated_and_saved_in_order",
+      "passed": true
+    },
+    {
+      "name": "references_survive_reload",
+      "passed": true
+    },
+    {
+      "name": "regeneration_submits_five_current_references_and_retains_media_settings",
+      "passed": true
+    },
+    {
+      "name": "original_canvas_and_fourteen_messages_unchanged",
+      "passed": true
+    }
+  ],
+  "supplierSubmissions": 0,
+  "qualityApproved": false,
+  "request": {
+    "referenceImages": 5,
+    "model": "minimax-H3-super",
+    "size": "9:16",
+    "resolution": "768P",
+    "audio": true
+  }
+}

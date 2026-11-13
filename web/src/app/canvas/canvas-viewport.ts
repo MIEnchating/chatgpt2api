@@ -2,12 +2,18 @@ export type CanvasViewport = { zoom: number; x: number; y: number };
 
 type CanvasConnectionLike = { from_node_id: string; to_node_id: string };
 type CanvasConnectionBounds = { left: number; top: number; right: number; bottom: number };
+type CanvasNodeGeometry = { x: number; y: number; width: number; height: number };
 
 export type CanvasConnectionIndex = {
   cellSize: number;
-  cells: ReadonlyMap<string, readonly number[]>;
-  spanning: readonly number[];
-  bounds: readonly (CanvasConnectionBounds | undefined)[];
+  cells: Map<string, number[]>;
+  spanning: Set<number>;
+  bounds: Array<CanvasConnectionBounds | undefined>;
+  connectionCells: string[][];
+  connectionsByNode: Map<string, number[]>;
+  geometryByNode: Map<string, { x: number; y: number; width: number; height: number }>;
+  connections: readonly CanvasConnectionLike[];
+  nodesSnapshot?: readonly object[];
 };
 
 export const CANVAS_MIN_ZOOM = 0.05;
@@ -103,39 +109,120 @@ export function buildCanvasConnectionIndex(
   cellSize = 1024,
 ): CanvasConnectionIndex {
   const cells = new Map<string, number[]>();
-  const spanning: number[] = [];
+  const spanning = new Set<number>();
   const bounds: Array<CanvasConnectionBounds | undefined> = [];
-  for (let index = 0; index < connections.length; index += 1) {
-    const connection = connections[index];
+  const connectionCells: string[][] = [];
+  const connectionsByNode = new Map<string, number[]>();
+  const geometryByNode = new Map([...nodeByID].map(([id, node]) => [id, { x: node.x, y: node.y, width: node.width, height: node.height }]));
+  const connectionIndex = { cellSize, cells, spanning, bounds, connectionCells, connectionsByNode, geometryByNode, connections };
+  for (let position = 0; position < connections.length; position += 1) {
+    const connection = connections[position];
+    for (const nodeID of new Set([connection.from_node_id, connection.to_node_id])) {
+      const values = connectionsByNode.get(nodeID);
+      if (values) values.push(position);
+      else connectionsByNode.set(nodeID, [position]);
+    }
+    addCanvasConnectionToIndex(connectionIndex, position, connection, nodeByID);
+  }
+  return connectionIndex;
+}
+
+function addCanvasConnectionToIndex(index: CanvasConnectionIndex, connectionIndex: number, connection: CanvasConnectionLike, nodeByID: ReadonlyMap<string, CanvasNodeGeometry>) {
     const from = nodeByID.get(connection.from_node_id);
     const to = nodeByID.get(connection.to_node_id);
     if (!from || !to) {
-      bounds.push(undefined);
-      continue;
+      index.bounds[connectionIndex] = undefined;
+      index.connectionCells[connectionIndex] = [];
+      return;
     }
     const next = canvasConnectionBounds(
       { x: from.x + from.width, y: from.y + from.height / 2 },
       { x: to.x, y: to.y + to.height / 2 },
     );
-    bounds.push(next);
-    const minX = Math.floor(next.left / cellSize);
-    const maxX = Math.floor(next.right / cellSize);
-    const minY = Math.floor(next.top / cellSize);
-    const maxY = Math.floor(next.bottom / cellSize);
+    index.bounds[connectionIndex] = next;
+    const minX = Math.floor(next.left / index.cellSize);
+    const maxX = Math.floor(next.right / index.cellSize);
+    const minY = Math.floor(next.top / index.cellSize);
+    const maxY = Math.floor(next.bottom / index.cellSize);
     if ((maxX - minX + 1) * (maxY - minY + 1) > 64) {
-      spanning.push(index);
-      continue;
+      index.spanning.add(connectionIndex);
+      index.connectionCells[connectionIndex] = [];
+      return;
     }
+    const keys: string[] = [];
     for (let x = minX; x <= maxX; x += 1) {
       for (let y = minY; y <= maxY; y += 1) {
         const key = connectionCellKey(x, y);
-        const values = cells.get(key);
-        if (values) values.push(index);
-        else cells.set(key, [index]);
+        const values = index.cells.get(key);
+        if (values) {
+          let position = values.length;
+          while (position > 0 && values[position - 1] > connectionIndex) position -= 1;
+          values.splice(position, 0, connectionIndex);
+        }
+        else index.cells.set(key, [connectionIndex]);
+        keys.push(key);
       }
     }
+    index.connectionCells[connectionIndex] = keys;
+}
+
+export function canvasConnectionIndexMatchesGeometry(index: CanvasConnectionIndex, nodeByID: ReadonlyMap<string, { x: number; y: number; width: number; height: number }>) {
+  if (index.geometryByNode.size !== nodeByID.size) return false;
+  for (const [id, node] of nodeByID) {
+    const previous = index.geometryByNode.get(id);
+    if (!previous || previous.x !== node.x || previous.y !== node.y || previous.width !== node.width || previous.height !== node.height) return false;
   }
-  return { cellSize, cells, spanning, bounds };
+  return true;
+}
+
+export function updateCanvasConnectionIndex(
+  index: CanvasConnectionIndex,
+  nodeByID: ReadonlyMap<string, CanvasNodeGeometry>,
+  knownChangedNodeIDs?: Iterable<string>,
+) {
+  const changedGeometry = new Map<string, CanvasNodeGeometry | undefined>();
+  if (!knownChangedNodeIDs) {
+    for (const [id, node] of nodeByID) {
+      const previous = index.geometryByNode.get(id);
+      if (!previous || previous.x !== node.x || previous.y !== node.y || previous.width !== node.width || previous.height !== node.height) changedGeometry.set(id, node);
+    }
+    for (const id of index.geometryByNode.keys()) if (!nodeByID.has(id)) changedGeometry.set(id, undefined);
+  } else {
+    for (const id of knownChangedNodeIDs) changedGeometry.set(id, nodeByID.get(id));
+  }
+  return updateCanvasConnectionGeometry(index, changedGeometry);
+}
+
+export function updateCanvasConnectionGeometry(index: CanvasConnectionIndex, changedGeometry: ReadonlyMap<string, CanvasNodeGeometry | undefined>, nodesSnapshot?: readonly object[]) {
+  if (!changedGeometry.size) return index;
+  const actualChanges = new Map<string, CanvasNodeGeometry | undefined>();
+  for (const [id, geometry] of changedGeometry) {
+    const previous = index.geometryByNode.get(id);
+    if (geometry ? !previous || previous.x !== geometry.x || previous.y !== geometry.y || previous.width !== geometry.width || previous.height !== geometry.height : Boolean(previous)) actualChanges.set(id, geometry);
+  }
+  if (!actualChanges.size) {
+    if (nodesSnapshot) index.nodesSnapshot = nodesSnapshot;
+    return index;
+  }
+  const changedConnections = new Set<number>();
+  for (const id of actualChanges.keys()) for (const connectionIndex of index.connectionsByNode.get(id) || []) changedConnections.add(connectionIndex);
+  for (const connectionIndex of changedConnections) {
+    for (const key of index.connectionCells[connectionIndex] || []) {
+      const values = index.cells.get(key);
+      if (!values) continue;
+      const position = values.indexOf(connectionIndex);
+      if (position >= 0) values.splice(position, 1);
+      if (!values.length) index.cells.delete(key);
+    }
+    index.spanning.delete(connectionIndex);
+  }
+  for (const [id, geometry] of actualChanges) {
+    if (geometry) index.geometryByNode.set(id, { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height });
+    else index.geometryByNode.delete(id);
+  }
+  for (const connectionIndex of changedConnections) addCanvasConnectionToIndex(index, connectionIndex, index.connections[connectionIndex], index.geometryByNode);
+  if (nodesSnapshot) index.nodesSnapshot = nodesSnapshot;
+  return index;
 }
 
 export function canvasConnectionsInViewport(

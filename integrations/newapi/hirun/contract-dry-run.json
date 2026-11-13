@@ -1,0 +1,13 @@
+[
+  {
+    "contract": "Hi.Run H3 视频（OpenAI 兼容）",
+    "passed": true,
+    "models_tested": 2,
+    "modes_tested": 4,
+    "checks": [
+      "契约结构、模型与字段映射",
+      "各模型、各生成模式的代表性参数与素材约束",
+      "轮询路径与状态配置"
+    ]
+  }
+]

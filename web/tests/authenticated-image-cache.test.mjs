@@ -7,7 +7,21 @@ import {
   fetchCachedAuthenticatedImage,
   getCachedAuthenticatedImageByteSize,
   releaseCachedAuthenticatedImage,
+  resolveImageRequestURL,
 } from "../src/lib/authenticated-image.ts";
+
+test("managed image URLs use the current API origin when no separate API URL is configured", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = { location: { href: "http://127.0.0.1:8002/canvas/example" } };
+  try {
+    assert.equal(resolveImageRequestURL("http://public.example:8002/images/example.png?size=original"), "http://127.0.0.1:8002/images/example.png?size=original");
+    assert.equal(resolveImageRequestURL("/image-thumbnails/example.webp"), "http://127.0.0.1:8002/image-thumbnails/example.webp");
+    assert.equal(resolveImageRequestURL("https://external.example/photo.png"), "https://external.example/photo.png");
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
 
 test("image downloads and editors reuse the cached original Blob without another request", async () => {
   const originalFetch = globalThis.fetch;

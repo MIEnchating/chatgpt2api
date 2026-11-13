@@ -44,19 +44,21 @@ export function CanvasParameterPopover({ icon, label, summary, width = 380, disa
         data-canvas-no-pan
         role="dialog"
         aria-label={label}
-        className="max-h-(--radix-popover-content-available-height) max-w-[calc(100vw-1rem)]"
+        className="min-h-0 max-h-(--radix-popover-content-available-height) max-w-[calc(100vw-1rem)] overflow-hidden"
         style={{ width }}
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}
-      ><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 pb-3">
           <ItemMedia variant="icon" className="grid size-7 shrink-0 place-items-center [&_svg]:size-4">{icon}</ItemMedia>
           <span className="text-sm font-semibold">{label}</span>
         </div>
-        <div className="min-w-0">{children}</div>
-      </ScrollArea></PopoverContent>
+        <ScrollArea data-slot="canvas-parameter-body" className="-mx-2.5 min-h-0 min-w-0 flex-1" contentClassName="px-2.5 py-2">
+          {children}
+        </ScrollArea>
+      </PopoverContent>
     </Popover>
   );
 }

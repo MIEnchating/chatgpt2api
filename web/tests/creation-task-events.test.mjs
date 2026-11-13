@@ -101,6 +101,36 @@ test("task SSE cancellation, timeout and account changes release connections", a
   client.reset();
 });
 
+test("long task observation waits for the server terminal state and remains cancellable", async () => {
+  for (const cancel of [false, true]) {
+    const { client, connections } = fixture();
+    const controller = new AbortController();
+    const deadlines = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    let pending;
+    try {
+      globalThis.setTimeout = callback => { deadlines.push(callback); return 0; };
+      pending = client.wait("long", { signal: controller.signal, timeoutMs: null });
+    } finally { globalThis.setTimeout = originalSetTimeout; }
+    let settled = false;
+    void pending.then(() => { settled = true; }, () => { settled = true; });
+    try {
+      connections[0].emit(event([task("long", 1, "running")], "snapshot"));
+      deadlines.forEach(callback => callback());
+      await Promise.resolve();
+      assert.equal(settled, false, "an observation deadline must not interrupt a running paid task");
+      if (cancel) {
+        controller.abort();
+        await assert.rejects(pending, { name: "AbortError" });
+      } else {
+        connections[0].emit(event([task("long", 2, "success")]));
+        assert.equal((await pending).status, "success");
+      }
+      assert.equal(connections[0].signal.aborted, true);
+    } finally { client.reset(); }
+  }
+});
+
 test("task SSE stops retrying denied requests and reports deleted tasks", async () => {
   const { client, connections } = fixture();
   const denied = client.wait("one");
@@ -127,4 +157,23 @@ test("task SSE stops reconnecting when an open stream revokes access", async () 
       assert.equal(connections.length, 1);
     } finally { client.reset(); }
   }
+});
+
+test("recovery ignores cached terminal snapshots older than the claimed revision", async () => {
+ const { client, connections } = fixture();
+ const controller = new AbortController();
+ try {
+  const keepAlive=client.watch({signal:controller.signal,onUpdate:()=>{},onError:()=>{}});
+  connections[0].emit(event([task("recover",2,"error")],"snapshot"));
+  const progress=[];
+  let settled=false;
+  const pending=client.wait("recover",{minRevision:3,onProgress:t=>progress.push(t.status)}).then(t=>{settled=true;return t;});
+  await tick();
+  assert.equal(settled,false);
+  connections[0].emit(event([task("recover",3,"queued")]));
+  connections[0].emit(event([task("recover",5,"success")]));
+  assert.equal((await pending).status,"success");
+  assert.deepEqual(progress,["queued","success"]);
+  keepAlive();
+ } finally {controller.abort();client.reset();}
 });

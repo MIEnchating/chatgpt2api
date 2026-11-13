@@ -331,7 +331,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                     </TooltipHint>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-foreground">
+                        <h3 className="min-w-0 break-words text-sm font-semibold text-foreground">
                           {item.title || "系统公告"}
                         </h3>
                         <Badge variant={item.enabled ? "default" : "secondary"} >
@@ -341,10 +341,12 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                       <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
                         {item.content}
                       </p>
-                      <p className="mt-2 text-xs text-muted-foreground/75">
-                        更新于 {formatDateTime(item.updated_at)}
-                      </p>
                     </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pl-7">
+                    <p className="text-xs text-muted-foreground">
+                      更新于 {formatDateTime(item.updated_at)}
+                    </p>
                     <div className="flex shrink-0 items-center gap-1">
                       <TooltipHint content={"编辑公告"}><Button
                         type="button"

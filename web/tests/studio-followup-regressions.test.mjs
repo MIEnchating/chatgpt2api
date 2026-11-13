@@ -8,7 +8,7 @@ import { activeVideoModelContracts, installVideoModelContracts, videoModelContra
 import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
 import { videoModelRequiresHTTPSReferences } from "../src/lib/video-model-capabilities.ts";
 import { isPublicHTTPSReferenceURL } from "../src/lib/public-reference-url.ts";
-import { isVideoSaveFailure } from "../src/lib/video-task-error.ts";
+import { canRecoverVideoTask } from "../src/lib/video-task-error.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
 import { imageConversationHasActiveTurn, canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
 import { DEFAULT_PROMPT_MARKET_SOURCES, normalizePromptMarketSources } from "../src/app/image/banana-prompts.ts";
@@ -109,7 +109,7 @@ test("a video submission cancelled in flight runs compensation", async () => {
   const cancellations = [];
   const groups = [{ taskId: "task", count: 1 }];
   const submit = extract("submitTaskGroups", {
-    activeTurn: { mode: "video", prompt: "draw", model: "video" }, videoReferenceUrls: [], activeTurnRelayTokenName: undefined,
+    activeTurn: { mode: "video", prompt: "draw", model: "video", images: [] }, videoReferenceUrls: [], activeTurnRelayTokenName: undefined,
     assertTaskDispatchAllowed: () => { if (!allowed) throw new Aborted(); },
     taskDispatchIsAllowed: () => allowed, submitVideoTaskGroups: () => response.promise,
     pageActiveRef: { current: true }, runnerSessionEpoch: 0, pageSessionEpochRef: { current: 0 },
@@ -373,7 +373,7 @@ function retryFixture(mode = "generate", status = "message") {
       pageActiveRef: { current: true }, conversationsRef: { current: [conversation] },
       retryingImageIdsRef: { current: new Set() }, queueingTurnIdsRef: { current: new Set() },
       isTurnInProgress: () => false, isConfiguredCreationModel: () => true,
-      isVideoSaveFailure,
+      canRecoverVideoTask,
       videoModelContract,
       imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: item => item?.historySummaryOnly === true,
       imageTurnReferenceValidationError: () => "", requireRelayToken: () => true,
@@ -399,6 +399,7 @@ for (const outcome of ["success", "download-error", "session-change", "replaced-
     const fixture = retryFixture("video", "error");
     const original = fixture.turn.images[0];
     original.taskId = "completed-video";
+    original.canRecoverVideo = true;
     original.error = "视频已生成但保存失败: video content returned status 502";
     const response = deferred();
     const session = { current: "original-session" };
@@ -406,8 +407,10 @@ for (const outcome of ["success", "download-error", "session-change", "replaced-
     const retry = extract("handleRetryImage", {
       ...fixture.context,
       currentSessionKeyRef: session,
+      CREATION_TASK_POLL_MAX_DURATION_MS: 8 * 60_000,
+      isTaskActive: status => status === "queued" || status === "running",
       creationTaskRequestOptions: { sessionKey: session.current },
-      recoverVideoContent: async id => {
+      recoverVideoTask: async id => {
         assert.equal(id, "completed-video");
         downloads++;
         await response.promise;
@@ -563,3 +566,49 @@ for (const align of [false, true]) {
     assert.equal(preview.size, expected);
   });
 }
+
+test("video recovery follows the original task asynchronously with the configured authentication", async () => {
+ const fixture=retryFixture("video","error");
+ fixture.turn.images[0].taskId="original-video";
+ fixture.turn.images[0].canRecoverVideo=true;
+ const seen=[];
+ const requestOptions={sessionKey:"custom-session"};
+ const snapshots=[{id:"original-video",status:"running",revision:4},{id:"original-video",status:"success",revision:5}];
+ const retry=extract("handleRetryImage",{
+  ...fixture.context, currentSessionKeyRef:{current:"custom-session"},creationTaskRequestOptions:requestOptions,
+  CREATION_TASK_POLL_MAX_DURATION_MS:60_000,isTaskActive:status=>["queued","running"].includes(status),
+  recoverVideoTask:async(id,options)=>{assert.equal(options,requestOptions);return {id,status:"queued",revision:3};},
+  fetchCreationTasks:async(ids,options)=>{assert.deepEqual(ids,["original-video"]);assert.equal(options,requestOptions);return {items:[snapshots.shift()]};},
+  sleep:async()=>{},
+  taskDataToStoredImage:(image,task)=>{seen.push(task.status);return {...image,status:task.status==="success"?"success":"loading",taskRevision:task.revision};},
+  deriveGenerationTaskStatus:()=>({}),
+  runConversationQueue:()=>assert.fail("must not submit generation while recovering"),
+  formatCreationTaskError:error=>error.message,
+  toast:{loading:()=>1,dismiss:()=>{},success:()=>{},error:error=>fixture.errors.push(error)},
+ });
+ await retry("conversation","turn",0);
+ assert.deepEqual(fixture.errors,[]);
+ assert.deepEqual(seen,["queued","running","success"]);
+ assert.equal(fixture.saved.turns[0].images[0].taskId,"original-video");
+});
+
+test("a persisted accepted video is observed and cannot be resubmitted when missing", async () => {
+ for(const missing of [false,true]) {
+  const groups=[{taskId:"accepted-original",count:1}];
+  const options={sessionKey:"original-auth"};
+  let requests=0;
+  const submit=extract("submitTaskGroups",{
+   activeTurn:{mode:"video",prompt:"fixture",model:"video",images:[{taskId:"accepted-original",taskRevision:2,status:"loading"}]},
+   videoReferenceUrls:[],activeTurnRelayTokenName:undefined,creationTaskRequestOptions:options,
+   fetchCreationTasks:async(ids,auth)=>{requests++;assert.equal(auth,options);assert.deepEqual(ids,["accepted-original"]);return {items:missing?[]:[{id:"accepted-original",status:"running"}],missing_ids:missing?["accepted-original"]:[]};},
+   submitVideoTaskGroups:async groups=>{assert.deepEqual(groups,[]);return {submitted:[],failed:[]};},
+   assertTaskDispatchAllowed:()=>{},taskDispatchIsAllowed:()=>true,
+   ImageTaskDispatchAbortedError:class extends Error{},
+  });
+  const result=await submit(groups);
+  assert.equal(requests,1);
+  assert.equal(result.submitted.length,missing?0:1);
+  assert.equal(result.failed.length,missing?1:0);
+  if(missing) assert.match(result.failed[0].error.message,/未重新生成/);
+ }
+});

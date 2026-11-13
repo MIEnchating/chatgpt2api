@@ -1,0 +1,39 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "checks": [
+    {
+      "name": "actual_movie_playback",
+      "passed": true,
+      "duration": 60,
+      "time": 1.199571,
+      "width": 768,
+      "height": 1376
+    },
+    {
+      "name": "authenticated_movie_download",
+      "passed": true,
+      "bytes": 14768956
+    },
+    {
+      "name": "refresh_preserves_full_history_and_completed_tasks",
+      "passed": true,
+      "messageCount": 18
+    },
+    {
+      "name": "mobile_agent_and_movie_layout",
+      "passed": true,
+      "width": 390
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "assets/canvas-native-fresh-film-final-1440.png",
+    "assets/canvas-native-fresh-film-final-390.png"
+  ],
+  "qualityApproved": false,
+  "mediaSubmissions": 0
+}

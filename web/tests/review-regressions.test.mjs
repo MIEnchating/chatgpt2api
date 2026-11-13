@@ -15,9 +15,9 @@ describe("review regressions", () => {
   });
 
   test("canvas does not apply a workspace without model contracts", () => {
-    expect(canvasSource).toContain("await Promise.all([fetchCanvasDocument(), fetchModelConfig()])");
+    expect(canvasSource).toContain("const [initialWorkspace] = await Promise.all([workspaceRequest, fetchModelConfig()])");
     expect(canvasSource).not.toContain("const modelConfigRequest = fetchModelConfig().catch(() => undefined);");
-    expect(canvasSource.indexOf("await Promise.all([fetchCanvasDocument(), fetchModelConfig()])")).toBeLessThan(canvasSource.indexOf("applyWorkspace(workspace);"));
+    expect(canvasSource.indexOf("const [initialWorkspace] = await Promise.all([workspaceRequest, fetchModelConfig()])")).toBeLessThan(canvasSource.indexOf("applyWorkspace(workspace);"));
   });
 
   test("creator model configuration failures stay non-authoritative and retryable", () => {

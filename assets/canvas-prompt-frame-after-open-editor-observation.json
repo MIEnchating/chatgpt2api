@@ -1,0 +1,1917 @@
+{
+  "phase": "after",
+  "checks": [],
+  "pageErrors": [],
+  "browserWrites": 6,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 8387,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 161.70000004768372,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 82.10000002384186,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 805.8999999761581,
+          "ms": 217
+        },
+        {
+          "start": 1026.1999999284744,
+          "ms": 84
+        },
+        {
+          "start": 2477.2999999523163,
+          "ms": 104
+        },
+        {
+          "start": 2779.100000023842,
+          "ms": 230
+        },
+        {
+          "start": 3019.5,
+          "ms": 67
+        },
+        {
+          "start": 5014,
+          "ms": 376
+        },
+        {
+          "start": 5393.5,
+          "ms": 403
+        },
+        {
+          "start": 5804.799999952316,
+          "ms": 123
+        },
+        {
+          "start": 6635.399999976158,
+          "ms": 71
+        },
+        {
+          "start": 6708.5,
+          "ms": 72
+        },
+        {
+          "start": 7588.399999976158,
+          "ms": 630
+        },
+        {
+          "start": 8218.899999976158,
+          "ms": 70
+        },
+        {
+          "start": 8319.299999952316,
+          "ms": 50
+        }
+      ]
+    },
+    {
+      "readyMs": 6435,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.20000004768371582,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 113.29999995231628,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 42.60000002384186,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1974.2999999523163,
+          "ms": 221
+        },
+        {
+          "start": 2207,
+          "ms": 59
+        },
+        {
+          "start": 2298.100000023842,
+          "ms": 60
+        },
+        {
+          "start": 3975.399999976158,
+          "ms": 311
+        },
+        {
+          "start": 4288,
+          "ms": 370
+        },
+        {
+          "start": 4664.799999952316,
+          "ms": 102
+        },
+        {
+          "start": 5900.5,
+          "ms": 406
+        },
+        {
+          "start": 6307.299999952316,
+          "ms": 79
+        }
+      ]
+    },
+    {
+      "readyMs": 7129,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.19999992847442627,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 116.39999997615814,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 80.19999992847443,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 800.7000000476837,
+          "ms": 87
+        },
+        {
+          "start": 2214,
+          "ms": 191
+        },
+        {
+          "start": 2417.9000000953674,
+          "ms": 59
+        },
+        {
+          "start": 2513.4000000953674,
+          "ms": 61
+        },
+        {
+          "start": 4596.5,
+          "ms": 305
+        },
+        {
+          "start": 4902.400000095367,
+          "ms": 404
+        },
+        {
+          "start": 5314.300000071526,
+          "ms": 102
+        },
+        {
+          "start": 6664.400000095367,
+          "ms": 367
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "saveResponses": [
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    }
+  ],
+  "canvasReadRequests": 6,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "editCopies": [
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.20000004768371582,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    }
+  ],
+  "editSerializations": [],
+  "editLongTasks": [
+    {
+      "start": 9624.600000023842,
+      "ms": 386
+    },
+    {
+      "start": 10019.100000023842,
+      "ms": 96
+    },
+    {
+      "start": 10211.600000023842,
+      "ms": 149
+    },
+    {
+      "start": 15523.100000023842,
+      "ms": 169
+    },
+    {
+      "start": 15711.400000095367,
+      "ms": 101
+    },
+    {
+      "start": 15908.5,
+      "ms": 185
+    },
+    {
+      "start": 16094.5,
+      "ms": 172
+    },
+    {
+      "start": 16337.400000095367,
+      "ms": 71
+    },
+    {
+      "start": 22687.300000071526,
+      "ms": 192
+    },
+    {
+      "start": 22900.5,
+      "ms": 101
+    },
+    {
+      "start": 23037.100000023842,
+      "ms": 364
+    },
+    {
+      "start": 23512.300000071526,
+      "ms": 90
+    },
+    {
+      "start": 28698.900000095367,
+      "ms": 215
+    },
+    {
+      "start": 28935.5,
+      "ms": 70
+    },
+    {
+      "start": 29070.400000095367,
+      "ms": 236
+    },
+    {
+      "start": 29307.400000095367,
+      "ms": 181
+    },
+    {
+      "start": 29593.300000071526,
+      "ms": 91
+    },
+    {
+      "start": 29714.300000071526,
+      "ms": 54
+    },
+    {
+      "start": 34886.700000047684,
+      "ms": 116
+    },
+    {
+      "start": 35024,
+      "ms": 87
+    }
+  ],
+  "promptFrameStats": {
+    "measures": 0,
+    "observers": 0,
+    "disconnects": 0
+  },
+  "layoutMetrics": {
+    "LayoutCount": 49,
+    "LayoutDuration": 0.050567,
+    "RecalcStyleCount": 129,
+    "RecalcStyleDuration": 0.121613
+  },
+  "applicationAncestors": [
+    {
+      "function": "CanvasPage",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794488247373",
+      "line": 973,
+      "sampleMs": 222.35099999999997
+    },
+    {
+      "function": "CanvasAgentPanelContent",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 177,
+      "sampleMs": 126.10400000000001
+    },
+    {
+      "function": "TooltipTrigger",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 71,
+      "sampleMs": 101.87299999999998
+    },
+    {
+      "function": "TooltipContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 90,
+      "sampleMs": 93.32699999999997
+    },
+    {
+      "function": "Button",
+      "url": "http://127.0.0.1:8002/src/components/ui/button.tsx",
+      "line": 34,
+      "sampleMs": 83.69100000000002
+    },
+    {
+      "function": "TooltipHint",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 124,
+      "sampleMs": 51.687000000000005
+    },
+    {
+      "function": "ConfirmDialog",
+      "url": "http://127.0.0.1:8002/src/components/ui/confirm-dialog.tsx?t=1794262740140",
+      "line": 9,
+      "sampleMs": 51.159
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 308,
+      "sampleMs": 48.66799999999999
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-engine-picker.tsx",
+      "line": 126,
+      "sampleMs": 48.642
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/generation/prompt-textarea-frame.tsx?t=1794488247346",
+      "line": 10,
+      "sampleMs": 47.961000000000006
+    },
+    {
+      "function": "CanvasTextPromptPanel",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794488247373",
+      "line": 797,
+      "sampleMs": 43.865
+    },
+    {
+      "function": "CanvasAgentMediaModelPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-media-model-picker.tsx?t=1794487449822",
+      "line": 12,
+      "sampleMs": 42.81
+    },
+    {
+      "function": "normalizeDimensions",
+      "url": "http://127.0.0.1:8002/src/lib/image-options.ts",
+      "line": 427,
+      "sampleMs": 39.708
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 36.321999999999996
+    },
+    {
+      "function": "canvasDocumentValuesEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 2,
+      "sampleMs": 31.472
+    },
+    {
+      "function": "Tooltip",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 60,
+      "sampleMs": 26.531999999999996
+    },
+    {
+      "function": "CanvasWorkspaceControls",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 185,
+      "sampleMs": 22.729999999999993
+    },
+    {
+      "function": "CanvasNodeQuickActions",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-node-actions-panel.tsx",
+      "line": 12,
+      "sampleMs": 19.984000000000005
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 171,
+      "sampleMs": 19.128999999999998
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-conversation.tsx?t=1794483815419",
+      "line": 161,
+      "sampleMs": 18.816000000000003
+    },
+    {
+      "function": "ControlButton",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 967,
+      "sampleMs": 17.287
+    },
+    {
+      "function": "Dialog",
+      "url": "http://127.0.0.1:8002/src/components/ui/dialog.tsx?t=1794261789124",
+      "line": 11,
+      "sampleMs": 16.031
+    },
+    {
+      "function": "strings",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 158,
+      "sampleMs": 14.940999999999999
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 16,
+      "sampleMs": 14.239
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/overflow-marquee-text.tsx",
+      "line": 16,
+      "sampleMs": 13.413
+    },
+    {
+      "function": "DialogContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/dialog.tsx?t=1794261789124",
+      "line": 67,
+      "sampleMs": 13.305
+    },
+    {
+      "function": "CanvasEngine",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794488247373",
+      "line": 58,
+      "sampleMs": 12.218
+    },
+    {
+      "function": "CanvasDOMNode",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794488247373",
+      "line": 1198,
+      "sampleMs": 12.030999999999999
+    },
+    {
+      "function": "InputGroupAddon",
+      "url": "http://127.0.0.1:8002/src/components/ui/input-group.tsx",
+      "line": 33,
+      "sampleMs": 11.712
+    },
+    {
+      "function": "CanvasPromptLibrary",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-prompt-library.tsx?t=1794477665662",
+      "line": 10,
+      "sampleMs": 11.077
+    },
+    {
+      "function": "CanvasAgentEnginePicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-engine-picker.tsx",
+      "line": 13,
+      "sampleMs": 10.451999999999998
+    },
+    {
+      "function": "SkillPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-skill-picker.tsx?t=1794487449826",
+      "line": 45,
+      "sampleMs": 10.351
+    },
+    {
+      "function": "cn",
+      "url": "http://127.0.0.1:8002/src/lib/utils.ts",
+      "line": 3,
+      "sampleMs": 10.206
+    },
+    {
+      "function": "taskNodeRenderingEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-conversation.tsx?t=1794483815419",
+      "line": 288,
+      "sampleMs": 9.912
+    },
+    {
+      "function": "PopoverContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 33,
+      "sampleMs": 9.232
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 10,
+      "sampleMs": 9.163
+    },
+    {
+      "function": "ModelPicker",
+      "url": "http://127.0.0.1:8002/src/components/model-picker.tsx?t=1794476799533",
+      "line": 11,
+      "sampleMs": 8.999
+    },
+    {
+      "function": "CanvasToolPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 645,
+      "sampleMs": 8.724
+    },
+    {
+      "function": "MessageScrollerButton",
+      "url": "http://127.0.0.1:8002/src/components/ui/message-scroller.tsx",
+      "line": 66,
+      "sampleMs": 8.495000000000001
+    },
+    {
+      "function": "Popover",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 11,
+      "sampleMs": 8.216
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 22129.770000000088
+    },
+    {
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 1628.6480000000001
+    },
+    {
+      "function": "exports.jsxDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 805.821
+    },
+    {
+      "function": "exports.jsx",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 590.239000000001
+    },
+    {
+      "function": "exports.createElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 591,
+      "sampleMs": 266.62500000000006
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 174.22100000000003
+    },
+    {
+      "function": "run",
+      "url": "",
+      "line": 0,
+      "sampleMs": 147.153
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 116.29199999999999
+    },
+    {
+      "function": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 114.87999999999997
+    },
+    {
+      "function": "logComponentRender",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2459,
+      "sampleMs": 84.28899999999997
+    },
+    {
+      "function": "createTask",
+      "url": "",
+      "line": 0,
+      "sampleMs": 84.169
+    },
+    {
+      "function": "react_stack_bottom_frame",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 12860,
+      "sampleMs": 78.58099999999997
+    },
+    {
+      "function": "measure",
+      "url": "",
+      "line": 0,
+      "sampleMs": 68.95799999999997
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 308,
+      "sampleMs": 48.66799999999999
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/generation/prompt-textarea-frame.tsx?t=1794488247346",
+      "line": 10,
+      "sampleMs": 47.961000000000006
+    },
+    {
+      "function": "prepareFreshStack",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 8136,
+      "sampleMs": 46.49000000000001
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/class-variance-authority.js?v=5b2f5e33",
+      "line": 19,
+      "sampleMs": 45.337
+    },
+    {
+      "function": "query",
+      "url": "",
+      "line": 5719,
+      "sampleMs": 44.754000000000005
+    },
+    {
+      "function": "addObjectDiffToProperties",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2407,
+      "sampleMs": 43.538999999999994
+    },
+    {
+      "function": "normalizeDimensions",
+      "url": "http://127.0.0.1:8002/src/lib/image-options.ts",
+      "line": 427,
+      "sampleMs": 39.708
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 132,
+      "sampleMs": 37.758
+    },
+    {
+      "function": "mergeProps",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/dist-Cvya3_Fp.js?v=5b2f5e33",
+      "line": 70,
+      "sampleMs": 36.946
+    },
+    {
+      "function": "CanvasAgentMediaModelPicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-media-model-picker.tsx?t=1794487449822",
+      "line": 12,
+      "sampleMs": 34.134
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 33.963
+    },
+    {
+      "function": "getComponentNameFromFiber",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 482,
+      "sampleMs": 32.17100000000001
+    },
+    {
+      "function": "canvasDocumentValuesEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 2,
+      "sampleMs": 31.472
+    },
+    {
+      "function": "validateProperty$1",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 1849,
+      "sampleMs": 25.695
+    },
+    {
+      "function": "finishRenderingHooks",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 4225,
+      "sampleMs": 25.108
+    },
+    {
+      "function": "createWorkInProgress",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2726,
+      "sampleMs": 24.965999999999998
+    },
+    {
+      "function": "jsxDEVImpl",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 148,
+      "sampleMs": 24.747999999999998
+    },
+    {
+      "function": "now",
+      "url": "",
+      "line": 0,
+      "sampleMs": 24.651000000000003
+    },
+    {
+      "function": "reconcileChildFibersImpl",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 3775,
+      "sampleMs": 22.017000000000007
+    },
+    {
+      "function": "ReactStrictModeWarnings.recordLegacyContextWarning",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 12831,
+      "sampleMs": 21.62
+    },
+    {
+      "function": "beginWork",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 6079,
+      "sampleMs": 20.566
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 171,
+      "sampleMs": 19.128999999999998
+    },
+    {
+      "function": "runWithFiberInDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 845,
+      "sampleMs": 16.282000000000004
+    },
+    {
+      "function": "validateProperties$2",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 1865,
+      "sampleMs": 16.196
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/rolldown-runtime-SbdDWaPq.js?v=5b2f5e33",
+      "line": 22,
+      "sampleMs": 15.917000000000002
+    },
+    {
+      "function": "strings",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 158,
+      "sampleMs": 14.940999999999999
+    },
+    {
+      "function": "getTaskName",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 64,
+      "sampleMs": 14.648000000000001
+    }
+  ],
+  "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '展开节点输入', exact: true })\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-prompt-frame.mjs:162:82",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

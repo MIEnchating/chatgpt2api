@@ -1,0 +1,134 @@
+{
+  "scope": "GET canvas share status reads only the owner manifest and validates project membership; creation, revocation, public access, storage formats and SQL remain unchanged.",
+  "sourceHashes": {
+    "internal/service/canvas_share.go": "66d136c74a0e9ab45b816a24423e30957883de958b4dc54fda20f712fd11e186",
+    "internal/service/canvas_share_test.go": "b546eacb06daeb5183fa02871d8abfc8c7e92929c044b4e756d08bd328e2d748"
+  },
+  "reproduction": {
+    "command": "GOMAXPROCS=4 go test ./internal/service -run ^TestCanvasShareStatusReadsOnlyOwnerManifestWithoutChangingHistory$ -count=1",
+    "exitCode": 1,
+    "log": "/tmp/canvas-share-status-before.log",
+    "failure": "Status lookup loaded transcript blocks and active-project state, rather than just the owner manifest."
+  },
+  "limitations": [
+    "Whole active transcript and workspace root still read completely.",
+    "No SQL, schema or persistence protocol change; isolated MySQL/PostgreSQL integration has not been rerun in this round.",
+    "Small Vite development-mode timing samples under variable background load do not establish full-page performance acceptance."
+  ],
+  "focused": {
+    "command": "GOMAXPROCS=4 go test ./internal/service ./internal/httpapi -run 'TestCanvasShare|TestPublicCanvasDocument|TestFileLifecycle|TestLifecycleShare' -count=1",
+    "exitCode": 0,
+    "serviceSeconds": 0.933,
+    "httpapiSeconds": 0.314,
+    "log": "/tmp/canvas-share-status-focused-final.log",
+    "coverage": [
+      "root-only status read",
+      "unknown owner does not create a workspace",
+      "complete history and manifest unchanged",
+      "missing private history does not block status but still blocks public content",
+      "orphan share mapping and malformed manifest rejected",
+      "share create/revoke and owner isolation",
+      "public projection and media range/ownership",
+      "file lifecycle regressions"
+    ]
+  },
+  "fullGo": {
+    "command": "GOMAXPROCS=4 go test ./internal/service ./internal/httpapi -count=1",
+    "exitCode": 0,
+    "serviceSeconds": 217.382,
+    "httpapiSeconds": 87.727,
+    "log": "/tmp/canvas-share-status-full-go.log",
+    "allRepositoryTestsRerun": false,
+    "externalDatabaseIntegration": "Not repeated; SQL/schema/persistence protocol unchanged. SQLite isolated tests executed."
+  },
+  "runtime": {
+    "service": "chatgpt2api.service",
+    "sourceCommand": "go run ./internal",
+    "cwd": "/root/workspace/chatgpt2api",
+    "backendPort": 8090,
+    "oldMainPID": 1738937,
+    "oldListenerPID": 1739230,
+    "newMainPID": 1772293,
+    "newListenerPID": 1772453,
+    "frontendPID": 806679,
+    "frontendPort": 8002,
+    "health": "ok",
+    "noActiveAgentOrMediaBeforeRestart": true
+  },
+  "browserComparison": {
+    "before": {
+      "shareMs": [
+        783,
+        867,
+        763
+      ],
+      "readyMs": [
+        6648,
+        5728
+      ],
+      "longestMainThreadTaskMs": [
+        311,
+        295
+      ],
+      "checks": [
+        {
+          "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+          "passed": true
+        },
+        {
+          "name": "temporary_share_create_status_unauthenticated_projection_revoke_and_history_preserved",
+          "passed": true
+        }
+      ],
+      "pageErrors": [],
+      "browserWrites": 0,
+      "generationSubmissions": 0,
+      "testProjectDeleted": true,
+      "originalHistoryUnchanged": true
+    },
+    "after": {
+      "shareMs": [
+        24,
+        22,
+        24
+      ],
+      "readyMs": [
+        6268,
+        5246
+      ],
+      "longestMainThreadTaskMs": [
+        297,
+        292
+      ],
+      "checks": [
+        {
+          "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+          "passed": true
+        },
+        {
+          "name": "temporary_share_create_status_unauthenticated_projection_revoke_and_history_preserved",
+          "passed": true
+        }
+      ],
+      "pageErrors": [],
+      "browserWrites": 0,
+      "generationSubmissions": 0,
+      "testProjectDeleted": true,
+      "originalHistoryUnchanged": true
+    }
+  },
+  "sourceHashesUnchanged": true,
+  "frontendValidation": {
+    "sourceUnchangedSinceConversationActionsRound": true,
+    "fullTests": {
+      "pass": 1773,
+      "fail": 0,
+      "files": 194,
+      "seconds": 117.62
+    },
+    "build": "passed in same turn before backend edit",
+    "lint": "0 warnings/errors in same turn before backend edit",
+    "embedded": "go test ./internal/web passed (0.025s) in same turn",
+    "rerunAfterBackendOnlyChange": false
+  }
+}

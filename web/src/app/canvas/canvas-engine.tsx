@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createCanvasAlignmentContext, calculateCanvasAlignment, type CanvasAlignmentContext, type CanvasAlignmentGuides } from "./canvas-alignment";
 import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, RefreshCw, Settings2, Star, Type, Video } from "lucide-react";
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNow } from "@/lib/use-now";
 import { useStableCallback } from "@/lib/use-stable-callback";
+import { useContentStableNodes } from "./use-content-stable-nodes";
 
 import { CanvasConnectionFlow } from "./canvas-connection-flow";
 import { CanvasNodeToolbar } from "./canvas-node-toolbar";
@@ -22,20 +23,22 @@ import {
   activeCanvasConnectionPath,
   canvasConnectionPath,
   canvasConnectionRelations,
+  canvasScriptReferenceConnectionIDs,
   findCanvasConnectionDropTarget,
   resolveCanvasConnection,
   type CanvasConnectionHandleType as HandleType,
   type CanvasConnectionOrigin as ConnectionOrigin,
   type CanvasPoint as Point,
 } from "@/app/canvas/canvas-connections";
-import { buildCanvasConnectionIndex, canvasConnectionsInViewport, canvasGridMetrics, canvasNodesInViewport, zoomCanvasViewport } from "@/app/canvas/canvas-viewport";
+import { buildCanvasConnectionIndex, canvasConnectionIndexMatchesGeometry, canvasConnectionsInViewport, canvasGridMetrics, canvasNodesInViewport, updateCanvasConnectionGeometry, zoomCanvasViewport, type CanvasConnectionIndex } from "@/app/canvas/canvas-viewport";
 import { canvasExportTransform, type CanvasExportBounds } from "@/app/canvas/canvas-export";
 import { canvasNodeAspectRatio } from "@/app/canvas/canvas-node-geometry";
-import { expandCanvasGroupNodeIDs, findCanvasGroupDropTarget, findContainingCanvasGroupID, snapCanvasNodesIntoGroup } from "@/app/canvas/canvas-groups";
+import { expandCanvasGroupNodeIDs, findCanvasGroupDropTargetForNodes, findContainingCanvasGroupID, snapCanvasNodesIntoGroup } from "@/app/canvas/canvas-groups";
 import { buildCanvasInputIndex } from "@/app/canvas/canvas-config-inputs";
 import { canvasBatchMotion, expandCanvasBatchNodeIDs, visibleCanvasNodes } from "@/app/canvas/canvas-batches";
 import { CanvasScriptNode } from "@/app/canvas/canvas-script-node";
-import { scriptProgress } from "@/app/canvas/canvas-script";
+import { scriptProductionSummary, scriptProgress } from "@/app/canvas/canvas-script";
+import { canvasGenerationNeedsRecovery } from "@/app/canvas/canvas-generation-context";
 import { CanvasDirectorNodePanel } from "@/app/canvas/canvas-director-node-panel";
 import { CanvasSpecialNodeContent, SpecialNodeLoading } from "@/app/canvas/canvas-special-nodes";
 import { CanvasVideoNodePlayer } from "@/app/canvas/canvas-video-player";
@@ -91,7 +94,7 @@ type CanvasEngineProps = {
   onConnectionDropEmpty: (origin: ConnectionOrigin, position: Point, menu: Point) => void;
   onTitleChange: (nodeID: string, title: string) => void;
   onNodePanelToggle: (nodeID: string) => void;
-  onNodeMediaLoad: (nodeID: string, width: number, height: number, bytes?: number, sourceURL?: string) => void;
+  onNodeMediaLoad: (nodeID: string, width: number, height: number, bytes?: number, sourceURL?: string, durationMS?: number) => void;
   onViewImage: (nodeID: string) => void;
   onFocusNode: (nodeID: string) => void;
   onDirectorOpen: (nodeID: string) => void;
@@ -174,13 +177,15 @@ export function CanvasEngine({
   const onSetBatchPrimary = useStableCallback(onSetBatchPrimaryProp);
   const onNodeContextMenu = useStableCallback(onNodeContextMenuProp);
   const connectionArrowID = useId();
+  const contentStableNodes = useContentStableNodes(nodes);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef(nodes);
   const viewportRef = useRef(viewport);
   const selectedRef = useRef(selectedNodeIDs);
   const frameRef = useRef<number | null>(null);
+  const interactionPointerRef = useRef<number | null>(null);
   const panRef = useRef({ active: false, startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false, preserveSelection: false });
-  const dragRef = useRef<{ active: boolean; moved: boolean; clickedNodeID: string; startX: number; startY: number; initial: Array<{ id: string; x: number; y: number }> }>({ active: false, moved: false, clickedNodeID: "", startX: 0, startY: 0, initial: [] });
+  const dragRef = useRef<{ active: boolean; moved: boolean; clickedNodeID: string; startX: number; startY: number; initial: Array<{ id: string; x: number; y: number }>; movingIDs: ReadonlySet<string>; nodesSnapshot: readonly CanvasNode[] }>({ active: false, moved: false, clickedNodeID: "", startX: 0, startY: 0, initial: [], movingIDs: new Set(), nodesSnapshot: [] });
   const alignmentRef = useRef<CanvasAlignmentContext | null>(null);
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuides>({});
   const resizeRef = useRef<{ active: boolean; pointerID: number; nodeID: string; corner: ResizeCorner; node: CanvasNode | null }>({ active: false, pointerID: -1, nodeID: "", corner: "bottom-right", node: null });
@@ -221,24 +226,38 @@ export function CanvasEngine({
   }, []);
 
   const configSummaryCacheRef = useRef(new Map<string, { text: number; image: number; video: number; audio: number }>());
-  const canvasInputIndex = useMemo(() => buildCanvasInputIndex(nodes, connections), [connections, nodes]);
-  const nodeByID = canvasInputIndex.nodeByID;
+  const connectionIndexRef = useRef<CanvasConnectionIndex | null>(null);
+  const canvasInputIndex = useMemo(() => buildCanvasInputIndex(contentStableNodes, connections), [connections, contentStableNodes]);
+  const nodeByID = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const batchVisibleNodes = useMemo(() => visibleCanvasNodes(nodes, collapsingBatchRootIDs), [collapsingBatchRootIDs, nodes]);
   const renderedNodes = useMemo(() => exporting ? batchVisibleNodes : canvasNodesInViewport(batchVisibleNodes, viewport, canvasSize), [batchVisibleNodes, canvasSize, exporting, viewport]);
   const connectionNodeIDs = useMemo(() => new Set(batchVisibleNodes.map((node) => node.id)), [batchVisibleNodes]);
+  const connectionNodeIDsRef = useRef(connectionNodeIDs);
+  connectionNodeIDsRef.current = connectionNodeIDs;
   const renderedNodeIDs = useMemo(() => new Set(renderedNodes.map((node) => node.id)), [renderedNodes]);
-  const connectionIndex = useMemo(() => buildCanvasConnectionIndex(connections, nodeByID), [connections, nodeByID]);
-  const renderedConnectionIndices = useMemo(() => exporting
+  const connectionIndex = useMemo(() => {
+    const previous = connectionIndexRef.current;
+    if (previous?.connections === connections && (previous.nodesSnapshot === nodes || canvasConnectionIndexMatchesGeometry(previous, nodeByID))) return previous;
+    const next = buildCanvasConnectionIndex(connections, nodeByID);
+    next.nodesSnapshot = nodes;
+    return next;
+  }, [connections, nodeByID, nodes]);
+  useLayoutEffect(() => {
+    connectionIndex.nodesSnapshot = nodes;
+    connectionIndexRef.current = connectionIndex;
+  }, [connectionIndex, nodes]);
+  const renderedConnectionIndices = exporting
     ? connections.map((_, index) => index)
-    : canvasConnectionsInViewport(connectionIndex, viewport, canvasSize), [canvasSize, connectionIndex, connections, exporting, viewport]);
-  const scriptCompletedSteps = useMemo(() => new Map(nodes.flatMap((node) =>
+    : canvasConnectionsInViewport(connectionIndex, viewport, canvasSize);
+  const scriptCompletedSteps = useMemo(() => new Map(contentStableNodes.flatMap((node) =>
     node.type === "script" && node.script_project
-      ? [[node.id, scriptProgress(node.script_project, nodes, nodeByID).steps] as const]
+      ? [[node.id, scriptProgress(node.script_project, contentStableNodes, canvasInputIndex.nodeByID).steps] as const]
       : [],
-  )), [nodeByID, nodes]);
+  )), [canvasInputIndex, contentStableNodes]);
+  const scriptProductionSummaries = useMemo(() => new Map(contentStableNodes.flatMap(node => node.type === "script" && node.script_project ? [[node.id, scriptProductionSummary(node.script_project, contentStableNodes)] as const] : [])), [contentStableNodes]);
   const configInputSummaries = useMemo(() => {
     const summaries = new Map<string, { text: number; image: number; video: number; audio: number }>();
-    nodes.forEach((node) => {
+    contentStableNodes.forEach((node) => {
       if (node.type !== "config") return;
       const inputs = canvasInputIndex.configInputsByNodeID.get(node.id) || [];
       summaries.set(node.id, {
@@ -256,14 +275,14 @@ export function CanvasEngine({
     });
     configSummaryCacheRef.current = summaries;
     return summaries;
-  }, [canvasInputIndex, nodes]);
+  }, [canvasInputIndex, contentStableNodes]);
   const groupChildCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    nodes.forEach((node) => {
+    contentStableNodes.forEach((node) => {
       if (node.group_id) counts.set(node.group_id, (counts.get(node.group_id) || 0) + 1);
     });
     return counts;
-  }, [nodes]);
+  }, [contentStableNodes]);
   const hasTimedLoadingNode = nodes.some((node) => node.generation_status === "loading" && (node.type === "text" || node.type === "image" || node.type === "video" || node.type === "script"));
 
   const generationNow = useNow(hasTimedLoadingNode);
@@ -294,7 +313,7 @@ export function CanvasEngine({
     });
   }, [connectionFor]);
 
-  function selectNode(event: ReactMouseEvent, nodeID: string) {
+  function selectNode(event: ReactPointerEvent, nodeID: string) {
     const next = new Set(selectedRef.current);
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       if (next.has(nodeID)) next.delete(nodeID);
@@ -307,8 +326,8 @@ export function CanvasEngine({
     return next;
   }
 
-  function captureNodeSelection(event: ReactMouseEvent, nodeID: string) {
-    if (event.button !== 0) return;
+  function captureNodeSelection(event: ReactPointerEvent, nodeID: string) {
+    if (event.button !== 0 || !event.isPrimary || interactionPointerRef.current !== null) return;
     if (spacePressedRef.current || toolRef.current === "pan") {
       pendingSelectionRef.current = null;
       return;
@@ -316,12 +335,15 @@ export function CanvasEngine({
     pendingSelectionRef.current = selectNode(event, nodeID);
   }
 
-  function startNodeDrag(event: ReactMouseEvent, nodeID: string) {
-    if (event.button !== 0) return;
+  function startNodeDrag(event: ReactPointerEvent, nodeID: string) {
+    if (event.button !== 0 || !event.isPrimary || interactionPointerRef.current !== null) return;
     if (spacePressedRef.current || toolRef.current === "pan") return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("[data-connection-handle],[data-resize-handle],[data-canvas-no-pan]")) return;
+    if (target?.closest("[data-connection-handle],[data-resize-handle]")) return;
+    if (target?.closest("[data-canvas-no-pan]") && !target.closest("[data-canvas-node-drag]")) return;
     event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    interactionPointerRef.current = event.pointerId;
     const selected = pendingSelectionRef.current ?? selectNode(event, nodeID);
     const draggedIDs = expandCanvasGroupNodeIDs(expandCanvasBatchNodeIDs(selected, nodesRef.current), nodesRef.current);
     pendingSelectionRef.current = null;
@@ -334,21 +356,28 @@ export function CanvasEngine({
       startX: event.clientX,
       startY: event.clientY,
       initial: nodesRef.current.filter((node) => draggedIDs.has(node.id)).map((node) => ({ id: node.id, x: node.x, y: node.y })),
+      movingIDs: draggedIDs,
+      nodesSnapshot: nodesRef.current,
     };
     syncToolCursor();
   }
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>, node: CanvasNode, corner: ResizeCorner) {
+    if (event.button !== 0 || !event.isPrimary || interactionPointerRef.current !== null) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    interactionPointerRef.current = event.pointerId;
     resizeRef.current = { active: true, pointerID: event.pointerId, nodeID: node.id, corner, node: { ...node } };
     syncToolCursor();
   }
 
-  function startConnection(event: ReactMouseEvent, nodeID: string, handleType: HandleType) {
+  function startConnection(event: ReactPointerEvent, nodeID: string, handleType: HandleType) {
+    if (event.button !== 0 || !event.isPrimary || interactionPointerRef.current !== null) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    interactionPointerRef.current = event.pointerId;
     const origin = { nodeID, handleType };
     connectionRef.current = origin;
     syncToolCursor();
@@ -360,6 +389,7 @@ export function CanvasEngine({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary || interactionPointerRef.current !== null) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target && !event.currentTarget.contains(target)) return;
     const overCanvasControl = Boolean(target?.closest("[data-canvas-no-pan]"));
@@ -368,8 +398,11 @@ export function CanvasEngine({
       document.activeElement.blur();
     }
     const pan = toolRef.current === "pan" || spacePressedRef.current || event.button === 1;
-    if (overCanvasControl || (!pan && overNodeOrConnection)) return;
+    if (overCanvasControl && (!pan || !overNodeOrConnection)) return;
+    if (!pan && overNodeOrConnection) return;
     if (event.button !== 0 && event.button !== 1) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    interactionPointerRef.current = event.pointerId;
     if (event.button === 0 && !pan) {
       event.preventDefault();
       const point = screenToWorld(event.clientX, event.clientY);
@@ -397,7 +430,8 @@ export function CanvasEngine({
       const zoomGesture = event.ctrlKey || event.metaKey;
       const overNode = Boolean(target?.closest("[data-canvas-node]"));
       const overEditor = Boolean(target?.closest("input,textarea,[contenteditable='true'],[role='dialog'],[role='listbox']"));
-      if (!zoomGesture && (overEditor || (!overNode && target?.closest(".scroll-area-viewport,[data-scrollable],[data-canvas-no-zoom],[data-canvas-no-pan]")))) return;
+      const overScrollRegion = Boolean(target?.closest(".scroll-area-viewport,[data-scrollable],[data-canvas-no-zoom]"));
+      if (!zoomGesture && (overEditor || overScrollRegion || (!overNode && target?.closest("[data-canvas-no-pan]")))) return;
       event.preventDefault();
       event.stopPropagation();
       const rect = container.getBoundingClientRect();
@@ -434,12 +468,15 @@ export function CanvasEngine({
     // Space is handled in the capture phase so controls inside parameter panels (select triggers, switches) cannot consume it first.
     let spaceConsumed = false;
     const handleSpaceDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
+      if (event.code !== "Space" || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;
-      const inParameterPanel = Boolean(target?.closest("[data-canvas-parameter-panel]"));
+      const parameterPanel = target?.closest("[data-canvas-parameter-panel]");
+      const inNode = Boolean(target?.closest("[data-canvas-node],[data-canvas-node-toolbar],[data-canvas-node-input-anchor]"));
       const textEntry = target?.closest("input,textarea,select,[contenteditable='true'],[role='listbox'],[role='option']");
-      const otherOverlay = !inParameterPanel && target?.closest("[data-canvas-no-pan],[role='dialog']");
-      if (textEntry || otherOverlay) return;
+      // Dialog close restores focus to node buttons; Space must still activate canvas panning.
+      const overlay = target?.closest("[role='dialog'],[role='alertdialog'],[role='menu'],[data-slot='popover-content']");
+      if (textEntry || overlay && overlay !== parameterPanel) return;
+      if (!parameterPanel && !inNode && target?.closest("[data-canvas-no-pan]")) return;
       event.preventDefault();
       event.stopPropagation();
       spaceConsumed = true;
@@ -496,6 +533,7 @@ export function CanvasEngine({
       let dx = (clientX - drag.startX) / viewportRef.current.zoom;
       let dy = (clientY - drag.startY) / viewportRef.current.zoom;
       const anchor = drag.initial.find((node) => node.id === drag.clickedNodeID);
+      const initialByID = new Map(drag.initial.map((item) => [item.id, item]));
       if (snapToGrid && anchor) {
         // Snap the dragged anchor while preserving group and multi-selection offsets.
         const gridSize = canvasGridMetrics(viewportRef.current).size / viewportRef.current.zoom;
@@ -503,22 +541,46 @@ export function CanvasEngine({
         dy = Math.round((anchor.y + dy) / gridSize) * gridSize - anchor.y;
       }
       if (!snapToGrid) {
+        if (drag.nodesSnapshot !== nodesRef.current) {
+          // Rebuild after external edits, keeping drag bounds in their original coordinate space.
+          const alignmentNodes = nodesRef.current.filter((node) => connectionNodeIDsRef.current.has(node.id)).map((node) => {
+            const initial = initialByID.get(node.id);
+            return initial ? { ...node, x: initial.x, y: initial.y } : node;
+          });
+          alignmentRef.current = createCanvasAlignmentContext(alignmentNodes, drag.movingIDs);
+        }
         const aligned = calculateCanvasAlignment(alignmentRef.current, { x: dx, y: dy }, 6 / viewportRef.current.zoom);
         dx = aligned.offset.x;
         dy = aligned.offset.y;
         setAlignmentGuides(aligned.guides);
       }
-      const initialByID = new Map(drag.initial.map((item) => [item.id, item]));
-      return nodesRef.current.map((node) => {
+      const changedGeometry = new Map<string, CanvasNode | undefined>(drag.initial.map((item) => [item.id, undefined]));
+      const movingNodes: CanvasNode[] = [];
+      const groups: CanvasNode[] = [];
+      const nodes = nodesRef.current.map((node) => {
         const initial = initialByID.get(node.id);
-        return initial ? { ...node, x: initial.x + dx, y: initial.y + dy } : node;
+        const next = initial ? { ...node, x: initial.x + dx, y: initial.y + dy } : node;
+        if (initial) {
+          changedGeometry.set(node.id, next);
+          if (next.type !== "group") movingNodes.push(next);
+        }
+        if (next.type === "group" && connectionNodeIDsRef.current.has(next.id)) groups.push(next);
+        return next;
       });
+      if (!snapToGrid) drag.nodesSnapshot = nodes;
+      return { nodes, movingNodes, groups, changedGeometry };
+    };
+    const updateDraggedConnectionIndex = (changedGeometry: ReadonlyMap<string, { x: number; y: number; width: number; height: number } | undefined>, nodesSnapshot: CanvasNode[]) => {
+      const index = connectionIndexRef.current;
+      if (!index || index.connections !== connections) return;
+      updateCanvasConnectionGeometry(index, changedGeometry, nodesSnapshot);
     };
     const applyNodeDrag = (clientX: number, clientY: number) => {
       if (!dragRef.current.active) return;
-      const next = draggedNodesAt(clientX, clientY);
-      setDropTargetGroupID(findCanvasGroupDropTarget(new Set(dragRef.current.initial.map((item) => item.id)), next)?.id || "");
-      onNodesChange(next);
+      const dragged = draggedNodesAt(clientX, clientY);
+      setDropTargetGroupID(findCanvasGroupDropTargetForNodes(dragged.movingNodes, dragged.groups, dragRef.current.movingIDs)?.id || "");
+      updateDraggedConnectionIndex(dragged.changedGeometry, dragged.nodes);
+      onNodesChange(dragged.nodes);
     };
     const applyNodeResize = (clientX: number, clientY: number) => {
       const resize = resizeRef.current;
@@ -542,13 +604,47 @@ export function CanvasEngine({
         if (height < 160) { height = 160; width = height * ratio; }
         if (width < 220) { width = 220; height = width / ratio; }
       }
-      onNodesChange(nodesRef.current.map((node) => node.id === start.id ? { ...node, x: left ? anchorX - width : start.x, y: top ? anchorY - height : start.y, width, height } : node));
+      let resizedNode: CanvasNode | undefined;
+      const next = nodesRef.current.map((node) => {
+        if (node.id !== start.id) return node;
+        resizedNode = { ...node, x: left ? anchorX - width : start.x, y: top ? anchorY - height : start.y, width, height };
+        return resizedNode;
+      });
+      updateDraggedConnectionIndex(new Map([[start.id, resizedNode]]), next);
+      onNodesChange(next);
+    };
+    const applyConnectionDrag = (clientX: number, clientY: number) => {
+      const origin = connectionRef.current;
+      if (!origin) return;
+      const point = screenToWorld(clientX, clientY);
+      const targetID = connectionTargetAt(point, origin).nodeID;
+      setMouseWorld(point);
+      setConnectionTargetID(targetID);
+    };
+    const applySelectionDrag = (clientX: number, clientY: number) => {
+      const selection = selectionRef.current;
+      if (!selection) return;
+      const point = screenToWorld(clientX, clientY);
+      const current = { ...selection, current: point };
+      selectionRef.current = current;
+      setSelectionBox(current);
+      const left = Math.min(current.start.x, point.x);
+      const top = Math.min(current.start.y, point.y);
+      const right = Math.max(current.start.x, point.x);
+      const bottom = Math.max(current.start.y, point.y);
+      const ids = new Set(current.additive ? current.initialIDs : []);
+      visibleCanvasNodes(nodesRef.current).forEach((node) => {
+        if (left < node.x + node.width && right > node.x && top < node.y + node.height && bottom > node.y) ids.add(node.id);
+      });
+      onSelectionChange(ids, "");
     };
     const handleMove = (event: PointerEvent) => {
+      if (event.pointerId !== interactionPointerRef.current) return;
       if (panRef.current.active) {
         const dx = event.clientX - panRef.current.startX;
         const dy = event.clientY - panRef.current.startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panRef.current.moved = true;
+        if (!panRef.current.moved) return;
         scheduleFrame(() => {
           const next = { ...viewportRef.current, x: panRef.current.initialX + dx, y: panRef.current.initialY + dy };
           viewportRef.current = next;
@@ -558,6 +654,7 @@ export function CanvasEngine({
       }
       if (dragRef.current.active) {
         if (Math.abs(event.clientX - dragRef.current.startX) > 3 || Math.abs(event.clientY - dragRef.current.startY) > 3) dragRef.current.moved = true;
+        if (!dragRef.current.moved) return;
         const { clientX, clientY } = event;
         scheduleFrame(() => applyNodeDrag(clientX, clientY));
         return;
@@ -568,30 +665,17 @@ export function CanvasEngine({
         return;
       }
       if (connectionRef.current) {
-        const point = screenToWorld(event.clientX, event.clientY);
-        const targetID = connectionTargetAt(point, connectionRef.current).nodeID;
-        setMouseWorld(point);
-        setConnectionTargetID(targetID);
+        scheduleFrame(() => applyConnectionDrag(event.clientX, event.clientY));
         return;
       }
       if (selectionRef.current) {
-        const point = screenToWorld(event.clientX, event.clientY);
-        const current = { ...selectionRef.current, current: point };
-        selectionRef.current = current;
-        setSelectionBox(current);
-        const left = Math.min(current.start.x, point.x);
-        const top = Math.min(current.start.y, point.y);
-        const right = Math.max(current.start.x, point.x);
-        const bottom = Math.max(current.start.y, point.y);
-        const ids = new Set(current.additive ? current.initialIDs : []);
-        visibleCanvasNodes(nodesRef.current).forEach((node) => {
-          if (left < node.x + node.width && right > node.x && top < node.y + node.height && bottom > node.y) ids.add(node.id);
-        });
-        onSelectionChange(ids, "");
+        scheduleFrame(() => applySelectionDrag(event.clientX, event.clientY));
       }
     };
 
     const handleUp = (event: PointerEvent) => {
+      if (event.pointerId !== interactionPointerRef.current) return;
+      interactionPointerRef.current = null;
       if (panRef.current.active) {
         const wasMoved = panRef.current.moved;
         const wasCancelled = event.type === "pointercancel";
@@ -604,6 +688,8 @@ export function CanvasEngine({
           const next = { ...viewportRef.current, x: panRef.current.initialX + dx, y: panRef.current.initialY + dy };
           viewportRef.current = next;
           onViewportChange(next, true);
+        } else if (wasCancelled && wasMoved) {
+          onViewportChange(viewportRef.current, true);
         } else if (!wasCancelled && !panRef.current.preserveSelection) {
           onSelectionChange(new Set(), "");
         }
@@ -615,13 +701,15 @@ export function CanvasEngine({
         cancelPendingFrame();
         if (event.type !== "pointercancel" && moved) {
           const movedIDs = new Set(dragRef.current.initial.map((item) => item.id));
-          const movedNodes = draggedNodesAt(event.clientX, event.clientY);
-          const targetGroup = findCanvasGroupDropTarget(movedIDs, movedNodes);
+          const dragged = draggedNodesAt(event.clientX, event.clientY);
+          updateDraggedConnectionIndex(dragged.changedGeometry, dragged.nodes);
+          const movedNodes = dragged.nodes;
+          const targetGroup = findCanvasGroupDropTargetForNodes(dragged.movingNodes, dragged.groups, movedIDs);
           onNodesChange(targetGroup
             ? snapCanvasNodesIntoGroup(movedIDs, movedNodes, targetGroup)
             : movedNodes.map((node) => {
               if (!movedIDs.has(node.id) || node.type === "group") return node;
-              const groupID = findContainingCanvasGroupID(node, movedNodes);
+              const groupID = findContainingCanvasGroupID(node, dragged.groups);
               return node.group_id === groupID ? node : { ...node, group_id: groupID };
             }));
         }
@@ -629,6 +717,8 @@ export function CanvasEngine({
         dragRef.current.moved = false;
         dragRef.current.clickedNodeID = "";
         dragRef.current.initial = [];
+        dragRef.current.movingIDs = new Set();
+        dragRef.current.nodesSnapshot = [];
         alignmentRef.current = null;
         setAlignmentGuides({});
         setDropTargetGroupID("");
@@ -645,25 +735,30 @@ export function CanvasEngine({
       }
       const origin = connectionRef.current;
       if (origin) {
-        const point = screenToWorld(event.clientX, event.clientY);
-        const dropTarget = connectionTargetAt(point, origin);
+        cancelPendingFrame();
         connectionRef.current = null;
         setConnectionTargetID("");
-        const connection = connectionFor(origin, dropTarget.nodeID);
         if (event.type === "pointercancel") {
           setConnecting(null);
-        } else if (connection) {
-          setConnecting(null);
-          onConnect(connection.sourceID, connection.targetID);
-        } else if (dropTarget.isNearNode) {
-          setConnecting(null);
         } else {
-          setMouseWorld(point);
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (rect) onConnectionDropEmpty(origin, point, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+          const point = screenToWorld(event.clientX, event.clientY);
+          const dropTarget = connectionTargetAt(point, origin);
+          const connection = connectionFor(origin, dropTarget.nodeID);
+          if (connection) {
+            setConnecting(null);
+            onConnect(connection.sourceID, connection.targetID);
+          } else if (dropTarget.isNearNode) {
+            setConnecting(null);
+          } else {
+            setMouseWorld(point);
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (rect) onConnectionDropEmpty(origin, point, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+          }
         }
       }
       if (selectionRef.current) {
+        cancelPendingFrame();
+        if (event.type !== "pointercancel") applySelectionDrag(event.clientX, event.clientY);
         selectionRef.current = null;
         setSelectionBox(null);
       }
@@ -671,6 +766,7 @@ export function CanvasEngine({
     };
 
     const handleBlur = () => {
+      interactionPointerRef.current = null;
       cancelPendingFrame();
       if (panRef.current.active && panRef.current.moved) onViewportChange(viewportRef.current, true);
       if (dragRef.current.active && dragRef.current.moved) onNodesCommit();
@@ -680,6 +776,10 @@ export function CanvasEngine({
       dragRef.current.moved = false;
       dragRef.current.clickedNodeID = "";
       dragRef.current.initial = [];
+      dragRef.current.movingIDs = new Set();
+      dragRef.current.nodesSnapshot = [];
+      alignmentRef.current = null;
+      setAlignmentGuides({});
       setDropTargetGroupID("");
       resizeRef.current.active = false;
       resizeRef.current.pointerID = -1;
@@ -703,10 +803,10 @@ export function CanvasEngine({
       window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [connectionFor, connectionTargetAt, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange, snapToGrid, syncToolCursor]);
+  }, [connectionFor, connectionTargetAt, connections, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange, snapToGrid, syncToolCursor]);
 
   const nodeHandlers = {
-    onMouseDown: useStableCallback(startNodeDrag),
+    onPointerDown: useStableCallback(startNodeDrag),
     onSelectCapture: useStableCallback(captureNodeSelection),
     onResize: useStableCallback(startResize),
     onConnect: useStableCallback(startConnection),
@@ -729,6 +829,7 @@ export function CanvasEngine({
     ? ""
     : hoveredNodeID || (selectedNodeIDs.size === 1 ? Array.from(selectedNodeIDs)[0] : "");
   const related = useMemo(() => canvasConnectionRelations(activeNodeID, connections), [activeNodeID, connections]);
+  const scriptReferenceConnectionIDs = useMemo(() => canvasScriptReferenceConnectionIDs(contentStableNodes, connections), [contentStableNodes, connections]);
   const exportViewport = exporting && exportBounds ? { zoom: 1, x: -exportBounds.minX, y: -exportBounds.minY } : viewport;
   const grid = canvasGridMetrics(exportViewport);
   const canvasBackgroundStyle = {
@@ -797,6 +898,7 @@ export function CanvasEngine({
             const path = canvasConnectionPath(start, end);
             const selected = !exporting && (selectedConnectionID === connection.id || selectedNodeIDs.has(from.id) || selectedNodeIDs.has(to.id));
             const active = selected || (!exporting && related.connectionIDs.has(connection.id));
+            if (!active && scriptReferenceConnectionIDs.has(connection.id)) return null;
             return (
               <g key={connection.id}>
                 <path
@@ -813,7 +915,7 @@ export function CanvasEngine({
                   d={path}
                   stroke={active ? "var(--canvas-connection-active)" : "var(--canvas-connection-muted)"}
                   strokeWidth={active ? 2 : 1.5}
-                  opacity={active ? 0.7 : 0.6}
+                  opacity={active ? 0.85 : !exporting && (activeNodeID || selectedNodeIDs.size) ? 0.12 : 0.6}
                   fill="none"
                   markerEnd={`url(#${connectionArrowID})`}
                   className="pointer-events-none"
@@ -833,6 +935,7 @@ export function CanvasEngine({
             key={node.id}
             node={node}
             scriptCompletedSteps={scriptCompletedSteps.get(node.id)}
+            scriptSummary={scriptProductionSummaries.get(node.id)}
             showImageInfo={showImageInfo}
             exporting={exporting}
             selected={!exporting && selectedNodeIDs.has(node.id)}
@@ -886,9 +989,10 @@ const NODE_TYPE_BADGE: Record<CanvasNode["type"], { label: string; icon: typeof 
   group: { label: "组", icon: Images },
 };
 
-const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, showImageInfo, exporting, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onMouseDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onScriptOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
+const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, scriptSummary, showImageInfo, exporting, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onPointerDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onScriptOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
   node: CanvasNode;
   scriptCompletedSteps?: readonly boolean[];
+  scriptSummary?: ReturnType<typeof scriptProductionSummary>;
   showImageInfo: boolean;
   exporting: boolean;
   selected: boolean;
@@ -906,10 +1010,10 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
   batchOpening: boolean;
   batchRecovering: boolean;
   batchMotion?: { x: number; y: number; index: number };
-  onMouseDown: (event: ReactMouseEvent, nodeID: string) => void;
-  onSelectCapture: (event: ReactMouseEvent, nodeID: string) => void;
+  onPointerDown: (event: ReactPointerEvent, nodeID: string) => void;
+  onSelectCapture: (event: ReactPointerEvent, nodeID: string) => void;
   onResize: (event: ReactPointerEvent<HTMLDivElement>, node: CanvasNode, corner: ResizeCorner) => void;
-  onConnect: (event: ReactMouseEvent, nodeID: string, handleType: HandleType) => void;
+  onConnect: (event: ReactPointerEvent, nodeID: string, handleType: HandleType) => void;
   onTitleChange: (nodeID: string, title: string) => void;
   onActivate: (nodeID: string) => void;
   onViewImage: (nodeID: string) => void;
@@ -920,7 +1024,7 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
   onToggleBatch: (nodeID: string) => void;
   onSetBatchPrimary: (nodeID: string) => void;
   onContextMenu: (event: ReactMouseEvent, nodeID: string) => void;
-  onMediaLoad: (nodeID: string, width: number, height: number, bytes?: number, sourceURL?: string) => void;
+  onMediaLoad: (nodeID: string, width: number, height: number, bytes?: number, sourceURL?: string, durationMS?: number) => void;
   onHoverStart: (nodeID: string) => void;
   onHoverEnd: (nodeID: string) => void;
 }) {
@@ -997,7 +1101,7 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
       }}
       onMouseEnter={() => { setHovered(true); onHoverStart(node.id); }}
       onMouseLeave={() => { setHovered(false); onHoverEnd(node.id); }}
-      onMouseDownCapture={(event) => onSelectCapture(event, node.id)}
+      onPointerDownCapture={(event) => onSelectCapture(event, node.id)}
       onContextMenu={(event) => onContextMenu(event, node.id)}
     >
       <div
@@ -1054,11 +1158,11 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
         {isGroup ? <Badge variant="secondary" className="shrink-0 tabular-nums">{groupChildCount} 个节点</Badge> : null}
       </div>
       <div
-        className={cn("relative size-full transition-[border-color,box-shadow,transform]", isGroup ? "rounded-xl border bg-card/35" : "rounded-2xl border-2", isBatchRoot ? "overflow-visible" : "overflow-hidden", !isGroup && (mediaNode && node.url ? "bg-transparent" : "bg-card"), groupDropTarget
+        className={cn("relative size-full transition-[border-color,box-shadow,transform]", isGroup ? "rounded-xl border bg-card/75" : "rounded-2xl border-2", isBatchRoot ? "overflow-visible" : "overflow-hidden", !isGroup && (mediaNode && node.url ? "bg-transparent" : "bg-card"), groupDropTarget
     ? "border-primary ring-2 ring-primary/40" : active
     ? "border-primary ring-1 ring-primary/35" : related
     ? "border-[var(--canvas-connection-muted)] shadow-[0_0_0_1px_var(--canvas-connection-shadow)]" : mediaNode && node.url ? "border-transparent" : "border-border")}
-        onMouseDown={(event) => onMouseDown(event, node.id)}
+        onPointerDown={(event) => onPointerDown(event, node.id)}
         onDoubleClick={(event) => {
           event.stopPropagation();
           onFocusNode(node.id);
@@ -1078,13 +1182,13 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
               <Badge variant="secondary" className="flex items-center justify-between gap-1"><span>音频</span><span className="font-medium tabular-nums text-foreground">{configInputSummary.audio} 个</span></Badge>
             </div>
           </div>
-        ) : node.type === "script" ? <CanvasScriptNode node={node} completedSteps={scriptCompletedSteps} onOpen={() => onScriptOpen(node.id)} /> : node.type === "director" ? <CanvasDirectorNodePanel onOpen={() => onDirectorOpen(node.id)} /> : node.type === "audio" || node.type === "panorama" ? <CanvasSpecialNodeContent node={node} onPanoramaOpen={node.type === "panorama" && node.url ? () => onViewImage(node.id) : undefined} onPanoramaMoveStart={node.type === "panorama" ? (event) => onMouseDown(event, node.id) : undefined} /> : (node.type === "image" || node.type === "video" || node.type === "text") && node.generation_status === "error" ? (
+        ) : node.type === "script" ? <CanvasScriptNode node={node} completedSteps={scriptCompletedSteps} summary={scriptSummary} onOpen={() => onScriptOpen(node.id)} onFocusMovie={onFocusNode} /> : node.type === "director" ? <CanvasDirectorNodePanel onOpen={() => onDirectorOpen(node.id)} /> : node.type === "audio" || node.type === "panorama" ? <CanvasSpecialNodeContent node={node} onPanoramaOpen={node.type === "panorama" && node.url ? () => onViewImage(node.id) : undefined} onPanoramaMoveStart={node.type === "panorama" ? (event) => onPointerDown(event, node.id) : undefined} /> : (node.type === "image" || node.type === "video" || node.type === "text") && node.generation_status === "error" ? (
           <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-6 text-center">
             <ItemMedia variant="icon" className="grid size-9 place-items-center"><AlertCircle className="size-4.5" /></ItemMedia>
             <ScrollAreaRoot data-canvas-no-pan data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[calc(100%-88px)] max-w-[260px]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 whitespace-pre-wrap break-words text-xs leading-5 px-1">
               {node.generation_error || "生成失败"}
             </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-            <Button variant="outline" data-canvas-no-pan type="button" className="flex items-center transition" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw  />重试</Button>
+            {canvasGenerationNeedsRecovery(node) ? <><Badge variant="secondary">待同步</Badge><Button variant="outline" data-canvas-no-pan type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw />同步原任务</Button></> : <Button variant="outline" data-canvas-no-pan type="button" className="flex items-center transition" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw  />重试</Button>}
           </div>
         ) : node.type === "image" || node.type === "video" ? node.url ? (
           node.type === "video" ? (
@@ -1094,7 +1198,7 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
               title={node.title || node.prompt || "画布视频"}
               selected={selected}
               onOpen={() => onViewImage(node.id)}
-              onMediaLoad={(width, height) => onMediaLoad(node.id, width, height, undefined, node.url)}
+              onMediaLoad={(width, height, durationMS) => onMediaLoad(node.id, width, height, undefined, node.url, durationMS)}
             />
           ) : exporting ? <AuthenticatedImage key={node.url} src={node.url} alt={node.title || node.prompt || "画布图片"} draggable={false} className="pointer-events-none size-full rounded-[inherit] object-contain" /> : <ImagePreview key={node.url} src={node.url} alt={node.title || node.prompt || "画布图片"} draggable={false} className="pointer-events-none size-full rounded-[inherit] object-contain" onMetadata={(width, height, bytes) => onMediaLoad(node.id, width, height, bytes, node.url)} />
         ) : (
@@ -1122,8 +1226,8 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
         {isBatchRoot ? <Button variant="outline" data-canvas-no-pan type="button" aria-label={node.batch_expanded ? "收起图片组" : "展开图片组"} className="absolute top-2.5 right-2.5 z-40 flex items-center" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggleBatch(node.id); }}><span className="text-primary">{batchCount}</span><ChevronRight className={cn("size-3.5 transition-transform", node.batch_expanded && "rotate-90")} /></Button> : null}
         {isBatchChild && node.url ? <Button variant="outline" data-canvas-no-pan type="button" className="absolute top-2.5 right-2.5 z-40 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onSetBatchPrimary(node.id); }}><Star className="text-primary" />设为主图</Button> : null}
       </div>
-      {!isGroup ? <ConnectionHandle side="left" visible={hovered || selected || connecting} onMouseDown={(event) => onConnect(event, node.id, "target")} /> : null}
-      {!isGroup ? <ConnectionHandle side="right" visible={node.type !== "config" && (hovered || selected || connecting)} onMouseDown={(event) => onConnect(event, node.id, "source")} /> : null}
+      {!isGroup ? <ConnectionHandle side="left" visible={hovered || selected || connecting} onPointerDown={(event) => onConnect(event, node.id, "target")} /> : null}
+      {!isGroup ? <ConnectionHandle side="right" visible={node.type !== "config" && (hovered || selected || connecting)} onPointerDown={(event) => onConnect(event, node.id, "source")} /> : null}
       {(["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeCorner[]).map((corner) => <ResizeHandle key={corner} corner={corner} visible={selected || hovered} onPointerDown={(event) => onResize(event, node, corner)} />)}
     </div>
   );
@@ -1190,8 +1294,8 @@ function CanvasBatchStack({ count, expanded, opening, recovering }: { count: num
   );
 }
 
-function ConnectionHandle({ side, visible, onMouseDown }: { side: "left" | "right"; visible: boolean; onMouseDown: (event: ReactMouseEvent) => void }) {
-  return <div data-connection-handle={side === "left" ? "target" : "source"} className={cn("absolute z-30 flex size-12 -translate-y-1/2 cursor-crosshair items-center justify-center transition-opacity duration-150", visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} style={{ top: "50%", left: side === "left" ? -24 : undefined, right: side === "right" ? -24 : undefined }} onMouseDown={onMouseDown}><div className="size-3 rounded-full border-2 border-[var(--canvas-connection-muted)] bg-card transition-transform hover:scale-125" /></div>;
+function ConnectionHandle({ side, visible, onPointerDown }: { side: "left" | "right"; visible: boolean; onPointerDown: (event: ReactPointerEvent) => void }) {
+  return <div data-connection-handle={side === "left" ? "target" : "source"} className={cn("absolute z-30 flex size-12 -translate-y-1/2 cursor-crosshair items-center justify-center transition-opacity duration-150", visible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} style={{ top: "50%", left: side === "left" ? -24 : undefined, right: side === "right" ? -24 : undefined }} onPointerDown={onPointerDown}><div className="size-3 rounded-full border-2 border-[var(--canvas-connection-muted)] bg-card transition-transform hover:scale-125" /></div>;
 }
 
 function ResizeHandle({ corner, visible, onPointerDown }: { corner: ResizeCorner; visible: boolean; onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void }) {

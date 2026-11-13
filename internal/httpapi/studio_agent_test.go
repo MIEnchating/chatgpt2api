@@ -247,7 +247,7 @@ func TestStudioVideoSubmissionPreservesContractParametersAndOwnership(t *testing
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	item, err := service.WaitCanvasAgentTask(ctx, app.tasks, owner, "studio-video-paid", nil)
+	item, err := service.WaitCanvasAgentTask(ctx, app.tasks, owner, "studio-video-paid", nil, nil)
 	if err != nil || item["status"] != "success" || submissions.Load() != 1 {
 		t.Fatalf("result=%#v err=%v calls=%d", item, err, submissions.Load())
 	}

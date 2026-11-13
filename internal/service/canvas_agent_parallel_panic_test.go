@@ -7,7 +7,7 @@ import (
 )
 
 func TestCanvasAgentParallelMediaPanicBecomesFailureInsteadOfHanging(t *testing.T) {
-	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		panic("provider client crashed")
 	})
 	created, err := w.createCanvasWorkflow([]map[string]any{parallelImageStep("front")})

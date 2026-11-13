@@ -2,12 +2,143 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"chatgpt2api/internal/util"
 )
+
+func TestCanvasAgentGenerationChangeDetailsContainFieldNamesWithoutValues(t *testing.T) {
+	before := CanvasDocument{Nodes: []CanvasNode{{ID: "image", Type: "image", Prompt: "private original"}, {ID: "reference", Type: "image", URL: "https://private.example/original"}}, Connections: []CanvasConnection{{ID: "edge", FromNodeID: "reference", ToNodeID: "image"}}}
+	after := cloneCanvasAgentDocument(before)
+	after.Nodes[0].Prompt = "private changed"
+	after.Nodes[1].URL = "https://private.example/changed"
+	details := canvasAgentGenerationChanges(before, after, "image")
+	for _, expected := range []string{"image.prompt", "reference.url"} {
+		if !slices.Contains(details, expected) {
+			t.Fatalf("missing field %s in %v", expected, details)
+		}
+	}
+	if strings.Contains(strings.Join(details, ","), "private") {
+		t.Fatal("generation diagnostic leaked field values")
+	}
+}
+
+func TestCanvasAgentGenerationPreservesConcurrentPresentationEdits(t *testing.T) {
+	for _, target := range []string{"target", "source"} {
+		for _, change := range []string{"title", "group"} {
+			t.Run(target+"-"+change, func(t *testing.T) {
+				var w *canvasAgentWorker
+				submissions := 0
+				w = parallelAgentWorker(t, func(_ context.Context, _ Identity, _ CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
+					submissions++
+					current, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+					if err != nil {
+						return nil, err
+					}
+					for i := range current.Nodes {
+						if current.Nodes[i].ID == target {
+							if change == "title" {
+								current.Nodes[i].Title = "Renamed during generation"
+							} else {
+								current.Nodes[i].GroupID = "group"
+							}
+						}
+					}
+					if _, err := w.service.canvas.SaveAtRevision(w.identity.ID, current); err != nil {
+						return nil, err
+					}
+					return map[string]any{"data": []map[string]any{{"url": "/generated.mp4"}}}, nil
+				})
+				w.doc.Nodes = []CanvasNode{
+					{ID: "target", Type: "video", Title: "Video", Width: 360, Height: 360, Prompt: "Continue the scene", GenerationVideoModel: "video-test", GenerationVideoSeconds: 5, GenerationVideoReferenceImages: []string{"/reference.png"}},
+					{ID: "source", Type: "image", Title: "Reference", Width: 360, Height: 360, URL: "/reference.png", GenerationStatus: "success"},
+					{ID: "group", Type: "group", Width: 800, Height: 500},
+				}
+				w.doc.Connections = []CanvasConnection{{ID: "reference", FromNodeID: "source", ToNodeID: "target"}}
+				if err := w.save(); err != nil {
+					t.Fatal(err)
+				}
+				result, err := w.generateNode("target")
+				if err != nil || result["ok"] != true || submissions != 1 {
+					t.Fatalf("presentation edit discarded a valid result: result=%v err=%v submissions=%d", result, err, submissions)
+				}
+				if err := w.save(); err != nil {
+					t.Fatal(err)
+				}
+				if w.node("target").URL != "/generated.mp4" || w.node("target").GenerationStatus != "success" || len(agentStrings(w.state["detachedTaskIds"])) != 0 {
+					t.Fatal("generation output was detached or lost during the final save")
+				}
+				if change == "title" && w.node(target).Title != "Renamed during generation" || change == "group" && w.node(target).GroupID != "group" {
+					t.Fatal("concurrent presentation edit was lost")
+				}
+				before := cloneCanvasAgentDocument(w.doc)
+				for i := range before.Nodes {
+					if before.Nodes[i].ID == target {
+						if change == "title" {
+							before.Nodes[i].Title = "Previous title"
+						} else {
+							before.Nodes[i].GroupID = ""
+						}
+					}
+				}
+				if !canvasAgentContentChanged(before, w.doc) {
+					t.Fatal("presentation edit bypassed the general instruction conflict check")
+				}
+				if canvasAgentGenerationInputFingerprint(before, "target") != canvasAgentGenerationInputFingerprint(w.doc, "target") {
+					t.Fatal("presentation edit invalidated a persisted generation checkpoint")
+				}
+				if fields := canvasAgentGenerationChanges(before, w.doc, "target"); len(fields) != 0 {
+					t.Fatalf("presentation edit reported as changed generation fields: %v", fields)
+				}
+			})
+		}
+	}
+}
+
+func TestCanvasAgentGenerationIgnoresScriptNavigationAndReviews(t *testing.T) {
+	before := CanvasDocument{Nodes: []CanvasNode{
+		{ID: "script", Type: "script", ScriptProject: &CanvasScriptProject{Confirmed: true, Shots: []CanvasScriptShot{{ID: "shot", Seconds: 15, Description: "A knock at the door", VideoNodeID: "video"}}}},
+		{ID: "video", Type: "video", Prompt: "A knock at the door", GenerationVideoSeconds: 15},
+	}, Connections: []CanvasConnection{{ID: "script-video", FromNodeID: "script", ToNodeID: "video"}}}
+	for _, change := range []string{"navigation", "color", "review", "merged-result", "content", "confirmation"} {
+		t.Run(change, func(t *testing.T) {
+			after := cloneCanvasAgentDocument(before)
+			script := after.Nodes[0].ScriptProject
+			switch change {
+			case "navigation":
+				script.Step = 2
+			case "review":
+				script.Shots[0].QualityReview = &CanvasScriptQualityReview{MediaURL: "/previous.mp4", Continuity: "needs_fix", Dialogue: "unchecked", Speaker: "unchecked", LipSync: "unchecked", Notes: "Review of a previous result"}
+			case "color":
+				script.Shots[0].Color = "#4bb7ef"
+			case "merged-result":
+				script.MergedVideoNodeID = "existing-movie"
+				script.MergedVideoFingerprint = "fingerprint"
+				script.MergedVideoOutdated = true
+			case "content":
+				script.Shots[0].Description = "A different scene"
+			case "confirmation":
+				script.Confirmed = false
+			}
+			wantChanged := change == "content" || change == "confirmation"
+			if contentChanged := canvasAgentContentChanged(before, after); contentChanged != (change != "navigation" && change != "color") {
+				t.Fatal("script navigation triggered replanning or an actual content/review edit was ignored")
+			}
+			if changed := canvasAgentGenerationChanged(before, after, "video"); changed != wantChanged {
+				t.Fatalf("generation changed = %v, want %v; fields=%v", changed, wantChanged, canvasAgentGenerationChanges(before, after, "video"))
+			}
+			if sameFingerprint := canvasAgentGenerationInputFingerprint(before, "video") == canvasAgentGenerationInputFingerprint(after, "video"); sameFingerprint == wantChanged {
+				t.Fatal("checkpoint fingerprint disagrees with the generation content check")
+			}
+		})
+	}
+	if before.Nodes[0].ScriptProject.Step != 0 || before.Nodes[0].ScriptProject.Shots[0].QualityReview != nil {
+		t.Fatal("generation comparison mutated the saved script")
+	}
+}
 
 func TestCanvasAgentReplansAfterConcurrentModelEdit(t *testing.T) {
 	for _, change := range []string{"delete", "content", "move", "arrange"} {
@@ -39,7 +170,7 @@ func TestCanvasAgentReplansAfterConcurrentModelEdit(t *testing.T) {
 					}
 					return agentTurn(agentCall("stale", "update_text_node", map[string]any{"nodeId": "target", "content": "model content"})), nil
 				}
-				if change != "move" && change != "arrange" && !strings.Contains(agentJSON(r.Messages), "用户刚刚修改了画布") {
+				if change != "move" && change != "arrange" && !strings.Contains(agentJSON(r.Messages), "画布状态与执行快照不一致") {
 					t.Error("model did not receive the canvas change")
 				}
 				return agentTurn(), nil
@@ -96,7 +227,7 @@ func TestCanvasAgentGenerationPreservesConcurrentUserChanges(t *testing.T) {
 					t.Error("generation conflict not delivered to model")
 				}
 				return agentTurn(), nil
-			}, func(_ context.Context, _ Identity, _ CanvasNode, _ map[string]any) (map[string]any, error) {
+			}, func(_ context.Context, _ Identity, _ CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 				submissions.Add(1)
 				current, err := svc.canvas.Project(identity.ID, doc.ID)
 				if err != nil {
@@ -167,6 +298,61 @@ func TestCanvasAgentGenerationPreservesConcurrentUserChanges(t *testing.T) {
 						t.Fatalf("concurrent edit displayed as failure: %v", trace)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestCanvasAgentGenerationIgnoresAutomaticMediaMetadata(t *testing.T) {
+	for _, metadata := range []string{"bytes", "duration", "thumbnail"} {
+		t.Run(metadata, func(t *testing.T) {
+			var w *canvasAgentWorker
+			submissions := 0
+			w = parallelAgentWorker(t, func(_ context.Context, _ Identity, _ CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
+				submissions++
+				current, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+				if err != nil {
+					return nil, err
+				}
+				switch metadata {
+				case "bytes":
+					current.Nodes[1].Bytes = 123456
+				case "duration":
+					current.Nodes[1].DurationMS = 5000
+				case "thumbnail":
+					current.Nodes[1].ThumbnailURL = "/preview.png"
+				}
+				if _, err := w.service.canvas.SaveAtRevision(w.identity.ID, current); err != nil {
+					return nil, err
+				}
+				return map[string]any{"data": []map[string]any{{"url": "/generated.mp4"}}}, nil
+			})
+			w.doc.Nodes = []CanvasNode{
+				{ID: "target", Type: "video", Width: 360, Height: 360, Prompt: "Continue the scene", GenerationVideoModel: "video-test", GenerationVideoSeconds: 5, GenerationVideoReferenceImages: []string{"/reference.png"}},
+				{ID: "source", Type: "image", Width: 360, Height: 360, URL: "/reference.png", GenerationStatus: "success"},
+			}
+			w.doc.Connections = []CanvasConnection{{ID: "reference", FromNodeID: "source", ToNodeID: "target"}}
+			if err := w.save(); err != nil {
+				t.Fatal(err)
+			}
+			before := cloneCanvasAgentDocument(w.doc)
+			result, err := w.generateNode("target")
+			if err != nil || result["ok"] != true || w.canvasChanged || submissions != 1 {
+				t.Fatalf("automatic metadata discarded a valid result: result=%v err=%v changed=%v submissions=%d", result, err, w.canvasChanged, submissions)
+			}
+			if err := w.save(); err != nil {
+				t.Fatal(err)
+			}
+			if w.node("target").URL != "/generated.mp4" || w.node("target").GenerationStatus != "success" || len(agentStrings(w.state["detachedTaskIds"])) != 0 {
+				t.Fatal("generation output was detached or lost during the final save")
+			}
+			source := w.node("source")
+			if metadata == "bytes" && source.Bytes != 123456 || metadata == "duration" && source.DurationMS != 5000 || metadata == "thumbnail" && source.ThumbnailURL != "/preview.png" {
+				t.Fatal("automatic metadata was lost during the final save")
+			}
+			before.Nodes[0] = w.doc.Nodes[0]
+			if canvasAgentGenerationInputFingerprint(before, "target") != canvasAgentGenerationInputFingerprint(w.doc, "target") {
+				t.Fatal("automatic metadata invalidated a persisted generation checkpoint")
 			}
 		})
 	}
@@ -247,7 +433,7 @@ func TestCanvasAgentDeleteApprovalExpiresWhenNodeChanges(t *testing.T) {
 
 func TestCanvasAgentPreSubmissionConflictPreservesExistingTask(t *testing.T) {
 	var submissions atomic.Int32
-	svc, identity, doc, req := agentFixture(t, nil, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, nil, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		submissions.Add(1)
 		return map[string]any{}, nil
 	})

@@ -1,0 +1,7 @@
+{
+  "scope": "Browser-only isolated approval requests; no Codex execution or supplier calls",
+  "checks": [],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "error": "page.waitForFunction: Timeout 45000ms exceeded."
+}

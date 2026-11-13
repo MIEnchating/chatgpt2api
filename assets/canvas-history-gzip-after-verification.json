@@ -1,0 +1,35 @@
+{
+  "stage": "after",
+  "generationSubmissions": 0,
+  "pageErrors": [],
+  "samples": [
+    {
+      "kind": "editor",
+      "encoding": "gzip",
+      "encodedBytes": 1097185,
+      "decodedBytes": 7606318,
+      "transferBytes": 1097485,
+      "durationMs": 1244,
+      "visibleMs": 5703
+    },
+    {
+      "kind": "editor",
+      "encoding": "gzip",
+      "encodedBytes": 1097185,
+      "decodedBytes": 7606318,
+      "transferBytes": 1097485,
+      "durationMs": 1107,
+      "visibleMs": 3702
+    },
+    {
+      "kind": "archive",
+      "encoding": "gzip",
+      "encodedBytes": 284994,
+      "decodedBytes": 1977245,
+      "transferBytes": 285294,
+      "durationMs": 129
+    }
+  ],
+  "fullHistoryPreserved": true,
+  "fixtureDeleted": true
+}

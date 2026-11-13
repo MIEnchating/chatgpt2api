@@ -1,0 +1,164 @@
+{
+  "references": [
+    {
+      "shotID": "shot-01",
+      "nodeID": "video-a0266161-b32e-4e16-ad58-9cda1c2b49a9",
+      "images": [
+        {
+          "picture": 1,
+          "image": 1
+        },
+        {
+          "picture": 2,
+          "image": 2
+        },
+        {
+          "picture": 3,
+          "image": 3
+        },
+        {
+          "picture": 4,
+          "image": 4
+        },
+        {
+          "picture": 5,
+          "image": 5
+        }
+      ]
+    },
+    {
+      "shotID": "shot-02",
+      "nodeID": "video-c438835b-7e36-408a-98f8-6d549a36261b",
+      "images": [
+        {
+          "picture": 1,
+          "image": 6
+        },
+        {
+          "picture": 2,
+          "image": 2
+        },
+        {
+          "picture": 3,
+          "image": 3
+        },
+        {
+          "picture": 4,
+          "image": 4
+        },
+        {
+          "picture": 5,
+          "image": 7
+        }
+      ]
+    },
+    {
+      "shotID": "shot-03",
+      "nodeID": "video-c7d887fe-c727-48c8-b6bb-d74a767010dd",
+      "images": [
+        {
+          "picture": 1,
+          "image": 8
+        },
+        {
+          "picture": 2,
+          "image": 2
+        },
+        {
+          "picture": 3,
+          "image": 9
+        },
+        {
+          "picture": 4,
+          "image": 3
+        },
+        {
+          "picture": 5,
+          "image": 4
+        },
+        {
+          "picture": 6,
+          "image": 7
+        }
+      ]
+    },
+    {
+      "shotID": "shot-04",
+      "nodeID": "video-df2ea6eb-a640-4415-99ac-86624ba3029c",
+      "images": [
+        {
+          "picture": 1,
+          "image": 10
+        },
+        {
+          "picture": 2,
+          "image": 2
+        },
+        {
+          "picture": 3,
+          "image": 9
+        },
+        {
+          "picture": 4,
+          "image": 4
+        },
+        {
+          "picture": 5,
+          "image": 11
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "index": 1,
+      "sha256": "171fe2d66b8fe5e0b6939071e924873c2b42dc060a63f578e886a065f94926fa"
+    },
+    {
+      "index": 2,
+      "sha256": "8ae2fff9960b5769dfbc48a121932417f9725a22baa1a80166978337cc31a1cb"
+    },
+    {
+      "index": 3,
+      "sha256": "12ebd4ef9dad7aba65b4e0ed1430279c8926007652eb899c6c77470f6972b672"
+    },
+    {
+      "index": 4,
+      "sha256": "c85a45f17332f469a8b309b6e8214734e3e95a8e0b702b0ab9c769119ae170fc"
+    },
+    {
+      "index": 5,
+      "sha256": "9eb26c9b864d43101ea88af79148086a9b3f0205a4953d2fc59c4e23ac3ceccb"
+    },
+    {
+      "index": 6,
+      "sha256": "f1efc8063cb02d2c56615dc2dc5a2528f15fde915ae2b12e12c41ee1bc73a185"
+    },
+    {
+      "index": 7,
+      "sha256": "9881a38bf3d5901f66374eeb993f50001d9cee65b84847e79a529ace2afacf79"
+    },
+    {
+      "index": 8,
+      "sha256": "3127502295fa37de6cb5e50a2468a399a1277811863c8ec5345198718242cb7a"
+    },
+    {
+      "index": 9,
+      "sha256": "27fa221e27f02c0a08b8efcf3993ed4850644122d1d56da2f7db315787cfc226"
+    },
+    {
+      "index": 10,
+      "sha256": "25d14cb2fc916855d614454d7ba9f60b73c9572d5b840bba40b3c26d3af9ef18"
+    },
+    {
+      "index": 11,
+      "sha256": "cdffd43b25d93ffc6af781f2ce4833c0eddc1525ad4bc4b2ac073cb298b55bd1"
+    }
+  ],
+  "scope": "Read current actual script video input settings; fetched stored original images through local development service. No media generation during this audit.",
+  "uniqueImages": 11,
+  "referenceSlots": 21,
+  "visualObservation": "At original size, no dialogue captions observed in these 11 image inputs; helmet highlights resemble light reflections. This is a visual observation and does not establish supplier-side processing or rule out small text outside inspected areas.",
+  "contactSheet": "canvas-live-reference-audit.jpg",
+  "qualityApproved": false
+}

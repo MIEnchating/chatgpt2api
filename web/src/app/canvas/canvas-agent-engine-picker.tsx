@@ -30,7 +30,8 @@ export function CanvasAgentEnginePicker({ mode, disabled, connected, connecting,
       event.preventDefault();
       configureAfterCloseRef.current = false;
       onConfigure();
-    }}><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+    }}>
+      {open ? <ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
       <PopoverHeader className="flex-row items-start gap-3 px-3 pt-3">
         <div className="min-w-0 flex-1">
           <PopoverTitle>引擎与连接</PopoverTitle>
@@ -58,6 +59,6 @@ export function CanvasAgentEnginePicker({ mode, disabled, connected, connecting,
         </div>
         <Button type="button" variant="secondary" className="w-full" onClick={() => { configureAfterCloseRef.current = true; setOpen(false); }}><Plug  />{connected ? "管理 Codex 连接" : "配置 Codex 连接"}</Button>
       </div> : null}
-    </ScrollArea></PopoverContent>
+    </ScrollArea> : null}</PopoverContent>
   </Popover>;
 }

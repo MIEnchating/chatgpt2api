@@ -47,6 +47,32 @@ func TestAgentNodeFullUsesTextOrPromptKey(t *testing.T) {
 	}
 }
 
+func TestAgentNodeDetailsDistinguishMeasuredMediaFromRequestedGeneration(t *testing.T) {
+	requestedAudio := true
+	for _, audio := range []bool{true, false} {
+		node := CanvasNode{ID: "video", Type: "video", GenerationVideoSeconds: 15, GenerationVideoAudio: &requestedAudio,
+			MediaMetadata: &CanvasMediaMetadata{Width: 768, Height: 1376, DurationMS: 15083, HasAudio: &audio}, MediaSilentClips: 1}
+		full := agentNode(node, true)
+		if full["mediaMetadata"] != node.MediaMetadata || full["mediaSilentClips"] != 1 {
+			t.Fatalf("node detail lost measured duration, dimensions, audio or silent input count: %#v", full)
+		}
+		if generation := full["generation"].(map[string]any); generation["seconds"] != 15 || generation["generateAudio"] != node.GenerationVideoAudio {
+			t.Fatalf("measured media replaced requested generation parameters: %#v", generation)
+		}
+		if _, exists := agentNode(node, false)["mediaMetadata"]; exists {
+			t.Fatal("compact index expanded media details")
+		}
+	}
+	node := CanvasNode{ID: "unknown", Type: "video", GenerationVideoSeconds: 60, GenerationVideoAudio: &requestedAudio, MediaProbeError: "probe unavailable"}
+	full := agentNode(node, true)
+	if _, exists := full["mediaMetadata"]; exists {
+		t.Fatal("request parameters were presented as measured media")
+	}
+	if full["mediaProbeError"] != node.MediaProbeError {
+		t.Fatalf("node detail lost the actual probe error: %#v", full)
+	}
+}
+
 func TestAgentNodeReadsStructuredScriptWithoutExpandingIndex(t *testing.T) {
 	project := &CanvasScriptProject{Step: 2, Confirmed: true,
 		Shots:  []CanvasScriptShot{{ID: "shot-1", Seconds: 5, Description: "A knock at the door"}},
@@ -56,8 +82,14 @@ func TestAgentNodeReadsStructuredScriptWithoutExpandingIndex(t *testing.T) {
 	if _, exists := agentNode(node, false)["scriptProject"]; exists {
 		t.Fatal("node index expanded the complete script")
 	}
+	if _, exists := agentNode(node, false)["confirmationFingerprint"]; exists {
+		t.Fatal("compact node index should not compute script confirmation fingerprints")
+	}
 	if full := agentNode(node, true); full["scriptProject"] != project || full["prompt"] != node.Prompt {
 		t.Fatalf("script detail lost the structured storyboard or original script: %#v", full)
+	}
+	if fingerprint, ok := agentNode(node, true)["confirmationFingerprint"].(string); !ok || len(fingerprint) != 64 {
+		t.Fatal("full script reads must include the version required for confirmation")
 	}
 }
 
@@ -128,6 +160,21 @@ func TestCanvasAgentPromptUsesSelectedSkillsInsteadOfIntentRouting(t *testing.T)
 	}
 }
 
+func TestCanvasAgentPromptUsesStructuredShotsAndSingleFrameStoryboards(t *testing.T) {
+	w := &canvasAgentWorker{state: map[string]any{}, req: CanvasAgentRequest{UserText: "完整制作60秒有声短剧，每镜一张分镜图，不要宫格"}}
+	prompt := w.prompt()
+	for _, rule := range []string{"镜头直接保存在 scriptProject.shots", "普通分镜默认每镜一张单幅画面", "只有用户明确要求宫格、拼图或多面板", "单幅分镜不是宫格", "用户明确委托自主创作并完整制作", "读取已保存的脚本", "内容未变时调用 confirm_script_node"} {
+		if !strings.Contains(prompt, rule) {
+			t.Errorf("missing production rule: %s", rule)
+		}
+	}
+	for _, obsolete := range []string{"每个计划视频片段/镜头节点生成一张拼图", "必须包含当前镜头文本 nodeId", "退出：真实镜头文本节点已创建", "完整项目默认先建立真实镜头节点", "检测到分镜拼图标题或用户明确说分镜/宫格/storyboard 时"} {
+		if strings.Contains(prompt, obsolete) {
+			t.Errorf("contradictory production rule remains: %s", obsolete)
+		}
+	}
+}
+
 func TestCanvasAgentPromptKeepsLiveCanvasOutOfReusableInstructions(t *testing.T) {
 	w := &canvasAgentWorker{doc: CanvasDocument{ID: "cache-project", Nodes: []CanvasNode{{ID: "changing-node", Type: "video", GenerationStatus: "loading"}}}, state: map[string]any{}, req: CanvasAgentRequest{UserText: "继续制作短剧"}}
 	before := w.prompt()
@@ -180,5 +227,32 @@ func TestCanvasAgentSDKPlanProgressPreservesModelPrefix(t *testing.T) {
 	done := agentWait(t, svc, identity, doc.ID)
 	if done.AgentRun.Status != "success" || turns != 2 {
 		t.Fatalf("run=%+v turns=%d", done.AgentRun, turns)
+	}
+}
+
+func TestCanvasAgentPromptAvoidsRepeatedParameterAndTechnicalQuestions(t *testing.T) {
+	w := &canvasAgentWorker{state: map[string]any{}, req: CanvasAgentRequest{UserText: "继续生成有声短剧，不创建音频节点"}}
+	prompt := w.prompt()
+	for _, forbidden := range []string{"缺失必须询问", "每次一个关键问题", "只问一个最阻塞的问题", "缺少必要参数必须提问", "不能用默认秒数代替用户确认", "交付比例、时长和声音需求缺失时必须询问", "用户未说明或未明确委托时必须询问", "必要条件缺失时必须询问", "每次通过 ask_user_question 询问一个最关键问题"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Errorf("prompt still forces repeated questions: %s", forbidden)
+		}
+	}
+	for _, required := range []string{"同阶段的必要缺口合并为一次提问", "每项用户请求最多发起一轮普通澄清", "后续阶段按合理默认直接执行", "不得再弹出“立即生成”授权问题", "技术错误或配置通知不得包装成问题卡", "已接受的限制不重复确认", "requiresUserReview=true", "不得因沉默、等待或超时自动选择推荐项"} {
+		if !strings.Contains(prompt, required) {
+			t.Errorf("prompt lost interaction contract: %s", required)
+		}
+	}
+}
+
+func TestCanvasAgentPromptExplainsVideoModesAndNativeAudio(t *testing.T) {
+	for _, skills := range [][]AgentSkill{nil, {{ID: "custom", Name: "custom", Content: "custom workflow"}}} {
+		w := &canvasAgentWorker{state: map[string]any{}, skills: skills, req: CanvasAgentRequest{UserText: "创作60秒短剧"}}
+		prompt := w.prompt()
+		for _, required := range []string{"defaultMode 只是默认模式", "referenceMaterials.modes", "独立音频模型不是原生有声视频的前置条件", "先生成所需参考图"} {
+			if !strings.Contains(prompt, required) {
+				t.Errorf("video capability interpretation missing: %s", required)
+			}
+		}
 	}
 }

@@ -1,0 +1,45 @@
+{
+  "scope": "Two accepted image edits inspected in actual service audit logs; no generated media URLs or credentials included.",
+  "attempts": [
+    {
+      "taskID": "canvas-edit-b96a54f0-5d56-462d-9066-f6bed4cabc6d",
+      "nodeID": "image-a0bed0e5-e710-4b1a-8050-f08937894f2c",
+      "status": "success",
+      "upstreamHTTPStatus": 200,
+      "durationMS": 48627,
+      "model": "gpt-image-2.6-flare",
+      "apiMode": "images",
+      "stream": true,
+      "partialImages": 1,
+      "referenceImages": 5,
+      "size": "864x1536",
+      "authoredPromptPreserved": true,
+      "authoredPromptSHA256": "df1c24070202ec24d2c9dee59cb6d2a49bd3fc4c87e2a28504cddb2e0e321c45",
+      "observedWireContentType": null,
+      "wireLimitation": "Application audit records requested stream but does not record response content type or heartbeat timing. Cannot assert that early SSE prevented the earlier 524.",
+      "originalChatAndNodesPreserved": true,
+      "preferencesRestored": true
+    },
+    {
+      "taskID": "canvas-edit-be0d3e20-ef80-4223-81d1-802e4be0b0b8",
+      "nodeID": "image-8997b70a-ba97-4395-8054-f2c5ce52c283",
+      "status": "success",
+      "upstreamHTTPStatus": 200,
+      "durationMS": 43461,
+      "model": "gpt-image-2.6-flare",
+      "apiMode": "images",
+      "stream": true,
+      "partialImages": 1,
+      "referenceImages": 5,
+      "size": "864x1536",
+      "authoredPromptPreserved": true,
+      "authoredPromptSHA256": "19a85b49dd4f2b7a733f9b8d37e742212f1f7dd18ea878d9fb4d736e0528590d",
+      "observedWireContentType": null,
+      "wireLimitation": "Application audit records requested stream but does not record response content type or heartbeat timing. Cannot assert that early SSE prevented the earlier 524.",
+      "originalChatAndNodesPreserved": true,
+      "preferencesRestored": true
+    }
+  ],
+  "conclusion": "Both new stream-enabled requests succeeded. One returned an unsuitable exterior and was corrected before video generation. Successes do not prove 524 has been permanently eliminated.",
+  "qualityApproved": false
+}

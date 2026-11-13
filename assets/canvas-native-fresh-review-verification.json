@@ -1,0 +1,18 @@
+{
+  "qualityApproved": false,
+  "scope": "Automated findings saved as notes only; all four manual checks remain unchecked",
+  "checks": [
+    {
+      "name": "all_current_notes_persist_without_marking_manual_approval",
+      "passed": true,
+      "messages": 18
+    },
+    {
+      "name": "mobile_notes_and_no_generation",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "finishedAt": "2026-11-12T10:48:04.346Z"
+}

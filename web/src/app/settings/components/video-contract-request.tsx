@@ -1,10 +1,11 @@
+import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { Item } from "@/components/ui/item";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { ChevronDown, ArrowRight } from "lucide-react";
+import { ChevronDown, CircleHelp, ArrowRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -12,11 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { VideoModelContract } from "@/lib/video-model-contracts";
 import { videoMaterialTransports } from "@/lib/video-model-contracts";
 import { setVideoMaterialTransports } from "@/lib/video-contract-editor";
+import { VideoContractUploadCredential } from "./video-contract-upload-credential";
 
 type RequestKey = Exclude<keyof VideoModelContract["request"], "duration_value_type" | "reference_value_type">;
 
-export function ContractRequestEditor({ contract, generation, disabled, onChange, onGenerationChange }: {
+export function ContractRequestEditor({ contract, contractID, generation, disabled, onChange, onGenerationChange }: {
   contract: VideoModelContract;
+  contractID?: string;
   generation: VideoModelContract["generation"];
   disabled: boolean;
   onChange: (update: (contract: VideoModelContract) => void) => void;
@@ -41,19 +44,24 @@ export function ContractRequestEditor({ contract, generation, disabled, onChange
     { key: "reference_videos_field", label: "参考视频", example: '["https://example.com/ref.mp4"]', placeholder: "reference_videos", supported: supports("video") },
     { key: "reference_audios_field", label: "参考音频", example: '["https://example.com/ref.mp3"]', placeholder: "reference_audios", supported: supports("audio") },
   ];
-  const renderMapping = (item: typeof mappings[number]) => <div key={item.key} className="grid items-start gap-2 border-t border-border/60 py-3 first:border-t-0 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-3">
-    <FieldLabel htmlFor={`video-contract-${item.key}`} >{item.label}</FieldLabel>
-    <div className="min-w-0 space-y-1.5"><Input id={`video-contract-${item.key}`} className="font-mono" value={request[item.key]} disabled={disabled} placeholder={`例如 ${item.placeholder}`} onChange={(event) => onChange((next) => { next.request[item.key] = event.target.value; })} /><div className="flex items-start gap-1.5 text-[11px] leading-5 text-muted-foreground"><ArrowRight className="mt-1 size-3 shrink-0" /><code className="break-all">{request[item.key] ? `${request[item.key]} = ${item.example}` : "未设置自定义字段"}</code></div></div>
-  </div>;
-  return <div className="space-y-5">
-    <Item variant="muted" className="space-y-3 p-4">
-      <p className="font-medium">什么时候需要配置？</p>
-      <p className="text-muted-foreground">例如用户选择 5 秒，但接口要求 <code className="text-foreground">duration</code>，就把“视频时长”对应字段填为 duration。接口要求嵌套参数时，可填 <code className="text-foreground">metadata.duration</code>。</p>
-      <p className="text-muted-foreground">首帧传给 <code className="text-foreground">image_url</code>、参考视频传给 <code className="text-foreground">reference_videos</code>，也是同样的配置方式。具体字段和素材结构以当前接口协议为准，可在右侧“请求与响应模拟”中验证。</p>
-    </Item>
+  const renderMapping = (item: typeof mappings[number]) => <Field key={item.key}>
+    <FieldLabel htmlFor={`video-contract-${item.key}`}>{item.label}</FieldLabel>
+    <Input id={`video-contract-${item.key}`} className="font-mono" value={request[item.key]} disabled={disabled} placeholder={`例如 ${item.placeholder}`} onChange={(event) => onChange((next) => { next.request[item.key] = event.target.value; })} />
+    <div className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground"><ArrowRight className="mt-1 size-3 shrink-0" /><code className="break-all">{request[item.key] ? `${request[item.key]} = ${item.example}` : "未设置自定义字段"}</code></div>
+  </Field>;
+  return <div className="grid min-w-0 gap-5">
+    <Collapsible className="group">
+      <CollapsibleTrigger asChild><Button type="button" variant="ghost" size="sm" className="justify-start"><CircleHelp />什么时候需要配置？<ChevronDown className="ml-auto group-data-[state=open]:rotate-180" /></Button></CollapsibleTrigger>
+      <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+        <Item variant="muted" className="mt-2 grid gap-2 p-4 text-xs leading-5">
+          <p>上游字段与当前协议不同时才需要映射。例如把视频时长发送到 <code>duration</code>，嵌套参数可填 <code>metadata.duration</code>。</p>
+          <p>首帧对应 <code>image_url</code>、参考视频对应 <code>reference_videos</code>。以当前接口文档为准，可在“请求与响应模拟”中验证。</p>
+        </Item>
+      </CollapsibleContent>
+    </Collapsible>
     <Card className="space-y-4 p-4 gap-0">
-      <h4 className="text-sm font-semibold">1. 接口路径</h4>
-      <p className="text-xs leading-5 text-muted-foreground">{customProtocol ? "自定义协议没有默认接口，请按上游文档填写提交和查询路径。" : "内置协议会自动选择提交和查询接口，通常无需配置。只有上游网关使用不同路径时，才需要自定义。"} 上游服务地址在渠道中配置。</p>
+      <h4 className="text-base font-medium">接口路径</h4>
+      <p className="text-xs leading-5 text-muted-foreground">{customProtocol ? "自定义协议没有默认接口，请按上游文档填写提交和查询路径。" : "内置协议已提供提交与查询路径，仅在网关路径不同时自定义。"} 上游服务地址在渠道中配置。</p>
       {!customProtocol ? <Label className="flex items-center gap-2 text-sm"><Checkbox checked={customPaths} disabled={disabled} onCheckedChange={(checked) => {
         setOverrideDriver(checked ? contract.driver : null);
         if (!checked) onChange((next) => { next.transport.create_path = ""; next.transport.query_path = ""; });
@@ -65,13 +73,14 @@ export function ContractRequestEditor({ contract, generation, disabled, onChange
       {!customProtocol && customPaths ? <p className="text-xs leading-5 text-muted-foreground">填写后将覆盖内置接口路径，请确认上游仍接受当前协议的请求格式。关闭此选项会清空自定义路径，恢复协议默认接口。</p> : null}
     </Card>
     <Card className="p-4 gap-0">
-      <h4 className="text-sm font-semibold">2. 参数对应哪个上游字段</h4>
-      <p className="mt-1 mb-3 text-xs leading-5 text-muted-foreground">左侧是创作参数，右侧填写接口接收它的字段名。下方展示字段和值的对应关系；这些设置由本契约所有模型共用。</p>
-      {mappings.filter((item) => item.supported).map(renderMapping)}
-      <div className="border-t border-border/60 pt-4">
+      <h4 className="text-base font-medium">参数字段映射</h4>
+      <p className="mt-1 mb-3 text-xs leading-5 text-muted-foreground">填写上游接收的字段名，下方显示发送示例。所有匹配模型共用这些映射。</p>
+      <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">{mappings.filter((item) => item.supported).map(renderMapping)}</div>
+      <Separator className="my-5" />
+      <div>
         <Field><FieldLabel htmlFor="video-contract-duration-value-type">时长的发送格式</FieldLabel><Select value={request.duration_value_type} disabled={disabled} onValueChange={(value) => onChange((next) => { next.request.duration_value_type = value as "number" | "string"; })}><SelectTrigger id="video-contract-duration-value-type" ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="number">数字：5</SelectItem><SelectItem value="string">文本："5"</SelectItem></SelectContent></Select><FieldDescription>只影响接口数据格式，不改变视频时长。接口若严格检查类型，填错会导致请求失败；按接口文档选择 number 或 string。</FieldDescription></Field>
       </div>
-      {mappings.some((item) => !item.supported) ? <Collapsible className="group mt-4"><CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal flex cursor-pointer list-none items-center justify-between h-auto min-h-8">未启用能力的字段（保留原配置）<ChevronDown className="group-data-[state=open]:rotate-180" /></Button></CollapsibleTrigger><CollapsibleContent forceMount className="data-[state=closed]:hidden"><div className="mt-2">{mappings.filter((item) => !item.supported).map(renderMapping)}</div></CollapsibleContent></Collapsible> : null}
+      {mappings.some((item) => !item.supported) ? <Collapsible className="group mt-4"><CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal flex cursor-pointer list-none items-center justify-between h-auto min-h-8">未启用能力的字段（保留原配置）<ChevronDown className="group-data-[state=open]:rotate-180" /></Button></CollapsibleTrigger><CollapsibleContent forceMount className="data-[state=closed]:hidden"><div className="mt-3 grid gap-x-5 gap-y-4 sm:grid-cols-2">{mappings.filter((item) => !item.supported).map(renderMapping)}</div></CollapsibleContent></Collapsible> : null}
     </Card>
     <Field><FieldLabel>参考素材值格式</FieldLabel><Select value={request.reference_value_type || "array"} disabled={disabled} onValueChange={(value) => onChange(next => { next.request.reference_value_type = value as "array" | "scalar"; })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="array">素材字符串数组</SelectItem><SelectItem value="scalar">单个素材字符串（合计最多一份）</SelectItem></SelectContent></Select></Field>
     <Collapsible className="group" defaultOpen={Boolean(request.generation_mode_field) || undefined}>
@@ -83,10 +92,28 @@ export function ContractRequestEditor({ contract, generation, disabled, onChange
       </div>
     </CollapsibleContent></Collapsible>
     <Card className="space-y-4 p-4 gap-0">
-      <h4 className="text-sm font-semibold">3. 上传素材如何发送</h4>
+      <h4 className="text-base font-medium">素材传输</h4>
+      <Label className="flex items-center gap-2 text-sm"><Checkbox checked={Boolean(transport.material_upload)} disabled={disabled} onCheckedChange={checked => onChange(next => {
+        if (!checked) { delete next.transport.material_upload; return; }
+        next.transport = setVideoMaterialTransports(next.transport, ["url"]);
+        next.transport.material_upload = { base_url: next.provider?.base_url || "", path: "/v1/uploads", encoding: "multipart", field: "file", url_field: "url", base64_format: "", max_bytes: 100 * 1024 * 1024 };
+      })} />先上传到供应商，再提交素材 URL</Label>
+      {transport.material_upload ? <div className="grid gap-4 sm:grid-cols-2">
+        <Field className="sm:col-span-2"><FieldDescription>由本项目直接上传，不经过 NewAPI。每份契约单独保存供应商上传密钥，生成任务继续使用所选线路的令牌。</FieldDescription></Field>
+        {([
+          ["base_url", "供应商上传服务地址", "https://openai.fit"],
+          ["path", "上传接口路径", "/v1/uploads"],
+          ["field", "上传请求字段", "file"],
+          ["url_field", "响应 URL 字段路径", "data.url"],
+        ] as const).map(([key, label, placeholder]) => <Field key={key}><FieldLabel htmlFor={`video-upload-${key}`}>{label}</FieldLabel><Input id={`video-upload-${key}`} value={transport.material_upload?.[key] || ""} placeholder={placeholder} disabled={disabled} onChange={event => onChange(next => { if (next.transport.material_upload) next.transport.material_upload[key] = event.target.value; })} /></Field>)}
+        <VideoContractUploadCredential key={`${contractID}:${transport.material_upload.base_url}`} contractID={contractID} baseURL={transport.material_upload.base_url} disabled={disabled} />
+        <Field><FieldLabel>上传格式</FieldLabel><Select value={transport.material_upload.encoding} disabled={disabled} onValueChange={value => onChange(next => { const upload = next.transport.material_upload; if (!upload) return; upload.encoding = value as "multipart" | "base64"; upload.base64_format = value === "base64" ? "data_url" : ""; upload.field = value === "base64" ? "data_url" : "file"; })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="multipart">multipart 文件</SelectItem><SelectItem value="base64">JSON Base64</SelectItem></SelectContent></Select></Field>
+        {transport.material_upload.encoding === "base64" ? <Field><FieldLabel>上传 Base64 格式</FieldLabel><Select value={transport.material_upload.base64_format || "data_url"} disabled={disabled} onValueChange={value => onChange(next => { if (next.transport.material_upload) next.transport.material_upload.base64_format = value as "data_url" | "raw"; })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="data_url">Data URL</SelectItem><SelectItem value="raw">纯 Base64</SelectItem></SelectContent></Select></Field> : null}
+        <Field><FieldLabel htmlFor="video-upload-max-bytes">单文件大小上限（字节）</FieldLabel><Input id="video-upload-max-bytes" type="number" min={1} max={104857600} value={transport.material_upload.max_bytes} disabled={disabled} onChange={event => onChange(next => { if (next.transport.material_upload) next.transport.material_upload.max_bytes = Number(event.target.value); })} /><FieldDescription>同时受本项目已有的素材类型大小限制约束。</FieldDescription></Field>
+      </div> : null}
       <Field><FieldLabel>上游支持的素材提交方式</FieldLabel><div className="flex flex-wrap gap-4">{([
         ["multipart", "上传文件（multipart）"], ["base64", "Base64"], ["url", "公网 URL"],
-      ] as const).map(([method, label]) => <Label key={method} className="flex items-center gap-2 text-sm"><Checkbox checked={materialTransports.includes(method)} disabled={disabled || materialTransports.length === 1 && materialTransports[0] === method} onCheckedChange={checked => onChange(next => { next.transport = setVideoMaterialTransports(next.transport, checked ? [...materialTransports, method] : materialTransports.filter(value => value !== method)); })} />{label}</Label>)}</div><FieldDescription>按接口文档勾选。Agent 传递生成素材时，按上传文件、Base64、公网 URL 的顺序选择支持的方式；只有一种时直接使用。</FieldDescription></Field>
+      ] as const).map(([method, label]) => <Label key={method} className="flex items-center gap-2 text-sm"><Checkbox checked={materialTransports.includes(method)} disabled={disabled || Boolean(transport.material_upload) || materialTransports.length === 1 && materialTransports[0] === method} onCheckedChange={checked => onChange(next => { next.transport = setVideoMaterialTransports(next.transport, checked ? [...materialTransports, method] : materialTransports.filter(value => value !== method)); })} />{label}</Label>)}</div><FieldDescription>按接口文档勾选。Agent 传递生成素材时，按上传文件、Base64、公网 URL 的顺序选择支持的方式；只有一种时直接使用。</FieldDescription></Field>
       {materialTransports.includes("base64") ? <Field><FieldLabel>Base64 格式</FieldLabel><Select value={transport.base64_format || "data_url"} disabled={disabled} onValueChange={value => onChange(next => { next.transport.base64_format = value as "data_url" | "raw"; })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="data_url">Data URL（含 MIME 前缀）</SelectItem><SelectItem value="raw">纯 Base64</SelectItem></SelectContent></Select><FieldDescription>按上游要求选择编码格式。</FieldDescription></Field> : null}
       {transport.local_material === "multipart" ? <>
         <Label className="flex items-center gap-2 text-sm"><Checkbox checked={Boolean(transport.multipart_fields && Object.keys(transport.multipart_fields).length)} disabled={disabled} onCheckedChange={checked => onChange(next => {

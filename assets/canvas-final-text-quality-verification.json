@@ -1,0 +1,84 @@
+{
+  "method": "Sampled decoded frames from the exported movies at the indicated timestamps",
+  "movies": [
+    {
+      "title": "最后一单",
+      "durationSeconds": 60.0,
+      "bytes": 14768956,
+      "sha256": "17321fde9e51cdf7f504525b28f3345905e1aaebfdfdb88ad613e73f22418a9c",
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio",
+          "sample_rate": "48000"
+        }
+      ],
+      "textOnScreenStatus": "needs_fix",
+      "confirmedFindings": [
+        {
+          "shot": 2,
+          "seconds": [
+            18.5,
+            19.5,
+            20.5
+          ],
+          "observation": "三年了、她还留着的对白字幕可见"
+        }
+      ],
+      "frameEvidence": "assets/canvas-final-last-order-text-evidence.jpg"
+    },
+    {
+      "title": "留一盏灯",
+      "durationSeconds": 60.0,
+      "bytes": 11934339,
+      "sha256": "15b924972aecb196d68572030e11acbb29549c6b71d90621ca7d3f9ce4fa675f",
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio",
+          "sample_rate": "48000"
+        }
+      ],
+      "textOnScreenStatus": "needs_fix",
+      "confirmedFindings": [
+        {
+          "shot": 1,
+          "seconds": [
+            5,
+            7
+          ],
+          "observation": "陈姨、这么晚还没收摊啊的对白字幕可见"
+        },
+        {
+          "shot": 2,
+          "seconds": [
+            21,
+            24
+          ],
+          "observation": "线开了、明天第一天上班的对白字幕可见"
+        },
+        {
+          "shot": 4,
+          "seconds": [
+            48,
+            55
+          ],
+          "observation": "中文对白字幕下方另有无意义的英文式字串"
+        }
+      ],
+      "frameEvidence": "assets/canvas-final-lamp-text-evidence.jpg"
+    }
+  ]
+}

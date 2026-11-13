@@ -1,0 +1,1066 @@
+{
+  "phase": "opening-clone-after",
+  "checks": [
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 0,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 11108,
+      "openingCopies": [
+        {
+          "milliseconds": 39.5,
+          "serializedCharacters": 0,
+          "messages": 2000,
+          "protocol": 4000
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1786,
+          "duration": 191
+        },
+        {
+          "start": 1987,
+          "duration": 98
+        },
+        {
+          "start": 5895,
+          "duration": 292
+        },
+        {
+          "start": 6197,
+          "duration": 61
+        },
+        {
+          "start": 6298,
+          "duration": 63
+        },
+        {
+          "start": 7945,
+          "duration": 301
+        },
+        {
+          "start": 8248,
+          "duration": 269
+        },
+        {
+          "start": 8548,
+          "duration": 115
+        },
+        {
+          "start": 9356,
+          "duration": 84
+        },
+        {
+          "start": 9493,
+          "duration": 55
+        },
+        {
+          "start": 10354,
+          "duration": 604
+        }
+      ],
+      "resources": [
+        {
+          "path": "/api/profile/image-generation-preferences",
+          "start": 2370,
+          "duration": 20,
+          "transferBytes": 4359,
+          "encodedBytes": 4059,
+          "decodedBytes": 4059
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 2404,
+          "duration": 98,
+          "transferBytes": 2567,
+          "encodedBytes": 2267,
+          "decodedBytes": 2267
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 2405,
+          "duration": 104,
+          "transferBytes": 2195,
+          "encodedBytes": 1895,
+          "decodedBytes": 1895
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 2406,
+          "duration": 98,
+          "transferBytes": 4345,
+          "encodedBytes": 4045,
+          "decodedBytes": 4045
+        },
+        {
+          "path": "/api/model-config",
+          "start": 5965,
+          "duration": 238,
+          "transferBytes": 62386,
+          "encodedBytes": 62086,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "start": 5967,
+          "duration": 230,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "start": 5974,
+          "duration": 1923,
+          "transferBytes": 9272386,
+          "encodedBytes": 9272086,
+          "decodedBytes": 9272086
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 8370,
+          "duration": 1123,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 8373,
+          "duration": 2134,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 10471,
+          "duration": 523,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 10499,
+          "duration": 483,
+          "transferBytes": 1975,
+          "encodedBytes": 1675,
+          "decodedBytes": 1675
+        }
+      ],
+      "cpuSelf": [
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 6671
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1280
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "ms": 130
+        },
+        {
+          "name": "transformResponse",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 1961,
+          "ms": 81
+        },
+        {
+          "name": "react_stack_bottom_frame",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 12860,
+          "ms": 81
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 80
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 58
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 49
+        },
+        {
+          "name": "getPreferredColorTheme",
+          "file": "/src/lib/theme.ts",
+          "line": 5,
+          "ms": 49
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 46
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 45
+        },
+        {
+          "name": "computeBox",
+          "file": "",
+          "line": 3165,
+          "ms": 42
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 42
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 42
+        },
+        {
+          "name": "addObjectToProperties",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 2331,
+          "ms": 42
+        },
+        {
+          "name": "globalThis.__openingCopy",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1,
+          "ms": 41
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 40
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/react-CR84W5JX.js",
+          "line": 451,
+          "ms": 40
+        },
+        {
+          "name": "createElementNS",
+          "file": "",
+          "line": 0,
+          "ms": 39
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 39
+        },
+        {
+          "name": "blockTokens",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 36196,
+          "ms": 38
+        },
+        {
+          "name": "jsxDEVImpl",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 148,
+          "ms": 37
+        },
+        {
+          "name": "jsxDEVImpl",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 148,
+          "ms": 37
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 40030,
+          "ms": 37
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 35
+        },
+        {
+          "name": "SelectProvider",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 11528,
+          "ms": 32
+        },
+        {
+          "name": "validatePropertiesInDevelopment",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9492,
+          "ms": 31
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 30
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/src/app/canvas/canvas-workspace-controls.tsx",
+          "line": 716,
+          "ms": 28
+        },
+        {
+          "name": "reduceDescriptors",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 650,
+          "ms": 27
+        }
+      ],
+      "cpuInclusive": [
+        {
+          "name": "(root)",
+          "file": "",
+          "line": 0,
+          "ms": 11221
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 6671
+        },
+        {
+          "name": "performWorkUntilDeadline",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 16,
+          "ms": 2601
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 2554
+        },
+        {
+          "name": "performWorkOnRootViaSchedulerTask",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9047,
+          "ms": 2554
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1280
+        },
+        {
+          "name": "workLoopConcurrentByScheduler",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8422,
+          "ms": 1068
+        },
+        {
+          "name": "renderRootConcurrent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8325,
+          "ms": 1068
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 1065
+        },
+        {
+          "name": "commitRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8530,
+          "ms": 994
+        },
+        {
+          "name": "commitRootWhenReady",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8057,
+          "ms": 994
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 939
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 932
+        },
+        {
+          "name": "performSyncWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9061,
+          "ms": 805
+        },
+        {
+          "name": "flushSyncWorkAcrossRoots_impl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8966,
+          "ms": 805
+        },
+        {
+          "name": "flushSpawnedWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8685,
+          "ms": 805
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 737
+        },
+        {
+          "name": "updateFunctionComponent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 5559,
+          "ms": 678
+        },
+        {
+          "name": "renderWithHooks",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4199,
+          "ms": 674
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 633
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 631
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 596
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 581
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 572
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 493
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 492
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 492
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 456
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 454
+        },
+        {
+          "name": "react_stack_bottom_frame",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 12860,
+          "ms": 430
+        }
+      ]
+    },
+    {
+      "readyMs": 8356,
+      "openingCopies": [
+        {
+          "milliseconds": 80.10000002384186,
+          "serializedCharacters": 0,
+          "messages": 2000,
+          "protocol": 4000
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1279,
+          "duration": 58
+        },
+        {
+          "start": 2755,
+          "duration": 219
+        },
+        {
+          "start": 2985,
+          "duration": 59
+        },
+        {
+          "start": 3078,
+          "duration": 61
+        },
+        {
+          "start": 3694,
+          "duration": 52
+        },
+        {
+          "start": 3774,
+          "duration": 63
+        },
+        {
+          "start": 3838,
+          "duration": 308
+        },
+        {
+          "start": 4146,
+          "duration": 337
+        },
+        {
+          "start": 4534,
+          "duration": 52
+        },
+        {
+          "start": 5606,
+          "duration": 51
+        },
+        {
+          "start": 6367,
+          "duration": 82
+        },
+        {
+          "start": 6790,
+          "duration": 50
+        },
+        {
+          "start": 7297,
+          "duration": 54
+        },
+        {
+          "start": 7649,
+          "duration": 611
+        }
+      ],
+      "resources": [
+        {
+          "path": "/api/profile/image-generation-preferences",
+          "start": 1448,
+          "duration": 18,
+          "transferBytes": 4359,
+          "encodedBytes": 4059,
+          "decodedBytes": 4059
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1473,
+          "duration": 101,
+          "transferBytes": 2567,
+          "encodedBytes": 2267,
+          "decodedBytes": 2267
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1474,
+          "duration": 207,
+          "transferBytes": 2195,
+          "encodedBytes": 1895,
+          "decodedBytes": 1895
+        },
+        {
+          "path": "/api/profile/upstream-models",
+          "start": 1476,
+          "duration": 91,
+          "transferBytes": 4345,
+          "encodedBytes": 4045,
+          "decodedBytes": 4045
+        },
+        {
+          "path": "/api/model-config",
+          "start": 2775,
+          "duration": 212,
+          "transferBytes": 62386,
+          "encodedBytes": 62086,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2776,
+          "duration": 208,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "start": 2781,
+          "duration": 993,
+          "transferBytes": 9272386,
+          "encodedBytes": 9272086,
+          "decodedBytes": 9272086
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 4262,
+          "duration": 1319,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/canvas/shares",
+          "start": 4264,
+          "duration": 2630,
+          "transferBytes": 313,
+          "encodedBytes": 13,
+          "decodedBytes": 13
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 7761,
+          "duration": 534,
+          "transferBytes": 0,
+          "encodedBytes": 0,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/profile/agent-skills",
+          "start": 7809,
+          "duration": 463,
+          "transferBytes": 1975,
+          "encodedBytes": 1675,
+          "decodedBytes": 1675
+        }
+      ],
+      "cpuSelf": [
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3835
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1485
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "ms": 168
+        },
+        {
+          "name": "globalThis.__openingCopy",
+          "file": "/src/app/canvas/page.tsx",
+          "line": 1,
+          "ms": 80
+        },
+        {
+          "name": "getAnimationName",
+          "file": "/node_modules/.vite/deps/radix-ui.js",
+          "line": 1158,
+          "ms": 68
+        },
+        {
+          "name": "exports.createElement",
+          "file": "/node_modules/.vite/deps/react-CR84W5JX.js",
+          "line": 591,
+          "ms": 67
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 56
+        },
+        {
+          "name": "exports.createElement",
+          "file": "/node_modules/.vite/deps/react-CR84W5JX.js",
+          "line": 591,
+          "ms": 50
+        },
+        {
+          "name": "exports.createElement",
+          "file": "/node_modules/.vite/deps/react-CR84W5JX.js",
+          "line": 591,
+          "ms": 44
+        },
+        {
+          "name": "onloadend",
+          "file": "/node_modules/.vite/deps/axios.js",
+          "line": 2488,
+          "ms": 42
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 104,
+          "ms": 42
+        },
+        {
+          "name": "mergeProps",
+          "file": "/node_modules/.vite/deps/dist-Cvya3_Fp.js",
+          "line": 70,
+          "ms": 42
+        },
+        {
+          "name": "recursivelyTraverseLayoutEffects",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7476,
+          "ms": 41
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 40
+        },
+        {
+          "name": "reconcileChildFibersImpl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 3775,
+          "ms": 40
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 40
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 3479,
+          "ms": 39
+        },
+        {
+          "name": "createWorkInProgress",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 2726,
+          "ms": 39
+        },
+        {
+          "name": "updatedAncestorInfoDev",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 1641,
+          "ms": 39
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 38
+        },
+        {
+          "name": "(anonymous)",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 39969,
+          "ms": 38
+        },
+        {
+          "name": "ReactElement",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 104,
+          "ms": 38
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 38
+        },
+        {
+          "name": "query",
+          "file": "",
+          "line": 5719,
+          "ms": 37
+        },
+        {
+          "name": "exports.jsxDEV",
+          "file": "/node_modules/.vite/deps/react_jsx-dev-runtime.js",
+          "line": 191,
+          "ms": 36
+        },
+        {
+          "name": "characterType",
+          "file": "/node_modules/.vite/deps/chunk-7TTQLYRW-CI92ClkW.js",
+          "line": 10397,
+          "ms": 27
+        },
+        {
+          "name": "d",
+          "file": "/node_modules/.vite/deps/chunk-HBS6WEDP-CI4hTPo4.js",
+          "line": 16,
+          "ms": 27
+        },
+        {
+          "name": "exports.jsx",
+          "file": "/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js",
+          "line": 191,
+          "ms": 27
+        },
+        {
+          "name": "createElementNS",
+          "file": "",
+          "line": 0,
+          "ms": 25
+        },
+        {
+          "name": "worker.onmessage",
+          "file": "/src/app/canvas/use-canvas-agent-token-estimate.ts",
+          "line": 37,
+          "ms": 21
+        }
+      ],
+      "cpuInclusive": [
+        {
+          "name": "(root)",
+          "file": "",
+          "line": 0,
+          "ms": 8424
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "ms": 3835
+        },
+        {
+          "name": "performWorkUntilDeadline",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 16,
+          "ms": 2540
+        },
+        {
+          "name": "performWorkOnRootViaSchedulerTask",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9047,
+          "ms": 2507
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 2507
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "ms": 1485
+        },
+        {
+          "name": "renderRootConcurrent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8325,
+          "ms": 1151
+        },
+        {
+          "name": "workLoopConcurrentByScheduler",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8422,
+          "ms": 1150
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 1150
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 1017
+        },
+        {
+          "name": "commitRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8530,
+          "ms": 996
+        },
+        {
+          "name": "commitRootWhenReady",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8057,
+          "ms": 996
+        },
+        {
+          "name": "run",
+          "file": "",
+          "line": 0,
+          "ms": 888
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 883
+        },
+        {
+          "name": "performSyncWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 9061,
+          "ms": 876
+        },
+        {
+          "name": "flushSyncWorkAcrossRoots_impl",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8966,
+          "ms": 876
+        },
+        {
+          "name": "flushSpawnedWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8685,
+          "ms": 876
+        },
+        {
+          "name": "performWorkOnRoot",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 7938,
+          "ms": 793
+        },
+        {
+          "name": "performUnitOfWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8425,
+          "ms": 691
+        },
+        {
+          "name": "workLoopSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8322,
+          "ms": 691
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 691
+        },
+        {
+          "name": "runWithFiberInDEV",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 845,
+          "ms": 683
+        },
+        {
+          "name": "beginWork",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 6079,
+          "ms": 676
+        },
+        {
+          "name": "run",
+          "file": "",
+          "line": 0,
+          "ms": 676
+        },
+        {
+          "name": "updateFunctionComponent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 5559,
+          "ms": 563
+        },
+        {
+          "name": "renderWithHooks",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4199,
+          "ms": 552
+        },
+        {
+          "name": "react_stack_bottom_frame",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 12860,
+          "ms": 394
+        },
+        {
+          "name": "updateFunctionComponent",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 5559,
+          "ms": 350
+        },
+        {
+          "name": "renderRootSync",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 8266,
+          "ms": 344
+        },
+        {
+          "name": "renderWithHooks",
+          "file": "/node_modules/.vite/deps/react-dom_client.js",
+          "line": 4199,
+          "ms": 343
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "canvasReadRequests": 4,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "afterLoadingEarlier": {
+    "openingCopies": [
+      {
+        "milliseconds": 80.10000002384186,
+        "serializedCharacters": 0,
+        "messages": 2000,
+        "protocol": 4000
+      }
+    ]
+  },
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

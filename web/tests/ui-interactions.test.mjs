@@ -168,16 +168,15 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.match(videoContractsSource, /h-\[min\(94dvh,940px\)\][\s\S]*?w-\[min\(96vw,1360px\)\] max-w-none/);
   assert.match(videoContractsSource, /<DialogContent[\s\S]*?overflow-hidden/);
   assert.match(videoContractsSource, /aria-label="视频配置分区"/);
-  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)\][^"]*lg:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,22rem\)\]/);
-  assert.match(videoContractsSource, /data-video-contract-details[\s\S]*?className="[^"]*h-full overscroll-y-contain"[\s\S]*?aria-label="契约表单"/);
-  assert.match(videoContractsSource, /data-video-contract-preview[\s\S]*?className="[^"]*h-full overscroll-y-contain"[\s\S]*?aria-label="契约预览"/);
+  assert.match(videoContractsSource, /data-video-contract-layout/);
+  assert.match(videoContractsSource, /<nav aria-label="视频配置分区"/);
+  assert.match(videoContractsSource, /<ScrollArea data-video-contract-details aria-label="契约表单"/);
+  assert.match(videoContractsSource, /<ScrollArea data-video-contract-preview aria-label="契约预览"/);
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
   assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
   assert.match(videoContractsSource, /String\(value \|\| ""\)\.split/);
   assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"/);
-  assert.match(videoContractsSource, /divide-y divide-border\/70/);
   assert.match(videoContractsSource, /data-video-contract-layout/);
-  assert.match(videoContractsSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(320px,22rem\)\]/);
   assert.match(videoContractsSource, /data-video-contract-details[\s\S]*data-video-contract-preview/);
   assert.doesNotMatch(videoContractsSource, /dialogView|role="tablist"|契约查看方式/);
   assert.match(videoContractsSource, /<ContractParameterPreview key=\{parameterPreviewKey\}/);
@@ -320,6 +319,11 @@ test("settings saves do not overwrite edits made while the request is pending", 
 });
 
 test("video contracts use a responsive management list with prioritized actions", () => {
+  assert.match(videoContractsSource, /const \[listView, setListView\] = useState<"table" \| "cards">\("table"\)/);
+  assert.match(videoContractsSource, /aria-label="表格视图" aria-pressed=\{listView === "table"\} onClick=\{\(\) => setListView\("table"\)\}/);
+  assert.match(videoContractsSource, /aria-label="卡片视图" aria-pressed=\{listView === "cards"\} onClick=\{\(\) => setListView\("cards"\)\}/);
+  assert.match(videoContractsSource, /<Table aria-label="视频契约表格"/);
+  assert.match(videoContractsSource, /<TableBody>\{contractEntries\}<\/TableBody>[\s\S]*?: contractEntries\}/);
   assert.match(videoContractsSource, /data-video-contract-toolbar/);
   assert.match(videoContractsSource, /variant="ghost" disabled=\{isJSONImporting \|\| isBulkActionBusy \|\| selectedItems\.length > 0\}/);
   assert.match(videoContractsSource, /variant="ghost" disabled=\{items\.length === 0 \|\| selectedItems\.length > 0\}/);
@@ -336,9 +340,9 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /setOptimisticEnabledByID\(\(current\) => new Map\(current\)\.set\(item\.id, enabled\)\)/);
   assert.match(videoContractsSource, /const displayedEnabled = optimisticEnabledByID\.get\(item\.id\) \?\? item\.enabled/);
   assert.match(videoContractsSource, /decision\.reconcile && \(force \|\| decision\.concurrent\)/);
-  assert.match(videoContractsSource, /契约<\/span>[\s\S]*匹配模型<\/span>[\s\S]*能力范围<\/span>[\s\S]*更新时间<\/span>[\s\S]*操作<\/span>/);
+  assert.match(videoContractsSource, /aria-label="匹配模型"/);
+  assert.match(videoContractsSource, /aria-label="能力范围"/);
   assert.match(videoContractsSource, /data-video-contract-row/);
-  assert.match(videoContractsSource, /xl:grid-cols-\[32px_minmax\(140px,1\.2fr\)_minmax\(120px,0\.95fr\)_minmax\(150px,1\.35fr\)_110px_252px\]/);
   assert.match(videoContractsSource, /保存草稿/);
   assert.match(videoContractsSource, /发布新版本/);
   assert.match(videoContractsSource, /请求与响应模拟/);
@@ -355,7 +359,6 @@ test("video contracts support page selection and ordered bulk operations", () =>
   assert.match(videoContractsSource, /aria-label="选择当前页契约"/);
   assert.match(videoContractsSource, /data-video-contract-bulk-toolbar/);
   assert.match(videoContractsSource, /data-video-contract-toolbar[\s\S]*data-video-contract-bulk-toolbar[\s\S]*data-video-contract-list/);
-  assert.match(videoContractsSource, /data-video-contract-bulk-toolbar[\s\S]*"col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1\.5"/);
   assert.match(videoContractsSource, /批量启用/);
   assert.match(videoContractsSource, /批量停用/);
   assert.match(videoContractsSource, /导出选中/);
@@ -409,7 +412,7 @@ test("multi-image workflow runner exposes a full-width guided review workspace",
   assert.match(workflowSource, /data-series-draft-card/);
   assert.match(workflowSource, /const resultURL = draft\.result_ids\?\.\[0\] \|\| ""/);
   assert.match(workflowSource, /<AuthenticatedImage src=\{resultURL\}/);
-  assert.match(workflowSource, /<PromptTextareaFrame className="h-32 min-h-32">/);
+  assert.match(workflowSource, /<PromptTextareaFrame value=\{draft\.prompt\} className="h-32 min-h-32">/);
   assert.doesNotMatch(workflowSource, /<ImageLightbox[\s\S]*?src: resultURL/);
   assert.match(workflowSource, /<LoadingState label="正在生成图片"/);
   assert.match(workflowSource, />生成结果</);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Maximize2, Move } from "lucide-react";
 import { SYSTEM, Viewer } from "@photo-sphere-viewer/core";
 import "@photo-sphere-viewer/core/index.css";
@@ -18,7 +18,7 @@ type CanvasPanoramaViewerProps = {
   proxyGeneratedPanorama?: boolean;
   expandOnDoubleClick?: boolean;
   immersive?: boolean;
-  onMoveStart?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onMoveStart?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onOpen?: () => void;
 };
 
@@ -171,7 +171,7 @@ export function CanvasPanoramaViewer({ src, alt, proxyGeneratedPanorama = false,
   return (
     <div className="relative size-full overflow-hidden" data-canvas-no-pan data-canvas-no-zoom onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onPointerEnter={activate} onPointerDown={(event) => { activate(); event.stopPropagation(); }} onWheel={(event) => event.stopPropagation()} onDoubleClick={(event) => { if (!expandOnDoubleClick || !onOpen) return; event.stopPropagation(); onOpen(); }}>
       {surface}
-      {onMoveStart ? <TooltipButton type="button" tooltip="拖动节点" aria-label="拖动节点" className="absolute left-2 top-2 z-20 flex cursor-grab items-center justify-center opacity-70 hover:opacity-100 active:cursor-grabbing" onMouseDown={(event) => { event.preventDefault(); onMoveStart(event); }} onDoubleClick={(event) => event.stopPropagation()}><Move  /></TooltipButton> : null}
+      {onMoveStart ? <TooltipButton type="button" tooltip="拖动节点" aria-label="拖动节点" className="absolute left-2 top-2 z-20 flex cursor-grab items-center justify-center opacity-70 hover:opacity-100 active:cursor-grabbing" data-canvas-node-drag onPointerDown={(event) => { event.preventDefault(); onMoveStart(event); }} onDoubleClick={(event) => event.stopPropagation()}><Move  /></TooltipButton> : null}
       {onOpen ? <TooltipButton type="button" tooltip="沉浸式查看" aria-label="沉浸式查看" className="absolute bottom-2 left-2 z-20 flex items-center justify-center opacity-70 hover:opacity-100" onClick={(event) => { event.stopPropagation(); onOpen(); }} onMouseDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Maximize2  /></TooltipButton> : null}
     </div>
   );

@@ -1,0 +1,12 @@
+{
+  "stage": "before",
+  "generationSubmissions": 0,
+  "errors": [],
+  "closedEditorRequestedNoPanel": true,
+  "panelRequestedWhileHistoryHeld": false,
+  "historyRequestMs": 208,
+  "moduleRequestMs": 715,
+  "historyReleasedMs": 626,
+  "completeHistoryPreserved": true,
+  "fixtureDeleted": true
+}

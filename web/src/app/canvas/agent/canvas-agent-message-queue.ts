@@ -30,14 +30,17 @@ export function canvasAgentComposerAction({
   hasDraft,
   resumable,
   queued,
+  waitingForAnswer = false,
 }: {
   busy: boolean;
   hasDraft: boolean;
   resumable: boolean;
   queued: boolean;
+  waitingForAnswer?: boolean;
 }) {
   if (hasDraft) return busy ? "enqueue" : "send";
   if (busy) return "pause";
+  if (waitingForAnswer) return "send";
   return resumable || queued ? "resume" : "send";
 }
 

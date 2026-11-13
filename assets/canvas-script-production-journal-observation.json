@@ -1,0 +1,51 @@
+{
+  "startedAt": "2026-11-12T13:27:00.202Z",
+  "checks": [
+    {
+      "name": "real_tool_and_saved_history_include_ordered_current_state_and_measured_durations",
+      "passed": true
+    },
+    {
+      "name": "fresh_read_reports_outdated_video_and_does_not_guess_measured_total",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-1854d6a6b4eb40ff99da6a3b",
+  "summary": {
+    "totalShots": 4,
+    "plannedDurationSeconds": 60,
+    "actualDurationMS": 60332,
+    "canMerge": true,
+    "quality": [
+      "unchecked",
+      "unchecked",
+      "unchecked",
+      "unchecked"
+    ]
+  },
+  "modelProjectID": "canvas-0ca9ea1a775248880391986f",
+  "runID": "74EZmN47GcQofp3euDAeQ",
+  "runStatus": "success",
+  "calls": [
+    {
+      "name": "get_node",
+      "arguments": {
+        "nodeId": "script-canvas-57f40ada890cc88876873a0b"
+      }
+    },
+    {
+      "name": "finish_task",
+      "arguments": {
+        "text": "《留一盏灯》四镜按脚本顺序核对如下：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---:|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**。含音轨仅证明文件有声音轨道；对白清晰度、说话人、口型及画面连续性均尚无验收记录。本次仅作读取核对，未修改、合并、生成媒体或填写质量记录。"
+      }
+    }
+  ],
+  "reply": "《留一盏灯》四镜按脚本顺序核对如下：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---:|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**。含音轨仅证明文件有声音轨道；对白清晰度、说话人、口型及画面连续性均尚无验收记录。本次仅作读取核对，未修改、合并、生成媒体或填写质量记录。",
+  "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(JSON.stringify(session.protocolMessages).includes('actualDurationMS'))\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-script-production.mjs:78:9",
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-12T13:27:43.074Z"
+}

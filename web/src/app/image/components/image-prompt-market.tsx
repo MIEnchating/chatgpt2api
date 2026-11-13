@@ -453,6 +453,8 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     </Combobox>
   );
 
+  if (!open && presentation === "dialog") return <Dialog open={false} onOpenChange={onOpenChange} />;
+
   const content = (
     <>
         {presentation === "dialog" ? <DialogHeader className="block">

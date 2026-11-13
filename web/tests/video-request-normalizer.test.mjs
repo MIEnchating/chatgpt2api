@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
+import openAIFitDocument from "../../integrations/newapi/openai-fit-minimax/contract.json" with { type: "json" };
 
 import { activeVideoModelContracts, installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
 
@@ -14,6 +15,33 @@ import {
 } from "../src/lib/video-request-normalizer.ts";
 
 installVideoModelContracts(structuredClone(contractDocument.contracts));
+
+test("Super infers text generation when an old reference mode has no materials", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(openAIFitDocument.contracts.find(({ contract }) => contract.models.includes("minimax-H3-super")).contract);
+  try {
+    installVideoModelContracts([contract]);
+    const input = { model: "minimax-H3-super", referenceMode: "reference", clientTaskId: "super-text", prompt: "Clouds moving slowly" };
+    assert.equal(videoReferenceCombinationError(input), "");
+    const request = videoGenerationTaskRequestBody(input);
+    assert.equal(request.generation_mode, "text-to-video");
+    assert.equal(request.reference_mode, "first-frame");
+    assert.equal(request.reference_image_urls, undefined);
+    const imageRequest = videoGenerationTaskRequestBody({ ...input, referenceImageURLs: ["https://cdn.example.com/ref.png"] });
+    assert.equal(imageRequest.generation_mode, "reference-to-video");
+    assert.deepEqual(imageRequest.reference_image_urls, ["https://cdn.example.com/ref.png"]);
+    const normalized = normalizeVideoRequest({ ...input, referenceImageURLs: ["https://cdn.example.com/ref.png"] });
+    const canvasRequest = videoGenerationTaskRequestBody({ ...input, ...normalized });
+    assert.equal(canvasRequest.generation_mode, "reference-to-video");
+    assert.deepEqual(canvasRequest.reference_image_urls, ["https://cdn.example.com/ref.png"]);
+    const profile = contract.model_profiles.find((item) => item.model === "minimax-H3-super");
+    profile.generation.modes = profile.generation.modes.filter((mode) => mode.kind !== "text");
+    installVideoModelContracts([contract]);
+    assert.throws(() => videoGenerationTaskRequestBody(input), /不支持文生视频/);
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
 
 test("does not infer provider behavior for an unconfigured model", () => {
   assert.throws(() => normalizeVideoRequest({ model: "kling/text-to-video", size: "16:9", seconds: 7 }), /未配置启用的视频模型契约/);

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { applyCanvasTaskImage } from "../src/app/canvas/canvas-task-results.ts";
+import { canvasGenerationNeedsRecovery, canvasGenerationRecoveryTaskID } from "../src/app/canvas/canvas-generation-context.ts";
 import * as videoModelCapabilities from "../src/lib/video-model-capabilities.ts";
 
 function callback(path, name, context) {
@@ -75,10 +76,12 @@ test("video sound defaults respect explicit node choices and model audio support
 
 test("video retries update the failed node even after switching to new-node regeneration", async () => {
   for (const retry of [false, true]) {
-    const source = { id: "video", type: "video", url: "/previous.mp4", generation_status: "error", prompt: "Scene", x: 0, y: 0, width: 400, height: 225 };
+    const source = { id: "video", type: "video", url: "/previous.mp4", generation_status: "error", generation_error: "Previous attempt failed", prompt: "Scene", x: 0, y: 0, width: 400, height: 225 };
     const stopped = new Error("Stop before submitting a task");
     let resultNodes;
     const runVideo = callback("../src/app/canvas/page.tsx", "runVideoGeneration", {
+      canvasGenerationNeedsRecovery,
+      canvasGenerationRecoveryTaskID,
       videoModelRequiresHTTPSReferences: videoModelCapabilities.videoModelRequiresHTTPSReferences,
       documentRef: { current: { id: "project" } }, canvasOperationEpochRef: { current: 0 },
       nodesRef: { current: [source] }, activeGenerationsRef: { current: new Set() }, runningNodeID: "",
@@ -103,6 +106,7 @@ test("video retries update the failed node even after switching to new-node rege
     const result = resultNodes.at(-1);
     assert.equal(result.id, retry ? source.id : "video-new");
     assert.equal(result.generation_status, "loading");
+    assert.equal(result.generation_error, "");
     if (retry) assert.equal(result.url, source.url);
   }
 });

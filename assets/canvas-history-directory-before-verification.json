@@ -1,0 +1,20 @@
+{
+  "phase": "before",
+  "checks": [
+    {
+      "name": "real_composer_directory_validation_count",
+      "passed": true
+    },
+    {
+      "name": "history_and_draft_preserved_without_model_submission",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "generatedMessages": 2000,
+  "typingDirectoryCalls": 36,
+  "mobileTypingDirectoryCalls": 24,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

@@ -1,0 +1,16 @@
+{
+  "phase": "before",
+  "loads": [],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "switch": {
+    "readyMs": 3408,
+    "startedRequests": 1,
+    "successfulBytes": [
+      8995675
+    ]
+  },
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 2\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-in-editor-switch.mjs:42:10\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at process.processImmediate (node:internal/timers:452:9)\n    at process.callbackTrampoline (node:internal/async_hooks:130:17)",
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 2
+}

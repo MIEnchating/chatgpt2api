@@ -245,10 +245,14 @@ export function reconcileCancelledCanvasTaskNodes(
 
 export function applyCanvasVideoTaskProgressNodes(nodes: readonly CanvasNode[], task: CreationTask): CanvasNode[] {
   const progress = task.status === "success" ? 100 : normalizeGenerationProgress(task.progress);
-  return nodes.map((node) => node.type === "video" && node.task_id === task.id && node.generation_status === "loading"
-    && progress !== undefined && node.generation_progress !== progress
-    ? { ...node, generation_progress: progress }
-    : node);
+  const active = task.status === "queued" || task.status === "running";
+  return nodes.map((node) => {
+    if (node.type !== "video" || node.task_id !== task.id || node.generation_status !== "loading") return node;
+    const changedProgress = progress !== undefined && node.generation_progress !== progress;
+    const clearError = active && Boolean(node.generation_error);
+    if (!changedProgress && !clearError) return node;
+    return { ...node, ...(changedProgress ? { generation_progress: progress } : {}), ...(clearError ? { generation_error: "" } : {}) };
+  });
 }
 
 export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
@@ -340,7 +344,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
         const content = (task.data || []).map((item) => item.text_response || "").join("\n");
         const operation = node.script_operation;
         if (!operation || !node.script_project) throw new Error("脚本任务缺少操作信息，请重新生成");
-        const script_project = operation.kind === "script" ? parseGeneratedScript(content) : parseScriptPrompts(content, node.script_project, operation.shot_ids);
+        const script_project = operation.kind === "script" ? parseGeneratedScript(content, node.script_project) : parseScriptPrompts(content, node.script_project, operation.shot_ids);
         return { ...node, script_project, script_operation: undefined, generation_status: "success", generation_progress: 100, generation_error: "" };
       } catch (error) { return { ...node, script_operation: undefined, generation_status: "error", generation_error: error instanceof Error ? error.message : "脚本解析失败" }; }
     }

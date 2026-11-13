@@ -1,0 +1,92 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, complete 15-second waveform without VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "shot-01-fresh-native",
+      "expected_dialogue": "最后一单……怎么是家里的地址。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-16.4",
+      "max_volume_db": "-0.2",
+      "segments": [
+        {
+          "start": 0.47999999999999965,
+          "end": 3.74,
+          "text": "最後一單,怎麼是家裡的地址?",
+          "words": [
+            {
+              "start": 0.47999999999999965,
+              "end": 0.88,
+              "text": "最後",
+              "probability": 0.6515
+            },
+            {
+              "start": 0.88,
+              "end": 1.12,
+              "text": "一",
+              "probability": 0.9905
+            },
+            {
+              "start": 1.12,
+              "end": 1.32,
+              "text": "單,",
+              "probability": 0.8317
+            },
+            {
+              "start": 1.9,
+              "end": 2.76,
+              "text": "怎麼",
+              "probability": 0.8868
+            },
+            {
+              "start": 2.76,
+              "end": 2.96,
+              "text": "是",
+              "probability": 0.9619
+            },
+            {
+              "start": 2.96,
+              "end": 3.16,
+              "text": "家",
+              "probability": 0.9941
+            },
+            {
+              "start": 3.16,
+              "end": 3.3,
+              "text": "裡",
+              "probability": 0.7962
+            },
+            {
+              "start": 3.3,
+              "end": 3.4,
+              "text": "的",
+              "probability": 0.9867
+            },
+            {
+              "start": 3.4,
+              "end": 3.56,
+              "text": "地",
+              "probability": 0.9954
+            },
+            {
+              "start": 3.56,
+              "end": 3.74,
+              "text": "址?",
+              "probability": 0.8111
+            }
+          ]
+        }
+      ],
+      "transcript": "最後一單,怎麼是家裡的地址?",
+      "character_error_rate": 0.0,
+      "dialogue_lines": [
+        {
+          "expected": "最后一单……怎么是家里的地址。",
+          "status": "transcribed_in_order"
+        }
+      ],
+      "status": "text_consistent"
+    }
+  ]
+}

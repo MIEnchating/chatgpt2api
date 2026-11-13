@@ -1,0 +1,52 @@
+{
+  "sourceHashes": {
+    "web/src/app/canvas/canvas-agent-conversation.tsx": "af1ac507bdd9842013a76120f4a4303e83c17b3ddcd4bf33e83f125315b787ef",
+    "web/tests/canvas-agent-panel-review.test.mjs": "06732deedaca1c329e1cfd67754036980dc2b5a21fc03c28a90c682c788bde2c",
+    "web/tests/shared-component-boundaries.test.mjs": "0916c89f2d24b31532633147bc67936090382a42800f2ebc6b64f41f0b3f5d91"
+  },
+  "focusedFileTests": 19,
+  "finalNewTests": 2,
+  "existingSharedRegressions": 3,
+  "fullFrontendTests": 1766,
+  "testFiles": 194,
+  "fullCommand": "npm run test -- --timeout 20000",
+  "initialFullResult": {
+    "passed": 1762,
+    "failed": 4,
+    "reasons": [
+      "Three existing mocked import fixtures needed the actual JSON value comparator and required timing map.",
+      "One architecture scanner exceeded the default 5000 ms; isolated check passed without changing assertions."
+    ]
+  },
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "beforeSerialization": [
+    {
+      "calls": 160,
+      "characters": 702800
+    },
+    {
+      "calls": 80,
+      "characters": 351400
+    }
+  ],
+  "afterSerialization": [
+    {
+      "calls": 0,
+      "characters": 0
+    },
+    {
+      "calls": 0,
+      "characters": 0
+    }
+  ],
+  "browserPassed": true,
+  "productionProjectsUnchanged": true,
+  "limitations": [
+    "Full reads and valid first transcript copies remain.",
+    "Timings were collected under changing host load and do not prove an end-to-end speedup.",
+    "Media quality, actual standalone audio supplier verification and historical failure attribution remain open."
+  ]
+}

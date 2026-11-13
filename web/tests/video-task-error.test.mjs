@@ -15,10 +15,10 @@ test("missing reasons and bare task identifiers are not displayed as failure exp
   }
 });
 
-test("completed videos with a storage failure select save recovery instead of regeneration", async () => {
-  const { isVideoSaveFailure } = await import("../src/lib/video-task-error.ts");
-  assert.equal(isVideoSaveFailure({ error: "视频已生成但保存失败: video content returned status 502" }), true);
-  assert.equal(isVideoSaveFailure({ canRecoverVideo: true, error: "下载失败" }), true);
-  assert.equal(isVideoSaveFailure({ error: "视频生成失败" }), false);
-  assert.equal(isVideoSaveFailure({ error: "upstream 502" }), false);
+test("completed videos with a storage failure select original task recovery instead of regeneration", async () => {
+  const { canRecoverVideoTask } = await import("../src/lib/video-task-error.ts");
+  assert.equal(canRecoverVideoTask({ error: "视频已生成但保存失败: video content returned status 502" }), false);
+  assert.equal(canRecoverVideoTask({ canRecoverVideo: true, error: "下载失败" }), true);
+  assert.equal(canRecoverVideoTask({ error: "视频生成失败" }), false);
+  assert.equal(canRecoverVideoTask({ error: "upstream 502" }), false);
 });

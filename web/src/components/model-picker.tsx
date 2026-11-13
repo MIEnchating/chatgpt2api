@@ -65,7 +65,7 @@ export function ModelPicker({ id, label, value, options, onValueChange, disabled
         <ChevronDown />
       </Button>
     </ModelSelectorTrigger>
-    <ModelSelectorContent title={label}>
+    {open && !unavailable ? <ModelSelectorContent title={label}>
       <ModelSelectorInput placeholder="搜索模型…" aria-label="搜索模型" />
       <ModelSelectorList>
         <ModelSelectorEmpty>没有找到模型</ModelSelectorEmpty>
@@ -83,6 +83,6 @@ export function ModelPicker({ id, label, value, options, onValueChange, disabled
           </ModelSelectorItem>)}
         </ModelSelectorGroup>)}
       </ModelSelectorList>
-    </ModelSelectorContent>
+    </ModelSelectorContent> : null}
   </ModelSelector>;
 }

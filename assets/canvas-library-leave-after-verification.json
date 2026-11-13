@@ -1,0 +1,18 @@
+{
+  "phase": "after",
+  "errors": [],
+  "checks": [
+    "failed save stays on source, pending save delays navigation, successful save leaves, clean leave has no write",
+    "browser back stays after save rejection and leaves after successful save",
+    "mobile can return to library after closing the full-screen Agent panel"
+  ],
+  "mediaSubmissions": 0,
+  "saveAttempts": 7,
+  "dialogs": [],
+  "originalActiveProjectID": "canvas-04702de07993ea1fdf59d868",
+  "leftWithRejectedSave": false,
+  "attemptsOnLeave": 1,
+  "backWithRejectedSaveLeft": false,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

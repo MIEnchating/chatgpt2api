@@ -43,3 +43,27 @@ test("model profiles replace complete capabilities and preserve the shared proto
 test("video ratio labels preserve all declared Grok ratios", () => {
   for (const ratio of document.contracts[0].contract.capability.sizes) assert.equal(videoWorkbenchRatioForSize(ratio), ratio);
 });
+
+test("resolving a model does not copy unrelated profiles and returns independently editable fields", () => {
+  const contract = structuredClone(document.contracts[0].contract);
+  let unrelatedReads = 0;
+  const unused = contract.model_profiles[0];
+  Object.defineProperty(unused, "capability", { enumerable: true, get() { unrelatedReads++; return {}; } });
+  const selected = contract.model_profiles[1];
+  selected.transport = structuredClone(contract.transport);
+  selected.request = structuredClone(contract.request);
+  selected.transport.create_path = "/selected/tasks";
+  const resolved = resolveVideoModelContract(contract, selected.model);
+  assert.equal(unrelatedReads, 0, "only the selected model should be copied for rendering");
+  assert.equal(resolved.transport.create_path, "/selected/tasks");
+  resolved.capability.sizes.push("caller-size");
+  resolved.generation.modes[0].label = "caller-label";
+  resolved.transport.create_path = "/caller/tasks";
+  resolved.request.prompt_field = "caller_prompt";
+  resolved.polling.interval_seconds = 99;
+  assert.equal(selected.capability.sizes.includes("caller-size"), false);
+  assert.notEqual(selected.generation.modes[0].label, "caller-label");
+  assert.equal(selected.transport.create_path, "/selected/tasks");
+  assert.notEqual(selected.request.prompt_field, "caller_prompt");
+  assert.notEqual(contract.polling.interval_seconds, 99);
+});

@@ -1,0 +1,53 @@
+{
+  "sourceHashes": {
+    "internal/service/canvas_agent.go": "2df8b2cc42aa78281bb5bb8ccda36d3f12db8254f8bd58e7f4cd2458e7e33cf9",
+    "internal/service/canvas_agent_history_view.go": "ff405cd40a1e82ed7878f8adcec7fd30d9bdb54e96ce4764c423074fb209aaee",
+    "internal/service/canvas_document.go": "692b816346099125cac3e697ac27a284c4379c551037c118f71778dc6f466e11",
+    "internal/service/canvas_document_test.go": "037754b397cec7c8573db27b094f1632954b3530a46992ef50052f0606126fdc",
+    "internal/service/canvas_agent_test.go": "f45254167d1047a131d4a179081f97b37d57b2f86bb82b61bdd9aab4f1a37e1f",
+    "internal/httpapi/canvas.go": "a073d978cb16e52d4fe84306e8dff186397a3a8d5a5a59175e8b22029f87cf68",
+    "internal/httpapi/canvas_test.go": "934d06eb1dfce3d8337c5503fdc9f138687ef81fd4da4096cdade6bfa2550f30",
+    "web/src/app/canvas/page.tsx": "bf54462273a1e57ca745477ecb87e49ef202d0814586fa7e6d4a134b2db5c2a9",
+    "web/src/services/api/canvas.ts": "a20498b52fb0b737635d548947a8588a658d23263a4de3f1a5e8ebe309378ec9",
+    "web/tests/canvas-review-regressions.test.mjs": "418ce180fb26589e276cb85074bd1f1cdd2f78cf332b41b34fca8720ec51ab40",
+    "web/tests/review-regressions.test.mjs": "4f4ec7f3f02a85dc93d2593fed436d1ce994d6413979ccf8e331ae8633e86fc8"
+  },
+  "checks": {
+    "frontFull": {
+      "command": "cd web && npm run test -- --timeout 20000",
+      "passed": 1773,
+      "files": 194,
+      "failed": 0,
+      "durationSeconds": 127.85,
+      "exitCode": 0
+    },
+    "build": {
+      "exitCode": 0,
+      "viteSeconds": 8.31
+    },
+    "lint": {
+      "exitCode": 0,
+      "warnings": 0,
+      "errors": 0
+    },
+    "embedded": {
+      "exitCode": 0,
+      "durationSeconds": 0.031
+    },
+    "focusedGo": {
+      "exitCode": 0,
+      "serviceSeconds": 0.717,
+      "httpapiSeconds": 0.67
+    },
+    "fullGo": {
+      "command": "GOMAXPROCS=4 go test ./internal/service ./internal/httpapi -count=1",
+      "exitCode": 0,
+      "serviceSeconds": 224.408,
+      "httpapiSeconds": 91.613
+    }
+  },
+  "fullGoPending": false,
+  "databaseScope": "No SQL, schema or persistence format changes. Isolated SQLite executed; MySQL/PostgreSQL not rerun.",
+  "sourceHashesVerifiedAtCompletion": true,
+  "goalStatus": "paused"
+}

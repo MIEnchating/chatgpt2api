@@ -19,6 +19,7 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { ManagementHeader, ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -627,7 +628,8 @@ function LogsContent() {
           </div>
         </div>
 
-          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
+          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-h-full min-w-0">
+            <div className="hidden min-h-full flex-col lg:flex">
             <Table aria-label="请求日志" aria-busy={isLoading} className="min-w-[1040px] table-fixed">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>
@@ -692,13 +694,6 @@ function LogsContent() {
                     </TableRow>
                   );
                 })}
-                {isLoading && items.length === 0 ? (
-                  <TableRow >
-                    <TableCell colSpan={7} className="text-center">
-                      <LoadingState label="正在加载日志" />
-                    </TableCell>
-                  </TableRow>
-                ) : null}
                 {!isLoading && items.length === 0 ? (
                   <TableRow >
                     <TableCell colSpan={7} >
@@ -708,6 +703,34 @@ function LogsContent() {
                 ) : null}
               </TableBody>
             </Table>
+            {isLoading && items.length === 0 ? <LoadingState className="min-h-40 flex-1" label="正在加载日志" /> : null}
+            </div>
+            <div className="flex min-h-full flex-col lg:hidden">
+            <ItemGroup className="divide-y" aria-label="请求日志" aria-busy={isLoading}>
+              {currentRows.map((item, index) => (
+                <Item key={`${item.time}-${index}`} className="min-w-0 flex-col items-stretch gap-2 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <time className="font-mono text-xs text-muted-foreground">{item.time}</time>
+                    <Badge variant={statusBadgeVariant(item)}>{statusText(item)}</Badge>
+                  </div>
+                  <div className="flex min-w-0 items-start gap-2">
+                    {detailText(item, "method") ? <Badge variant={methodBadgeVariant(detailText(item, "method"))}>{detailText(item, "method")}</Badge> : null}
+                    <span className="min-w-0 break-words text-sm font-medium">{eventText(item)}</span>
+                  </div>
+                  {eventPathText(item) ? <code className="break-all text-xs text-muted-foreground">{eventPathText(item)}</code> : null}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="break-all">{actorText(item)}</span>
+                    <span>{moduleText(item)}</span>
+                    <span>{levelLabel(logLevel(item))}</span>
+                    <span className="font-mono">{formatDuration(item)}</span>
+                  </div>
+                  <Button variant="outline" size="sm" className="self-start" onClick={() => openDetail(item)} aria-label="查看日志详情"><Eye />查看详情</Button>
+                </Item>
+              ))}
+              {!isLoading && items.length === 0 ? <EmptyState compact icon={ListFilter} title={activeFilters > 0 ? "没有匹配的日志" : "暂无日志"} description="调整筛选条件后再试" /> : null}
+            </ItemGroup>
+            {isLoading && items.length === 0 ? <LoadingState className="min-h-40 flex-1" label="正在加载日志" /> : null}
+            </div>
           </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           <ManagementPagination
             mode="cursor"

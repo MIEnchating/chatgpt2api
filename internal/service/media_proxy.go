@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -45,14 +46,71 @@ func newSafeOutboundTransport() *http.Transport {
 	return transport
 }
 
+// MediaConnectionError identifies failures that happened before an HTTP request was sent.
+type MediaConnectionError struct {
+	Stage string
+	Host  string
+	Err   error
+}
+
+func (e *MediaConnectionError) Error() string {
+	return fmt.Sprintf("media %s failed for %s: %v", e.Stage, e.Host, e.Err)
+}
+func (e *MediaConnectionError) Unwrap() error { return e.Err }
+
+// Retry only temporary DNS failures, before dialing or sending any paid request.
+func resolveMediaProxyHost(ctx context.Context, host string, lookup func(context.Context, string) ([]net.IPAddr, error)) ([]net.IPAddr, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		ips, err := lookup(ctx, host)
+		if err == nil && len(ips) > 0 {
+			return ips, nil
+		}
+		if err == nil {
+			err = errors.New("resolver returned no addresses")
+		}
+		var dns *net.DNSError
+		if attempt != 0 || !errors.As(err, &dns) || !dns.IsTemporary || dns.IsNotFound || ctx.Err() != nil {
+			return nil, &MediaConnectionError{Stage: "dns", Host: host, Err: err}
+		}
+		timer := time.NewTimer(150 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, &MediaConnectionError{Stage: "dns", Host: host, Err: ctx.Err()}
+		case <-timer.C:
+		}
+	}
+	panic("unreachable DNS retry state")
+}
+
+// Preflight checks the selected public route without sending an HTTP request.
+func PreflightMediaEndpoint(ctx context.Context, raw string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return errors.New("invalid media route URL")
+	}
+	ips, err := resolveMediaProxyHost(ctx, parsed.Hostname(), net.DefaultResolver.LookupIPAddr)
+	if err != nil {
+		return err
+	}
+	for _, ip := range ips {
+		if isBlockedMediaProxyIP(ip.IP) {
+			return errors.New("local and private media hosts are not allowed")
+		}
+	}
+	return nil
+}
+
 func safeMediaProxyDialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
 	}
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil || len(ips) == 0 {
-		return nil, errors.New("unable to resolve media host")
+	ips, err := resolveMediaProxyHost(ctx, host, net.DefaultResolver.LookupIPAddr)
+	if err != nil {
+		return nil, err
 	}
 	for _, item := range ips {
 		if isBlockedMediaProxyIP(item.IP) {
@@ -68,7 +126,7 @@ func safeMediaProxyDialContext(ctx context.Context, network, address string) (ne
 		}
 		lastErr = dialErr
 	}
-	return nil, fmt.Errorf("unable to connect to media host: %w", lastErr)
+	return nil, &MediaConnectionError{Stage: "connect", Host: host, Err: lastErr}
 }
 
 func isBlockedMediaProxyIP(ip net.IP) bool {

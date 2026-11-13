@@ -111,7 +111,7 @@ func TestCanvasAgentResumeInspectsExistingResultsWithoutRegeneration(t *testing.
 			return agentTurn(calls...), nil
 		}
 		return agentTurn(), nil
-	}, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	}, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		generated.Add(1)
 		return nil, errors.New("must not regenerate")
 	})

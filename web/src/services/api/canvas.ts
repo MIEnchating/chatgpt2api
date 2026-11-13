@@ -3,7 +3,9 @@ import { httpRequest } from "@/lib/request";
 import type { AgentRunStatus } from "@/lib/agent-run-state";
 
 export type CanvasScriptDialogue = { id: string; kind: "dialogue" | "narration"; asset_id: string; text: string };
-export type CanvasScriptShot = {
+export type CanvasScriptReviewStatus = "unchecked" | "passed" | "needs_fix";
+export type CanvasScriptQualityReview = { media_url: string; continuity: CanvasScriptReviewStatus; dialogue: CanvasScriptReviewStatus; speaker: CanvasScriptReviewStatus; lip_sync: CanvasScriptReviewStatus; text_on_screen?: CanvasScriptReviewStatus; notes: string };
+export type CanvasScriptShot = { quality_review?: CanvasScriptQualityReview;
   id: string;
   seconds: number;
   description: string;
@@ -19,9 +21,13 @@ export type CanvasScriptShot = {
   source_node_id?: string;
   image_node_id?: string;
   video_node_id?: string;
+  image_outdated?: boolean;
+  video_outdated?: boolean;
+  image_prompt_outdated?: boolean;
+  video_prompt_outdated?: boolean;
 };
 export type CanvasScriptAsset = { id: string; kind: "character" | "scene" | "prop"; name: string; description: string; image_node_id: string };
-export type CanvasScriptProject = { step: number; confirmed: boolean; shots: CanvasScriptShot[]; assets: CanvasScriptAsset[] };
+export type CanvasScriptProject = { step: number; confirmed: boolean; shots: CanvasScriptShot[]; assets: CanvasScriptAsset[]; merged_video_node_id?: string; merged_video_fingerprint?: string; merged_video_outdated?: boolean };
 
 type CanvasViewport = {
   zoom: number;
@@ -109,6 +115,9 @@ export type CanvasNode = {
   audio_task_id?: string;
   audio_task_result_id?: string;
   duration_ms?: number;
+  media_metadata?: { width: number; height: number; duration_ms: number; has_audio?: boolean };
+  media_silent_clips?: number;
+  media_probe_error?: string;
   mime_type?: string;
   panorama_source_prompt?: string;
   panorama_final_prompt?: string;
@@ -188,6 +197,10 @@ export type CanvasDocument = {
   connections: CanvasConnection[];
   agent_messages?: CanvasAgentMessage[];
   agent_sessions?: unknown[];
+  agent_history_partial?: boolean;
+  agent_session_summaries?: CanvasAgentSessionSummary[];
+  agent_session_updates?: CanvasAgentSessionUpdate[];
+  deleted_agent_session_ids?: string[];
   active_agent_session_id?: string;
   agent_config?: Record<string, unknown>;
   agent_panel?: {
@@ -202,6 +215,13 @@ export type CanvasDocument = {
   updated_at?: string;
 };
 
+export type CanvasAgentSessionUpdate = {
+  id: string;
+  changes: { title?: string; engine?: "native" | "codex"; updatedAt?: string };
+};
+
+export type CanvasAgentSessionSummary = { id: string; title: string; created_at?: string; updated_at?: string; message_count: number; content_hash: string };
+
 export type CanvasProjectSummary = {
   id: string;
   title: string;
@@ -211,15 +231,30 @@ export type CanvasProjectSummary = {
   updated_at?: string;
 };
 
-export type CanvasWorkspaceResponse = {
-  document: CanvasDocument;
+export type CanvasProjectList = {
   projects: CanvasProjectSummary[];
   active_project_id: string;
 };
 
-export async function fetchCanvasDocument(projectID?: string) {
-  const query = projectID ? `?project_id=${encodeURIComponent(projectID)}` : "";
-  return httpRequest<CanvasWorkspaceResponse>(`/api/canvas${query}`);
+export type CanvasWorkspaceResponse = CanvasProjectList & { document: CanvasDocument };
+
+export function fetchCanvasProjectList(signal?: AbortSignal) {
+  return httpRequest<CanvasProjectList>("/api/canvas?view=projects", { signal });
+}
+
+type CanvasHistoryScope = "full" | "active" | "editor";
+
+export async function fetchCanvasDocument(projectID?: string, history: CanvasHistoryScope = "full", sessionIDs: string[] = [], signal?: AbortSignal) {
+  const query = new URLSearchParams();
+  if (projectID) query.set("project_id", projectID);
+  if (history !== "full") query.set("history", history);
+  for (const id of sessionIDs) query.append("session_id", id);
+  return httpRequest<CanvasWorkspaceResponse>(`/api/canvas?${query}`, { signal });
+}
+
+export function fetchCanvasAgentHistorySession(projectID: string, sessionID: string, revision: number, signal?: AbortSignal) {
+  const query = new URLSearchParams({ project_id: projectID, session_id: sessionID, revision: String(revision) });
+  return httpRequest<{ session: unknown; revision: number }>(`/api/canvas/agent-history?${query}`, { signal });
 }
 
 export async function saveCanvasDocument(document: CanvasDocument) {
@@ -231,25 +266,32 @@ export async function saveCanvasDocument(document: CanvasDocument) {
 
 export async function clearCanvasDocument(projectID: string, revision: number) {
   return httpRequest<{ document: CanvasDocument }>(
-    `/api/canvas?project_id=${encodeURIComponent(projectID)}&revision=${encodeURIComponent(String(revision))}`,
+    `/api/canvas?history=active&project_id=${encodeURIComponent(projectID)}&revision=${encodeURIComponent(String(revision))}`,
     { method: "DELETE" },
   );
 }
 
-export async function updateCanvasProject(input: {
+type CanvasProjectMutation = {
   action: "create" | "activate" | "rename" | "delete";
   project_id?: string;
   title?: string;
   revision?: number;
-}) {
-  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
+};
+
+export function mutateCanvasProjectList(input: CanvasProjectMutation | { action: "import"; document: CanvasDocument }) {
+  return httpRequest<CanvasProjectList>("/api/canvas?view=projects", { method: "POST", body: input });
+}
+
+export async function updateCanvasProject(input: CanvasProjectMutation, history: CanvasHistoryScope = "full", signal?: AbortSignal) {
+  return httpRequest<CanvasWorkspaceResponse>(`/api/canvas?history=${history}`, {
     method: "POST",
     body: input,
+    signal,
   });
 }
 
-export async function importCanvasProject(document: CanvasDocument) {
-  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
+export async function importCanvasProject(document: CanvasDocument, history: "full" | "active" = "full") {
+  return httpRequest<CanvasWorkspaceResponse>(`/api/canvas?history=${history}`, {
     method: "POST",
     body: { action: "import", document },
   });

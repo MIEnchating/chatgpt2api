@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -102,12 +103,24 @@ func (w *canvasAgentWorker) sdkRequest(method string, params map[string]any) (an
 		w.reconcilePendingMedia()
 		status := util.Clean(params["status"])
 		reply := util.Clean(params["text"])
-		if !w.conversation && (!w.accepted || w.finalBlocked || w.hasPendingPlan() || len(agentStrings(w.state["pendingTaskIds"])) > 0) {
-			status = "waiting"
-			reply = "任务仍有未完成步骤，已有结果和执行记录已保存，可以继续执行。"
-		}
 		if messages, ok := params["messages"]; ok {
 			w.messages = util.AsMapSlice(messages)
+		}
+		var delivery struct {
+			OK     bool   `json:"ok"`
+			Status string `json:"status"`
+		}
+		if len(w.messages) > 0 {
+			last := w.messages[len(w.messages)-1]
+			if last["role"] == "tool" && last["name"] == "finish_task" {
+				_ = json.Unmarshal([]byte(util.Clean(last["content"])), &delivery)
+			}
+		}
+		if delivery.OK && delivery.Status == "error" {
+			status = "error"
+		} else if !w.conversation && (!w.accepted || w.finalBlocked || w.hasPendingPlan() || len(agentStrings(w.state["pendingTaskIds"])) > 0) {
+			status = "waiting"
+			reply = "任务仍有未完成步骤，已有结果和执行记录已保存，可以继续执行。"
 		}
 		w.sdk.State = ""
 		w.sdk.Phase = "complete"
@@ -319,7 +332,7 @@ func (w *canvasAgentWorker) sdkTool(call map[string]any) (any, error) {
 			for nodeID, fingerprint := range agentMap(receipt["nodeFingerprints"]) {
 				node := w.node(nodeID)
 				if node == nil || fingerprint != w.deletionFingerprint(nodeID) {
-					return w.canvasChangedResult("已完成操作的节点已被用户修改或移除，保留当前画布，不重复执行"), nil
+					return w.canvasChangedResult("已完成操作的节点状态已变化或节点已移除，保留当前画布，不重复执行"), nil
 				}
 			}
 			if call["name"] == "finish_task" && result["ok"] == true {
@@ -396,7 +409,7 @@ func (w *canvasAgentWorker) sdkTool(call map[string]any) (any, error) {
 	var result map[string]any
 	var err error
 	if w.canvasChanged || w.layoutChanged && (call["name"] == "arrange_nodes" || call["name"] == "create_group") {
-		result = w.canvasChangedResult("用户刚刚修改了画布，本批剩余操作未执行。请以当前画布为准重新判断，不恢复已删除节点。")
+		result = w.canvasChangedResult("画布状态与执行快照不一致，本批剩余操作未执行。请重新读取当前画布和已有任务后判断，不恢复已删除节点。")
 	} else {
 		result, err = w.tool(call)
 	}
@@ -417,7 +430,7 @@ func (w *canvasAgentWorker) sdkTool(call map[string]any) (any, error) {
 	}
 	if w.canvasChanged && result["ok"] == true {
 		previous := result
-		result = w.canvasChangedResult("已保留你的画布修改，正在核对本次操作结果并调整后续步骤")
+		result = w.canvasChangedResult("画布状态与执行快照不一致，已保留当前内容，正在核对本次操作结果并调整后续步骤")
 		result["operationResult"] = previous
 	}
 
@@ -433,17 +446,16 @@ func (w *canvasAgentWorker) sdkTool(call map[string]any) (any, error) {
 	if result["code"] == "canvas_changed" {
 		status = "changed"
 	}
+	if result["status"] == "error" {
+		status = "error"
+	}
 	w.trace(map[string]any{"id": id, "type": "operation", "kind": agentToolKind(util.Clean(call["name"])), "label": label, "status": status, "detail": agentResultDetail(result), "nodeId": result["nodeId"]})
 	for _, nodeID := range agentStrings(result["nodeIds"]) {
 		if call["name"] == "run_canvas_workflow" {
 			break
 		}
 		if node := w.node(nodeID); node != nil {
-			nodeStatus := "success"
-			if node.Type != "text" && node.GenerationStatus != "success" {
-				nodeStatus = "waiting"
-			}
-			w.trace(map[string]any{"id": id + ":" + nodeID, "type": "operation", "kind": "create", "label": node.Title, "status": nodeStatus, "detail": "已保存到画布", "nodeId": nodeID})
+			w.trace(map[string]any{"id": id + ":" + nodeID, "type": "operation", "kind": "create", "label": node.Title, "status": "success", "detail": "已保存到画布", "nodeId": nodeID})
 		}
 	}
 	if err = w.save(); err != nil {
@@ -581,6 +593,9 @@ func (w *canvasAgentWorker) answerQuestion(call map[string]any) (any, error) {
 }
 
 func agentToolKind(name string) string {
+	if name == "merge_script_videos" {
+		return "generate"
+	}
 	if name == "read_skill_file" {
 		return "file"
 	}
@@ -599,7 +614,7 @@ func agentToolKind(name string) string {
 	if strings.HasPrefix(name, "create_") {
 		return "create"
 	}
-	if strings.HasPrefix(name, "update_") || strings.HasPrefix(name, "delete_") || name == "arrange_nodes" {
+	if strings.HasPrefix(name, "update_") || strings.HasPrefix(name, "delete_") || name == "arrange_nodes" || name == "set_video_model" || name == "confirm_script_node" {
 		return "edit"
 	}
 	return "tool"

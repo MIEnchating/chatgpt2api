@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import { buildCanvasAudioGenerationRequest, canvasAgentAudioNodeParameters, canvasAudioGenerationReferences, canvasAudioProvider, canvasAudioReferences, canvasAudioResponseFormat, isCanvasAudioFile, resolveCanvasAudioModel } from "../src/app/canvas/canvas-audio.ts";
+
+test("canvas does not invent an audio model before server configuration arrives", () => {
+  const source = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /const \[audioModel, setAudioModel\] = useState\(""\);[\s\S]*const \[audioModels, setAudioModels\] = useState<string\[\]>\(\[\]\)/);
+});
 
 function node(model, values = {}) {
   return { id: "audio", type: "audio", x: 0, y: 0, width: 340, height: 160, scale_x: 1, scale_y: 1, generation_audio_model: model, ...values };

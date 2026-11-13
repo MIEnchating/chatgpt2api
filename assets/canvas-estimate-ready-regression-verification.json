@@ -1,0 +1,21 @@
+{
+  "sourceHashes": {
+    "web/src/app/canvas/use-canvas-agent-token-estimate.ts": "f313524163b3bda4bd31b369a463a3eb3f43bcf36a00fbf0fef617788f5f9943",
+    "web/src/app/canvas/agent/canvas-agent-token-estimate.worker.ts": "3da2b6cb939bfe42c230e6bb793eddfd8c5f0f11a18ed25118cfeb4357e30f2f",
+    "web/tests/canvas-agent-token-estimate.test.mjs": "d02060f224c6aca82abf775ec7dab855cd9302a5fdcb678aca2483df7d1fcf1b"
+  },
+  "focusedTests": 9,
+  "completeFrontendTests": 1764,
+  "testFiles": 194,
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "browserPassed": true,
+  "productionProjectsUnchanged": true,
+  "limitations": [
+    "Initial browser attempt timed out after reloading before panel state was saved; retained in the initial verification artifact.",
+    "Readiness delivery was intentionally gated; these timings are not performance comparisons.",
+    "Full conversation reads, initial valid history transfer, media content quality and historical failure attribution remain open."
+  ]
+}

@@ -74,6 +74,37 @@ export function canvasConnectionRelations(activeNodeID: string, connections: rea
   return { nodeIDs, connectionIDs };
 }
 
+// Reference details are revealed on focus; the overview keeps the script path.
+export function canvasScriptReferenceConnectionIDs(nodes: readonly CanvasNode[], connections: readonly CanvasConnection[]) {
+  const incoming = new Map<string, CanvasConnection[]>();
+  const outgoing = new Map<string, Set<string>>();
+  for (const edge of connections) {
+    const inputs = incoming.get(edge.to_node_id) || [];
+    inputs.push(edge);
+    incoming.set(edge.to_node_id, inputs);
+    const outputs = outgoing.get(edge.from_node_id) || new Set<string>();
+    outputs.add(edge.to_node_id);
+    outgoing.set(edge.from_node_id, outputs);
+  }
+  const details = new Set<string>();
+  for (const node of nodes) {
+    if (node.type !== "script" || !node.script_project) continue;
+    const inputs = new Set(incoming.get(node.id)?.map(edge => edge.from_node_id));
+    const outputs = outgoing.get(node.id);
+    const assets = new Map(node.script_project.assets.map(asset => [asset.id, asset.image_node_id]));
+    for (const shot of node.script_project.shots) {
+      const references = new Set([...shot.asset_ids, ...shot.dialogue.map(line => line.asset_id)].map(id => assets.get(id)).filter(Boolean));
+      for (const id of [shot.image_node_id, shot.video_node_id]) {
+        if (!id || !outputs?.has(id)) continue;
+        for (const edge of incoming.get(id) || []) {
+          if (inputs.has(edge.from_node_id) && references.has(edge.from_node_id)) details.add(edge.id);
+        }
+      }
+    }
+  }
+  return details;
+}
+
 export function findCanvasConnectionDropTarget({
   nodes,
   point,

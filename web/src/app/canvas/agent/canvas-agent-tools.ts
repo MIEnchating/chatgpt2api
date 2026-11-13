@@ -16,6 +16,8 @@ const CANVAS_AGENT_ACTION_NAMES = [
   "get_downstream_nodes",
   "get_connected_nodes",
   "get_generation_config",
+  "list_video_models",
+  "set_video_model",
   "get_generation_task",
   "set_agent_state",
   "ask_user_question",
@@ -25,6 +27,7 @@ const CANVAS_AGENT_ACTION_NAMES = [
   "create_text_node",
   "update_text_node",
   "update_script_node",
+  "confirm_script_node",
   "update_node",
   "delete_node",
   "create_connection",
@@ -36,6 +39,7 @@ const CANVAS_AGENT_ACTION_NAMES = [
   "generate_video",
   "generate_audio",
   "generate_node",
+  "merge_script_videos",
   "get_media_task_status",
   "list_workflows",
   "get_workflow",
@@ -116,6 +120,16 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
     case "get_canvas_summary":
     case "get_selected_nodes":
     case "get_generation_config":
+    case "list_video_models":
+      break;
+    case "set_video_model":
+      normalized = { model: requiredString(input.model, "model") };
+      break;
+    case "merge_script_videos":
+      normalized = { scriptNodeId: requiredString(input.scriptNodeId, "scriptNodeId") };
+      break;
+    case "confirm_script_node":
+      normalized = { nodeId: requiredString(input.nodeId, "nodeId"), confirmationFingerprint: requiredString(input.confirmationFingerprint, "confirmationFingerprint") };
       break;
     case "get_node":
     case "get_upstream_nodes":
@@ -159,10 +173,14 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
       normalized = { nodeId: requiredString(input.nodeId, "nodeId"), ...(title ? { title } : {}), ...(content ? { content } : {}) };
       break;
     }
-    case "update_node":
+    case "update_node": {
       if (Object.keys(input).every((key) => key === "nodeId")) throw new Error("update_node 缺少要修改的字段");
       normalized = { ...input, nodeId: requiredString(input.nodeId, "nodeId") };
+      if (isRecord(input.generation) && input.generation.videoParameters !== undefined) {
+        normalized.generation = { ...input.generation, videoParameters: normalizeVideoParameters(input.generation.videoParameters) };
+      }
       break;
+    }
     case "set_agent_state": {
       const phase = requiredString(input.phase, "phase") as CanvasAgentPhase;
       if (!PHASES.includes(phase)) throw new Error("无效的 Agent 创作阶段");
@@ -188,7 +206,10 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
           key: requiredString(item.key, "variables.key"),
           label: requiredString(item.label, "variables.label"),
           required: item.required === true,
-          ...(optionalString(item.defaultValue) ? { defaultValue: optionalString(item.defaultValue) } : {}),
+          ...(typeof item.defaultValue === "string" ? { defaultValue: item.defaultValue } : {}),
+          ...(typeof item.type === "string" ? { type: item.type } : {}),
+          ...(Array.isArray(item.options) ? { options: item.options } : {}),
+          ...(typeof item.placeholder === "string" ? { placeholder: item.placeholder } : {}),
         };
       }) : [];
       normalized = {
@@ -232,10 +253,14 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
           key: requiredString(step.key, "steps.key"), type,
           title: requiredString(step.title, "steps.title"), prompt: requiredString(step.prompt, "steps.prompt"),
           dependsOn: stringArray(step.dependsOn), sourceNodeIds: stringArray(step.sourceNodeIds), attachmentIds: stringArray(step.attachmentIds),
+          ...(optionalString(step.scriptNodeId) ? { scriptNodeId: optionalString(step.scriptNodeId) } : {}),
+          ...(optionalString(step.assetId) ? { assetId: optionalString(step.assetId) } : {}),
+          ...(optionalString(step.shotId) ? { shotId: optionalString(step.shotId) } : {}),
           ...(optionalString(step.size) ? { size: optionalString(step.size) } : {}),
           ...(boundedInteger(step.count, 1, 15) !== undefined ? { count: boundedInteger(step.count, 1, 15) } : {}),
           ...(boundedInteger(step.seconds, 1, Number.MAX_SAFE_INTEGER) !== undefined ? { seconds: boundedInteger(step.seconds, 1, Number.MAX_SAFE_INTEGER) } : {}),
           ...(typeof step.generateAudio === "boolean" ? { generateAudio: step.generateAudio } : {}),
+          ...(step.videoParameters !== undefined ? { videoParameters: normalizeVideoParameters(step.videoParameters) } : {}),
           ...(optionalString(step.voice) ? { voice: optionalString(step.voice) } : {}),
           ...(optionalString(step.resolution) ? { resolution: optionalString(step.resolution) } : {}),
         };
@@ -263,13 +288,19 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
     case "generate_video": {
       const sourceNodeIds = optionalStringArray(input.sourceNodeIds, "sourceNodeIds");
       const attachmentIds = optionalStringArray(input.attachmentIds, "attachmentIds");
-      normalized = { ...(attachmentIds ? { attachmentIds } : {}), prompt: requiredString(input.prompt, "prompt"), ...(sourceNodeIds ? { sourceNodeIds } : {}), ...(optionalString(input.title) ? { title: optionalString(input.title) } : {}), ...(optionalString(input.size) ? { size: optionalString(input.size) } : {}), ...(optionalString(input.resolution) ? { resolution: optionalString(input.resolution) } : {}), ...(boundedNumber(input.seconds, 1, Number.MAX_SAFE_INTEGER) !== undefined ? { seconds: boundedNumber(input.seconds, 1, Number.MAX_SAFE_INTEGER) } : {}), ...(typeof input.generateAudio === "boolean" ? { generateAudio: input.generateAudio } : {}) };
+      normalized = { ...(attachmentIds ? { attachmentIds } : {}), prompt: requiredString(input.prompt, "prompt"), ...(sourceNodeIds ? { sourceNodeIds } : {}), ...(optionalString(input.title) ? { title: optionalString(input.title) } : {}), ...(optionalString(input.size) ? { size: optionalString(input.size) } : {}), ...(optionalString(input.resolution) ? { resolution: optionalString(input.resolution) } : {}), ...(boundedNumber(input.seconds, 1, Number.MAX_SAFE_INTEGER) !== undefined ? { seconds: boundedNumber(input.seconds, 1, Number.MAX_SAFE_INTEGER) } : {}), ...(typeof input.generateAudio === "boolean" ? { generateAudio: input.generateAudio } : {}), ...(input.videoParameters !== undefined ? { videoParameters: normalizeVideoParameters(input.videoParameters) } : {}) };
       break;
     }
     case "generate_audio": {
       const sourceNodeIds = optionalStringArray(input.sourceNodeIds, "sourceNodeIds");
       normalized = { prompt: requiredString(input.prompt, "prompt"), ...(sourceNodeIds ? { sourceNodeIds } : {}), ...(optionalString(input.title) ? { title: optionalString(input.title) } : {}), ...(optionalString(input.voice) ? { voice: optionalString(input.voice) } : {}), ...(optionalString(input.instructions) ? { instructions: optionalString(input.instructions) } : {}) };
       break;
+    }
+  }
+  if (["create_text_node", "generate_image", "edit_image", "generate_video"].includes(actionName)) {
+    for (const key of ["scriptNodeId", "assetId", "shotId"] as const) {
+      const value = optionalString(input[key]);
+      if (value) normalized[key] = value;
     }
   }
   return { id, name: actionName, arguments: normalized };
@@ -293,6 +324,17 @@ function optionalString(value: unknown) { return typeof value === "string" ? val
 function requiredString(value: unknown, key: string) { const result = optionalString(value); if (!result) throw new Error(`${key} 不能为空`); return result; }
 function stringArray(value: unknown) { return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))].slice(0, 50) : []; }
 function optionalStringArray(value: unknown, key: string) { if (value === undefined) return undefined; if (!Array.isArray(value)) throw new Error(`${key} 必须是字符串数组`); return stringArray(value); }
+function normalizeVideoParameters(value: unknown) {
+  if (!Array.isArray(value)) throw new Error("videoParameters 必须是参数数组");
+  const result: Record<string, unknown> = Object.create(null);
+  for (const entry of value) {
+    if (!isRecord(entry)) throw new Error("videoParameters 必须是参数对象数组");
+    const name = requiredString(entry.name, "videoParameters.name");
+    if (Object.hasOwn(result, name)) throw new Error(`videoParameters 参数名重复：${name}`);
+    result[name] = entry.value;
+  }
+  return result;
+}
 function positiveNumber(value: unknown) { const number = typeof value === "number" ? value : Number(value); return Number.isFinite(number) && number > 0 ? number : undefined; }
 function boundedNumber(value: unknown, minimum: number, maximum: number) { if (value === undefined || value === null || value === "") return undefined; const number = typeof value === "number" ? value : Number(value); if (!Number.isFinite(number) || number < minimum || number > maximum) throw new Error(`数值必须在 ${minimum} 到 ${maximum} 之间`); return number; }
 function boundedInteger(value: unknown, minimum: number, maximum: number) { const number = boundedNumber(value, minimum, maximum); return number === undefined ? undefined : Math.floor(number); }
@@ -304,10 +346,12 @@ type ArgumentRule = {
   maximum?: number;
   minItems?: number;
   maxItems?: number;
+  minLength?: number;
   maxLength?: number;
   items?: ArgumentRule;
   properties?: Record<string, ArgumentRule>;
   required?: string[];
+  anyOf?: ArgumentRule[];
 };
 
 export function validateCanvasAgentArguments(args: Record<string, unknown>, schema: CanvasAgentToolDefinition["function"]["parameters"]) {
@@ -315,6 +359,10 @@ export function validateCanvasAgentArguments(args: Record<string, unknown>, sche
 }
 
 function validateArgument(value: unknown, rule: ArgumentRule, path: string) {
+  if (rule.anyOf) {
+    if (!rule.anyOf.some((choice) => { try { validateArgument(value, choice, path); return true; } catch { return false; } })) throw new Error(`${path} 类型错误`);
+    return;
+  }
   if (rule.type === "object") {
     if (!isRecord(value)) throw new Error(`${path} 必须是 JSON 对象`);
     for (const key of rule.required || []) if (!(key in value)) throw new Error(`缺少工具参数 ${key}`);
@@ -335,6 +383,7 @@ function validateArgument(value: unknown, rule: ArgumentRule, path: string) {
     if ((rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)) throw new Error(`${path} 超出允许范围`);
   } else {
     if (typeof value !== rule.type) throw new Error(`${path} 类型错误，应为 ${rule.type}`);
+    if (typeof value === "string" && rule.minLength !== undefined && value.length < rule.minLength) throw new Error(`${path} 至少 ${rule.minLength} 字符`);
     if (typeof value === "string" && rule.maxLength !== undefined && value.length > rule.maxLength) throw new Error(`${path} 最多 ${rule.maxLength} 字符`);
   }
   if (rule.enum && !rule.enum.includes(value)) throw new Error(`${path} 不是允许的值`);

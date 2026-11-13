@@ -38,7 +38,9 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.Method {
 	case http.MethodGet:
-		doc, err = a.canvasAgent.Snapshot(identity, project)
+		var workspace service.CanvasWorkspaceResult
+		workspace, err = a.canvasAgent.Workspace(identity, project, r.URL.Query()["session_id"], service.CanvasHistoryScope(r.URL.Query().Get("history")))
+		doc = workspace.Document
 	case http.MethodPost:
 		if !requireAgentJSON(w, r) {
 			return
@@ -62,6 +64,7 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, 400, "文本模型不可用")
 			return
 		}
+		req.MediaBaseURL = a.resolveImageBaseURL(r.Context())
 		doc, err = a.canvasAgent.Start(identity, project, req)
 	case http.MethodDelete:
 		err = a.canvasAgent.Stop(identity, project, r.URL.Query().Get("run_id"))
@@ -80,7 +83,12 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	util.WriteJSON(w, 200, map[string]any{"document": doc})
+	doc, err = canvasHistoryResponse(r, doc)
+	if err != nil {
+		writeCanvasMutationError(w, err, "Agent 执行记录读取失败")
+		return
+	}
+	writeCanvasHistoryJSON(w, r, len(doc.AgentSessions), map[string]any{"document": doc})
 }
 
 func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req service.AgentModelRequest) (map[string]any, error) {
@@ -142,17 +150,18 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 	return data[0], nil
 }
 
-func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity, n service.CanvasNode, metadata map[string]any) (map[string]any, error) {
+func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity, n service.CanvasNode, metadata map[string]any, onProgress func(int) error) (map[string]any, error) {
+	ctx = context.WithValue(ctx, mediaBaseURLContextKey{}, util.Clean(metadata["media_base_url"]))
 	existing, err := a.tasks.ListTasksWithError(identity, []string{n.TaskID})
 	if err != nil {
 		return nil, err
 	}
 	if len(util.AsMapSlice(existing["items"])) > 0 {
-		return service.WaitCanvasAgentTask(ctx, a.tasks, identity, n.TaskID, nil)
+		return a.waitCanvasAgentMedia(ctx, identity, n, onProgress)
 	}
 	body := map[string]any{"token_name": metadata["relay_token_name"], "prompt": n.Prompt, "client_task_id": n.TaskID}
 	for k, v := range metadata {
-		if k != "relay_token_name" {
+		if k != "relay_token_name" && k != "media_base_url" {
 			body[k] = v
 		}
 	}
@@ -186,6 +195,11 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		if err = a.freezeRelayCredentialForTask(ctx, identity, body); err != nil {
 			return nil, err
 		}
+		if frozen, ok := body[relayTaskCredentialKey].(frozenTaskCredential); ok && frozen.credential.Custom {
+			if err := service.PreflightMediaEndpoint(ctx, frozen.credential.BaseURL); err != nil {
+				return nil, fmt.Errorf("生成前路由预检失败，未提交上游任务: %w", err)
+			}
+		}
 		if len(images) > 0 {
 			_, err = a.tasks.SubmitEditWithOptions(ctx, identity, n.TaskID, n.Prompt, n.GenerationModel, n.GenerationSize, n.GenerationQuality, a.relayBaseURL(), images, n.GenerationCount, imageTaskRequestMetadata(body), service.ImageOutputOptions{Format: n.GenerationOutputFormat, Compression: n.GenerationOutputCompression}, service.ImageToolOptions{Options: n.GenerationImageOptions})
 		} else {
@@ -211,6 +225,8 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		body["seconds"] = n.GenerationVideoSeconds
 		body["resolution"] = n.GenerationVideoResolution
 		body["generate_audio"] = n.GenerationVideoAudio != nil && *n.GenerationVideoAudio
+		body["watermark"] = n.GenerationVideoWatermark != nil && *n.GenerationVideoWatermark
+		body["parameters"] = n.GenerationVideoParameters
 		body["reference_mode"] = n.GenerationVideoReferenceMode
 		body["reference_image_urls"] = n.GenerationVideoReferenceImages
 		body["reference_video_urls"] = n.GenerationVideoReferenceURLs
@@ -239,13 +255,18 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		if err = a.freezeRelayCredentialForTask(ctx, identity, body); err != nil {
 			return nil, err
 		}
+		if frozen, ok := body[relayTaskCredentialKey].(frozenTaskCredential); ok && frozen.credential.Custom {
+			if err := service.PreflightMediaEndpoint(ctx, frozen.credential.BaseURL); err != nil {
+				return nil, fmt.Errorf("生成前路由预检失败，未提交上游任务: %w", err)
+			}
+		}
 		ref, e := a.videoContracts.ReferenceForContract(contract, model)
 		if e != nil {
 			return nil, e
 		}
 		meta := videoTaskRequestMetadata(body, contract)
 		meta["video_contract"] = ref
-		_, err = a.tasks.SubmitVideo(ctx, identity, n.TaskID, n.Prompt, model, util.Clean(body["size"]), util.ToInt(body["seconds"], 0), util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), false, util.Clean(body["reference_mode"]), util.AsStringSlice(body["reference_image_urls"]), util.AsStringSlice(body["reference_video_urls"]), util.AsStringSlice(body["reference_audio_urls"]), meta)
+		_, err = a.tasks.SubmitVideo(ctx, identity, n.TaskID, n.Prompt, model, util.Clean(body["size"]), util.ToInt(body["seconds"], 0), util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), util.Clean(body["reference_mode"]), util.AsStringSlice(body["reference_image_urls"]), util.AsStringSlice(body["reference_video_urls"]), util.AsStringSlice(body["reference_audio_urls"]), meta)
 	case "audio":
 		body["model"] = n.GenerationAudioModel
 		body["input"] = n.Prompt
@@ -262,6 +283,11 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 		if err = a.freezeRelayCredentialForTask(ctx, identity, body); err != nil {
 			return nil, err
 		}
+		if frozen, ok := body[relayTaskCredentialKey].(frozenTaskCredential); ok && frozen.credential.Custom {
+			if err := service.PreflightMediaEndpoint(ctx, frozen.credential.BaseURL); err != nil {
+				return nil, fmt.Errorf("生成前路由预检失败，未提交上游任务: %w", err)
+			}
+		}
 		_, err = a.tasks.SubmitAudio(ctx, identity, n.TaskID, body, creationTaskRequestMetadata(body))
 	default:
 		return nil, fmt.Errorf("不支持的媒体类型")
@@ -269,5 +295,5 @@ func (a *App) runCanvasAgentMedia(ctx context.Context, identity service.Identity
 	if err != nil {
 		return nil, err
 	}
-	return service.WaitCanvasAgentTask(ctx, a.tasks, identity, n.TaskID, nil)
+	return a.waitCanvasAgentMedia(ctx, identity, n, onProgress)
 }

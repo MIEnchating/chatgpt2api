@@ -1,0 +1,60 @@
+{
+  "phase": "estimate-ready",
+  "checks": [],
+  "pageErrors": [],
+  "browserWrites": 1,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 28376,
+      "workers": [
+        {
+          "ready": false,
+          "released": false,
+          "terminated": true,
+          "sent": [],
+          "results": []
+        },
+        {
+          "ready": true,
+          "released": true,
+          "terminated": true,
+          "sent": [],
+          "results": []
+        },
+        {
+          "ready": true,
+          "released": true,
+          "terminated": false,
+          "sent": [
+            {
+              "type": "history",
+              "count": 4000,
+              "beforeReady": false
+            },
+            {
+              "type": "estimate",
+              "requestID": 1,
+              "beforeReady": false
+            }
+          ],
+          "results": [
+            {
+              "requestID": 1,
+              "tokens": 2994172
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "canvasReadRequests": 4,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "error": "locator.waitFor: Timeout 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-agent-message=\"assistant-999\"]') to be visible\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-estimate-ready.mjs:83:64",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

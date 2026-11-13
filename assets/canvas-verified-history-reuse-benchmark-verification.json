@@ -1,0 +1,133 @@
+{
+  "verifiedAt": "2026-11-12T14:45:56.588Z",
+  "chunkDecoding": {
+    "before": [
+      {
+        "iterations": 1196,
+        "nanoseconds": 1032888,
+        "bytesAllocated": 165256,
+        "allocations": 15
+      },
+      {
+        "iterations": 1299,
+        "nanoseconds": 959807,
+        "bytesAllocated": 167623,
+        "allocations": 16
+      },
+      {
+        "iterations": 1164,
+        "nanoseconds": 950398,
+        "bytesAllocated": 166110,
+        "allocations": 15
+      }
+    ],
+    "after": [
+      {
+        "iterations": 6855,
+        "nanoseconds": 198732,
+        "bytesAllocated": 65781,
+        "allocations": 6
+      },
+      {
+        "iterations": 5494,
+        "nanoseconds": 195874,
+        "bytesAllocated": 65764,
+        "allocations": 6
+      },
+      {
+        "iterations": 6056,
+        "nanoseconds": 196840,
+        "bytesAllocated": 65775,
+        "allocations": 6
+      }
+    ],
+    "observedReduction": {
+      "timePercent": 79.90393100048146,
+      "allocatedBytesPercent": 60.456042117160905
+    }
+  },
+  "geometrySave": {
+    "backend": "isolated SQLite",
+    "messages": 2000,
+    "protocolMessages": 4000,
+    "before": [
+      {
+        "iterations": 3,
+        "nanoseconds": 2607701900,
+        "bytesAllocated": 457881280,
+        "allocations": 127881
+      }
+    ],
+    "after": [
+      {
+        "iterations": 3,
+        "nanoseconds": 1927917146,
+        "bytesAllocated": 316851224,
+        "allocations": 113357
+      }
+    ],
+    "observedReduction": {
+      "timePercent": 26.068346002278865,
+      "allocatedBytesPercent": 30.800572585103282
+    }
+  },
+  "sourceSHA256": {
+    "internal/service/canvas_agent_history.go": "ad6de1e2140fc4d959fd3924ebe89004de5b60394c1c876ab007826431ae3359",
+    "internal/service/canvas_document.go": "40b12d2782a7ac08622520359d69018ca977a78bb03b70d6ed8ce9a3560dea5c"
+  },
+  "limitations": [
+    "Small samples and variable background load; no fixed latency guarantee.",
+    "Chunk microbenchmark measures decoding; geometry benchmark measures an unchanged conversation save.",
+    "Does not prove initial page loading, editing responsiveness, or video quality is solved."
+  ],
+  "databaseChecks": {
+    "serviceSeconds": 54.793,
+    "sqlite": "passed",
+    "mysql": "8.0.46 passed",
+    "postgres": "18.4 passed",
+    "cases": [
+      "complete history and independent reopen",
+      "partial geometry save and inactive conversation edits",
+      "rollback after chunk or root publication failure",
+      "missing/corrupt chunks and owner isolation",
+      "legacy inline, version 2, and version 3 migration",
+      "concurrent project saves",
+      "forced root conflict after sibling chunks are reclaimed",
+      "readers concurrent with pruning",
+      "clearing history"
+    ]
+  },
+  "browserChecks": {
+    "passed": true,
+    "saveRequests": 8,
+    "completeMessages": 2000,
+    "completeProtocolMessages": 4000,
+    "allReceiptsSucceeded": true,
+    "allRequestsAndReceiptsOmitBodies": true,
+    "initialLoadMilliseconds": 11216,
+    "geometrySaveMilliseconds": [
+      2571.02001953125,
+      2659.864990234375,
+      2531.919921875,
+      2753.92919921875,
+      2493.325927734375,
+      2492.0009765625
+    ],
+    "engineSaveMilliseconds": [
+      5028.843017578125,
+      4958.67578125
+    ],
+    "longestEditTaskMilliseconds": 616,
+    "originalProjectsUnchanged": true,
+    "generationSubmissions": 0
+  },
+  "finalChecks": {
+    "servicePackageSeconds": 241.221,
+    "httpapiPackageSeconds": 108.281,
+    "embeddedWeb": "cached pass",
+    "frontend": "unchanged source; reused previous 330 regressions, 19 history checks, build and lint",
+    "temporaryDatabases": "removed",
+    "temporaryCredentials": "removed",
+    "temporaryBinary": "removed"
+  }
+}

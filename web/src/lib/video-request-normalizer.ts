@@ -109,7 +109,7 @@ function inferredGenerationKind(input: VideoReferenceCombinationInput): VideoMod
   const images = input.ordinaryReferenceImageCount ?? cleanURLs(input.referenceImageURLs).length;
   const videos = cleanURLs(input.referenceVideoURLs).length;
   const audios = cleanURLs(input.referenceAudioURLs).length;
-  if (input.referenceMode === "reference" || videos + audios > 0) return "reference";
+  if ((input.referenceMode === "reference" && images > 0) || videos + audios > 0) return "reference";
   if (hasFrames || images > 0) return "image";
   return "text";
 }

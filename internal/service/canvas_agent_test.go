@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -192,7 +193,7 @@ func TestCanvasAgentCancellationPreservesSubmittedMedia(t *testing.T) {
 	var submissions atomic.Int32
 	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 		return agentTurn(agentCall("image", "generate_image", map[string]any{"prompt": "海报", "sourceNodeIds": []string{}, "size": "1:1", "count": 1})), nil
-	}, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	}, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		if n.TaskID == "" {
 			t.Error("task ID was not saved")
 		}
@@ -446,7 +447,7 @@ func TestCanvasAgentResumeReusesSavedMediaNodeAndTask(t *testing.T) {
 			return agentTurn(agentCall("create", "generate_image", map[string]any{"prompt": "poster", "sourceNodeIds": []string{}, "size": "1:1", "count": 1})), nil
 		}
 		return agentTurn(), nil
-	}, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	}, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		if media.Add(1) == 1 {
 			originalTask = n.TaskID
 			close(entered)
@@ -482,7 +483,7 @@ func TestCanvasAgentResumeReconcilesMediaFinishedWhileStopped(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
 				return agentTurn(), nil
-			}, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+			}, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 				t.Error("an already settled task must not be submitted again")
 				return nil, errors.New("unexpected generation")
 			})
@@ -593,7 +594,7 @@ func TestCanvasAgentWorkflowIsAtomicAndExecutesDependencies(t *testing.T) {
 		default:
 			return agentTurn(), nil
 		}
-	}, func(_ context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	}, func(_ context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		generated = append(generated, n.Type)
 		if n.Type == "image" && !strings.Contains(n.Prompt, "统一使用蓝色") {
 			t.Error("upstream text missing")
@@ -1051,7 +1052,7 @@ func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *te
 		default:
 			return agentTurn(), nil
 		}
-	}, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any) (map[string]any, error) {
+	}, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		generatedMu.Lock()
 		generated = append(generated, node.ID)
 		generatedMu.Unlock()
@@ -1317,5 +1318,235 @@ func TestCanvasAgentBatchDeletionRejectsInvalidTargetsBeforeApproval(t *testing.
 		if len(w.doc.Nodes) != 1 || len(agentMap(w.state["pendingQuestion"])) != 0 {
 			t.Fatal("invalid deletion changed canvas or created approval")
 		}
+	}
+}
+
+func TestCanvasAgentSnapshotClearsOrphanedRunWithoutDroppingCanvas(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		return agentTurn(), nil
+	}, nil)
+	doc.Nodes = []CanvasNode{
+		{ID: "source", Type: "text", Width: 360, Height: 200, ScaleX: 1, ScaleY: 1, Prompt: "保留素材"},
+		{ID: "result", Type: "text", Width: 360, Height: 200, ScaleX: 1, ScaleY: 1, Prompt: "保留结果"},
+	}
+	doc.Connections = []CanvasConnection{{ID: "source-result", FromNodeID: "source", ToNodeID: "result"}}
+	doc.AgentSessions = json.RawMessage(`[]`)
+	doc.ActiveAgentSessionID = req.SessionID
+	doc.AgentRun = &CanvasAgentRun{ID: req.ID, SessionID: req.SessionID, AssistantID: req.AssistantID, Status: "running", UpdatedAt: util.NowISO()}
+	if _, err := svc.canvas.saveAgent(identity.ID, doc); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := svc.Snapshot(identity, doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.AgentRun != nil || recovered.ActiveAgentSessionID != "" {
+		t.Fatalf("orphaned execution state was retained: run=%+v active=%q", recovered.AgentRun, recovered.ActiveAgentSessionID)
+	}
+	if len(recovered.Nodes) != 2 || len(recovered.Connections) != 1 || recovered.Nodes[0].Prompt != "保留素材" {
+		t.Fatalf("canvas content was changed while recovering: nodes=%+v connections=%+v", recovered.Nodes, recovered.Connections)
+	}
+
+	persisted, err := svc.canvas.Project(identity.ID, doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.AgentRun != nil || len(persisted.Nodes) != 2 || len(persisted.Connections) != 1 {
+		t.Fatalf("recovered state was not persisted: %+v", persisted)
+	}
+}
+
+func TestCanvasAgentWorkspaceRepairsPreserveUnloadedSessions(t *testing.T) {
+	for _, scope := range []CanvasHistoryScope{CanvasHistoryActive, CanvasHistoryEditor} {
+		for _, activate := range []bool{false, true} {
+			for _, scenario := range []string{"completed", "interrupted", "orphaned", "active", "finishing"} {
+				t.Run(fmt.Sprintf("%s/%s/activate_%t", scope, scenario, activate), func(t *testing.T) {
+					svc, identity, doc, req := agentFixture(t, nil, nil)
+					var sessions []json.RawMessage
+					if err := json.Unmarshal(doc.AgentSessions, &sessions); err != nil {
+						t.Fatal(err)
+					}
+					archived := json.RawMessage(`{"id":"archived","messages":[{"id":"old","role":"assistant","text":"Keep archived transcript and tool results"}],"protocolMessages":[{"role":"tool","content":"Original tool result"}]}`)
+					sessions = append(sessions, archived)
+					doc.AgentSessions, _ = json.Marshal(sessions)
+					doc.AgentRun = &CanvasAgentRun{ID: req.ID, SessionID: req.SessionID, AssistantID: req.AssistantID, Status: "success"}
+					if scenario == "interrupted" || scenario == "active" {
+						doc.AgentRun.Status = "running"
+					}
+					if scenario == "orphaned" {
+						doc.AgentRun.SessionID = "removed-session"
+					}
+					if scenario == "active" || scenario == "finishing" {
+						cancel := func() {}
+						svc.active[agentKey(identity.ID, doc.ID)] = cancel
+						defer delete(svc.active, agentKey(identity.ID, doc.ID))
+					}
+					persisted, err := svc.canvas.saveAgent(identity.ID, doc)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var workspace CanvasWorkspaceResult
+					if activate {
+						workspace, err = svc.ActivateWorkspace(identity, doc.ID, scope)
+					} else {
+						workspace, err = svc.Workspace(identity, doc.ID, nil, scope)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					result := workspace.Document
+					wantDeferred := scope == CanvasHistoryEditor && scenario == "completed"
+					if workspace.historyDeferred != wantDeferred {
+						t.Fatalf("history deferred = %t, want %t", workspace.historyDeferred, wantDeferred)
+					}
+					if wantDeferred && (string(result.AgentSessions) != "[]" || result.ActiveAgentSessionID != req.SessionID) {
+						t.Fatal("closed editor did not preserve the directory selection")
+					}
+					if !result.AgentHistoryPartial || len(result.AgentSessionSummaries) != 2 || strings.Contains(string(result.AgentSessions), "Keep archived transcript") {
+						t.Fatal("a partial workspace disclosed an unrequested archived body")
+					}
+					if scenario == "orphaned" {
+						if result.AgentRun != nil {
+							t.Fatal("orphaned run not cleared")
+						}
+					} else {
+						want := persisted.AgentRun.Status
+						if scenario == "finishing" {
+							want = "running"
+						}
+						if scenario == "interrupted" {
+							want = "interrupted"
+							_, current, err := agentSession(result, req.SessionID)
+							if err != nil || util.Clean(util.AsMapSlice(current["messages"])[1]["status"]) != "waiting" {
+								t.Fatal("interrupted reply did not become waiting", err)
+							}
+						}
+						if result.AgentRun == nil || result.AgentRun.Status != want {
+							t.Fatalf("wrong reconciled run: %+v", result.AgentRun)
+						}
+					}
+					for _, summary := range workspace.Projects {
+						if summary.ID == doc.ID && (summary.Revision != result.Revision || summary.UpdatedAt != result.UpdatedAt) {
+							t.Fatal("directory revision did not follow snapshot repair")
+						}
+					}
+					full, err := svc.canvas.Project(identity.ID, doc.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var retained []json.RawMessage
+					if err := json.Unmarshal(full.AgentSessions, &retained); err != nil || len(retained) != 2 {
+						t.Fatal("repair dropped history", err)
+					}
+					var expected, actual any
+					_ = json.Unmarshal(archived, &expected)
+					_ = json.Unmarshal(retained[1], &actual)
+					if !reflect.DeepEqual(expected, actual) {
+						t.Fatal("unloaded archived session changed")
+					}
+					if scenario == "completed" || scenario == "active" {
+						if !result.AgentHistoryPartial || len(result.AgentSessionSummaries) != 2 || result.Revision != persisted.Revision {
+							t.Fatal("normal snapshot reloaded or rewrote complete history")
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCanvasAgentWorkspaceDoesNotReloadLongSettledHistoryWithoutRepairs(t *testing.T) {
+	for _, withCheckpoint := range []bool{false, true} {
+		t.Run(fmt.Sprintf("checkpoint_%t", withCheckpoint), func(t *testing.T) {
+			svc, identity, doc, req := agentFixture(t, nil, nil)
+			sessions, session, err := agentSession(doc, req.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A large user message is retained even when a private checkpoint exists.
+			session["protocolMessages"] = []map[string]any{{"role": "user", "content": strings.Repeat("retained ", 40000)}}
+			archive := map[string]any{"id": "archived", "messages": []any{}, "protocolMessages": []any{}}
+			doc.AgentSessions, _ = json.Marshal(append(sessions, archive))
+			doc.AgentPanel.Open = true
+			doc.AgentRun = &CanvasAgentRun{ID: req.ID, SessionID: req.SessionID, AssistantID: req.AssistantID, Status: "success"}
+			saved, err := svc.canvas.saveAgent(identity.ID, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if withCheckpoint {
+				worker := &canvasAgentWorker{service: svc, identity: identity, doc: saved, req: req, sdk: &AgentSDKSession{Items: []map[string]any{{"role": "user", "content": "checkpoint"}}}}
+				if err := worker.saveSDKSession(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			original := svc.canvas.store
+			_, reference, err := svc.canvas.agentHistoryIndexLocked(identity.ID, doc.ID)
+			if err != nil || len(reference.Sessions) != 2 {
+				t.Fatal("expected two indexed conversations", err)
+			}
+			archivedChunk := canvasAgentHistoryChunkName(identity.ID, doc.ID, reference.Sessions[1].Block.Chunks[0])
+			loads := make(map[string]int)
+			svc.canvas.store = &countingCanvasDocumentBackend{documents: original, beforeLoad: func(name string) { loads[name]++ }}
+			result, err := svc.Workspace(identity, doc.ID, nil, CanvasHistoryEditor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loads[archivedChunk] != 0 {
+				t.Errorf("read an unrequested archived transcript %d time(s)", loads[archivedChunk])
+			}
+			for _, hash := range reference.Sessions[0].Block.Chunks {
+				name := canvasAgentHistoryChunkName(identity.ID, doc.ID, hash)
+				if loads[name] != 1 {
+					t.Errorf("selected block was read %d time(s), want 1", loads[name])
+				}
+			}
+			var bodies []json.RawMessage
+			if err := json.Unmarshal(result.Document.AgentSessions, &bodies); err != nil || len(bodies) != 1 {
+				t.Fatal("editor must return only the selected session", err)
+			}
+			if result.Document.Revision != saved.Revision || result.Document.AgentRun.Status != "success" || len(result.Document.AgentSessionSummaries) != 2 {
+				t.Fatal("read changed the revision, run or directory")
+			}
+			svc.canvas.store = original
+			full, err := svc.canvas.Project(identity.ID, doc.ID)
+			if err != nil || string(full.AgentSessions) != string(saved.AgentSessions) {
+				t.Fatal("read changed the saved transcript", err)
+			}
+		})
+	}
+}
+
+func TestCanvasAgentReportsTechnicalBlockerWithoutQuestionOrSuccessfulDelivery(t *testing.T) {
+	turns := 0
+	const blocker = "素材服务不可用，已保留视频节点；请恢复素材服务后继续。"
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, _ AgentModelRequest) (map[string]any, error) {
+		turns++
+		if turns == 1 {
+			return agentTurn(agentCall("generate", "generate_image", map[string]any{"prompt": "A tree", "sourceNodeIds": []string{}, "size": "1:1", "count": 1})), nil
+		}
+		if turns == 2 {
+			return agentTurn(agentCall("inspect", "get_generation_config", map[string]any{})), nil
+		}
+		return agentTurn(agentCall("report", "finish_task", map[string]any{"text": blocker, "status": "error"})), nil
+	}, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
+		return nil, errors.New("素材服务不可用")
+	})
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if turns != 3 || done.AgentRun.Status != "error" || done.AgentRun.Error != blocker {
+		t.Fatalf("blocker did not terminate with the actual failure: turns=%d run=%+v", turns, done.AgentRun)
+	}
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agentMap(agentMap(session["agentState"])["pendingQuestion"])) != 0 {
+		t.Fatal("technical blocker created a question")
+	}
+	if len(done.Nodes) != 1 || done.Nodes[0].GenerationStatus != "error" {
+		t.Fatalf("failed node was lost or treated as successful: %+v", done.Nodes)
 	}
 }

@@ -84,7 +84,7 @@ func (w *canvasAgentWorker) updateNode(args map[string]any) (map[string]any, err
 			}
 		}
 	}
-	if len(generation) > 0 {
+	if len(generation) > 0 || (sourcesProvided || attachmentsProvided) && slices.Contains([]string{"image", "video", "audio"}, node.Type) {
 		if err := w.validateMedia(next); err != nil {
 			return agentError("invalid_media_parameters", err.Error()), nil
 		}
@@ -101,7 +101,6 @@ func (w *canvasAgentWorker) updateNode(args map[string]any) (map[string]any, err
 	for i := range after.Nodes {
 		if after.Nodes[i].ID == node.ID {
 			after.Nodes[i] = next
-			after.Nodes[i].Title = node.Title
 		}
 	}
 	after.Connections = connections
@@ -116,7 +115,7 @@ func (w *canvasAgentWorker) updateNode(args map[string]any) (map[string]any, err
 func (w *canvasAgentWorker) updateNodeGeneration(node *CanvasNode, patch map[string]any) error {
 	allowed := map[string]string{
 		"image": "model size resolution quality count",
-		"video": "model size resolution seconds generateAudio referenceMode",
+		"video": "model size resolution seconds generateAudio referenceMode videoParameters",
 		"audio": "model voice format speed instructions",
 	}
 	for key := range patch {
@@ -152,6 +151,17 @@ func (w *canvasAgentWorker) updateNodeGeneration(node *CanvasNode, patch map[str
 			node.GenerationVideoAudio = &audio
 		case "video.referenceMode":
 			node.GenerationVideoReferenceMode = util.Clean(value)
+		case "video.videoParameters":
+			parameters, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("videoParameters 必须是对象")
+			}
+			caps := agentMap(agentMap(w.req.Generation["capabilities"])["video"])
+			normalized, err := normalizeCanvasAgentVideoParameters(caps, parameters)
+			if err != nil {
+				return err
+			}
+			node.GenerationVideoParameters = normalized
 		case "audio.model":
 			node.GenerationAudioModel = util.Clean(value)
 		case "audio.voice":

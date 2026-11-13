@@ -1,0 +1,68 @@
+{
+  "sources": [
+    {
+      "path": "internal/service/canvas_agent_history.go",
+      "sha256": "3bde73e8230208ba5b8aa7f54ce775a28b83813d140d6fd2ca1627ecd66f5a64"
+    },
+    {
+      "path": "internal/service/canvas_document_test.go",
+      "sha256": "9e7c05781a57f133a674c80e812e822b63cbe2e78133bcd56f538dbefe07327c"
+    }
+  ],
+  "focusedCommand": "go test ./internal/service -run '^TestCanvasAgentHistory(BlockAssembly|ChunkDecoding)|^TestCanvasGeometrySaveReusesVerifiedHistory|^TestCanvas.*History' -count=1",
+  "focusedPassWithBenchmarkSeconds": 30.811,
+  "runtime": {
+    "mainPID": 1541591,
+    "childPID": 1548631,
+    "healthStatus": 200,
+    "frontendReusedPID": 806679
+  },
+  "notes": [
+    "Focused regression test for assembly passed against old implementation; the reproducible defect is allocation measured by the benchmark.",
+    "Frontend product sources unchanged in this turn."
+  ],
+  "fullInitial": {
+    "service": {
+      "passed": false,
+      "reason": "default package timeout under high host load",
+      "seconds": 687.5
+    },
+    "httpapi": {
+      "passed": true,
+      "cached": false,
+      "seconds": 281.413
+    },
+    "log": "/tmp/canvas-history-assembly-full.log"
+  },
+  "timeoutTestRecheck": {
+    "command": "GOMAXPROCS=4 go test ./internal/service -run '^TestCanvasDocumentServicePersistsValidatedAgentMessages$' -count=1 -timeout=2m",
+    "passed": true,
+    "seconds": 0.359
+  },
+  "embedded": {
+    "command": "go test ./internal/web",
+    "passed": true,
+    "cached": true
+  },
+  "browser": {
+    "before": "assets/canvas-history-editor-read-before-verification.json",
+    "after": "assets/canvas-history-editor-read-after-verification.json",
+    "passed": true,
+    "checks": [
+      "2000 messages and 4000 protocol entries equal",
+      "earlier messages",
+      "tool details",
+      "390px screenshot",
+      "no media submission",
+      "original active history unchanged",
+      "test project removed"
+    ]
+  },
+  "serviceFinal": {
+    "command": "GOMAXPROCS=4 go test ./internal/service -count=1 -parallel=4 -timeout=20m",
+    "passed": true,
+    "cached": false,
+    "seconds": 439.675,
+    "log": "/tmp/canvas-history-assembly-service-final.log"
+  }
+}

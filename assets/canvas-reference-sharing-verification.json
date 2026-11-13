@@ -1,0 +1,72 @@
+{
+  "checks": [
+    {
+      "name": "unrelated_node_deletion_reuses_complete_history_and_sends_no_body",
+      "passed": true
+    },
+    {
+      "name": "only_bound_reference_changes_and_same_id_upload_is_retained",
+      "passed": true
+    },
+    {
+      "name": "2000_messages_4000_protocol_entries_and_attachment_survive_mobile_reload",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "generationSubmissions": 0,
+  "saves": [
+    {
+      "status": 200,
+      "bodyCount": 0,
+      "receivedBodies": 0
+    },
+    {
+      "status": 200,
+      "bodyCount": 1,
+      "receivedBodies": 1
+    }
+  ],
+  "fixtureBytes": 9137716,
+  "testProjectID": "canvas-1ad55348ce210ce4ab4b5e30",
+  "stats": [
+    {
+      "removed": [
+        "unrelated"
+      ],
+      "sessions": 1,
+      "reusedSessions": 1,
+      "changedMessages": 0,
+      "ms": 0.8999999761581421
+    },
+    {
+      "removed": [
+        "unrelated"
+      ],
+      "sessions": 1,
+      "reusedSessions": 1,
+      "changedMessages": 0,
+      "ms": 0.3999999761581421
+    },
+    {
+      "removed": [
+        "reference-node"
+      ],
+      "sessions": 1,
+      "reusedSessions": 0,
+      "changedMessages": 1,
+      "ms": 0.30000007152557373
+    },
+    {
+      "removed": [
+        "reference-node"
+      ],
+      "sessions": 1,
+      "reusedSessions": 0,
+      "changedMessages": 1,
+      "ms": 0.2999999523162842
+    }
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

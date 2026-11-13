@@ -1,0 +1,111 @@
+{
+  "phase": "worker",
+  "checks": [
+    {
+      "name": "worker_pending_failure_and_reopen_recovery_without_false_zero_usage",
+      "passed": true
+    },
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 1,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 7941,
+      "estimateReadyMs": 8733,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    },
+    {
+      "readyMs": 6251,
+      "estimateReadyMs": 6707,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    },
+    {
+      "readyMs": 6323,
+      "estimateReadyMs": 6766,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "finalJobs": [
+    {
+      "submitted": true,
+      "completed": false,
+      "terminated": true,
+      "protocolMessages": 4000
+    },
+    {
+      "submitted": true,
+      "completed": false,
+      "terminated": true,
+      "protocolMessages": 4000
+    },
+    {
+      "submitted": true,
+      "completed": true,
+      "terminated": true,
+      "protocolMessages": 4000,
+      "tokens": 2994174
+    }
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('./dramaya-wan-3-1.0.0.js', import.meta.url));
+const source = readFileSync(new URL('./dramaya-wan-3-1.0.1.js', import.meta.url));
 const plugin = await import(`data:text/javascript;base64,${source.toString('base64')}`);
 const body = { model: 'wan-3', prompt: '镜头缓慢推进，云朵掠过山顶' };
 const baseUrl = 'https://channel.example.com';
@@ -12,7 +12,7 @@ const decode = value => plugin.protocols.openai_video.decodeRequest({ model: 'wa
 
 test('exact model, protocol, defaults and channel address', () => {
   assert.equal(plugin.meta.key, 'dramaya-wan-3');
-  assert.equal(plugin.meta.version, '1.0.0');
+  assert.equal(plugin.meta.version, '1.0.1');
   assert.equal(plugin.meta.baseUrl, 'https://video.dramaya.us');
   assert.equal(plugin.meta.auth, 'api_key');
   assert.deepEqual(plugin.meta.models, ['wan-3']);

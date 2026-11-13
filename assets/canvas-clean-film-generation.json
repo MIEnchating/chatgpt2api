@@ -1,0 +1,87 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "startedAt": "2026-11-12T00:32:34.884Z",
+  "qualityApproved": false,
+  "requests": [
+    {
+      "shotID": "shot-01",
+      "promptMatchesAuthored": true,
+      "promptSHA256": "d3add5e7580a22d1d5d913730a77df570c4f6a5deaeb965c2a18c1cced67e80b",
+      "referenceImages": 5,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "audio": true
+    },
+    {
+      "shotID": "shot-02",
+      "promptMatchesAuthored": true,
+      "promptSHA256": "d61220e2f3abf9a87d10c14ed9118fdc9a4a1d2125c3ae194b76e38eee0347e5",
+      "referenceImages": 5,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "audio": true
+    }
+  ],
+  "shots": [
+    {
+      "shotID": "shot-01",
+      "oldVideoID": "video-canvas-42382433829803aa84c25033",
+      "oldTaskID": "canvas-agent-media-canvas-43bc8a7a7baa6f0ce4ef6e92",
+      "videoID": "video-a0266161-b32e-4e16-ad58-9cda1c2b49a9",
+      "status": "success",
+      "taskID": "canvas-video-0d33d650-4d5e-41c8-ae41-e64072ce7e54",
+      "progress": 100,
+      "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-a0266161-b32e-4e16-ad58-9cda1c2b49a9.mp4"
+    },
+    {
+      "shotID": "shot-02",
+      "oldVideoID": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+      "oldTaskID": "canvas-video-75b1d194-5d14-43b3-ab21-a07036383a95",
+      "videoID": "video-c438835b-7e36-408a-98f8-6d549a36261b",
+      "status": "success",
+      "taskID": "canvas-video-454f4db1-dd2e-4003-b3ae-63aad95ab57f",
+      "progress": 100,
+      "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-c438835b-7e36-408a-98f8-6d549a36261b.mp4"
+    },
+    {
+      "shotID": "shot-03",
+      "oldVideoID": "video-canvas-22fda253fc0ab39b117f6ba6",
+      "oldTaskID": "canvas-agent-media-canvas-4e6277c373089d861c63495d",
+      "videoID": "video-c7d887fe-c727-48c8-b6bb-d74a767010dd",
+      "status": "success",
+      "taskID": "canvas-video-a1b8f109-6b89-4d01-85f6-9f69e7c71188",
+      "progress": 100,
+      "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-c7d887fe-c727-48c8-b6bb-d74a767010dd.mp4"
+    },
+    {
+      "shotID": "shot-04",
+      "oldVideoID": "video-da3d89b4-fbc1-48f1-938e-47336e7ce43a",
+      "oldTaskID": "canvas-video-d49a8d82-fadb-4b3a-beac-c72cefedc72a",
+      "videoID": "video-df2ea6eb-a640-4415-99ac-86624ba3029c",
+      "status": "success",
+      "taskID": "canvas-video-a3941420-448e-4c8c-8f28-8a34c7da64a2",
+      "progress": 100,
+      "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-df2ea6eb-a640-4415-99ac-86624ba3029c.mp4"
+    }
+  ],
+  "checks": [
+    {
+      "name": "four_revisions_submitted_through_selected_update_ui",
+      "passed": true
+    }
+  ],
+  "originalMessages": 14,
+  "observationInterruptions": [
+    {
+      "localObserverExitCode": 143,
+      "serverTasksRechecked": "All four original task IDs still running at 30%; observer will resume without submission."
+    }
+  ],
+  "finishedAt": "2026-11-12T00:45:36.321Z",
+  "successful": 4,
+  "pageErrors": []
+}

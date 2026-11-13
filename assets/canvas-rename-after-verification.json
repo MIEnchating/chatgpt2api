@@ -1,0 +1,17 @@
+{
+  "phase": "after",
+  "errors": [],
+  "checks": [
+    "unsaved edit survives rename response and is persisted with the renamed project",
+    "older rename response cannot replace a newer accepted save",
+    "mobile refresh retains the latest node and complete conversation"
+  ],
+  "mediaSubmissions": 0,
+  "saveStatuses": [
+    200,
+    409,
+    200
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

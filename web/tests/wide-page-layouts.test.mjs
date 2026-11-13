@@ -85,7 +85,7 @@ test("external storage uses a compact overview and policy layout", () => {
 
 test("global model groups can be explicitly cleared", () => {
   assert.match(modelConfigSource, />\s*清空\s*</);
-  assert.match(modelConfigSource, /onClear=\{\(\) => updateModels\("text", \[\]\)\}/);
+  assert.match(modelConfigSource, /onClear=\{\(\) => updateModels\(kind, \[\]\)\}/);
   assert.match(modelConfigSource, /暂无模型，点击“添加”进行配置/);
   assert.doesNotMatch(modelConfigSource, /if \(normalized\.length === 0\) return/);
   assert.doesNotMatch(modelConfigSource, /disabled=\{models\.length === 1\}/);

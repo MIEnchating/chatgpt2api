@@ -179,35 +179,51 @@ func TestCanvasAgentAudioReferenceEnforcesOwnership(t *testing.T) {
 func TestCanvasAgentVideoReferenceHonorsContractTransport(t *testing.T) {
 	for _, transport := range []string{"url", "base64", "multipart"} {
 		for _, baseURL := range []string{"", "https://media.example.test", "https://media.example.test/base"} {
-			t.Run(transport+"/"+baseURL, func(t *testing.T) {
-				t.Setenv("IMAGE_BASE_URL", baseURL)
-				app := newTestApp(t)
-				defer app.Close()
-				owner := service.Identity{ID: "reference-owner"}
-				var pixels bytes.Buffer
-				if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
-					t.Fatal(err)
-				}
-				upload, err := app.storageFiles.Upload(context.Background(), owner.ID, false, "reference.png", "image/png", pixels.Bytes(), nil)
-				if err != nil {
-					t.Fatal(err)
-				}
-				contract := protocol.DefaultVideoContracts()[0]
-				contract.Transport.LocalMaterial = transport
-				result, err := app.canvasAgentVideoReference(context.Background(), owner, upload.URL, "image", contract)
-				if transport == "url" && baseURL == "" {
-					if err == nil || !strings.Contains(err.Error(), "IMAGE_BASE_URL") {
-						t.Fatalf("URL-only reference did not report missing public base URL: result=%q err=%v", result, err)
+			for _, site := range []string{"", "https://canvas.example.test", "http://127.0.0.1:8002"} {
+				t.Run(transport+"/"+baseURL+"/"+site, func(t *testing.T) {
+					t.Setenv("IMAGE_BASE_URL", baseURL)
+					app := newTestApp(t)
+					defer app.Close()
+					owner := service.Identity{ID: "reference-owner"}
+					var pixels bytes.Buffer
+					if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+						t.Fatal(err)
 					}
-					return
-				}
-				if err != nil || transport == "url" && !isPublicReferenceURL(result) || transport != "url" && !isLocalVideoReferencePath(result) {
-					t.Fatalf("reference transport mismatch: result=%q err=%v", result, err)
-				}
-				if !app.validReferenceCapability(httptest.NewRequest(http.MethodGet, result, nil).URL, time.Now()) {
-					t.Fatal("reference signature was lost during transport conversion")
-				}
-			})
+					upload, err := app.storageFiles.Upload(context.Background(), owner.ID, false, "reference.png", "image/png", pixels.Bytes(), nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					contract := protocol.DefaultVideoContracts()[0]
+					contract.Transport.LocalMaterial = transport
+					ctx := context.WithValue(context.Background(), mediaBaseURLContextKey{}, site)
+					result, err := app.canvasAgentVideoReference(ctx, owner, upload.URL, "image", contract)
+					if transport == "url" && baseURL == "" && !isPublicReferenceURL(site) {
+						if err == nil || !strings.Contains(err.Error(), "IMAGE_BASE_URL") {
+							t.Fatalf("URL-only reference did not report unusable site: result=%q err=%v", result, err)
+						}
+						return
+					}
+					if err != nil || transport == "url" && !isPublicReferenceURL(result) || transport != "url" && !isLocalVideoReferencePath(result) {
+						t.Fatalf("reference transport mismatch: result=%q err=%v", result, err)
+					}
+					if transport == "url" {
+						wantBase := baseURL
+						if wantBase == "" {
+							wantBase = site
+						}
+						if !strings.HasPrefix(result, wantBase+"/") {
+							t.Fatalf("wrong reference base: %s", result)
+						}
+					}
+					file, local, localErr := app.localVideoReferenceFile(result)
+					if localErr != nil || !local || !bytes.Equal(file.Data, pixels.Bytes()) {
+						t.Fatalf("local reference resolution: local=%v err=%v", local, localErr)
+					}
+					if !app.validReferenceCapability(httptest.NewRequest(http.MethodGet, result, nil).URL, time.Now()) {
+						t.Fatal("reference signature was lost during transport conversion")
+					}
+				})
+			}
 		}
 	}
 }
@@ -394,6 +410,79 @@ func TestCanvasAgentHTTPExternalToolsValidateAndShareRunSnapshots(t *testing.T) 
 	t.Fatal("tool run did not finish")
 }
 
+func TestCanvasAgentHTTPVideoModelToolsUseServerConfiguration(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"video_models": []string{"minimax-h3-768p", "unknown-video"}}); err != nil {
+		t.Fatal(err)
+	}
+	token := adminSessionToken(t, app)
+	identity := app.auth.Authenticate(token)
+	workspace, err := app.canvas.Workspace(identityScope(*identity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := workspace.Document
+	doc.AgentSessions = json.RawMessage(`[{"id":"s","messages":[{"id":"a","role":"assistant","text":"","status":"thinking"}],"protocolMessages":[],"agentState":{"phase":"intake","approvedNodeIds":[],"referenceNodeIds":[],"pendingTaskIds":[],"completedTaskIds":[]}}]`)
+	if doc, err = app.canvas.SaveAtRevision(identityScope(*identity), doc); err != nil {
+		t.Fatal(err)
+	}
+	for i, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"list_video_models", map[string]any{}},
+		{"set_video_model", map[string]any{"model": "minimax-h3-768p"}},
+		{"get_generation_config", map[string]any{}},
+	} {
+		runID := fmt.Sprintf("video-tool-%d", i)
+		input := service.CanvasAgentToolRequest{Context: service.CanvasAgentRequest{
+			ID: runID, SessionID: "s", AssistantID: "a", UserText: "切换有声视频模型", APIMode: "responses",
+			Generation: map[string]any{"videoModel": "unknown-video", "videoSupportsAudio": false, "capabilities": map[string]any{"video": map[string]any{"audioControl": "none"}}},
+		}}
+		input.Call.ID, input.Call.Name, input.Call.Arguments = runID, tc.name, tc.args
+		body, _ := json.Marshal(input)
+		r := httptest.NewRequest(http.MethodPost, "/api/canvas/agent-tools?project_id="+doc.ID, bytes.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		setRequestAuthCookie(r, token)
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, r)
+		if response.Code != 200 {
+			t.Fatalf("%s: %d %s", tc.name, response.Code, response.Body.String())
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			doc, err = app.canvasAgent.Snapshot(*identity, doc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.AgentRun.Status != "running" {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("video model tool did not finish")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		result := doc.AgentRun.ToolResult
+		if result["ok"] != true {
+			t.Fatal(tc.name, result)
+		}
+		if tc.name == "list_video_models" {
+			models := util.AsMapSlice(result["models"])
+			if len(models) != 2 || util.StringMap(models[0]["capabilities"])["audioControl"] != "always" || util.StringMap(models[1]["capabilities"])["audioControl"] != "unknown" {
+				t.Fatal("server model catalog not used", models)
+			}
+		}
+		if tc.name == "get_generation_config" {
+			generation := util.StringMap(result["generation"])
+			if generation["videoModel"] != "minimax-h3-768p" || generation["videoSupportsAudio"] != true {
+				t.Fatal("stale browser capability or choice was trusted", generation)
+			}
+		}
+	}
+}
+
 func TestCanvasAgentModelForwardsDirectlyWithoutCreatingBackgroundTask(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run(fmt.Sprint(stream), func(t *testing.T) {
@@ -491,5 +580,186 @@ func TestAgentModelCancellationClosesDirectUpstreamRequest(t *testing.T) {
 	case <-closed:
 	case <-time.After(5 * time.Second):
 		t.Fatal("upstream request remained active")
+	}
+}
+
+func TestCanvasAgentVideoCapabilitiesUseConfiguredAliasAndProfile(t *testing.T) {
+	previous := protocol.ActiveVideoContracts()
+	t.Cleanup(func() {
+		if err := protocol.ReplaceVideoContracts(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
+	if !ok {
+		t.Fatal("missing fixture contract")
+	}
+	contract.Name, contract.Models = "Custom video", []string{"minimax-h3-supper"}
+	contract.Capability.AudioControl = "none"
+	profile := protocol.VideoModelContractProfile{Model: "minimax-h3-supper", Capability: contract.Capability, Generation: contract.Generation, Rules: contract.Rules}
+	profile.Capability.AudioControl = "always"
+	contract.ModelProfiles = []protocol.VideoModelContractProfile{profile}
+	if err := protocol.ReplaceVideoContracts(append(previous, contract)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities := canvasAgentVideoCapabilities("minimax-h3-supper")
+	if capabilities["audioControl"] != "always" || capabilities["contractConfigured"] != true {
+		t.Fatalf("configured alias/profile was guessed from its name or base contract: %v", capabilities)
+	}
+}
+
+func TestCanvasAgentVideoCapabilitiesExposeMachineReadableDurationRange(t *testing.T) {
+	previous := protocol.ActiveVideoContracts()
+	t.Cleanup(func() {
+		if err := protocol.ReplaceVideoContracts(previous); err != nil {
+			t.Fatal(err)
+		}
+	})
+	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
+	if !ok {
+		t.Fatal("missing fixture contract")
+	}
+	contract.Name, contract.Models = "Agent duration test", []string{"agent-duration-test"}
+	contract.ModelProfiles = nil
+	maximum := 30
+	contract.Capability.Seconds = nil
+	contract.Capability.DefaultSeconds = 6
+	contract.Capability.SecondsRange = &protocol.VideoDurationRange{Min: 2, Max: &maximum, Step: 2}
+	if err := protocol.ReplaceVideoContracts(append(previous, contract)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities := canvasAgentVideoCapabilities("agent-duration-test")
+	duration := util.StringMap(capabilities["duration"])
+	rangeSpec := util.StringMap(duration["secondsRange"])
+	if util.ToInt(rangeSpec["min"], 0) != 2 || util.ToInt(rangeSpec["max"], 0) != 30 || util.ToInt(rangeSpec["step"], 0) != 2 {
+		t.Fatalf("duration range was reduced to default-only values: %v", duration)
+	}
+}
+
+func TestCanvasAgentHTTPToolKeepsSiteForBackgroundGeneration(t *testing.T) {
+	t.Setenv("IMAGE_BASE_URL", "")
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	identity := app.auth.Authenticate(token)
+	workspace, err := app.canvas.Workspace(identityScope(*identity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := workspace.Document
+	doc.AgentSessions = json.RawMessage(`[{"id":"s","messages":[{"id":"a","role":"assistant","text":"","status":"thinking"}],"protocolMessages":[],"agentState":{"phase":"intake","approvedNodeIds":[],"referenceNodeIds":[],"pendingTaskIds":[],"completedTaskIds":[]}}]`)
+	if doc, err = app.canvas.SaveAtRevision(identityScope(*identity), doc); err != nil {
+		t.Fatal(err)
+	}
+	gotBase := make(chan string, 1)
+	app.canvasAgent.Close()
+	app.canvasAgent = service.NewCanvasAgentService(app.ctx, app.agentExecutions, app.canvas, app.agentSkills, nil, func(ctx context.Context, _ service.Identity, _ service.CanvasNode, metadata map[string]any, _ func(int) error) (map[string]any, error) {
+		gotBase <- util.Clean(metadata["media_base_url"])
+		return map[string]any{"data": []map[string]any{{"url": "https://canvas.example.test/images/result.png"}}}, nil
+	})
+	input := service.CanvasAgentToolRequest{Context: service.CanvasAgentRequest{ID: "site-tool", SessionID: "s", AssistantID: "a", UserText: "生成一张图片", APIMode: "responses", Generation: map[string]any{"imageModel": "test", "autoGenerateMedia": true}}}
+	input.Call.ID, input.Call.Name, input.Call.Arguments = "generate", "generate_image", map[string]any{"prompt": "A tree", "sourceNodeIds": []string{}, "size": "1:1", "count": 1}
+	body, _ := json.Marshal(input)
+	requestCtx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "https://canvas.example.test/api/canvas/agent-tools?project_id="+doc.ID, bytes.NewReader(body)).WithContext(requestCtx)
+	request.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(request, token)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	cancel()
+	if response.Code != http.StatusOK {
+		t.Fatalf("tool = %d %s", response.Code, response.Body.String())
+	}
+	select {
+	case base := <-gotBase:
+		if base != "https://canvas.example.test" {
+			t.Fatalf("background site = %q", base)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("background generation did not run")
+	}
+}
+
+func TestCanvasAgentVideoSubmissionHonorsWatermarkSettingsAndContract(t *testing.T) {
+	watermarkOn, watermarkOff := true, false
+	for _, tc := range []struct {
+		name      string
+		requested *bool
+		supported bool
+		forced    string
+		want      bool
+	}{
+		{"enabled", &watermarkOn, true, "", true},
+		{"disabled", &watermarkOff, true, "", false},
+		{"unset", nil, true, "", false},
+		{"forced_on", &watermarkOff, true, "true", true},
+		{"forced_off", &watermarkOn, true, "false", false},
+		{"unsupported", &watermarkOn, false, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+			contract := protocol.DefaultVideoContracts()[0]
+			contract.Name = "Canvas watermark fixture"
+			contract.Models = []string{"canvas-watermark-fixture"}
+			contract.Capability.Watermark = tc.supported
+			contract.Request.WatermarkField = ""
+			if tc.supported {
+				contract.Request.WatermarkField = "watermark"
+			}
+			contract.Rules = nil
+			if tc.forced != "" {
+				contract.Rules = []protocol.VideoModelContractRule{{
+					When:        protocol.VideoModelContractRuleCondition{Field: "size", Operator: "equals", Value: contract.Capability.DefaultSize},
+					ForceValues: map[string]string{"watermark": tc.forced},
+					Message:     "Watermark fixture rule",
+				}}
+			}
+			if _, err := app.videoContracts.Create(contract, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := app.config.Update(map[string]any{"video_models": contract.Models}); err != nil {
+				t.Fatal(err)
+			}
+			dbURL := newHTTPTestNewAPIDatabase(t)
+			insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+			insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "video", "fixture-key", -1, 0, true)
+			reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if app.newAPIKeys != nil {
+				_ = app.newAPIKeys.Close()
+			}
+			app.newAPIKeys = reader
+			received := make(chan map[string]any, 2)
+			app.tasks.SetVideoHandler(func(_ context.Context, _ service.Identity, payload map[string]any) (map[string]any, error) {
+				received <- util.CopyMap(payload)
+				return nil, errors.New("watermark fixture stopped after capture")
+			})
+			node := service.CanvasNode{
+				ID: "video", Type: "video", Prompt: "Animate fixture", TaskID: "watermark-task",
+				GenerationVideoModel: contract.Models[0], GenerationVideoSize: contract.Capability.DefaultSize,
+				GenerationVideoSeconds: contract.Capability.DefaultSeconds, GenerationVideoResolution: contract.Capability.DefaultResolution,
+				GenerationVideoWatermark: tc.requested,
+			}
+			owner := service.Identity{ID: "user-1", Role: service.AuthRoleUser, Name: "alice"}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := app.runCanvasAgentMedia(ctx, owner, node, nil, nil); err == nil || !strings.Contains(err.Error(), "watermark fixture stopped after capture") {
+				t.Fatalf("fixture result = %v", err)
+			}
+			payload := <-received
+			if value, present := payload["watermark"]; !present || value != tc.want {
+				t.Fatalf("watermark = %#v (present %v), want %v", value, present, tc.want)
+			}
+			if _, err := app.runCanvasAgentMedia(ctx, owner, node, nil, nil); err == nil || !strings.Contains(err.Error(), "watermark fixture stopped after capture") {
+				t.Fatalf("existing task result = %v", err)
+			}
+			if len(received) != 0 {
+				t.Fatal("observing an existing task submitted a second generation")
+			}
+		})
 	}
 }

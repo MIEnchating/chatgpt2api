@@ -1,0 +1,22 @@
+{
+  "method": "Layout-only verification on an imported completed baseline during independent generation; no model calls",
+  "checks": [
+    {
+      "name": "readable_selection_and_accessible_footer",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "passed": true
+    },
+    {
+      "name": "readable_selection_and_accessible_footer",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "passed": true
+    }
+  ],
+  "submissions": 0
+}

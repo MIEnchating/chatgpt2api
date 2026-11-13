@@ -1,0 +1,8 @@
+{
+  "checks": [],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '镜头 1 素材与验收', exact: true })\u001b[22m\n\n    at openShot (/root/workspace/chatgpt2api/build/review/canvas-production/verify-text-on-screen-review.mjs:36:74)\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-text-on-screen-review.mjs:47:23",
+  "testProjectDeleted": true,
+  "originalUnchanged": true
+}

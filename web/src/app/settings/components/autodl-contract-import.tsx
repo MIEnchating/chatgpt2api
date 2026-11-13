@@ -60,7 +60,7 @@ export function AutoDLContractImport({ onDraft, disabled }: { onDraft: (contract
   };
   return <>
     <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => setOpen(true)}>从 AutoDL 导入</Button>
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>从 AutoDL 工作流生成契约</DialogTitle><DialogDescription>读取已保存线路的真实工作流规则。生成后可检查和修改，再发布到视频模型列表。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>从 AutoDL 工作流生成契约</DialogTitle><DialogDescription>读取已保存线路的真实工作流规则。生成后可检查和修改，再发布到视频契约列表。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
       <div className="grid gap-3">
         <Select value={tokenName} onValueChange={setTokenName}><SelectTrigger><SelectValue placeholder="选择 AutoDL 视频线路" /></SelectTrigger><SelectContent>{configs.map((item) => <SelectItem key={item.id} value={item.token_name}>{item.name}</SelectItem>)}</SelectContent></Select>
         {configs.length === 0 ? <p className="text-sm text-muted-foreground">先在个人设置中添加协议为 AutoDL 的视频自定义 API 配置。</p> : null}

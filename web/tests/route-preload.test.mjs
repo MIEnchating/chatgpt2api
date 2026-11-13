@@ -71,8 +71,8 @@ test("authorized menu intentions preload the matching page module", async () => 
     ["/assets/item-one/edit", ["/assets"], "@/app/assets/editor-page"],
     ["/studio?conversation=example#latest", ["/studio"], "@/app/image/page"],
     ["/canvas", ["/canvas"], "@/app/canvas/library-route"],
-    ["/canvas/editor", ["/canvas"], "@/app/canvas/route"],
-    ["/canvas/project-123", ["/canvas"], "@/app/canvas/route"],
+    ["/canvas/editor", ["/canvas"], "@/app/canvas/page"],
+    ["/canvas/project-123", ["/canvas"], "@/app/canvas/page"],
     ["/profile", [], "@/app/profile/page"],
   ];
   for (const [pathname, permissions, expectedModule] of cases) {

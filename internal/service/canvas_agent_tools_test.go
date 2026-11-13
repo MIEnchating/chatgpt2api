@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/util"
@@ -30,6 +31,90 @@ func TestCanvasAgentToolReportsMissingNodeAsCanvasChange(t *testing.T) {
 	result := runToolTest(t, toolTestWorker(CanvasNode{ID: "a", Type: "text"}), "get_node", map[string]any{"nodeId": "gone"})
 	if result["ok"] == true {
 		t.Fatalf("missing node reported success: %#v", result)
+	}
+}
+
+func TestCanvasAgentScriptReadIncludesOrderedProductionStateWithoutExtraNodeReads(t *testing.T) {
+	hasAudio := true
+	w := toolTestWorker(
+		CanvasNode{ID: "script", Type: "script", ScriptProject: &CanvasScriptProject{Shots: []CanvasScriptShot{
+			{ID: "first", Seconds: 15, ImageNodeID: "frame", VideoNodeID: "b"},
+			{ID: "second", Seconds: 15, VideoNodeID: "a"},
+		}}},
+		CanvasNode{ID: "a", Type: "video", URL: "/a.mp4", TaskID: "task-a", GenerationStatus: "success", MediaMetadata: &CanvasMediaMetadata{DurationMS: 15083, HasAudio: &hasAudio}},
+		CanvasNode{ID: "frame", Type: "image", URL: "/frame.png", GenerationStatus: "success"},
+		CanvasNode{ID: "b", Type: "video", URL: "/b.mp4", TaskID: "task-b", GenerationStatus: "success", MediaMetadata: &CanvasMediaMetadata{DurationMS: 15084}},
+	)
+	w.doc.AgentRun = &CanvasAgentRun{}
+	before := agentJSON(w.doc)
+	node := agentMap(runToolTest(t, w, "get_node", map[string]any{"nodeId": "script"})["node"])
+	production := agentMap(node["production"])
+	if production["canMerge"] != true || production["totalShots"] != 2 || production["plannedDurationSeconds"] != 30 || production["actualDurationMS"] != int64(30167) {
+		t.Fatalf("script production state missing or duration guessed: %v", production)
+	}
+	shots, ok := production["shots"].([]map[string]any)
+	if !ok || len(shots) != 2 || shots[0]["shotId"] != "first" || shots[1]["shotId"] != "second" {
+		t.Fatalf("shot order differs from script: %v", production)
+	}
+	video := agentMap(shots[0]["video"])
+	if video["nodeId"] != "b" || video["taskId"] != "task-b" || video["ready"] != true || video["outdated"] != false || shots[0]["qualityStatus"] != "unchecked" {
+		t.Fatalf("current media state is incomplete: %v", shots[0])
+	}
+	if metadata, ok := video["mediaMetadata"].(*CanvasMediaMetadata); !ok || metadata.DurationMS != 15084 || metadata.HasAudio != nil {
+		t.Fatalf("unknown audio was treated as known: %v", video)
+	}
+	if body := agentJSON(production); strings.Contains(body, "/a.mp4") || strings.Contains(body, "/b.mp4") || strings.Contains(body, "/frame.png") {
+		t.Fatalf("production status repeated transport URLs: %s", body)
+	}
+	if before != agentJSON(w.doc) {
+		t.Fatal("read changed the script, media, or review records")
+	}
+}
+
+func TestCanvasAgentScriptReadRejectsUnusableClipsAndDoesNotGuessMissingMeasurements(t *testing.T) {
+	for _, state := range []string{"unbound", "missing", "wrong-type", "outdated", "loading", "error", "empty", "unmeasured"} {
+		t.Run(state, func(t *testing.T) {
+			shot := CanvasScriptShot{ID: "first", Seconds: 15, VideoNodeID: "clip", QualityReview: &CanvasScriptQualityReview{MediaURL: "/clip.mp4", Continuity: "passed", Dialogue: "passed", Speaker: "passed", LipSync: "passed"}}
+			clip := CanvasNode{ID: "clip", Type: "video", URL: "/clip.mp4", GenerationStatus: "success", GenerationVideoSeconds: 15}
+			switch state {
+			case "unbound":
+				shot.VideoNodeID = ""
+			case "missing":
+				clip.ID = "other"
+			case "wrong-type":
+				clip.Type = "image"
+			case "outdated":
+				shot.VideoOutdated = true
+			case "loading", "error":
+				clip.GenerationStatus = state
+			case "empty":
+				clip.URL = ""
+			}
+			w := toolTestWorker(CanvasNode{ID: "script", Type: "script", ScriptProject: &CanvasScriptProject{Shots: []CanvasScriptShot{shot}}}, clip)
+			w.doc.AgentRun = &CanvasAgentRun{}
+			read := func() map[string]any {
+				return agentMap(agentMap(runToolTest(t, w, "get_node", map[string]any{"nodeId": "script"})["node"])["production"])
+			}
+			production := read()
+			if production["canMerge"] != (state == "unmeasured") || production["actualDurationMS"] != nil {
+				t.Fatalf("unusable clip accepted or requested duration reported as measured: %v", production)
+			}
+			shots, ok := production["shots"].([]map[string]any)
+			if !ok || len(shots) != 1 || state != "unmeasured" && shots[0]["qualityStatus"] != "unchecked" {
+				t.Fatalf("stale review accepted: %v", production)
+			}
+			w.node("script").ScriptProject.Shots[0].VideoNodeID = clip.ID
+			w.node("script").ScriptProject.Shots[0].VideoOutdated = false
+			w.doc.Nodes[1].Type, w.doc.Nodes[1].GenerationStatus, w.doc.Nodes[1].URL = "video", "success", "/new.mp4"
+			if current := read(); current["canMerge"] != true || current["shots"].([]map[string]any)[0]["qualityStatus"] != "unchecked" {
+				t.Fatalf("read retained stale status or a review of the replaced clip: %v", current)
+			}
+		})
+	}
+	w := toolTestWorker(CanvasNode{ID: "plain", Type: "text"})
+	w.doc.AgentRun = &CanvasAgentRun{}
+	if node := agentMap(runToolTest(t, w, "get_node", map[string]any{"nodeId": "plain"})["node"]); node["production"] != nil {
+		t.Fatalf("ordinary node gained script state: %v", node)
 	}
 }
 
@@ -148,6 +233,25 @@ func TestCanvasAgentToolQueryNodesFiltersAndPages(t *testing.T) {
 	result = runToolTest(t, w, "get_selected_nodes", map[string]any{})
 	if result["total"] != 1 {
 		t.Fatalf("selected total = %v, want 1", result["total"])
+	}
+}
+
+func TestCanvasAgentToolArrangeFitsLargeGroupsAndPreservesRequestedOrder(t *testing.T) {
+	w := toolTestWorker(
+		CanvasNode{ID: "a", Type: "text", Width: 1000, Height: 900},
+		CanvasNode{ID: "b", Type: "text", Width: 300, Height: 300},
+		CanvasNode{ID: "g", Type: "group", X: 800, Y: 900, Width: 1400, Height: 1000},
+		CanvasNode{ID: "child", Type: "image", GroupID: "g", X: 824, Y: 948, Width: 300, Height: 300},
+		CanvasNode{ID: "c", Type: "text", Width: 300, Height: 300},
+		CanvasNode{ID: "d", Type: "text", Width: 300, Height: 300},
+	)
+	w.req.UserText = "请整理画布"
+	result := runToolTest(t, w, "arrange_nodes", map[string]any{"nodeIds": []string{"g", "a", "b", "c", "d"}})
+	if result["ok"] != true || w.node("g").X != 0 || w.node("a").X < w.node("g").Width+72 || w.node("b").X < w.node("a").X+w.node("a").Width+72 || w.node("d").Y < 1072 {
+		t.Fatalf("large nodes overlap or requested order lost: %v %+v", result, w.doc.Nodes)
+	}
+	if child := w.node("child"); child.X != 24 || child.Y != 48 {
+		t.Fatalf("group movement lost child offsets: %+v", child)
 	}
 }
 

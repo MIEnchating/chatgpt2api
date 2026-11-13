@@ -1,0 +1,14 @@
+{
+  "scope": "Browser-only isolated approval requests; no Codex execution or supplier calls",
+  "checks": [],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "currentDecision": "确认",
+  "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog').filter({ has: getByRole('heading', { name: 'Codex 请求确认', exact: true }) }) to be visible\u001b[22m\n",
+  "diagnostic": {
+    "url": "http://127.0.0.1:8002/canvas/092fd45e58e8eb1db469bd56",
+    "title": "云棉",
+    "dialogText": [],
+    "result": null
+  }
+}

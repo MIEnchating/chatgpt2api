@@ -13,18 +13,18 @@ const videoContractImportSystemPrompt = `# Role
 你是视频模型 API 契约提取器。你的输出会直接进入严格 JSON Schema 校验和服务端业务校验。
 
 # Goal
-从用户提供的 <document> 中提取可执行的视频模型契约。覆盖文档中明确出现的全部视频模型；按真实协议差异拆分，协议相同的模型合并。
+从用户提供的 <document> 中提取可执行的视频模型契约。覆盖文档中明确出现的全部视频模型；能用一份契约表达的型号必须合并到一份。
 
 # Success criteria
 - models 只包含文档原文出现的完整模型 ID，不补全、不猜测、不发明别名。
-- 同一 contract 共用 driver、transport、request、polling 和 artifact；只有这些接口协议配置不同才拆分。
-- 同协议模型的参数范围、默认值、素材限制、生成模式或条件规则不同，使用 model_profiles 分别配置，不拆成多条契约。model_profiles 每项包含 model、capability、generation、rules，完整替换该模型的能力设置，不做部分字段合并。model 必须是 models 中的精确 ID，不允许通配符或重复项。
-- 顶层 capability、generation、rules 为通用能力；未单独配置的模型使用通用能力。相同能力无需重复声明，model_profiles 可为空数组。
+- 同一 API 服务和鉴权默认只生成一份契约；不要按产品名、系列、型号前缀或能力差异拆分。型号的能力、生成模式、素材、参数、请求字段、传输和规则差异写入 model_profiles（可逐项覆盖顶层）；完全相同时无需重复 profile。
+- 只有 API 地址/鉴权身份或协议驱动不同，或轮询、产物协议无法由 profile 表达时才拆分。契约名称使用上游服务/产品名。
+- model_profiles 每项的 model 必须是 models 中的精确 ID，不允许通配符或重复项。顶层配置作为通用默认值；相同配置无需重复声明，model_profiles 可为空数组。
 - 只声明文档有证据支持的能力，并使用文档中的原始字段名、枚举值和响应路径。
 - 每个 contract 都能通过字段映射、生成模式、默认值、素材数量和轮询状态的一致性校验。
 
 # Extraction rules
-1. name 使用文档中的厂家、产品或模型系列名称，并能区分拆分后的契约；priority 没有明确需求时为 0。
+1. name 使用文档中的上游服务或产品名称；priority 没有明确需求时为 0。只有必须拆分时才在名称中标明区别。
 2. driver 按下方 Protocol matching 选择，Gemini 与 Vertex、KIE 与 APIMart 必须区分。ark-seedance 的 request 素材字段填写 first_frame_url、last_frame_url、reference_image_urls、reference_video_urls、reference_audio_urls，由驱动转换为 content 数组。
 3. custom-video 必须填写 create_path 和含 {task_id} 的 query_path。素材方式按 multipart、base64、url 排序，local_material 取第一项；multipart 必须填写文件字段。
 4. capability 的非空能力必须有对应 request 字段：多个 seconds 选项必须有 duration_field；单一固定时长若由模型决定且文档要求不传时长，则 duration_field 为空；sizes/aspect_ratio_field、resolutions/resolution_field、toggle/generate_audio_field、watermark/watermark_field 均按文档字段映射。image 模式必须填写 first_frame_field，支持尾帧时还必须填写 last_frame_field；reference 模式中哪类素材上限非零，就必须填写对应的 reference_images_field、reference_videos_field 或 reference_audios_field。duration_value_type 必须按文档声明为 number 或 string；例如 JSON 示例中的 seconds 字符串值 "5" 必须选择 string，duration 数字值 5 必须选择 number。未支持的能力数量为 0、数组为空、字段为空字符串。
@@ -66,7 +66,7 @@ func videoContractGenerationSystemPrompt(includeProvider bool) string {
 12. capability.parameters 显式声明附加参数：name 为调用端 parameters 中的键，field 为上游路径，label 为中文用途，type 为 string/integer/number/boolean；保留 required、enum、minimum/maximum、format、max_length、modes（text/image/reference；空数组表示全部）。没有默认值用 null，不凭空选择必填枚举默认值。seed、callback_url（format=uri）、prompt_enhance、prompt_extend、prompt_expansion_mode、独立 aspect_ratio 等按文档声明为参数；不是任意 body 透传。必填 size 用 sizes 与 aspect_ratio_field 映射，独立 aspect_ratio 用 parameters 声明，不能放入 resolutions。仅支持部分模型的参数放入对应 profile.capability.parameters。
 13. capability.prompt 表达提示词 required、min_length、max_length（0 表示未声明上限）；没有额外约束填 null。request.reference_value_type 为 array 或 scalar；单个字符串接受图片或视频时使用 scalar，图片和视频可共享字段，但 reference 模式 total.max 必须为 1。
 14. transport.multipart_fields 按素材角色映射具名表单字段（first_frame、last_frame、reference_image、reference_video、reference_audio）；使用具名映射时 multipart_file_field 留空。重复数组使用文档明确的字段或 field[]；不支持的角色留空；无具名映射时所有角色填空字符串。URL 模式无需声明文件路由。
-15. transport.material_transports 只记录文档明确支持的素材提交方式，按 multipart（文件上传）、base64、url（公网 URL）排序；支持两种也按此顺序，只有一种直接使用。local_material 为排序后的第一项，Agent 运行时将生成的素材按此方式提交给后续模型，不因素材已有公网 URL 而降低优先级。multipart 必须填写文件字段；Base64 按原文填写 base64_format=data_url（带 MIME 前缀）或 raw（纯 Base64），不支持时为空字符串。这是提交前的选择顺序，失败后不能自动切换方式重试。
+15. transport.material_transports 只记录生成接口明确支持的素材提交方式，按 multipart（文件直传）、base64、url 排序，local_material 为第一项。multipart 必须填写文件字段；Base64 按原文填写 base64_format=data_url 或 raw，不支持时为空字符串。失败后不能自动切换方式重试。文档明确要求先调用素材上传接口取得 URL 时，设置 local_material=url、material_transports=["url"]，并填写 material_upload：base_url 为上传服务 HTTPS 地址，path 为相对路径，encoding 为 multipart 或 base64，field 为文件或 Base64 请求字段，url_field 为上传响应 URL 的 JSON 路径，base64_format 为 data_url/raw（multipart 时为空），max_bytes 为文档上限且不得超过 104857600；上传密钥由管理员在每份视频契约中单独配置，绝不在生成的契约、schema 或示例中填写实际密钥。没有明确上传协议时 material_upload=null；上传接口支持的格式不能误认为生成接口支持的直传格式。
 
 ` + videoContractProviderInstructions(includeProvider) + `
 
@@ -195,10 +195,18 @@ func videoContractImportJSONSchema(includeProvider bool) map[string]any {
 			"minLength": 1,
 			"maxLength": 128,
 			"pattern":   `^[A-Za-z0-9][A-Za-z0-9 ._:/-]*$`,
-		}, 1, 20),
+		}, 1, protocol.MaxVideoContractModels),
 		"priority": integerValue(-1000, 1000),
 		"driver":   stringEnum(drivers...),
 		"transport": objectValue(map[string]any{
+			"material_upload": map[string]any{"anyOf": []any{
+				map[string]any{"type": "null"},
+				objectValue(map[string]any{
+					"base_url": stringValue(), "path": stringValue(),
+					"encoding": stringEnum("multipart", "base64"), "field": stringValue(), "url_field": stringValue(),
+					"base64_format": stringEnum("", "data_url", "raw"), "max_bytes": integerValue(1, 104857600),
+				}),
+			}},
 			"local_material":       stringEnum("multipart", "base64", "url"),
 			"material_transports":  arrayValue(stringEnum("multipart", "base64", "url"), 1, 3),
 			"base64_format":        stringEnum("", "data_url", "raw"),
@@ -286,7 +294,7 @@ func videoContractImportJSONSchema(includeProvider bool) map[string]any {
 		contract["required"] = append(contract["required"].([]string), "provider")
 	}
 	definitions := map[string]any{"rule_field": stringEnum(ruleFields...)}
-	for _, name := range []string{"capability", "generation", "rules"} {
+	for _, name := range []string{"capability", "generation", "rules", "transport", "request"} {
 		definitions[name] = properties[name]
 		properties[name] = refValue(name)
 	}
@@ -295,7 +303,9 @@ func videoContractImportJSONSchema(includeProvider bool) map[string]any {
 		"capability": properties["capability"],
 		"generation": properties["generation"],
 		"rules":      properties["rules"],
-	}), 0, 20)
+		"transport":  properties["transport"],
+		"request":    properties["request"],
+	}), 0, protocol.MaxVideoContractModels)
 	contract["required"] = append(contract["required"].([]string), "model_profiles")
 	evidenceProperties := map[string]any{
 		"model": stringValue(), "endpoints_quote": stringValue(), "parameters_quote": stringValue(),

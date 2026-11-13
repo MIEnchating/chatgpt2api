@@ -84,6 +84,8 @@ func TestGeneratedPluginExtendedParameterRuntime(t *testing.T) {
 		}
 	}
 	c.Transport.LocalMaterial = "multipart"
+	c.Transport.MaterialTransports = []string{"multipart", "base64", "url"}
+	c.Transport.Base64Format = "data_url"
 	c.Transport.MultipartFields = map[string]string{"reference_image": "input_reference", "reference_video": "input_reference"}
 	c.Transport.MultipartFileField = ""
 	result, err = GenerateNewAPIVideoPlugin(c, pluginOptionsFixture())
@@ -93,6 +95,10 @@ func TestGeneratedPluginExtendedParameterRuntime(t *testing.T) {
 	data, _ = json.Marshal(result)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
+	}
+	cmd = exec.Command(node, "testdata/newapi_plugin_parameters.mjs", path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("multiple material encodings: %v\n%s", err, out)
 	}
 	cmd = exec.Command(node, "testdata/newapi_plugin_multipart.mjs", path)
 	if out, err := cmd.CombinedOutput(); err != nil {

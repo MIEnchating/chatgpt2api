@@ -1,0 +1,10 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "removedFields": [
+    "generation_video_audio",
+    "generation_video_watermark",
+    "generation_video_reference_mode"
+  ],
+  "mediaAttributesAndAllOtherContentPreserved": true,
+  "qualityApproved": false
+}

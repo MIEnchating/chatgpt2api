@@ -4,13 +4,18 @@ export { DEFAULT_CONTEXT_WINDOW_TOKENS as DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TO
 const SUMMARY_CHUNK_TOKENS = 20_000;
 const SUMMARY_MAX_TOKENS = 4_000;
 
-export function estimateCanvasAgentTokens(value: unknown) {
+export function measureCanvasAgentTokenInput(value: unknown) {
   let imageTokens = 0;
   const text = typeof value === "string" ? value : JSON.stringify(value, (_key, item) => {
     if (item && typeof item === "object" && item.type === "image_url") { imageTokens += 2048; return "[image reference]"; }
     return item;
   });
-  return Math.ceil(new TextEncoder().encode(text || "").length / 3) + 8 + imageTokens;
+  return { bytes: new TextEncoder().encode(text || "").length, imageTokens };
+}
+
+export function estimateCanvasAgentTokens(value: unknown) {
+  const { bytes, imageTokens } = measureCanvasAgentTokenInput(value);
+  return Math.ceil(bytes / 3) + 8 + imageTokens;
 }
 
 export function isCanvasAgentContextLimitError(error: unknown) {

@@ -3,7 +3,7 @@ import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-export function PromptTextareaFrame({ children, className }: { children: ReactNode; className?: string }) {
+export function PromptTextareaFrame({ value, children, className }: { value: string; children: ReactNode; className?: string }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -30,7 +30,6 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
         syncTextareaHeight();
       });
     };
-    syncTextareaHeight();
     textarea.addEventListener("input", scheduleSync);
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleSync);
     observer?.observe(frame);
@@ -39,7 +38,9 @@ export function PromptTextareaFrame({ children, className }: { children: ReactNo
       observer?.disconnect();
       if (frameID !== null) cancelAnimationFrame(frameID);
     };
-  }, [children, syncTextareaHeight]);
+  }, [syncTextareaHeight]);
+
+  useLayoutEffect(syncTextareaHeight, [value, syncTextareaHeight]);
 
   return (
     <div ref={frameRef} className={cn("canvas-prompt-scroll-frame relative min-w-0 w-full overflow-hidden", className)}>

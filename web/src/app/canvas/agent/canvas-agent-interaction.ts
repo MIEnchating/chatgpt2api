@@ -36,6 +36,7 @@ export function canvasAgentUserMediaChoice(text: string): "generate" | undefined
   const request = text.trim();
   if (/[?？“”「」『』"`]|(?:如果|假如|要是|能否|能不能|可不可以|是否|怎么|如何|为什么|不要|不能|不想|无需|不需要|先不|暂不|稍后|暂缓|取消|别生成|别提交|不生成|等我|确认后)|[吗么][。！!\s]*$/i.test(request)) return undefined;
   if (/^(?:(?:好的|好|可以)[，,。！!\s]*)?(?:(?:请|麻烦|你|您|帮我|给我|为我|现在|立即|直接|继续|开始|确认|同意|马上)\s*)*生成(?:吧|啊|呀|了|一下|图片|视频|音频|这|那|已有|待处理|[一二三四五六七八九十0-9]|\s|[，,。！!]|$)/.test(request)) return "generate";
+  if (/^(?:(?:好的|好|可以)[，,。！!\s]*)?(?:(?:请|麻烦|你|您|帮我|给我|为我|我想|我需要|现在|立即|直接|继续|开始|按计划|照计划|马上|就)\s*)*(?:制作|创作|拍摄|做出|做|生成|继续|开始)(?=.{0,100}(?:图片|海报|视频|短剧|短片|镜头|分镜|成片|动画|音频|旁白|配音))/.test(request)) return "generate";
   if (/^(?:please\s+)?(?:generate|create)\s+(?:the\s+)?(?:images?|videos?|audio)\b/i.test(request) && !/\b(?:not|don't|later|if|whether)\b/i.test(request)) return "generate";
   return undefined;
 }

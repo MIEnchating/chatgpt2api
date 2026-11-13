@@ -1,0 +1,42 @@
+{
+  "checkedAt": "2026-11-12T07:01:25.162Z",
+  "scope": "Persisted node reference configuration, separate from browser payload count and prompt hashes",
+  "checks": [
+    {
+      "shot": 1,
+      "nodeID": "video-a7c52128-4e9e-4c5e-a251-80ba034588cb",
+      "referenceCount": 5,
+      "referenceOrderMatches": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "shot": 2,
+      "nodeID": "video-606a6f3d-9ad8-43e4-9e1d-7e06669fa0e9",
+      "referenceCount": 5,
+      "referenceOrderMatches": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "shot": 4,
+      "nodeID": "video-d68d0836-42b1-4019-a96f-44b5c79fcad9",
+      "referenceCount": 5,
+      "referenceOrderMatches": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  ]
+}

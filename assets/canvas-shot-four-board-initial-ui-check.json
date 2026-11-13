@@ -1,0 +1,9 @@
+{
+  "stage": "board",
+  "startedAt": "2026-11-11T21:33:46.789Z",
+  "observeOnly": false,
+  "qualityApproved": false,
+  "checks": [],
+  "submissions": 0,
+  "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog').filter({ has: getByRole('heading', { name: '镜头素材与成品', exact: true }) }).locator('[data-slot=\"card\"]').filter({ has: getByText('分镜图片', { exact: true }) }).getByRole('button', { name: '重新生成', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button disabled data-size=\"sm\" data-slot=\"button\" data-variant=\"default\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 d…>重新生成</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+}

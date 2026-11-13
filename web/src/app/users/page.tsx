@@ -1,5 +1,6 @@
 "use client";
 
+import { Label } from "@/components/ui/label";
 import { LabeledField } from "@/components/labeled-field";
 import { Spinner } from "@/components/ui/spinner";
 import { Card } from "@/components/ui/card";
@@ -14,6 +15,8 @@ import { toast } from "sonner";
 import { ManagementHeader, ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { Item, ItemGroup } from "@/components/ui/item";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -314,6 +317,58 @@ function roleLabel(user: ManagedUser, roles: ManagedRole[]) {
   const roleID = String(user.role_id || "").trim();
   const role = roles.find((item) => item.id === roleID);
   return user.role_name || role?.name || "普通用户";
+}
+
+function ManagedUserActions({ user, isPending, onRole, onToggle, onDelete }: {
+  user: ManagedUser;
+  isPending: boolean;
+  onRole: (user: ManagedUser) => void;
+  onToggle: (user: ManagedUser) => void;
+  onDelete: (user: ManagedUser) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-w-[74px]"
+        onClick={() => onRole(user)}
+        disabled={isPending}
+      >
+        <ShieldCheck  />
+        角色
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-w-[74px]"
+        onClick={() => onToggle(user)}
+        disabled={isPending}
+      >
+        {isPending ? (
+          <Spinner />
+        ) : user.enabled ? (
+          <Ban  />
+        ) : (
+          <CheckCircle2  />
+        )}
+        {user.enabled ? "禁用" : "启用"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="min-w-[74px]"
+        onClick={() => onDelete(user)}
+        disabled={isPending}
+      >
+        <Trash2  />
+        删除
+      </Button>
+    </div>
+  );
 }
 
 function UsersContent() {
@@ -732,6 +787,57 @@ function UsersContent() {
             </div>
           </ManagementToolbar>
           <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
+            <div className="lg:hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
+                <Label className="flex items-center gap-2 text-xs">
+                  <Checkbox checked={allPageSelected || (somePageSelected ? "indeterminate" : false)} onCheckedChange={(checked) => togglePageSelection(checked === true)} aria-label="选择当前页用户" />
+                  选择本页
+                </Label>
+                <div className="flex items-center gap-1">
+                  <Select value={sortBy} onValueChange={(value: UserSortField) => handleSort(value)}>
+                    <SelectTrigger aria-label="用户排序字段" className="w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name">用户名称</SelectItem>
+                      <SelectItem value="id">用户 ID</SelectItem>
+                      <SelectItem value="role_name">角色</SelectItem>
+                      <SelectItem value="call_count" disabled={!usageStatsAvailable}>调用次数</SelectItem>
+                      <SelectItem value="last_used_at">使用时间</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="icon" onClick={() => handleSort(sortBy)} aria-label={sortOrder === "asc" ? "改为降序排列" : "改为升序排列"}>{sortIcon(sortBy)}</Button>
+                </div>
+              </div>
+              <ItemGroup className="divide-y" aria-label="用户列表" aria-busy={isLoading}>
+                {items.map((user) => (
+                  <Item key={user.id} className="min-w-0 flex-col items-stretch gap-3 p-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Checkbox className="mt-1" checked={selectedUserIds.has(user.id)} onCheckedChange={(checked) => toggleSelectedUser(user.id, checked === true)} aria-label={`选择 ${user.name || user.username || user.id}`} />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 break-words font-medium">{user.name || "普通用户"}</span>
+                          <Badge variant={user.enabled ? "default" : "destructive"}>{user.enabled ? "启用" : "禁用"}</Badge>
+                        </div>
+                        <p className="break-all text-xs text-muted-foreground">{user.username || user.id}</p>
+                        <div className="flex flex-wrap gap-1.5"><Badge variant="secondary">{roleLabel(user, roles)}</Badge><Badge variant="outline">{userSourceLabel(user)}</Badge></div>
+                      </div>
+                    </div>
+                    <ManagedUserActions user={user} isPending={pendingIds.has(user.id)} onRole={openRoleDialog} onToggle={handleToggle} onDelete={setDeletingUser} />
+                    <Collapsible>
+                      <CollapsibleTrigger asChild><Button variant="ghost" size="sm">账号详情与用量</Button></CollapsibleTrigger>
+                      <CollapsibleContent className="pt-2">
+                        <dl className="grid gap-2 text-xs text-muted-foreground">
+                          <div><dt>用户 ID</dt><dd className="break-all font-mono">{user.id}</dd></div>
+                          <div><dt>创建时间</dt><dd>{formatDateTime(user.created_at)}</dd></div>
+                          <div><dt>最近使用</dt><dd>{formatDateTime(user.last_used_at)}</dd></div>
+                          {usageStatsAvailable ? <div><dt>近 14 日调用</dt><dd>总计 {formatCompactNumber(user.call_count)} · 今日 {formatCompactNumber(todayCallCount(user))} · 失败 {formatCompactNumber(user.failure_count)}</dd><UsageSparkline points={user.usage_curve} /></div> : <div role="status">统计暂时不可用，用户操作不受影响</div>}
+                        </dl>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Item>
+                ))}
+              </ItemGroup>
+            </div>
+            <div className="hidden lg:block">
             <Table aria-label="用户列表" aria-busy={isLoading} className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>
@@ -826,53 +932,14 @@ function UsersContent() {
                         </div>
                       </TableCell>
                       <TableCell className="min-w-[260px] text-right">
-                        <div className="flex flex-nowrap justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="min-w-[74px]"
-                            onClick={() => openRoleDialog(user)}
-                            disabled={isPending}
-                          >
-                            <ShieldCheck  />
-                            角色
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="min-w-[74px]"
-                            onClick={() => void handleToggle(user)}
-                            disabled={isPending}
-                          >
-                            {isPending ? (
-                              <Spinner />
-                            ) : user.enabled ? (
-                              <Ban  />
-                            ) : (
-                              <CheckCircle2  />
-                            )}
-                            {user.enabled ? "禁用" : "启用"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="min-w-[74px]"
-                            onClick={() => setDeletingUser(user)}
-                            disabled={isPending}
-                          >
-                            <Trash2  />
-                            删除
-                          </Button>
-                        </div>
+                        <ManagedUserActions user={user} isPending={isPending} onRole={openRoleDialog} onToggle={handleToggle} onDelete={setDeletingUser} />
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+            </div>
             {isLoading && items.length === 0 ? <LoadingState label="正在加载用户" /> : null}
             {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
           </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>

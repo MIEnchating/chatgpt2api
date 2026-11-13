@@ -1,0 +1,40 @@
+{
+  "method": "Real UI navigation on an isolated copy of the actual project with one remote unrelated text node; no generation",
+  "checks": [
+    {
+      "name": "scope_ignores_remote_unrelated_nodes_without_changing_content",
+      "allNodesZoom": 0.05,
+      "productionZoom": 0.19316081330868762,
+      "passed": true
+    },
+    {
+      "name": "explicit_arrangement_resolves_existing_overlap_and_preserves_all_content",
+      "productionZoom": 0.22448979591836735,
+      "passed": true
+    },
+    {
+      "name": "workspace_production_link_closes_editor",
+      "passed": true
+    },
+    {
+      "name": "mobile_current_production_scope",
+      "width": 390,
+      "zoom": 0.12430295231168056,
+      "visibleNodes": 36,
+      "passed": true
+    },
+    {
+      "name": "mobile_shot_video_direct_navigation",
+      "passed": true,
+      "width": 249.60009765625
+    },
+    {
+      "name": "refresh_preserves_history_nodes_tasks_and_source_project",
+      "messageCount": 16,
+      "submissions": 0,
+      "passed": true
+    }
+  ],
+  "qualityApproved": false,
+  "testProjectDeleted": true
+}

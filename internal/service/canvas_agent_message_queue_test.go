@@ -70,4 +70,15 @@ func TestCanvasAgentMessageQueueValidation(t *testing.T) {
 			t.Fatalf("accepted malformed queue: %s", queue)
 		}
 	}
+	for _, sessions := range []string{
+		`{}`,
+		`[null]`,
+		`["session"]`,
+		`[{"id":"session"}] trailing`,
+		`[{"id":"session","messageQueue":null}]`,
+	} {
+		if validateCanvasAgentJSON(json.RawMessage(sessions), true) == nil {
+			t.Fatalf("accepted malformed sessions: %s", sessions)
+		}
+	}
 }

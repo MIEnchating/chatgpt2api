@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,6 +32,7 @@ type appRoute struct {
 func (a *App) Handler() http.Handler {
 	routes := a.routes()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(context.WithValue(r.Context(), mediaBaseURLContextKey{}, requestMediaBaseURL(r)))
 		a.serveObservedHTTP(w, r, routes)
 	})
 }
@@ -69,6 +71,7 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/api/workflows/agent-draft", a.handleWorkflowAgentDraft),
 		subtree("/api/workflows", a.handleWorkflows),
 		exact("", "/api/canvas", a.handleCanvasDocument),
+		exact(http.MethodGet, "/api/canvas/agent-history", a.handleCanvasAgentHistory),
 		exact("", "/api/canvas/agent-runs", a.handleCanvasAgent),
 		exact("", "/api/agent-runs", a.handleAgentExecution),
 		exact(http.MethodPost, "/api/creation-tasks/agent", a.handleStudioAgent),

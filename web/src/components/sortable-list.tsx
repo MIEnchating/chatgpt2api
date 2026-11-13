@@ -68,10 +68,11 @@ export function SortableList({ values, onReorder, disabled = false, children, ..
   </ListContext.Provider>;
 }
 
-export function SortableItem({ value, label, handle = true, className, children, ...props }: Omit<ComponentProps<typeof Reorder.Item<string, "div" | "tr">>, "value" | "onKeyDown" | "onDragStart" | "onDragEnd" | "onClickCapture" | "onPointerDownCapture" | "dragListener" | "dragControls"> & {
+export function SortableItem({ value, label, handle = true, instant = false, className, children, ...props }: Omit<ComponentProps<typeof Reorder.Item<string, "div" | "tr">>, "value" | "onKeyDown" | "onDragStart" | "onDragEnd" | "onClickCapture" | "onPointerDownCapture" | "dragListener" | "dragControls"> & {
   value: string;
   label: string;
   handle?: boolean;
+  instant?: boolean;
 }) {
   const list = useContext(ListContext);
   const controls = useDragControls();
@@ -102,9 +103,10 @@ export function SortableItem({ value, label, handle = true, className, children,
       dragControls={controls}
       drag={list.disabled ? false : "y"}
       dragMomentum={false}
+      dragElastic={instant ? 0 : undefined}
       dragTransition={{ bounceStiffness: 1000, bounceDamping: 60 }}
       layout="position"
-      transition={{ layout: reducedMotion ? { duration: 0 } : { type: "tween", duration: 0.15, ease: "easeOut" } }}
+      transition={{ layout: instant || reducedMotion ? { duration: 0 } : { type: "tween", duration: 0.15, ease: "easeOut" } }}
       className={cn("relative min-w-0", !handle && !list.disabled && "touch-none cursor-grab active:cursor-grabbing", className)}
       onPointerDownCapture={() => { dragged.current = false; }}
       onDragStart={() => { dragged.current = true; list.beginDrag(); }}

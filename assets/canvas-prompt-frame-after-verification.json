@@ -1,0 +1,1976 @@
+{
+  "phase": "after",
+  "checks": [
+    {
+      "name": "controlled_replacement_grow_shrink_scroll_resize_and_mobile_editor",
+      "passed": true
+    },
+    {
+      "name": "six_small_save_receipts_without_transcript_retransmission_or_large_edit_serialization",
+      "passed": true
+    },
+    {
+      "name": "initial_full_transcript_clone_count",
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 10,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 7631,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 113.89999997615814,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 87.29999995231628,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 739.7000000476837,
+          "ms": 191
+        },
+        {
+          "start": 934.5,
+          "ms": 82
+        },
+        {
+          "start": 2215.8000000715256,
+          "ms": 78
+        },
+        {
+          "start": 2473.2000000476837,
+          "ms": 240
+        },
+        {
+          "start": 2725.3000000715256,
+          "ms": 61
+        },
+        {
+          "start": 2837.600000023842,
+          "ms": 61
+        },
+        {
+          "start": 4699.899999976158,
+          "ms": 332
+        },
+        {
+          "start": 5037.399999976158,
+          "ms": 412
+        },
+        {
+          "start": 5479.100000023842,
+          "ms": 98
+        },
+        {
+          "start": 6241.700000047684,
+          "ms": 85
+        },
+        {
+          "start": 6328.600000023842,
+          "ms": 72
+        },
+        {
+          "start": 7113.5,
+          "ms": 406
+        },
+        {
+          "start": 7519.800000071526,
+          "ms": 72
+        }
+      ]
+    },
+    {
+      "readyMs": 5580,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 80.20000004768372,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 56.89999997615814,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 678.6000000238419,
+          "ms": 52
+        },
+        {
+          "start": 2138.7999999523163,
+          "ms": 197
+        },
+        {
+          "start": 3317.600000023842,
+          "ms": 241
+        },
+        {
+          "start": 3560.399999976158,
+          "ms": 312
+        },
+        {
+          "start": 3918.899999976158,
+          "ms": 99
+        },
+        {
+          "start": 4870.399999976158,
+          "ms": 583
+        },
+        {
+          "start": 5454.5,
+          "ms": 70
+        }
+      ]
+    },
+    {
+      "readyMs": 7350,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 145.29999995231628,
+          "hasSessions": true
+        },
+        {
+          "kind": "history",
+          "chars": 276,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 84,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 2054.399999976158,
+          "ms": 205
+        },
+        {
+          "start": 2272.600000023842,
+          "ms": 60
+        },
+        {
+          "start": 2363.8000000715256,
+          "ms": 61
+        },
+        {
+          "start": 4266.200000047684,
+          "ms": 59
+        },
+        {
+          "start": 4326.899999976158,
+          "ms": 313
+        },
+        {
+          "start": 4642.300000071526,
+          "ms": 336
+        },
+        {
+          "start": 5020.300000071526,
+          "ms": 123
+        },
+        {
+          "start": 6851.300000071526,
+          "ms": 391
+        },
+        {
+          "start": 7285.800000071526,
+          "ms": 51
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "saveResponses": [
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 4263,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 4371
+    },
+    {
+      "status": 200,
+      "bytes": 932,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1040
+    },
+    {
+      "status": 200,
+      "bytes": 915,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1023
+    }
+  ],
+  "canvasReadRequests": 6,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "editCopies": [
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "history",
+      "chars": 299,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    }
+  ],
+  "editSerializations": [],
+  "editLongTasks": [
+    {
+      "start": 10025.5,
+      "ms": 502
+    },
+    {
+      "start": 10539.300000071526,
+      "ms": 50
+    },
+    {
+      "start": 10657.399999976158,
+      "ms": 167
+    },
+    {
+      "start": 15976.399999976158,
+      "ms": 197
+    },
+    {
+      "start": 16230.700000047684,
+      "ms": 93
+    },
+    {
+      "start": 16359.899999976158,
+      "ms": 367
+    },
+    {
+      "start": 16862.399999976158,
+      "ms": 95
+    },
+    {
+      "start": 22092,
+      "ms": 172
+    },
+    {
+      "start": 22286.5,
+      "ms": 94
+    },
+    {
+      "start": 22458,
+      "ms": 184
+    },
+    {
+      "start": 22643.100000023842,
+      "ms": 126
+    },
+    {
+      "start": 22781.600000023842,
+      "ms": 53
+    },
+    {
+      "start": 22875.700000047684,
+      "ms": 95
+    },
+    {
+      "start": 27775.399999976158,
+      "ms": 162
+    },
+    {
+      "start": 27961.100000023842,
+      "ms": 92
+    },
+    {
+      "start": 28094.800000071526,
+      "ms": 376
+    },
+    {
+      "start": 28587,
+      "ms": 137
+    },
+    {
+      "start": 33670,
+      "ms": 191
+    },
+    {
+      "start": 33882.300000071526,
+      "ms": 137
+    }
+  ],
+  "promptFrameStats": {
+    "measures": 0,
+    "observers": 0,
+    "disconnects": 0
+  },
+  "layoutMetrics": {
+    "LayoutCount": 49,
+    "LayoutDuration": 0.05203,
+    "RecalcStyleCount": 123,
+    "RecalcStyleDuration": 0.132092
+  },
+  "applicationAncestors": [
+    {
+      "function": "CanvasPage",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794488247373",
+      "line": 973,
+      "sampleMs": 304.3880000000001
+    },
+    {
+      "function": "Button",
+      "url": "http://127.0.0.1:8002/src/components/ui/button.tsx",
+      "line": 34,
+      "sampleMs": 111.97699999999996
+    },
+    {
+      "function": "TooltipContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 90,
+      "sampleMs": 83.40699999999998
+    },
+    {
+      "function": "CanvasAgentPanelContent",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 177,
+      "sampleMs": 75.974
+    },
+    {
+      "function": "CanvasAgentEnginePicker",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-engine-picker.tsx",
+      "line": 13,
+      "sampleMs": 52.69
+    },
+    {
+      "function": "TooltipTrigger",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 71,
+      "sampleMs": 51.34999999999999
+    },
+    {
+      "function": "TooltipHint",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 124,
+      "sampleMs": 44.805
+    },
+    {
+      "function": "CanvasProjectDialog",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-project-dialog.tsx?t=1794262740140",
+      "line": 12,
+      "sampleMs": 42.865
+    },
+    {
+      "function": "imageModelRoute",
+      "url": "http://127.0.0.1:8002/src/lib/image-model-capabilities.ts",
+      "line": 228,
+      "sampleMs": 28.336000000000002
+    },
+    {
+      "function": "Tooltip",
+      "url": "http://127.0.0.1:8002/src/components/ui/tooltip.tsx",
+      "line": 60,
+      "sampleMs": 27.951000000000004
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 27.248999999999995
+    },
+    {
+      "function": "CanvasWorkspaceControls",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 185,
+      "sampleMs": 26.938000000000002
+    },
+    {
+      "function": "canvasDocumentValuesEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 2,
+      "sampleMs": 25.305
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/overflow-marquee-text.tsx",
+      "line": 16,
+      "sampleMs": 25.076000000000004
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-conversation.tsx?t=1794483815419",
+      "line": 161,
+      "sampleMs": 21.766
+    },
+    {
+      "function": "ScrollBar",
+      "url": "http://127.0.0.1:8002/src/components/ui/scroll-area.tsx",
+      "line": 48,
+      "sampleMs": 21.079
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 308,
+      "sampleMs": 20.912
+    },
+    {
+      "function": "cn",
+      "url": "http://127.0.0.1:8002/src/lib/utils.ts",
+      "line": 3,
+      "sampleMs": 17.808999999999997
+    },
+    {
+      "function": "CanvasEngine",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-engine.tsx?t=1794488247373",
+      "line": 58,
+      "sampleMs": 16.824
+    },
+    {
+      "function": "DialogContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/dialog.tsx?t=1794261789124",
+      "line": 67,
+      "sampleMs": 15.977
+    },
+    {
+      "function": "ConfirmDialog",
+      "url": "http://127.0.0.1:8002/src/components/ui/confirm-dialog.tsx?t=1794262740140",
+      "line": 9,
+      "sampleMs": 14.135000000000002
+    },
+    {
+      "function": "ControlButton",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 967,
+      "sampleMs": 11.338
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 171,
+      "sampleMs": 11.207
+    },
+    {
+      "function": "ModelPicker",
+      "url": "http://127.0.0.1:8002/src/components/model-picker.tsx?t=1794476799533",
+      "line": 11,
+      "sampleMs": 10.955999999999998
+    },
+    {
+      "function": "Card",
+      "url": "http://127.0.0.1:8002/src/components/ui/card.tsx",
+      "line": 6,
+      "sampleMs": 10.792
+    },
+    {
+      "function": "CanvasAgentAssetMenu",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-composer.tsx?t=1794276407913",
+      "line": 10,
+      "sampleMs": 10.724
+    },
+    {
+      "function": "InputGroupButton",
+      "url": "http://127.0.0.1:8002/src/components/ui/input-group.tsx",
+      "line": 62,
+      "sampleMs": 9.772
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-conversation.tsx?t=1794483815419",
+      "line": 100,
+      "sampleMs": 9.652
+    },
+    {
+      "function": "applyBackendAgentDocument",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794488247373",
+      "line": 1532,
+      "sampleMs": 9.598
+    },
+    {
+      "function": "Popover",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 11,
+      "sampleMs": 9.488000000000001
+    },
+    {
+      "function": "Dialog",
+      "url": "http://127.0.0.1:8002/src/components/ui/dialog.tsx?t=1794261789124",
+      "line": 11,
+      "sampleMs": 9.204
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/generation/prompt-textarea-frame.tsx?t=1794488247346",
+      "line": 10,
+      "sampleMs": 8.993
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-engine-picker.tsx",
+      "line": 126,
+      "sampleMs": 8.981
+    },
+    {
+      "function": "CanvasNodeQuickActions",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-node-actions-panel.tsx",
+      "line": 12,
+      "sampleMs": 8.946
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 10,
+      "sampleMs": 8.929
+    },
+    {
+      "function": "optionalStrings",
+      "url": "http://127.0.0.1:8002/src/app/canvas/agent/canvas-agent-sessions.ts?t=1794475955065",
+      "line": 161,
+      "sampleMs": 8.889999999999999
+    },
+    {
+      "function": "PopoverContent",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 33,
+      "sampleMs": 8.489
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 16,
+      "sampleMs": 8.34
+    },
+    {
+      "function": "CanvasZoomOptions",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-workspace-controls.tsx?t=1794461146198",
+      "line": 773,
+      "sampleMs": 8.277000000000001
+    },
+    {
+      "function": "PopoverTrigger",
+      "url": "http://127.0.0.1:8002/src/components/ui/popover.tsx",
+      "line": 22,
+      "sampleMs": 8.064
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 20272.5189999998
+    },
+    {
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 1496.8540000000019
+    },
+    {
+      "function": "exports.jsxDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 846.435000000001
+    },
+    {
+      "function": "exports.jsx",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 191,
+      "sampleMs": 736.3080000000001
+    },
+    {
+      "function": "run",
+      "url": "",
+      "line": 0,
+      "sampleMs": 340.54900000000004
+    },
+    {
+      "function": "measure",
+      "url": "",
+      "line": 0,
+      "sampleMs": 213.89099999999996
+    },
+    {
+      "function": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "sampleMs": 208.6530000000001
+    },
+    {
+      "function": "exports.createElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 591,
+      "sampleMs": 203.55100000000002
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 87.659
+    },
+    {
+      "function": "logComponentRender",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2459,
+      "sampleMs": 82.52000000000001
+    },
+    {
+      "function": "createTask",
+      "url": "",
+      "line": 0,
+      "sampleMs": 81.65399999999998
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 104,
+      "sampleMs": 75.324
+    },
+    {
+      "function": "reconcileChildFibersImpl",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 3775,
+      "sampleMs": 66.152
+    },
+    {
+      "function": "jsxDEVImpl",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=5b2f5e33",
+      "line": 148,
+      "sampleMs": 56.001000000000005
+    },
+    {
+      "function": "ReactElement",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-CR84W5JX.js?v=5b2f5e33",
+      "line": 132,
+      "sampleMs": 54.141999999999996
+    },
+    {
+      "function": "runWithFiberInDEV",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 845,
+      "sampleMs": 53.148
+    },
+    {
+      "function": "getComponentNameFromType",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/jsx-runtime-CtVuN5Dd.js?v=5b2f5e33",
+      "line": 15,
+      "sampleMs": 48.007999999999996
+    },
+    {
+      "function": "removeChild",
+      "url": "",
+      "line": 0,
+      "sampleMs": 47.696999999999996
+    },
+    {
+      "function": "mergeClasses",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/lucide-react.js?v=5b2f5e33",
+      "line": 17,
+      "sampleMs": 42.113
+    },
+    {
+      "function": "addObjectDiffToProperties",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2407,
+      "sampleMs": 41.403
+    },
+    {
+      "function": "useMemo",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 13392,
+      "sampleMs": 41.283
+    },
+    {
+      "function": "react_stack_bottom_frame",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 12860,
+      "sampleMs": 39.406
+    },
+    {
+      "function": "clsx",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/clsx.js?v=5b2f5e33",
+      "line": 11,
+      "sampleMs": 34.752
+    },
+    {
+      "function": "updateForwardRef",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 5386,
+      "sampleMs": 34.336999999999996
+    },
+    {
+      "function": "createWorkInProgress",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 2726,
+      "sampleMs": 33.039
+    },
+    {
+      "function": "ReactStrictModeWarnings.recordLegacyContextWarning",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 12831,
+      "sampleMs": 28.531
+    },
+    {
+      "function": "imageModelRoute",
+      "url": "http://127.0.0.1:8002/src/lib/image-model-capabilities.ts",
+      "line": 228,
+      "sampleMs": 28.336000000000002
+    },
+    {
+      "function": "cloneVideoModelContract",
+      "url": "http://127.0.0.1:8002/src/lib/video-model-contracts.ts?t=1794476799533",
+      "line": 32,
+      "sampleMs": 26.139999999999997
+    },
+    {
+      "function": "canvasDocumentValuesEqual",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-document-equality.ts",
+      "line": 2,
+      "sampleMs": 25.305
+    },
+    {
+      "function": "CanvasPage",
+      "url": "http://127.0.0.1:8002/src/app/canvas/page.tsx?t=1794488247373",
+      "line": 973,
+      "sampleMs": 24.293
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/components/overflow-marquee-text.tsx",
+      "line": 16,
+      "sampleMs": 23.982000000000003
+    },
+    {
+      "function": "now",
+      "url": "",
+      "line": 0,
+      "sampleMs": 23.883000000000003
+    },
+    {
+      "function": "mergeProps",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/dist-Cvya3_Fp.js?v=5b2f5e33",
+      "line": 70,
+      "sampleMs": 22.193
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/rolldown-runtime-SbdDWaPq.js?v=5b2f5e33",
+      "line": 22,
+      "sampleMs": 21.475
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/src/app/canvas/canvas-agent-panel.tsx?t=1794487449850",
+      "line": 308,
+      "sampleMs": 18.306000000000004
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/dist-Cvya3_Fp.js?v=5b2f5e33",
+      "line": 20,
+      "sampleMs": 18.101
+    },
+    {
+      "function": "beginWork",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 6079,
+      "sampleMs": 16.837
+    },
+    {
+      "function": "prepareFreshStack",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/react-dom_client.js?v=5b2f5e33",
+      "line": 8136,
+      "sampleMs": 16.334
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/radix-ui.js?v=5b2f5e33",
+      "line": 4487,
+      "sampleMs": 16.328
+    },
+    {
+      "function": "",
+      "url": "http://127.0.0.1:8002/node_modules/.vite/deps/radix-ui.js?v=5b2f5e33",
+      "line": 147,
+      "sampleMs": 13.844000000000001
+    }
+  ],
+  "longEditor": {
+    "value": "验证第 0 行中文与 English 内容\n验证第 1 行中文与 English 内容\n验证第 2 行中文与 English 内容\n验证第 3 行中文与 English 内容\n验证第 4 行中文与 English 内容\n验证第 5 行中文与 English 内容\n验证第 6 行中文与 English 内容\n验证第 7 行中文与 English 内容\n验证第 8 行中文与 English 内容\n验证第 9 行中文与 English 内容\n验证第 10 行中文与 English 内容\n验证第 11 行中文与 English 内容\n验证第 12 行中文与 English 内容\n验证第 13 行中文与 English 内容\n验证第 14 行中文与 English 内容\n验证第 15 行中文与 English 内容\n验证第 16 行中文与 English 内容\n验证第 17 行中文与 English 内容\n验证第 18 行中文与 English 内容\n验证第 19 行中文与 English 内容\n验证第 20 行中文与 English 内容\n验证第 21 行中文与 English 内容\n验证第 22 行中文与 English 内容\n验证第 23 行中文与 English 内容\n验证第 24 行中文与 English 内容\n验证第 25 行中文与 English 内容\n验证第 26 行中文与 English 内容\n验证第 27 行中文与 English 内容\n验证第 28 行中文与 English 内容\n验证第 29 行中文与 English 内容\n验证第 30 行中文与 English 内容\n验证第 31 行中文与 English 内容\n验证第 32 行中文与 English 内容\n验证第 33 行中文与 English 内容\n验证第 34 行中文与 English 内容\n验证第 35 行中文与 English 内容\n验证第 36 行中文与 English 内容\n验证第 37 行中文与 English 内容\n验证第 38 行中文与 English 内容\n验证第 39 行中文与 English 内容\n验证第 40 行中文与 English 内容\n验证第 41 行中文与 English 内容\n验证第 42 行中文与 English 内容\n验证第 43 行中文与 English 内容\n验证第 44 行中文与 English 内容\n验证第 45 行中文与 English 内容\n验证第 46 行中文与 English 内容\n验证第 47 行中文与 English 内容\n验证第 48 行中文与 English 内容\n验证第 49 行中文与 English 内容\n验证第 50 行中文与 English 内容\n验证第 51 行中文与 English 内容\n验证第 52 行中文与 English 内容\n验证第 53 行中文与 English 内容\n验证第 54 行中文与 English 内容\n验证第 55 行中文与 English 内容\n验证第 56 行中文与 English 内容\n验证第 57 行中文与 English 内容\n验证第 58 行中文与 English 内容\n验证第 59 行中文与 English 内容\n验证第 60 行中文与 English 内容\n验证第 61 行中文与 English 内容\n验证第 62 行中文与 English 内容\n验证第 63 行中文与 English 内容\n验证第 64 行中文与 English 内容\n验证第 65 行中文与 English 内容\n验证第 66 行中文与 English 内容\n验证第 67 行中文与 English 内容\n验证第 68 行中文与 English 内容\n验证第 69 行中文与 English 内容\n验证第 70 行中文与 English 内容\n验证第 71 行中文与 English 内容\n验证第 72 行中文与 English 内容\n验证第 73 行中文与 English 内容\n验证第 74 行中文与 English 内容\n验证第 75 行中文与 English 内容\n验证第 76 行中文与 English 内容\n验证第 77 行中文与 English 内容\n验证第 78 行中文与 English 内容\n验证第 79 行中文与 English 内容",
+    "height": 1616,
+    "scrollHeight": 1616,
+    "frameHeight": 212,
+    "viewportHeight": 212,
+    "viewportScrollHeight": 1616
+  },
+  "scrollAfterRename": 150,
+  "shortEditor": {
+    "height": 212,
+    "frameHeight": 212,
+    "scrollHeight": 212
+  },
+  "resizedEditor": {
+    "height": 212,
+    "frameHeight": 212,
+    "scrollHeight": 212
+  },
+  "mobileEditor": {
+    "value": "验证第 0 行中文与 English 内容\n验证第 1 行中文与 English 内容\n验证第 2 行中文与 English 内容\n验证第 3 行中文与 English 内容\n验证第 4 行中文与 English 内容\n验证第 5 行中文与 English 内容\n验证第 6 行中文与 English 内容\n验证第 7 行中文与 English 内容\n验证第 8 行中文与 English 内容\n验证第 9 行中文与 English 内容\n验证第 10 行中文与 English 内容\n验证第 11 行中文与 English 内容\n验证第 12 行中文与 English 内容\n验证第 13 行中文与 English 内容\n验证第 14 行中文与 English 内容\n验证第 15 行中文与 English 内容\n验证第 16 行中文与 English 内容\n验证第 17 行中文与 English 内容\n验证第 18 行中文与 English 内容\n验证第 19 行中文与 English 内容\n验证第 20 行中文与 English 内容\n验证第 21 行中文与 English 内容\n验证第 22 行中文与 English 内容\n验证第 23 行中文与 English 内容\n验证第 24 行中文与 English 内容\n验证第 25 行中文与 English 内容\n验证第 26 行中文与 English 内容\n验证第 27 行中文与 English 内容\n验证第 28 行中文与 English 内容\n验证第 29 行中文与 English 内容\n验证第 30 行中文与 English 内容\n验证第 31 行中文与 English 内容\n验证第 32 行中文与 English 内容\n验证第 33 行中文与 English 内容\n验证第 34 行中文与 English 内容\n验证第 35 行中文与 English 内容\n验证第 36 行中文与 English 内容\n验证第 37 行中文与 English 内容\n验证第 38 行中文与 English 内容\n验证第 39 行中文与 English 内容\n验证第 40 行中文与 English 内容\n验证第 41 行中文与 English 内容\n验证第 42 行中文与 English 内容\n验证第 43 行中文与 English 内容\n验证第 44 行中文与 English 内容\n验证第 45 行中文与 English 内容\n验证第 46 行中文与 English 内容\n验证第 47 行中文与 English 内容\n验证第 48 行中文与 English 内容\n验证第 49 行中文与 English 内容\n验证第 50 行中文与 English 内容\n验证第 51 行中文与 English 内容\n验证第 52 行中文与 English 内容\n验证第 53 行中文与 English 内容\n验证第 54 行中文与 English 内容\n验证第 55 行中文与 English 内容\n验证第 56 行中文与 English 内容\n验证第 57 行中文与 English 内容\n验证第 58 行中文与 English 内容\n验证第 59 行中文与 English 内容\n验证第 60 行中文与 English 内容\n验证第 61 行中文与 English 内容\n验证第 62 行中文与 English 内容\n验证第 63 行中文与 English 内容\n验证第 64 行中文与 English 内容\n验证第 65 行中文与 English 内容\n验证第 66 行中文与 English 内容\n验证第 67 行中文与 English 内容\n验证第 68 行中文与 English 内容\n验证第 69 行中文与 English 内容\n验证第 70 行中文与 English 内容\n验证第 71 行中文与 English 内容\n验证第 72 行中文与 English 内容\n验证第 73 行中文与 English 内容\n验证第 74 行中文与 English 内容\n验证第 75 行中文与 English 内容\n验证第 76 行中文与 English 内容\n验证第 77 行中文与 English 内容\n验证第 78 行中文与 English 内容\n验证第 79 行中文与 English 内容",
+    "height": 1936,
+    "scrollHeight": 1936,
+    "frameHeight": 212
+  },
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

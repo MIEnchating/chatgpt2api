@@ -45,6 +45,7 @@ func (a *App) handleCanvasAgentTool(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, 400, "invalid tool request")
 			return
 		}
+		input.Context.MediaBaseURL = a.resolveImageBaseURL(r.Context())
 		doc, err = a.canvasAgent.StartTool(identity, project, input)
 	}
 	if err != nil {
@@ -53,6 +54,11 @@ func (a *App) handleCanvasAgentTool(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeCanvasMutationError(w, err, "画布工具执行失败")
 		}
+		return
+	}
+	doc, err = canvasHistoryResponse(r, doc)
+	if err != nil {
+		writeCanvasMutationError(w, err, "画布工具记录读取失败")
 		return
 	}
 	util.WriteJSON(w, 200, map[string]any{"document": doc})

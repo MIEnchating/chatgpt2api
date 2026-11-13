@@ -1,0 +1,12 @@
+{
+  "method": "Isolated imported canvas copies with explicitly labelled synthetic review records; no human quality approval",
+  "checks": [
+    {
+      "name": "current_needs_fix_visible_in_movie_and_script_desktop_mobile",
+      "passed": true
+    }
+  ],
+  "submissions": 0,
+  "qualityApproved": false,
+  "observationError": "Stale-movie fixture timed out: manually setting merged_video_outdated was recomputed by the normal save boundary because no source or order changed. Correct the fixture with a real shot-order change; this is not evidence of a product regression."
+}

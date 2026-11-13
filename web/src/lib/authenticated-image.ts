@@ -41,7 +41,7 @@ function browserBaseURL() {
 
 function apiBaseURL() {
   const value = String(webConfig.apiUrl || "").trim();
-  return value ? `${value.replace(/\/$/, "")}/` : "";
+  return value ? `${value.replace(/\/$/, "")}/` : new URL("/", browserBaseURL()).toString();
 }
 
 function isManagedImagePath(pathname: string) {
@@ -147,7 +147,7 @@ export function resolveImageRequestURL(src: string) {
 
   const browserBase = browserBaseURL();
   const apiBase = apiBaseURL();
-  if (!isAbsoluteURL(value) && value.startsWith("/") && apiBase) {
+  if (!isAbsoluteURL(value) && value.startsWith("/")) {
     const relativeCandidate = new URL(value, apiBase);
     if (isManagedImagePath(relativeCandidate.pathname)) {
       return relativeCandidate.toString();
@@ -155,7 +155,7 @@ export function resolveImageRequestURL(src: string) {
   }
 
   const candidate = new URL(value, browserBase);
-  if (apiBase && isManagedImagePath(candidate.pathname)) {
+  if (isManagedImagePath(candidate.pathname)) {
     return new URL(`${candidate.pathname}${candidate.search}`, apiBase).toString();
   }
 

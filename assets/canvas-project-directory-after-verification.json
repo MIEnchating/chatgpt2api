@@ -1,0 +1,32 @@
+{
+  "stage": "after",
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "libraryVisibleMs": 5277,
+  "library": [
+    {
+      "method": "GET",
+      "view": "projects",
+      "action": null,
+      "bytes": 1639,
+      "hasDocument": false,
+      "hasHistory": false,
+      "activeProjectID": "canvas-88a3db9a18cfda40d66f53aa"
+    }
+  ],
+  "open": [
+    {
+      "method": "POST",
+      "view": null,
+      "action": "activate",
+      "bytes": 2973,
+      "hasDocument": true,
+      "hasHistory": true,
+      "activeProjectID": "canvas-8e4b09e691e59916c6ba21f8"
+    }
+  ],
+  "archivePreservesBothSessions": true,
+  "libraryMutationsReturnOnlySummaries": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 2
+}

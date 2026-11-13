@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { CanvasNode } from "@/services/api/canvas";
+import { CanvasScriptNavigation } from "./canvas-script-navigation";
 
 export type CanvasCreatableNodeType = Exclude<CanvasNode["type"], "group">;
 
@@ -30,7 +31,7 @@ const NODE_OPTIONS: Array<{ type: CanvasCreatableNodeType; label: string; descri
   { type: "video", label: "视频", description: "从文字或素材生成视频", icon: Video },
   { type: "audio", label: "音频", description: "创作配音与声音", icon: Music },
   { type: "panorama", label: "全景图", description: "创建沉浸式全景场景", icon: Compass },
-  { type: "script", label: "脚本", description: "从故事创作分镜、资产与视频", icon: FileText },
+  { type: "script", label: "脚本", description: "从故事创作分镜、素材与视频", icon: FileText },
   { type: "director", label: "导演台", description: "编排镜头与场景", icon: Camera },
   { type: "config", label: "生成配置", description: "连接素材并设置生成参数", icon: Settings2 },
 ];
@@ -95,6 +96,10 @@ type CanvasWorkspaceControlsProps = {
   onDelete: () => void;
   onZoom: (zoom: number) => void;
   onFit: () => void;
+  scripts: readonly CanvasNode[];
+  nodes: readonly CanvasNode[];
+  onFocusNode: (id: string) => void;
+  onFitScript: (id: string) => void;
   onMiniMap: () => void;
   onShortcuts: () => void;
 };
@@ -108,17 +113,17 @@ export function CanvasWorkspaceControls(props: CanvasWorkspaceControlsProps) {
   return (
     <div data-canvas-controls className={cn("pointer-events-none absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex items-center", stacked ? "flex-col gap-2" : "h-12 justify-center")}>
       <div data-canvas-view-controls role="group" aria-label="画布视图" style={stacked ? { marginLeft: compact ? 0 : props.viewInset } : { left: props.viewInset }} className={cn(surface, !stacked && "absolute left-0", stacked && !compact && "self-start")}>
-        {!props.sidePanelOpen ? <Tooltip><TooltipTrigger asChild><Button variant="ghost"  aria-label="资产管理" aria-expanded={props.sidePanelOpen} onClick={props.onManagement}><PanelLeft  />{!compact && "资产管理"}</Button></TooltipTrigger><TooltipContent>资产管理</TooltipContent></Tooltip> : null}
+        {!props.sidePanelOpen ? <Tooltip><TooltipTrigger asChild><Button variant="ghost"  aria-label="素材管理" aria-expanded={props.sidePanelOpen} onClick={props.onManagement}><PanelLeft  />{!compact && "素材管理"}</Button></TooltipTrigger><TooltipContent>素材管理</TooltipContent></Tooltip> : null}
         <ControlButton label="整理画布" disabled={props.readOnly || !props.hasNodes} onClick={props.onArrange}><Grid2X2 /></ControlButton>
         <ControlButton label="画布小地图" active={props.miniMapOpen} disabled={!props.hasNodes} onClick={props.onMiniMap}><Map /></ControlButton>
         <ControlButton label={props.showConnections ? "隐藏节点连线" : "显示节点连线"} active={props.showConnections} onClick={props.onToggleConnections}><Waypoints /></ControlButton>
         <ControlButton label="网格吸附" active={props.snapToGrid} onClick={props.onToggleSnap}><Magnet /></ControlButton>
         <Separator orientation="vertical" className="mx-1 h-5" />
-        <CanvasZoomOptions zoom={props.zoom} onZoom={props.onZoom} onFit={props.onFit} />
+        <CanvasZoomOptions zoom={props.zoom} onZoom={props.onZoom} onFit={props.onFit} scripts={props.scripts} nodes={props.nodes} onFitScript={props.onFitScript} onFocusNode={props.onFocusNode} />
       </div>
       <div data-canvas-workspace-dock className="flex w-max max-w-full items-center gap-1.5 sm:gap-2">
         <div className={cn(surface, "min-w-0", compact && "[&_button]:size-7 [&_button]:p-0", props.width < 360 && "[&_button]:size-6")}>
-          <div data-canvas-toolbar role="group" aria-label="画布操作" className={cn("flex items-center", compact ? "gap-0" : "gap-0.5")}>
+          <div data-canvas-toolbar role="group" aria-label="画布操作" className={cn("flex items-center", compact ? props.width < 360 ? "gap-0.5" : "gap-1" : "gap-2")}>
             <Popover open={createOpen && !props.readOnly} onOpenChange={setCreateOpen}>
               <TooltipHint content={"添加节点"}><span className="inline-flex shrink-0"><PopoverTrigger asChild><Button size="icon"  aria-label="添加节点" disabled={props.readOnly}><Plus  /></Button></PopoverTrigger></span></TooltipHint>
               <PopoverContent side="top" align="center" className="w-[272px]"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
@@ -167,7 +172,7 @@ function CanvasToolPicker({ tool, onChange }: { tool: CanvasTool; onChange: (too
   </Popover>;
 }
 
-function CanvasZoomOptions({ zoom, onZoom, onFit }: Pick<CanvasWorkspaceControlsProps, "zoom" | "onZoom" | "onFit">) {
+function CanvasZoomOptions({ zoom, onZoom, onFit, scripts, nodes, onFitScript, onFocusNode }: Pick<CanvasWorkspaceControlsProps, "zoom" | "onZoom" | "onFit" | "scripts" | "nodes" | "onFitScript" | "onFocusNode">) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const percentage = Math.round(zoom * 100);
@@ -181,7 +186,7 @@ function CanvasZoomOptions({ zoom, onZoom, onFit }: Pick<CanvasWorkspaceControls
   return (
     <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) setDraft(String(percentage)); }}>
       <PopoverTrigger asChild><Button variant="ghost" className="tabular-nums" aria-label="缩放比例">{percentage}%<ChevronDown  /></Button></PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-56"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+      <PopoverContent side="top" align="start" className="max-h-[min(640px,var(--radix-popover-content-available-height))] w-[min(320px,calc(100vw-2rem))]"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         <form className="relative mb-2" onSubmit={(event) => { event.preventDefault(); commit(); }}>
           <Input type="number" min={CANVAS_MIN_ZOOM * 100} max={CANVAS_MAX_ZOOM * 100} step="any" aria-label="缩放百分比" className="pr-8 tabular-nums" value={draft} onChange={(event) => setDraft(event.target.value)} />
           <span className="pointer-events-none absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
@@ -189,6 +194,7 @@ function CanvasZoomOptions({ zoom, onZoom, onFit }: Pick<CanvasWorkspaceControls
         <Button variant="ghost" className="w-full justify-between" disabled={zoom >= CANVAS_MAX_ZOOM} onClick={() => apply(zoom * 1.2)}>放大<Kbd>{shortcut} +</Kbd></Button>
         <Button variant="ghost" className="w-full justify-between" disabled={zoom <= CANVAS_MIN_ZOOM} onClick={() => apply(zoom / 1.2)}>缩小<Kbd>{shortcut} −</Kbd></Button>
         <Button variant="ghost" className="w-full justify-between" onClick={() => { onFit(); setOpen(false); }}>适合屏幕<Kbd>{shortcut} 0</Kbd></Button>
+        {scripts.length ? <CanvasScriptNavigation scripts={scripts} nodes={nodes} onFitScript={id => { onFitScript(id); setOpen(false); }} onFocusNode={id => { onFocusNode(id); setOpen(false); }} /> : null}
         <div className="my-1 border-t border-border" />
         {[0.5, 1, CANVAS_MAX_ZOOM].map((value) => <Button key={value} variant="ghost" className="w-full justify-start" onClick={() => apply(value)}>缩放至{value * 100}%</Button>)}
       </ScrollArea></PopoverContent>

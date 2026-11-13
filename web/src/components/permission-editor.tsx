@@ -1,5 +1,6 @@
 "use client";
 
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Item } from "@/components/ui/item";
@@ -79,12 +80,19 @@ export function PermissionEditor({
   const allApiPermissionKeys = useMemo(() => apis.map((item) => item.key), [apis]);
 
   return (
-    <div
+    <Tabs
+      defaultValue="menus"
       data-permission-editor
-      className={cn("grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] xl:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)] xl:grid-rows-1", className)}
+      className={cn("h-full min-h-0 min-w-0 gap-0", className)}
       aria-busy={disabled}
     >
-      <section className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
+      <TabsList aria-label="权限分类" className="mx-4 my-3 w-auto shrink-0 xl:hidden">
+        <TabsTrigger value="menus">菜单访问 {selectedMenuPaths.length}</TabsTrigger>
+        <TabsTrigger value="apis">功能权限 {selectedApiPermissions.length}</TabsTrigger>
+      </TabsList>
+      <div className="grid min-h-0 min-w-0 flex-1 xl:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)]">
+      <TabsContent value="menus" forceMount asChild>
+      <section className="flex min-h-0 min-w-0 flex-col data-[state=inactive]:hidden xl:border-r xl:data-[state=inactive]:flex">
         <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <Menu className="size-4 shrink-0 text-muted-foreground" />
@@ -117,8 +125,10 @@ export function PermissionEditor({
           ) : <EmptyState compact icon={Menu} title="暂无菜单权限" className="min-h-48" />}
         </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </section>
+      </TabsContent>
 
-      <section className="flex min-h-0 min-w-0 flex-col">
+      <TabsContent value="apis" forceMount asChild>
+      <section className="flex min-h-0 min-w-0 flex-col data-[state=inactive]:hidden xl:data-[state=inactive]:flex">
         <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -172,6 +182,8 @@ export function PermissionEditor({
           ) : <EmptyState compact icon={KeyRound} title="暂无功能权限" className="min-h-48" />}
         </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </section>
-    </div>
+      </TabsContent>
+      </div>
+    </Tabs>
   );
 }

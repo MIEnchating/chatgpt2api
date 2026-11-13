@@ -6,12 +6,21 @@ import {
   CANVAS_MIN_ZOOM,
   canvasGridMetrics,
   canvasConnectionInViewport,
+  buildCanvasConnectionIndex,
+  canvasConnectionsInViewport,
+  canvasConnectionIndexMatchesGeometry,
   canvasNodesInViewport,
   clampCanvasZoom,
   resetCanvasViewport,
   setCanvasViewportZoom,
+  updateCanvasConnectionGeometry,
+  updateCanvasConnectionIndex,
   zoomCanvasViewport,
 } from "../src/app/canvas/canvas-viewport.ts";
+
+function canvasNodeGeometry(nodes) {
+  return new Map(nodes.map(({ id, x, y, width, height }) => [id, { x, y, width, height }]));
+}
 
 test("canvas zoom uses the reference project range", () => {
   assert.equal(clampCanvasZoom(0), CANVAS_MIN_ZOOM);
@@ -88,4 +97,64 @@ test("connection culling retains curves crossing the viewport and removes remote
   assert.equal(canvasConnectionInViewport({ x: -500, y: 100 }, { x: 1400, y: 100 }, viewport, size), true);
   assert.equal(canvasConnectionInViewport({ x: -500, y: -1000 }, { x: 1400, y: -1000 }, viewport, size), false);
   assert.equal(canvasConnectionInViewport({ x: 2000, y: 100 }, { x: 3000, y: 100 }, viewport, size), false);
+});
+
+test("moving a node incrementally updates only its incident connection cells", () => {
+  const connections = [
+    { from_node_id: "a", to_node_id: "b" },
+    { from_node_id: "b", to_node_id: "c" },
+    { from_node_id: "c", to_node_id: "d" },
+    { from_node_id: "e", to_node_id: "f" },
+  ];
+  const nodes = [
+    { id: "a", x: 0, y: 0, width: 100, height: 100 },
+    { id: "b", x: 500, y: 0, width: 100, height: 100 },
+    { id: "c", x: 5000, y: 0, width: 100, height: 100 },
+    { id: "d", x: 6000, y: 0, width: 100, height: 100 },
+    { id: "e", x: 15000, y: 0, width: 100, height: 100 },
+    { id: "f", x: 16000, y: 0, width: 100, height: 100 },
+  ];
+  const originalGeometry = canvasNodeGeometry(nodes);
+  const index = buildCanvasConnectionIndex(connections, originalGeometry);
+  const stableCellKeys = index.connectionCells[3];
+  const stableCellValues = stableCellKeys.map((key) => index.cells.get(key));
+  const nextNodes = nodes.map((node) => node.id === "b" ? { ...node, x: 1600 } : node);
+  const nextGeometry = canvasNodeGeometry(nextNodes);
+  assert.equal(updateCanvasConnectionIndex(index, nextGeometry, ["b"]), index);
+  const rebuilt = buildCanvasConnectionIndex(connections, nextGeometry);
+  assert.deepEqual(index.bounds, rebuilt.bounds);
+  assert.deepEqual(index.connectionCells, rebuilt.connectionCells);
+  assert.deepEqual([...index.cells].sort(), [...rebuilt.cells].sort());
+  assert.deepEqual([...index.spanning], [...rebuilt.spanning]);
+  assert.deepEqual(canvasConnectionsInViewport(index, { x: -1500, y: 0, zoom: 1 }, { width: 800, height: 600 }), canvasConnectionsInViewport(rebuilt, { x: -1500, y: 0, zoom: 1 }, { width: 800, height: 600 }));
+  assert.equal(canvasConnectionIndexMatchesGeometry(index, nextGeometry), true);
+  assert.equal(index.connectionCells[3].every((key, position) => key === stableCellKeys[position] && index.cells.get(key) === stableCellValues[position]), true);
+  const snapshot = [...nextNodes];
+  assert.equal(updateCanvasConnectionGeometry(index, new Map([["b", nextGeometry.get("b")]]), snapshot), index);
+  assert.equal(index.nodesSnapshot, snapshot);
+});
+
+test("incremental connection indexes remove dangling edges when nodes disappear", () => {
+  const connections = [{ from_node_id: "a", to_node_id: "b" }, { from_node_id: "b", to_node_id: "c" }];
+  const nodes = [
+    { id: "a", x: 0, y: 0, width: 100, height: 100 },
+    { id: "b", x: 300, y: 0, width: 100, height: 100 },
+    { id: "c", x: 600, y: 0, width: 100, height: 100 },
+  ];
+  const index = buildCanvasConnectionIndex(connections, canvasNodeGeometry(nodes));
+  const remaining = canvasNodeGeometry(nodes.filter((node) => node.id !== "b"));
+  updateCanvasConnectionIndex(index, remaining);
+  const rebuilt = buildCanvasConnectionIndex(connections, remaining);
+  assert.deepEqual(index.bounds, rebuilt.bounds);
+  assert.deepEqual(index.connectionCells, rebuilt.connectionCells);
+  assert.deepEqual([...index.cells].sort(), [...rebuilt.cells].sort());
+  assert.deepEqual([...index.spanning], [...rebuilt.spanning]);
+});
+
+test("incremental connection indexes retain geometry without copying media or script content", () => {
+  const geometry = { x: 0, y: 0, width: 300, height: 200 };
+  const index = buildCanvasConnectionIndex([], new Map([["a", geometry]]));
+  const current = { ...geometry, x: 100, url: "data:image/png;base64,large-media", script_project: { shots: [{ prompt: "large script" }] } };
+  updateCanvasConnectionGeometry(index, new Map([["a", current]]));
+  assert.deepEqual(index.geometryByNode.get("a"), { x: 100, y: 0, width: 300, height: 200 });
 });

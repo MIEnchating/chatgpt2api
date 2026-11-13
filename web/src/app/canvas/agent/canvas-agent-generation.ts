@@ -1,4 +1,5 @@
-import { videoAudioControl, videoSecondsIsValid, videoSecondsOptions } from "@/lib/video-model-capabilities";
+import { canvasScriptProductionLayout } from "../canvas-script-layout";
+import { videoAudioControl, videoSecondsIsValid, videoSecondsOptions, type VideoModelCapabilitySource } from "@/lib/video-model-capabilities";
 import { videoModelContract } from "@/lib/video-model-contracts";
 import type { CanvasNode } from "@/services/api/canvas";
 
@@ -7,6 +8,7 @@ export const CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE = { width: 550, height: 600 }
 export type CanvasAgentVideoDurationHint = {
   values: number[];
   range: string;
+  secondsRange?: { min: number; max?: number; step: number };
 };
 
 export function canvasAgentSourceNodeIDs(
@@ -83,10 +85,17 @@ export function arrangeCanvasAgentNodes(nodes: readonly CanvasNode[], requestedN
   const startX = Math.min(...targets.map((node) => node.x));
   const startY = Math.min(...targets.map((node) => node.y));
   const positions = new Map<string, { x: number; y: number }>();
+  const eligible = new Set(targets.filter(node => !node.group_id && node.type!=="group").map(node => node.id));
+  let clusterRight=startX, clusterBottom=startY;
+  for (const script of targets.filter(node=>node.type==="script" && node.script_project)) {
+    const layout=canvasScriptProductionLayout(script,nodes,{x:clusterRight,y:startY},eligible);
+    for(const [id,point] of layout.positions) {positions.set(id,point);eligible.delete(id);}
+    clusterRight=layout.right+160;clusterBottom=Math.max(clusterBottom,layout.bottom+120);
+  }
   let x = startX;
-  let y = startY;
+  let y = clusterBottom;
   let rowHeight = 0;
-  targets.forEach((node, index) => {
+  targets.filter(node=>!positions.has(node.id)).forEach((node, index) => {
     if (index > 0 && index % 4 === 0) {
       x = startX;
       y += rowHeight + 72;
@@ -111,10 +120,11 @@ export function arrangeCanvasAgentNodes(nodes: readonly CanvasNode[], requestedN
   };
 }
 
-export function canvasAgentVideoDurationHint(modelName: string): CanvasAgentVideoDurationHint {
-  const values = videoSecondsOptions(modelName);
-  const range = videoModelContract(modelName)?.capability.seconds_range;
-  if (range) return { values, range: `${range.min} 秒起${range.max == null ? "，无固定上限" : `，最多 ${range.max} 秒`}，步长 ${range.step} 秒` };
+export function canvasAgentVideoDurationHint(source: VideoModelCapabilitySource): CanvasAgentVideoDurationHint {
+  const contract = typeof source === "string" ? videoModelContract(source) : source;
+  const values = contract ? videoSecondsOptions(contract) : [];
+  const range = contract?.capability.seconds_range;
+  if (range) return { values, range: `${range.min} 秒起${range.max == null ? "，无固定上限" : `，最多 ${range.max} 秒`}，步长 ${range.step} 秒`, secondsRange: { min: range.min, ...(range.max == null ? {} : { max: range.max }), step: range.step } };
   if (values.length === 0) return { values: [], range: "未配置视频模型契约" };
   return { values, range: values.length === 1 ? `仅 ${values[0]} 秒` : `可选 ${values.join("、")} 秒` };
 }
@@ -127,5 +137,6 @@ export function validateCanvasAgentVideoSeconds(modelName: string, seconds: numb
 }
 
 export function canvasAgentVideoSupportsAudio(modelName: string) {
+  if (!videoModelContract(modelName)) return null;
   return videoAudioControl(modelName) !== "none";
 }

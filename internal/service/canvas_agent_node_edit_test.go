@@ -19,7 +19,7 @@ func nodeEditWorker(t *testing.T) *canvasAgentWorker {
 		{ID: "video", Type: "video", Title: "Original shot", Prompt: "Original prompt", TaskID: "original-task", GenerationStatus: "error", GenerationError: "original failure", GenerationVideoModel: "video-test", GenerationVideoSize: "16:9", GenerationVideoSeconds: 5, GenerationVideoAudio: &audio, GenerationVideoReferenceMode: "first-frame", GenerationVideoReferenceImages: []string{"/old.png"}},
 		{ID: "hero", Type: "image", URL: "/hero.png"},
 		{ID: "scene", Type: "image", URL: "/scene.png"},
-		{ID: "script", Type: "script", ScriptProject: &CanvasScriptProject{Shots: []CanvasScriptShot{{ID: "s1", Seconds: 5, VideoNodeID: "video"}}}},
+		{ID: "script", Type: "script", ScriptProject: &CanvasScriptProject{Confirmed: true, Shots: []CanvasScriptShot{{ID: "s1", Seconds: 5, VideoNodeID: "video"}}}},
 	}
 	for i := range w.doc.Nodes {
 		w.doc.Nodes[i].Width, w.doc.Nodes[i].Height = 360, 360
@@ -80,7 +80,7 @@ func TestCanvasAgentUpdateNodeRepairsVideoInPlaceWithoutGenerating(t *testing.T)
 		t.Fatalf("edit bypassed paid retry confirmation: %v %v", result, err)
 	}
 	var submissions int
-	w.service.media = func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any) (map[string]any, error) {
+	w.service.media = func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		submissions++
 		if node.ID != "video" || node.TaskID == "original-task" || node.GenerationVideoSize != "9:16" || node.GenerationVideoReferenceMode != "reference" {
 			t.Fatalf("retry did not use edited original node: %+v", node)
@@ -145,6 +145,142 @@ func TestCanvasAgentUpdateNodePreservesExplicitFalseAndClearsReferences(t *testi
 	}
 }
 
+func TestCanvasAgentUpdateNodeValidatesSourceOnlyChangesAtomically(t *testing.T) {
+	w := nodeEditWorker(t)
+	w.req.Generation["capabilities"].(map[string]any)["image"].(map[string]any)["maxReferenceImages"] = 1
+	w.doc.Nodes = append(w.doc.Nodes, CanvasNode{ID: "picture", Type: "image", Width: 360, Height: 360, GenerationModel: "image-test", GenerationSize: "1:1", GenerationCount: 1})
+	before := agentJSON(w.doc)
+	result, err := w.updateNode(map[string]any{"nodeId": "picture", "sourceNodeIds": []string{"hero", "scene"}})
+	if err != nil || result["code"] != "invalid_media_parameters" || agentJSON(w.doc) != before {
+		t.Fatalf("source-only change bypassed limits or mutated document: %v %v", result, err)
+	}
+}
+
+func TestCanvasAgentVideoDurationValidationPrecedesCreation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		duration map[string]any
+		seconds  int
+	}{
+		{"discrete", map[string]any{"values": []int{5, 10}}, 7},
+		{"range minimum", map[string]any{"secondsRange": map[string]any{"min": 4, "max": 12, "step": 2}}, 2},
+		{"range maximum", map[string]any{"secondsRange": map[string]any{"min": 4, "max": 12, "step": 2}}, 14},
+		{"range step", map[string]any{"secondsRange": map[string]any{"min": 4, "max": 12, "step": 2}}, 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := nodeEditWorker(t)
+			w.req.Generation["autoGenerateMedia"] = false
+			w.req.Generation["capabilities"].(map[string]any)["video"].(map[string]any)["duration"] = tc.duration
+			before := agentJSON(w.doc)
+			result, err := w.createMedia("generate_video", map[string]any{"prompt": "move", "sourceNodeIds": []string{}, "size": "16:9", "seconds": tc.seconds, "generateAudio": false})
+			if err != nil || result["code"] != "invalid_media_parameters" || agentJSON(w.doc) != before {
+				t.Fatalf("invalid duration created a node: %v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestCanvasAgentVideoDurationValidationUsesServerRangeWithoutFixedMaximum(t *testing.T) {
+	w := nodeEditWorker(t)
+	w.service.SetVideoModels(func() []CanvasAgentVideoModel {
+		return []CanvasAgentVideoModel{{Model: "video-test", Capabilities: map[string]any{
+			"contractConfigured": true, "sizes": []string{"16:9"}, "audioControl": "none",
+			"duration": map[string]any{"values": []int{5}, "secondsRange": map[string]any{"min": 3, "step": 2}},
+		}}}
+	})
+	w.req.Generation["capabilities"].(map[string]any)["video"].(map[string]any)["duration"] = map[string]any{"values": []int{4}}
+	node := *w.node("video")
+	for _, seconds := range []int{3, 5, 4501} {
+		node.GenerationVideoSeconds = seconds
+		if err := w.validateMedia(node); err != nil {
+			t.Fatalf("server-supported duration %d rejected: %v", seconds, err)
+		}
+	}
+	node.GenerationVideoSeconds = 4
+	if err := w.validateMedia(node); err == nil {
+		t.Fatal("browser capabilities overrode the server duration step")
+	}
+}
+
+func TestCanvasAgentVideoResolutionValidationAcceptsContractCasing(t *testing.T) {
+	w := nodeEditWorker(t)
+	w.service.SetVideoModels(func() []CanvasAgentVideoModel {
+		return []CanvasAgentVideoModel{{Model: "video-test", Capabilities: map[string]any{
+			"contractConfigured": true, "sizes": []string{"9:16"}, "resolutions": []string{"480P"},
+			"audioControl": "always", "duration": map[string]any{"values": []int{15}},
+		}}}
+	})
+	node := *w.node("video")
+	node.GenerationVideoModel = "video-test"
+	node.GenerationVideoSize = "9:16"
+	node.GenerationVideoResolution = "480p"
+	node.GenerationVideoSeconds = 15
+	audio := true
+	node.GenerationVideoAudio = &audio
+	if err := w.validateMedia(node); err != nil {
+		t.Fatalf("contract resolution casing should be accepted: %v", err)
+	}
+}
+
+func TestCanvasAgentVideoParametersAreValidatedBeforeCanvasMutation(t *testing.T) {
+	w := nodeEditWorker(t)
+	w.req.Generation["capabilities"].(map[string]any)["video"].(map[string]any)["parameters"] = []map[string]any{
+		{"name": "seed", "type": "integer", "minimum": float64(0), "maximum": float64(100)},
+		{"name": "watermark", "type": "boolean"},
+		{"name": "style", "type": "string", "enum": []string{"cinematic", "anime"}},
+	}
+	valid := map[string]any{"seed": float64(0), "watermark": false, "style": "cinematic"}
+	result, err := w.updateNode(map[string]any{"nodeId": "video", "generation": map[string]any{"videoParameters": valid}})
+	if err != nil || result["ok"] != true || !reflect.DeepEqual(w.node("video").GenerationVideoParameters, valid) {
+		t.Fatalf("valid video parameters were not saved: %v %v", result, err)
+	}
+	for _, parameters := range []map[string]any{
+		{"seed": float64(101)},
+		{"watermark": "false"},
+		{"style": "unknown"},
+		{"unlisted": true},
+	} {
+		before := agentJSON(w.doc)
+		result, err = w.updateNode(map[string]any{"nodeId": "video", "generation": map[string]any{"videoParameters": parameters}})
+		if err != nil || result["code"] != "invalid_media_parameters" || agentJSON(w.doc) != before {
+			t.Fatalf("invalid video parameters were accepted or mutated state: %#v %v %v", parameters, result, err)
+		}
+	}
+}
+
+func TestCanvasAgentVideoParametersSurviveCreationAndWorkflowPlanning(t *testing.T) {
+	for _, create := range []struct {
+		name string
+		make func(*canvasAgentWorker) (map[string]any, error)
+	}{
+		{"tool", func(w *canvasAgentWorker) (map[string]any, error) {
+			return w.createMedia("generate_video", map[string]any{"prompt": "move", "sourceNodeIds": []string{}, "size": "16:9", "seconds": 5, "generateAudio": false, "videoParameters": map[string]any{"seed": float64(0), "watermark": false}})
+		}},
+		{"workflow", func(w *canvasAgentWorker) (map[string]any, error) {
+			return w.createCanvasWorkflow([]map[string]any{{"key": "shot", "type": "video", "title": "shot", "prompt": "move", "dependsOn": []string{}, "sourceNodeIds": []string{}, "attachmentIds": []string{}, "size": "16:9", "seconds": 5, "generateAudio": false, "videoParameters": map[string]any{"seed": float64(0), "watermark": false}}})
+		}},
+	} {
+		t.Run(create.name, func(t *testing.T) {
+			w := nodeEditWorker(t)
+			w.req.Generation["autoGenerateMedia"] = false
+			w.req.Generation["capabilities"].(map[string]any)["video"] = map[string]any{
+				"contractConfigured": true, "sizes": []string{"16:9"}, "resolutions": []string{}, "audioControl": "toggle",
+				"duration":   map[string]any{"values": []int{5}},
+				"parameters": []map[string]any{{"name": "seed", "type": "integer", "minimum": float64(0), "maximum": float64(100)}, {"name": "watermark", "type": "boolean"}},
+			}
+			result, err := create.make(w)
+			if err != nil || result["ok"] != true {
+				t.Fatalf("video creation failed: %#v %v", result, err)
+			}
+			for _, node := range w.doc.Nodes {
+				if node.Type == "video" && node.ID != "video" && !reflect.DeepEqual(node.GenerationVideoParameters, map[string]any{"seed": float64(0), "watermark": false}) {
+					t.Fatalf("video parameters were lost: %#v", node.GenerationVideoParameters)
+				}
+			}
+		})
+	}
+}
+
 func TestCanvasAgentUpdateNodeSupportsImageAudioAndTextWithoutClearingOutputs(t *testing.T) {
 	w := nodeEditWorker(t)
 	w.doc.Nodes = append(w.doc.Nodes,
@@ -194,7 +330,7 @@ func TestCanvasAgentSDKNodeEditSurvivesRestartWithoutReplacementOrSubmission(t *
 			return agentTurn(), nil
 		}
 	}
-	svc, identity, doc, req := agentFixture(t, model, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, model, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		t.Error("editing must not submit paid media")
 		return nil, errors.New("unexpected media submission")
 	})

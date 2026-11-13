@@ -1,0 +1,29 @@
+{
+  "stage": "board",
+  "startedAt": "2026-11-11T22:59:27.014Z",
+  "observeOnly": false,
+  "qualityApproved": false,
+  "checks": [
+    {
+      "name": "submitted_through_product_ui",
+      "passed": true
+    },
+    {
+      "name": "original_results_and_chat_preserved",
+      "passed": true
+    }
+  ],
+  "submissions": 1,
+  "nodeID": "image-ab9ebdfe-9f8a-4889-a6a5-6d84a45057b8",
+  "taskID": "canvas-edit-b84aeaa1-ca11-4cd7-b309-c2658bc52c17",
+  "status": "success",
+  "progress": 100,
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/image-ab9ebdfe-9f8a-4889-a6a5-6d84a45057b8.png",
+  "finishedAt": "2026-11-11T23:00:36.571Z",
+  "visualObservations": [
+    "Mother stands at left beside bag with hand around smooth closed flask; son stands right with both hands away from utensils.",
+    "Flask has flat round lid and no added handle, matching formal prop silhouette; bag remains upright at left table end.",
+    "Two empty bowls, rainy dark window, mother beige sweater/navy apron and son navy raincoat with no helmet are visible."
+  ],
+  "scope": "Inspection of a starting still, not approval of video continuity, speech or lip sync."
+}

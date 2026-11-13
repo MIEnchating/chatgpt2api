@@ -3,9 +3,96 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestCanvasShareStatusReadsOnlyOwnerManifestWithoutChangingHistory(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	doc, err := loadCanvas(svc, "share-status-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.AgentSessions = json.RawMessage(`[{"id":"retained","messages":[{"role":"user","text":"Complete private history"}],"protocolMessages":[{"role":"assistant","content":"Retained protocol"}]}]`)
+	doc, err = svc.SaveAtRevision("share-status-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := svc.CanvasShare("share-status-owner", doc.ID, "create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := backend.documents.LoadJSONDocument(canvasWorkspaceName("share-status-owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	backend.beforeLoad = func(name string) { names = append(names, name) }
+	backend.failSave = func(string) error { return errors.New("share status must be read-only") }
+	got, err := svc.CanvasShare("share-status-owner", doc.ID, "get")
+	if err != nil || got != share {
+		t.Fatal("share status changed", err)
+	}
+	if !reflect.DeepEqual(names, []string{canvasWorkspaceName("share-status-owner")}) {
+		t.Fatalf("status loaded unrelated history or active-project state: %v", names)
+	}
+	if _, err := svc.CanvasShare("different-owner", doc.ID, "get"); !errors.Is(err, ErrCanvasShareNotFound) {
+		t.Fatalf("unknown owner lookup must not create a workspace or disclose a token: %v", err)
+	}
+	encoded, err := json.Marshal(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest canvasWorkspace
+	if err := json.Unmarshal(encoded, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	hash := manifest.AgentHistories[doc.ID].Sessions[0].Block.Chunks[0]
+	chunkName := canvasAgentHistoryChunkName("share-status-owner", doc.ID, hash)
+	chunk, err := backend.documents.LoadJSONDocument(chunkName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.documents.DeleteJSONDocument(chunkName); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.CanvasShare("share-status-owner", doc.ID, "get"); err != nil || got != share {
+		t.Fatal("private history availability blocked independent share status", err)
+	}
+	if _, _, err := svc.SharedCanvas(share.Token); err == nil {
+		t.Fatal("status read bypassed full public-document integrity checks")
+	}
+	if _, err := backend.documents.LoadJSONDocument(chunkName); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.documents.SaveJSONDocument(chunkName, chunk); err != nil {
+		t.Fatal(err)
+	}
+	backend.failSave = nil
+	backend.beforeLoad = nil
+	stored, err := NewCanvasDocumentService(backend).Project("share-status-owner", doc.ID)
+	if err != nil || string(stored.AgentSessions) != string(doc.AgentSessions) {
+		t.Fatal("status read changed complete history", err)
+	}
+	after, err := backend.documents.LoadJSONDocument(canvasWorkspaceName("share-status-owner"))
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("status read changed the manifest", err)
+	}
+	if err := backend.SaveJSONDocument(canvasWorkspaceName("share-status-owner"), map[string]any{"projects": []any{}, "shares": map[string]string{doc.ID: share.Token}}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := svc.CanvasShare("share-status-owner", doc.ID, "get"); !errors.Is(err, ErrCanvasShareNotFound) || result.Token != "" {
+		t.Fatal("orphaned share metadata returned a token", err)
+	}
+	if err := backend.SaveJSONDocument(canvasWorkspaceName("share-status-owner"), map[string]any{"projects": "corrupt"}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := svc.CanvasShare("share-status-owner", doc.ID, "get"); err == nil || result.Token != "" {
+		t.Fatal("corrupt manifest returned a share status")
+	}
+}
 
 func TestCanvasShareLifecycleAndIsolation(t *testing.T) {
 	backend := newTestStorageBackend(t)

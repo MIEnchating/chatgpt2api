@@ -1,0 +1,18 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "nodeID": "video-b87398da-b455-4b67-98c5-675c1d1e7024",
+  "method": "Inspection of actual starting frame, contact sheet, native 4s/6s/14.9s frames, independent unprompted ASR, and every-frame lower-region OCR; not human quality approval",
+  "improved": [
+    "Mother alone lifts and pours from the flask in the sampled 4s/6s/8s frames; son keeps his hands away until serving ends.",
+    "Native 14.9s frame shows son lifting a bowl with both hands; rainy night, no helmet, left bag and clothing retained in observed frames.",
+    "Independent unprompted transcript matches both target dialogue lines in order."
+  ],
+  "remaining": [
+    "Chinese subtitles are visible around the two spoken turns, including 10s and 12s samples.",
+    "Native 4s and 6s frames show a closed-looking lid while pouring; the specified opening action is not convincingly realized.",
+    "Full speaker identity and lip synchronization are not independently approved."
+  ],
+  "ocrLimitations": "361 decoded frames were inspected by OCR in their lower 55 percent; table/clothing strokes often produced false Chinese characters. Candidate count is not a count of frames with confirmed subtitles. Three TSV quote-parsing errors were corrected with fresh OCR of those frames.",
+  "qualityApproved": false,
+  "originalResultsPreserved": true
+}

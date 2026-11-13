@@ -224,15 +224,15 @@ func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Id
 			return "", fmt.Errorf("无效媒体内容")
 		}
 	}
-	if contract.Transport.LocalMaterial == "url" && !isPublicReferenceURL(a.resolveImageBaseURL()) {
-		return "", fmt.Errorf("当前视频模型契约只支持公网 HTTP/HTTPS 素材 URL；使用本地素材前请配置公网可访问的素材基础地址 IMAGE_BASE_URL")
+	if contract.Transport.LocalMaterial == "url" && contract.Transport.MaterialUpload == nil && !isPublicReferenceURL(a.resolveImageBaseURL(ctx)) {
+		return "", fmt.Errorf("当前视频模型只接受公网素材 URL，当前站点地址无法用于公网素材访问；请通过公网网站访问，或用 IMAGE_BASE_URL 指定上游可访问的素材地址")
 	}
 	result, err := a.storeReferenceUpload(ctx, referenceUpload{data: data, filename: "agent-reference" + ext}, ext, contentType, kind, pathPrefix)
 	if err != nil {
 		return "", err
 	}
 	reference := util.Clean(result["url"])
-	if contract.Transport.LocalMaterial == "multipart" || contract.Transport.LocalMaterial == "base64" {
+	if contract.Transport.LocalMaterial == "multipart" || contract.Transport.LocalMaterial == "base64" || contract.Transport.MaterialUpload != nil {
 		stored, parseErr := url.Parse(reference)
 		if parseErr != nil {
 			return "", parseErr

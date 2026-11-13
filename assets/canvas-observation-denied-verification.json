@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {
+      "name": "denied_observation_keeps_task_and_blocks_regeneration",
+      "passed": true
+    },
+    {
+      "name": "restores_original_result_without_submit",
+      "passed": true
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "newMediaSubmissions": 0,
+  "qualityApproved": false
+}

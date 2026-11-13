@@ -1,0 +1,65 @@
+{
+  "checkedAt": "2026-11-12",
+  "frontend": {
+    "batches": [
+      {
+        "log": "/tmp/canvas-history-comparison-test-batch-0-final.log",
+        "passed": 198,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-history-comparison-test-batch-1-final.log",
+        "passed": 200,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-history-comparison-test-batch-2-final.log",
+        "passed": 311,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-history-comparison-test-batch-3-final.log",
+        "passed": 184,
+        "failed": 0
+      }
+    ],
+    "totalPassed": 893,
+    "buildLog": "/tmp/canvas-history-save-receipt-build-postdoc.log",
+    "lintLog": "/tmp/canvas-history-save-receipt-lint-postdoc.log",
+    "buildAndLintPassed": true
+  },
+  "backend": {
+    "fullPackages": [
+      "internal/service",
+      "internal/httpapi"
+    ],
+    "fullLog": "/tmp/canvas-history-save-receipt-go-packages-final.log",
+    "serviceSeconds": 243.035,
+    "httpapiSeconds": 91.106,
+    "focusedLog": "/tmp/canvas-history-save-receipt-hash-focused.log",
+    "embeddedLog": "/tmp/canvas-history-save-receipt-embedded-postdoc.log",
+    "databasesActuallyExecuted": [
+      "sqlite"
+    ],
+    "databasesNotConfigured": [
+      "mysql",
+      "postgres"
+    ]
+  },
+  "actualBrowserReports": [
+    "canvas-history-comparison-receipt-after-verification.json",
+    "canvas-history-save-receipt-lazy-verification.json",
+    "canvas-history-save-receipt-concurrent-chat-verification.json",
+    "canvas-history-save-receipt-restart-verification.json",
+    "canvas-history-save-receipt-production-verification.json"
+  ],
+  "remaining": [
+    "Long-session initial full-body load and browser long tasks",
+    "Server workspace read/save overhead",
+    "Three latest video submissions returned HTTP 503",
+    "Updated 60-second movie not merged",
+    "Full speaker, voice and lip-sync quality not accepted",
+    "Independent end-to-end Agent execution not fully verified",
+    "Historical disappearance and authentication causes not conclusively attributed"
+  ]
+}

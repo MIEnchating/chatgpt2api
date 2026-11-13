@@ -2500,7 +2500,7 @@
       "expectedError": "URL"
     },
     {
-      "name": "minimax H3-self rejects inline base64",
+      "name": "minimax H3-self accepts inline Base64",
       "hook": "buildSubmitRequest",
       "args": [
         {
@@ -2518,7 +2518,63 @@
           "files": []
         }
       ],
-      "expectedError": "URL"
+      "expected": {
+        "url": "https://channel.example.com/v1/videos",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer fixture-key",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "minimax H3-self",
+          "prompt": "A cloud moving slowly",
+          "seconds": 5,
+          "resolution": "768p竖",
+          "ref_image_0": "data:image/png;base64,YQ=="
+        }
+      }
+    },
+    {
+      "name": "minimax H3-self rejects malformed Base64",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "minimax H3-self",
+            "prompt": "A cloud moving slowly",
+            "image_urls": [
+              "data:image/png;base64,@@@"
+            ]
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expectedError": "Base64"
+    },
+    {
+      "name": "minimax H3-self rejects wrong Base64 media type",
+      "hook": "buildSubmitRequest",
+      "args": [
+        {
+          "requestBody": {
+            "model": "minimax H3-self",
+            "prompt": "A cloud moving slowly",
+            "image_urls": [
+              "data:video/mp4;base64,YQ=="
+            ]
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
+          "baseUrl": "https://channel.example.com",
+          "apiKey": "fixture-key",
+          "files": []
+        }
+      ],
+      "expectedError": "类型"
     },
     {
       "name": "minimax H3-self billing facts",
@@ -9470,7 +9526,11 @@
       "hook": "buildQueryRequest",
       "args": [
         {
-          "requestBody": {},
+          "requestBody": {
+            "model": "minimax H3-self"
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
           "baseUrl": "https://channel.example.com",
           "apiKey": "fixture-key",
           "files": [],
@@ -9490,7 +9550,11 @@
       "hook": "parseTaskResult",
       "args": [
         {
-          "requestBody": {},
+          "requestBody": {
+            "model": "minimax H3-self"
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
           "baseUrl": "https://channel.example.com",
           "apiKey": "fixture-key",
           "files": [],
@@ -9515,7 +9579,11 @@
       "hook": "parseTaskResult",
       "args": [
         {
-          "requestBody": {},
+          "requestBody": {
+            "model": "minimax H3-self"
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
           "baseUrl": "https://channel.example.com",
           "apiKey": "fixture-key",
           "files": [],
@@ -9540,7 +9608,11 @@
       "hook": "parseTaskResult",
       "args": [
         {
-          "requestBody": {},
+          "requestBody": {
+            "model": "minimax H3-self"
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
           "baseUrl": "https://channel.example.com",
           "apiKey": "fixture-key",
           "files": [],
@@ -9565,7 +9637,11 @@
       "hook": "parseTaskResult",
       "args": [
         {
-          "requestBody": {},
+          "requestBody": {
+            "model": "minimax H3-self"
+          },
+          "model": "minimax H3-self",
+          "upstreamModel": "minimax H3-self",
           "baseUrl": "https://channel.example.com",
           "apiKey": "fixture-key",
           "files": [],

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createScriptProject } from "../src/app/canvas/canvas-script.ts";
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "../src/app/canvas/canvas-clipboard.ts";
 import { expandCanvasBatchNodeIDs, reconcileCanvasBatchesAfterRemoval } from "../src/app/canvas/canvas-batches.ts";
 import { buildCanvasGenerationContext } from "../src/app/canvas/canvas-generation-context.ts";
@@ -171,4 +172,66 @@ test("script clipboard remaps asset images and rejects malformed script projects
   assert.equal(remapped.script_project.assets[0].image_node_id, "image-copy");
   assert.equal(script.script_project.assets[0].image_node_id, "image-1");
   assert.equal(normalizeCanvasClipboard({ nodes: [{ ...script, script_project: { step: 0 } }], connections: [] }), null);
+});
+
+
+test("copies all script media bindings and detaches references outside the copied graph", () => {
+  const project = { ...createScriptProject(), step: 2, confirmed: true, assets: [{ id: "hero", kind: "character", name: "Hero", description: "Reference", image_node_id: "hero-image" }],
+    shots: [{ ...createScriptProject().shots[0], id: "shot", source_node_id: "text", image_node_id: "image", video_node_id: "video" }],
+    merged_video_node_id: "movie", merged_video_fingerprint: "fingerprint" };
+  const original = node("script", { type: "script", script_project: project });
+  const copied = remapCanvasNodeReferences(original, new Map(["hero-image", "text", "image", "video", "movie"].map((id) => [id, `${id}-copy`])));
+  assert.equal(copied.script_project.assets[0].image_node_id, "hero-image-copy");
+  assert.equal(copied.script_project.shots[0].source_node_id, "text-copy");
+  assert.equal(copied.script_project.shots[0].image_node_id, "image-copy");
+  assert.equal(copied.script_project.shots[0].video_node_id, "video-copy");
+  assert.equal(copied.script_project.merged_video_node_id, "movie-copy");
+  const detached = remapCanvasNodeReferences(original, new Map()).script_project;
+  assert.equal(detached.assets[0].image_node_id, "");
+  assert.equal(detached.shots[0].video_node_id, undefined);
+  assert.equal(detached.merged_video_fingerprint, undefined);
+  const removed = reconcileCanvasBatchesAfterRemoval([original, node("video")], new Set(["video"]));
+  assert.equal(removed[0].script_project.shots[0].video_node_id, "");
+  assert.equal(project.shots[0].video_node_id, "video");
+});
+
+test("partial script copies invalidate only shots that lose their material images", () => {
+  const project = createScriptProject();
+  project.confirmed = true;
+  project.assets = [{ id: "hero", kind: "character", name: "Hero", description: "Reference", image_node_id: "hero-image" }];
+  project.shots.forEach((shot, index) => Object.assign(shot, { description: `Scene ${index}`, image_prompt: "Image", video_prompt: "Video", video_node_id: `video-${index}` }));
+  project.shots[0].dialogue = [{ kind: "dialogue", asset_id: "hero", text: "Hello" }];
+  const original = node("script", { type: "script", script_project: project });
+  const idMap = new Map(["video-0", "video-1"].map((id) => [id, `${id}-copy`]));
+  const partial = remapCanvasNodeReferences(original, idMap).script_project;
+  assert.equal(partial.confirmed, false);
+  assert.equal(partial.assets[0].image_node_id, "");
+  assert.equal(partial.shots[0].video_node_id, "video-0-copy");
+  assert.equal(partial.shots[0].video_outdated, true);
+  assert.equal(partial.shots[0].image_prompt, "Image");
+  assert.equal(partial.shots[0].image_prompt_outdated, true);
+  assert.equal(partial.shots[0].video_prompt, "Video");
+  assert.equal(partial.shots[0].video_prompt_outdated, true);
+  assert.equal(partial.shots[1].video_outdated, false);
+  assert.equal(partial.shots[1].video_prompt, "Video");
+  idMap.set("hero-image", "hero-image-copy");
+  const complete = remapCanvasNodeReferences(original, idMap).script_project;
+  assert.equal(complete.confirmed, true);
+  assert.equal(complete.shots[0].video_prompt, "Video");
+  assert.equal(Boolean(complete.shots[0].video_outdated), false);
+  assert.equal(project.confirmed, true);
+  assert.equal(project.shots[0].video_prompt, "Video");
+});
+
+test("production export retains actual metadata, freshness, and quality review without reviving missing references",()=>{
+ const project=createScriptProject();project.merged_video_node_id="movie";project.merged_video_outdated=true;
+ project.shots[0].video_node_id="clip";project.shots[0].video_outdated=true;project.shots[0].video_prompt_outdated=true;
+ project.shots[0].quality_review={media_url:"/clip.mp4",continuity:"passed",dialogue:"needs_fix",speaker:"unchecked",lip_sync:"unchecked",notes:"Check final line"};
+ const nodes=[node("script",{type:"script",script_project:project}),node("clip",{type:"video",url:"/clip.mp4",media_metadata:{width:768,height:1376,duration_ms:15000,has_audio:true}}),node("movie",{type:"video",url:"/movie.mp4",media_metadata:{width:768,height:1376,duration_ms:60000,has_audio:true},media_silent_clips:1})];
+ const restored=normalizeCanvasClipboard(JSON.parse(JSON.stringify({nodes,connections:[]})));
+ assert.deepEqual(restored.nodes[0].script_project,project);assert.deepEqual(restored.nodes[1].media_metadata,nodes[1].media_metadata);
+ const map=new Map([["script","new-script"],["clip","new-clip"],["movie","new-movie"]]);
+ const copy=remapCanvasNodeReferences(restored.nodes[0],map);
+ assert.equal(copy.script_project.merged_video_node_id,"new-movie");assert.equal(copy.script_project.shots[0].video_node_id,"new-clip");assert.equal(copy.script_project.shots[0].video_prompt_outdated,true);assert.deepEqual(copy.script_project.shots[0].quality_review,project.shots[0].quality_review);
+ nodes[1].media_metadata.duration_ms=-1;assert.equal(normalizeCanvasClipboard({nodes,connections:[]}),null);
 });

@@ -83,7 +83,7 @@ export function useCanvasAgentPanelDrag(panelRef: RefObject<HTMLElement | null>,
   function startDrag(event: PointerEvent<HTMLElement>) {
     const targetElement = event.target instanceof Element ? event.target : null;
     // Portaled dialogs and popovers must never start dragging their React ancestor.
-    if (!enabled || event.button !== 0 || !targetElement || !event.currentTarget.contains(targetElement)
+    if (!enabled || !event.isPrimary || event.button !== 0 || !targetElement || !event.currentTarget.contains(targetElement)
       || targetElement.closest("button, a, input, select, [role='combobox']")) return;
     event.preventDefault();
     event.stopPropagation();
@@ -97,7 +97,12 @@ export function useCanvasAgentPanelDrag(panelRef: RefObject<HTMLElement | null>,
     const previousCursor = document.body.style.cursor;
     const previousSelect = document.body.style.userSelect;
     const listeners = new AbortController();
-    const stop = () => {
+    const stop = (event?: Event) => {
+      if (event && "pointerId" in event && event.pointerId !== pointerID) return;
+      if (event?.type === "pointerup") {
+        const release = event as globalThis.PointerEvent;
+        moveTo({ x: start.x + release.clientX - startX, y: start.y + release.clientY - startY });
+      }
       flush();
       listeners.abort();
       if (target.hasPointerCapture(pointerID)) target.releasePointerCapture(pointerID);

@@ -1,0 +1,18 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "qualityApproved": false,
+  "startedAt": "2026-11-12T07:10:56.696Z",
+  "generationSubmissions": 0,
+  "pageErrors": [],
+  "checks": [
+    {
+      "name": "all_three_original_tasks_failed_without_result_or_recovery_metadata",
+      "passed": true
+    },
+    {
+      "name": "sixteen_chat_messages_all_old_media_and_shot_three_preserved",
+      "passed": true
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(bounds.x>=-1&&bounds.x+bounds.width<=391)\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-native-final-selected-failure.mjs:35:208\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at process.processImmediate (node:internal/timers:452:9)\n    at process.callbackTrampoline (node:internal/async_hooks:130:17)"
+}

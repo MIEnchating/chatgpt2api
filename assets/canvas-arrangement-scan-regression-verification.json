@@ -1,0 +1,44 @@
+{
+  "sources": [
+    {
+      "path": "web/src/app/canvas/page.tsx",
+      "sha256": "f619e50a70f168eb265bfe2e14f80b3b109a4e99a2affd83a7cf05ecd2127f7d"
+    },
+    {
+      "path": "web/tests/canvas-review-regressions.test.mjs",
+      "sha256": "711d95c3aa88bee78a5f2911bd930765bacc4f3ddfc02efdc72fe20d5bb27f1c"
+    },
+    {
+      "path": "build/review/canvas-production/verify-arrangement-scan.mjs",
+      "sha256": "8aaf6bbcd6d62b05b2bac7b18b1a5e4e84119a60115715ef00e6491d14376742"
+    }
+  ],
+  "checks": {
+    "focused": {
+      "files": 1,
+      "passed": 153,
+      "failed": 0
+    },
+    "frontend": {
+      "files": 67,
+      "passed": 898,
+      "failed": 0
+    },
+    "build": "passed",
+    "lint": {
+      "warnings": 0,
+      "errors": 0
+    },
+    "embedded": {
+      "command": "go test ./internal/web",
+      "passed": true,
+      "cached": false,
+      "seconds": 0.025
+    }
+  },
+  "evidence": [
+    "assets/canvas-arrangement-scan-before-verification.json",
+    "assets/canvas-arrangement-scan-after-verification.json",
+    "assets/canvas-arrangement-scan-protected-verification.json"
+  ]
+}

@@ -40,6 +40,8 @@ export function CanvasProjectDialog({
     onConfirm(value);
   }
 
+  if (!open) return null;
+
   if (mode === "delete") return <ConfirmDialog
     open={open}
     title="删除画布？"

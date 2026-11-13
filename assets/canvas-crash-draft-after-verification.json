@@ -1,0 +1,13 @@
+{
+  "stage": "after",
+  "checks": [
+    "same revision restores to original after HTTP 500 and crash; failed restore keeps the draft; confirmed save clears it; unchanged history is absent from the draft",
+    "a server save racing with in-place restoration causes a genuine revision conflict and keeps the draft for retry",
+    "a newer server revision restores divergent node and chat as a separate project; original retains remote node and full conversation",
+    "cancelled discard keeps the draft and explicit confirmation deletes only the local version"
+  ],
+  "mediaSubmissions": 0,
+  "pageErrors": [],
+  "fixtureProjectsDeleted": true,
+  "originalHistoryUnchanged": true
+}

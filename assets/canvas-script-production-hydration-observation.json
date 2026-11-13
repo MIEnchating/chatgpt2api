@@ -1,0 +1,36 @@
+{
+  "startedAt": "2026-11-12T13:24:41.937Z",
+  "checks": [
+    {
+      "name": "real_tool_and_saved_history_include_ordered_current_state_and_measured_durations",
+      "passed": true
+    },
+    {
+      "name": "fresh_read_reports_outdated_video_and_does_not_guess_measured_total",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-aee15af3438a033efe4a193e",
+  "summary": {
+    "totalShots": 4,
+    "plannedDurationSeconds": 60,
+    "actualDurationMS": 60332,
+    "canMerge": true,
+    "quality": [
+      "unchecked",
+      "unchecked",
+      "unchecked",
+      "unchecked"
+    ]
+  },
+  "modelProjectID": "canvas-124912b2eb4972b4a0112449",
+  "runID": "OEgszCRZcUWs381xnQBSL",
+  "runStatus": "success",
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      created_at: '2026-11-12T11:39:20.762887417Z',\n      generation_image_options: {},\n      generation_status: 'success',\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-68907edd4828bc282ffcc9c0',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-468eb52d1feaee8c9b83227b',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-4b03e366153d957a8ed24198',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-c11c0fb5174848a465c348fe',\n      media_metadata: {\n        duration_ms: 15083,\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-script-production.mjs:67:9",
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-12T13:25:21.808Z"
+}

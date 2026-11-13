@@ -34,7 +34,8 @@ import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import {
   fetchCanvasDocument,
-  importCanvasProject,
+  fetchCanvasProjectList,
+  mutateCanvasProjectList,
   saveCanvasDocument,
   updateCanvasProject,
   type CanvasProjectSummary,
@@ -72,23 +73,21 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const [agentTextModel, setAgentTextModel] = useState("");
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     setLoading(true);
     setLoadError("");
-    void fetchCanvasDocument()
-      .then((workspace) => {
-        if (!active) return;
-        setProjects(workspace.projects || []);
-        setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
+    void fetchCanvasProjectList(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setProjects(list.projects);
+        setActiveProjectID(list.active_project_id);
         setSelectedProjectIDs(new Set());
       })
       .catch((error) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "画布库加载失败");
+        if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "画布库加载失败");
       })
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-    };
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [session.key, reloadKey]);
 
   useEffect(() => {
@@ -114,7 +113,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     if (busy) return;
     setBusy(true);
     try {
-      const response = await updateCanvasProject({ action: "create", title: `无限画布 ${projects.length + 1}` });
+      const response = await mutateCanvasProjectList({ action: "create", title: `无限画布 ${projects.length + 1}` });
       navigate(canvasProjectPath(response.active_project_id));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "创建画布失败");
@@ -183,22 +182,6 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     }
   }
 
-  async function openProject(project: CanvasProjectSummary) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (project.id !== activeProjectID) {
-        const response = await updateCanvasProject({ action: "activate", project_id: project.id });
-        setActiveProjectID(response.active_project_id);
-      }
-      navigate(canvasProjectPath(project.id));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "打开画布失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function exportProject(project: CanvasProjectSummary) {
     if (busy) return;
     setBusy(true);
@@ -262,15 +245,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     let deletedCount = 0;
     try {
       for (const project of selected) {
-        await updateCanvasProject({ action: "delete", project_id: project.id, revision: project.revision });
+        const list = await mutateCanvasProjectList({ action: "delete", project_id: project.id, revision: project.revision });
         deletedCount += 1;
-        setProjects((current) => current.filter((item) => item.id !== project.id));
+        setProjects(list.projects);
+        setActiveProjectID(list.active_project_id);
         setSelectedProjectIDs((current) => new Set([...current].filter((id) => id !== project.id)));
       }
       setProjectDialog(null);
-      const workspace = await fetchCanvasDocument();
-      setProjects(workspace.projects || []);
-      setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
       setSelectedProjectIDs(new Set());
       toast.success(`已删除 ${selected.length} 个画布`);
     } catch (error) {
@@ -289,7 +270,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       const projectsToImport = await readCanvasProjectArchive(file);
       if (!projectsToImport.length) throw new Error("文件中没有有效的画布项目");
       for (const project of projectsToImport) {
-        await importCanvasProject(project);
+        await mutateCanvasProjectList({ action: "import", document: project });
         imported += 1;
       }
       toast.success(`已导入 ${projectsToImport.length} 个画布`);
@@ -300,9 +281,9 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       // Already imported projects must show up even when a later one failed.
       if (imported) {
         try {
-          const workspace = await fetchCanvasDocument();
-          setProjects(workspace.projects || []);
-          setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
+          const list = await fetchCanvasProjectList();
+          setProjects(list.projects);
+          setActiveProjectID(list.active_project_id);
           setSelectedProjectIDs(new Set());
         } catch {
           toast.error("画布列表刷新失败，请重新加载页面");
@@ -327,9 +308,9 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     }
     setBusy(true);
     try {
-      const response = await updateCanvasProject({ action: "rename", project_id: project.id, title, revision: project.revision });
-      setProjects(response.projects || []);
-      setActiveProjectID(response.active_project_id || activeProjectID);
+      const list = await mutateCanvasProjectList({ action: "rename", project_id: project.id, title, revision: project.revision });
+      setProjects(list.projects);
+      setActiveProjectID(list.active_project_id);
       setProjectDialog(null);
       toast.success("画布名称已更新");
     } catch (error) {
@@ -349,9 +330,9 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     if (!project || busy) return;
     setBusy(true);
     try {
-      const response = await updateCanvasProject({ action: "delete", project_id: project.id, revision: project.revision });
-      setProjects(response.projects || []);
-      setActiveProjectID(response.active_project_id || "");
+      const list = await mutateCanvasProjectList({ action: "delete", project_id: project.id, revision: project.revision });
+      setProjects(list.projects);
+      setActiveProjectID(list.active_project_id);
       setProjectDialog(null);
       toast.success("画布已删除");
     } catch (error) {
@@ -389,15 +370,15 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
         ) : visibleProjects.length ? (
           <div data-canvas-project-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {visibleProjects.map((project) => (
-              <Card key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} className="group flex min-w-0 flex-col p-4 text-left gap-0">
+              <Card key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} className="group flex min-w-0 flex-col gap-0 p-4 text-left transition-colors data-[selected=true]:bg-primary/5 data-[selected=true]:ring-2 data-[selected=true]:ring-primary/50">
                 <div className="mb-3 flex min-h-5 items-center justify-between gap-3">
-                  <Label data-disabled={busy} className="cursor-pointer has-disabled:cursor-not-allowed flex items-center gap-2 text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+                  <Label data-disabled={busy} data-selected={selectedProjectIDs.has(project.id)} className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground transition-colors has-disabled:cursor-not-allowed data-[selected=true]:text-primary" onClick={(event) => event.stopPropagation()}>
                     <Checkbox checked={selectedProjectIDs.has(project.id)} onCheckedChange={() => toggleProject(project.id)} disabled={busy} aria-label={`选择${project.title}`} />
                     <span>{selectedProjectIDs.has(project.id) ? "已选择" : "选择"}</span>
                   </Label>
                   {project.id === activeProjectID ? <span className="text-[11px] font-medium text-primary">当前画布</span> : null}
                 </div>
-                <Button variant="ghost" type="button" disabled={busy} onClick={() => void openProject(project)} className="block h-auto justify-start whitespace-normal p-0 min-w-0 flex-1 text-left disabled:cursor-wait disabled:opacity-60">
+                <Button variant="ghost" type="button" disabled={busy} onClick={() => navigate(canvasProjectPath(project.id))} className="block h-auto min-w-0 flex-1 justify-start rounded-none p-0 text-left whitespace-normal hover:bg-transparent dark:hover:bg-transparent hover:text-inherit disabled:cursor-wait disabled:opacity-60">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <ItemMedia variant="icon" className="flex size-9 shrink-0 items-center justify-center"><Sparkles  /></ItemMedia>

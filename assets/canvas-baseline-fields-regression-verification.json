@@ -1,0 +1,43 @@
+{
+  "sources": [
+    {
+      "path": "web/src/app/canvas/page.tsx",
+      "sha256": "c4da32bc74dcd464530dc188b619d139e9473e6734dbad595574af24edf60ca1"
+    },
+    {
+      "path": "web/tests/canvas-review-regressions.test.mjs",
+      "sha256": "8dac8b27ac6d25de6e46fb32582bda36eea236b6ad532cb10f0ddc07264371b4"
+    },
+    {
+      "path": "build/review/canvas-production/verify-baseline-fields.mjs",
+      "sha256": "8efdbc393cf45c7418eb70efdbd004cea6552fe52b1ac83c10c4b35982e10466"
+    }
+  ],
+  "checks": {
+    "focused": {
+      "passed": 2,
+      "failed": 0
+    },
+    "frontend": {
+      "files": 67,
+      "passed": 900,
+      "failed": 0
+    },
+    "build": "passed",
+    "lint": {
+      "warnings": 0,
+      "errors": 0
+    },
+    "embedded": {
+      "command": "go test ./internal/web",
+      "passed": true,
+      "cached": false,
+      "seconds": 0.027
+    }
+  },
+  "evidence": [
+    "assets/canvas-baseline-fields-before-verification.json",
+    "assets/canvas-baseline-fields-after-verification.json",
+    "assets/canvas-baseline-fields-protected-verification.json"
+  ]
+}

@@ -385,6 +385,8 @@ STORAGE_DATABASE_URL=mysql://user:password@host:3306/chatgpt2api
 
 ## 本地开发
 
+分镜视频合并依赖 FFmpeg，源码运行环境需要安装 `ffmpeg` 和 `ffprobe`（Debian/Ubuntu：`apt-get install ffmpeg`）；Docker 镜像已包含。该功能在服务端处理，不调用视频生成模型。
+
 ### 后端
 
 ```bash

@@ -1,0 +1,48 @@
+{
+  "phase": "after",
+  "loads": [
+    {
+      "round": 0,
+      "readyMs": 3943,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 3020,
+          "requestedProject": null,
+          "documentID": "canvas-dd8ff5ac1275629f5d86aedd",
+          "partial": true
+        },
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 3020,
+          "requestedProject": null,
+          "documentID": "canvas-dd8ff5ac1275629f5d86aedd",
+          "partial": true
+        }
+      ],
+      "persistedActiveTarget": true
+    },
+    {
+      "round": 1,
+      "readyMs": 2680,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 3020,
+          "requestedProject": null,
+          "documentID": "canvas-dd8ff5ac1275629f5d86aedd",
+          "partial": true
+        }
+      ],
+      "persistedActiveTarget": true
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 2
+}

@@ -1,0 +1,35 @@
+{
+  "scope": "video submission diagnostics and latest selected-shot failures",
+  "productChange": "Preserve submission stage, HTTP status and uncertain network acceptance; no submission retry added",
+  "regression": {
+    "oldImplementationReproduced": true,
+    "focusedPassed": true,
+    "focusedSeconds": 1.671,
+    "completeHTTPAPIPassed": true,
+    "httpapiSeconds": 91.804,
+    "frontendBuildLint": "not rerun; frontend source unchanged, previous passing artifacts reused",
+    "fullGoAndDatabases": "not rerun; no storage or database change"
+  },
+  "realGeneration": {
+    "submissions": 3,
+    "failedHTTP503": 3,
+    "newVideos": 0,
+    "newMergedMovie": false,
+    "supplierInternalAcceptanceAndBilling": "not independently verified"
+  },
+  "existingContent": {
+    "messages": 16,
+    "allOldMediaAndThirdShotPreserved": true,
+    "oldMovieStillOutdated": true,
+    "oldMoviePlaysAndDownloads": true
+  },
+  "reports": [
+    "assets/canvas-native-final-selected-video-revision.json",
+    "assets/canvas-native-final-selected-failure-audit.json",
+    "assets/canvas-native-final-selected-failure-verification.json",
+    "assets/canvas-video-submit-diagnostics-runtime-verification.json",
+    "assets/canvas-video-submit-diagnostics-presentation-verification.json"
+  ],
+  "qualityApproved": false,
+  "allIssuesResolved": false
+}

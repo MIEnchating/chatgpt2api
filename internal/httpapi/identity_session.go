@@ -24,6 +24,11 @@ func (a *App) requireIdentity(w http.ResponseWriter, r *http.Request) (service.I
 		*r = *r.WithContext(withRequestIdentity(r.Context(), *identity))
 		return *identity, true
 	}
+	reason := "invalid_cookie"
+	if token == "" {
+		reason = "missing_cookie"
+	}
+	*r = *r.WithContext(withAuthFailure(r.Context(), reason))
 	util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
 	return service.Identity{}, false
 }
@@ -39,6 +44,7 @@ func requestAuthCookieToken(r *http.Request) string {
 func (a *App) imageRequestIdentity(w http.ResponseWriter, r *http.Request) (service.Identity, bool) {
 	token := requestAuthCookieToken(r)
 	if token == "" {
+		*r = *r.WithContext(withAuthFailure(r.Context(), "missing_cookie"))
 		util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
 		return service.Identity{}, false
 	}
@@ -50,6 +56,7 @@ func (a *App) imageRequestIdentity(w http.ResponseWriter, r *http.Request) (serv
 	if identity != nil {
 		return *identity, true
 	}
+	*r = *r.WithContext(withAuthFailure(r.Context(), "invalid_cookie"))
 	util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
 	return service.Identity{}, false
 }

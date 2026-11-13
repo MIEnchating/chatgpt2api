@@ -57,3 +57,15 @@ test("only configuration nodes receive generation lifecycle status", () => {
   assert.equal(failed[0].generation_status, "error");
   assert.equal(failed[0].generation_error, "生成失败");
 });
+
+test("script production arrangement pairs shots, keeps materials as inputs, and isolates unrelated nodes", async () => {
+ const {arrangeCanvasAgentNodes}=await import("../src/app/canvas/agent/canvas-agent-generation.ts");
+ const nodes=[node("script","script",{script_project:{assets:[{image_node_id:"hero"}],shots:[{image_node_id:"f1",video_node_id:"v1"},{image_node_id:"f2",video_node_id:"v2"}],merged_video_node_id:"movie"}}),node("hero"),node("f1"),node("v1","video"),node("f2"),node("v2","video"),node("movie","video"),node("unrelated","text",{x:9000,y:9000})];
+ const result=arrangeCanvasAgentNodes(nodes,nodes.slice(0,-1).map(node=>node.id)).nodes;
+ const byID=new Map(result.map(node=>[node.id,node]));
+ assert.ok(byID.get("hero").x<byID.get("script").x);
+ for(const [frame,video] of [["f1","v1"],["f2","v2"]]){assert.equal(byID.get(frame).y,byID.get(video).y);assert.ok(byID.get(frame).x<byID.get(video).x);}
+ assert.ok(byID.get("movie").x>byID.get("v1").x);
+ assert.deepEqual(byID.get("unrelated"),nodes.at(-1));
+ for(let i=0;i<result.length-1;i++)for(let j=i+1;j<result.length-1;j++){const a=result[i],b=result[j];assert.ok(!(a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y),`${a.id} overlaps ${b.id}`);}
+});

@@ -59,6 +59,7 @@ export function videoModelRequiresHTTPSReferences(source: VideoModelCapabilitySo
   const providerBaseURL = contract?.provider?.base_url.trim().replace(/\/+$/, "").toLowerCase();
   return Boolean(
     contract?.transport.local_material === "url"
+      && !contract.transport.material_upload
       && (contract.driver === "minimax-video" || providerBaseURL === "https://openai.fit"),
   );
 }

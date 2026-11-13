@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TooltipHint } from "@/components/ui/tooltip";
 import { fetchPromptSourcesConfig, type ManagedImage } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import type { CanvasNode } from "@/services/api/canvas";
 
 export type CanvasSidePanelTab = "canvas" | "assets" | "prompts";
@@ -165,7 +166,27 @@ function loadSidePanelPrompts(sessionKey: string, force = false) {
   return tracked;
 }
 
-export function CanvasSidePanel({
+export function CanvasSidePanel(props: CanvasSidePanelProps) {
+  const onOpenChange = useStableCallback(props.onOpenChange);
+  const onWidthChange = useStableCallback(props.onWidthChange);
+  const onTabChange = useStableCallback(props.onTabChange);
+  const onFocusNode = useStableCallback(props.onFocusNode);
+  const onInsertLibraryImage = useStableCallback(props.onInsertLibraryImage);
+  const onOpenAssets = useStableCallback(props.onOpenAssets);
+  const onInsertPrompt = useStableCallback(props.onInsertPrompt);
+  return <MemoizedCanvasSidePanel {...props} onOpenChange={onOpenChange} onWidthChange={onWidthChange} onTabChange={onTabChange}
+    onFocusNode={onFocusNode} onInsertLibraryImage={onInsertLibraryImage} onOpenAssets={onOpenAssets} onInsertPrompt={onInsertPrompt} />;
+}
+
+const MemoizedCanvasSidePanel = memo(CanvasSidePanelContent, (previous, next) => {
+  if (previous.sessionKey !== next.sessionKey || previous.open !== next.open) return false;
+  // Keep hidden filters and drafts mounted without rebuilding rows for canvas edits.
+  if (!next.open) return true;
+  return previous.nodes === next.nodes && previous.selectedNodeIDs === next.selectedNodeIDs && previous.width === next.width
+    && previous.tab === next.tab && previous.libraryImages === next.libraryImages && previous.libraryLoading === next.libraryLoading;
+});
+
+function CanvasSidePanelContent({
   sessionKey,
   nodes,
   selectedNodeIDs,

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import App from "@/App";
 import "@/app/globals.css";
@@ -14,10 +14,10 @@ if (!rootElement) {
 
 applyColorTheme(getPreferredColorTheme());
 
+const router = createBrowserRouter([{ path: "*", element: <App /> }]);
+
 createRoot(rootElement).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 );

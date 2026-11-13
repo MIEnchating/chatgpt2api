@@ -19,7 +19,7 @@ function handler(file, name, context) {
   }
   visit(source);
   assert.ok(expression, `Missing handler ${name}`);
-  const compiled = ts.transpile(`const handler = ${expression.getText(source)};`, { target: ts.ScriptTarget.ES2022 });
+  const compiled = ts.transpile(`const handler = ${expression.getText(source).replace(/^export\s+/, "")};`, { target: ts.ScriptTarget.ES2022 });
   return new Function(...Object.keys(context), `${compiled}\nreturn handler;`)(...Object.values(context));
 }
 
@@ -47,10 +47,14 @@ test("document imports enter plugin generation only after preliminary review and
     let warnings;
     const contracts = [{ name: "First", models: ["video-one"] }, { name: "Second", models: ["video-two"] }];
     const context = {
-      importSourceType: "url", importFile: null, importURL: "https://docs.example.com/video", importModel: "test-model", importTokenName: "",
+      importSourceType: "url", importFile: null, importURLs: ["https://docs.example.com/video/create", "https://docs.example.com/video/query"], importModel: "test-model", importTokenName: "",
       importGeneratePlugin: enabled, sessionKey: "session-a", isCurrentSession: () => true,
       importControllerRef: { current: null }, importRunIDRef: { current: "" }, nanoid: () => "isolated-run", importStartedAtRef: { current: 0 },
-      importVideoModelContract: async () => ({ contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] }),
+      importVideoModelContract: async (input) => {
+        assert.deepEqual(input.urls, ["https://docs.example.com/video/create", "https://docs.example.com/video/query"]);
+        assert.equal(input.file, null);
+        return { contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] };
+      },
       normalizeVideoModelContractCollections: (value) => structuredClone(value), cloneVideoModelContract: structuredClone,
       setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportElapsedSeconds: () => {}, setIsImporting: () => {},
       setImportOpen: () => {}, setEditingItem: () => {}, setReadOnly: () => {}, setGeneratedContracts: () => {},
@@ -73,6 +77,36 @@ test("document imports enter plugin generation only after preliminary review and
       assert.deepEqual(targets[0].warnings, ["Check the provider address"]);
     } else assert.equal(targets, undefined);
   }
+});
+
+test("video document import sends every URL in the same multipart request", async () => {
+  const urls = ["https://docs.example.com/create", "https://docs.example.com/query", "https://other.example.com/download"];
+  const result = { contracts: [{ name: "combined" }] };
+  let requests = 0;
+  const send = handler("../lib/api.ts", "importVideoModelContract", {
+    FormData,
+    httpRequestEventStream: async (path, options) => {
+      requests++;
+      assert.equal(path, "/api/admin/video-model-contracts/import");
+      assert.deepEqual(options.body.getAll("url"), urls);
+      assert.equal(options.body.get("source_type"), "url");
+      assert.equal(options.body.get("model"), "test-model");
+      options.onData(JSON.stringify({ stage: "completed", message: "done", result }));
+    },
+  });
+  assert.deepEqual(await send({ runID: "isolated", sourceType: "url", urls: [...urls, "  "], generatePlugin: false, model: "test-model" }), result);
+  assert.equal(requests, 1);
+});
+
+test("video document import rejects too many entry URLs before starting a task", async () => {
+  const errors = [];
+  const generate = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", {
+    importSourceType: "url", importURLs: Array.from({ length: 25 }, (_, index) => `https://docs.example.com/${index}`),
+    toast: { error: value => errors.push(value) },
+  });
+  await generate();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /24/);
 });
 
 test("asset batches bound concurrency and preserve outcomes in input order", async () => {
@@ -501,5 +535,23 @@ test("asset editor returns to its library only after a successful save in the sa
     await pending;
     assert.equal(closed, outcome === "success" ? 1 : 0);
     assert.equal(fixture.messages.filter(([kind]) => kind === "success").length, outcome === "success" ? 1 : 0);
+  }
+});
+
+test("role selection preserves the current draft until a dirty switch is confirmed", () => {
+  const role = { id: "next", name: "Next role" };
+  for (const dirty of [true, false]) {
+    const applied = [], pending = [];
+    const select = handler("rbac/page.tsx", "requestRoleSelection", {
+      selectedRoleId: "current", isDirty: dirty,
+      setPendingRole: value => pending.push(value),
+      applySelectedRole: value => applied.push(value),
+    });
+    select({ id: "current" });
+    assert.deepEqual(applied, []);
+    assert.deepEqual(pending, []);
+    select(role);
+    assert.deepEqual(applied, dirty ? [] : [role]);
+    assert.deepEqual(pending, dirty ? [role] : []);
   }
 });

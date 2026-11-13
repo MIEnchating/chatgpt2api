@@ -1,0 +1,34 @@
+[
+  {
+    "shot": 1,
+    "nodeID": "video-canvas-42382433829803aa84c25033",
+    "method": "Every decoded frame, lower 55%, Tesseract chi_sim+eng PSM11. Detection candidates require visual inspection; absence does not prove no text.",
+    "decodedFrames": 362,
+    "candidateFrames": 231,
+    "qualityApproved": false
+  },
+  {
+    "shot": 2,
+    "nodeID": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+    "method": "Every decoded frame, lower 55%, Tesseract chi_sim+eng PSM11. Detection candidates require visual inspection; absence does not prove no text.",
+    "decodedFrames": 362,
+    "candidateFrames": 295,
+    "qualityApproved": false
+  },
+  {
+    "shot": 3,
+    "nodeID": "video-canvas-22fda253fc0ab39b117f6ba6",
+    "method": "Every decoded frame, lower 55%, Tesseract chi_sim+eng PSM11. Detection candidates require visual inspection; absence does not prove no text.",
+    "decodedFrames": 362,
+    "candidateFrames": 279,
+    "qualityApproved": false
+  },
+  {
+    "shot": 4,
+    "nodeID": "video-da3d89b4-fbc1-48f1-938e-47336e7ce43a",
+    "method": "Every decoded frame, lower 55%, Tesseract chi_sim+eng PSM11. Detection candidates require visual inspection; absence does not prove no text.",
+    "decodedFrames": 361,
+    "candidateFrames": 311,
+    "qualityApproved": false
+  }
+]

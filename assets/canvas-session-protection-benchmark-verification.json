@@ -1,0 +1,58 @@
+{
+  "verifiedAt": "2026-11-12T15:36:06.782120+00:00",
+  "benchmark": "BenchmarkCanvasDocumentLongHistoryMetadataSave",
+  "backend": "isolated SQLite",
+  "fixture": "Approximately 9 MB; 2000 messages and 4000 protocol messages; alternating native/codex metadata writes.",
+  "reproduction": {
+    "before": "FAIL: metadata update altered untouched field protocolMessages; exact JSON numbers changed by float64 conversion.",
+    "after": "PASS: mixed metadata/body writes preserve exact values and server-owned fields."
+  },
+  "before": {
+    "iterations": 3,
+    "nanoseconds": 3994902184,
+    "bytesAllocated": 503620085,
+    "allocations": 312673
+  },
+  "after": {
+    "iterations": 3,
+    "nanoseconds": 3757175849,
+    "bytesAllocated": 424946610,
+    "allocations": 127544
+  },
+  "observedReduction": {
+    "timePercent": 5.950742322355696,
+    "allocatedBytesPercent": 15.62159201811818
+  },
+  "sourceSHA256": {
+    "internal/service/canvas_document.go": "bb7c0b72cc03475368eb1d265ecdea5d3069a33c5becbf2380e827b9a3baf547",
+    "internal/service/canvas_document_test.go": "c1e44453a70ea81de59756032e00d994d9a83fb073f097a9b619efa6f1111ed1",
+    "internal/service/canvas_agent_history_view.go": "a0495a6f199d165da9d5ac93849b1017d313a7fe285d8599dbd971fd6d0524fb"
+  },
+  "limitations": [
+    "Three measured iterations per version with CPU profiling; variable background load.",
+    "Cumulative allocation is not resident memory; observed times are not latency guarantees.",
+    "This measures metadata saves, not initial loading, frontend editing, media generation, or video quality.",
+    "No storage format or database protocol changes; isolated persistence used SQLite."
+  ],
+  "validation": {
+    "focusedService": {
+      "passed": true,
+      "seconds": 12.88
+    },
+    "completePackages": {
+      "passed": true,
+      "command": "go test ./internal/service ./internal/httpapi -count=1",
+      "seconds": {
+        "service": 264.548,
+        "httpapi": 99.961
+      }
+    },
+    "embeddedWeb": {
+      "passed": true,
+      "cached": true
+    },
+    "frontend": "Unchanged in this iteration; frontend tests/build/lint were not rerun.",
+    "repositoryWideGo": "Not run.",
+    "database": "Isolated SQLite in this iteration; no database format/protocol changes; MySQL/PostgreSQL not repeated."
+  }
+}

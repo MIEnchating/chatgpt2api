@@ -180,11 +180,15 @@ func TestCanvasAgentSDKLargeReadResultsDoNotOverflowPublicCanvasHistory(t *testi
 	req.References = []map[string]any{{"id": "large-doc", "source": "attachment", "type": "text", "title": "长文资料", "text": source}}
 	doc = persistAgentTestReferences(t, svc, identity, doc, &req)
 	before := len(doc.AgentSessions)
-	// The attachment plus one unbounded read exceeds the public canvas limit.
+	// History may exceed the old limit, while duplicate tool bodies still stay compact.
 	_, control, _ := agentSession(doc, req.SessionID)
 	control["protocolMessages"] = []map[string]any{{"role": "tool", "name": "get_reference", "toolCallId": "control", "content": agentJSON(map[string]any{"ok": true, "reference": map[string]any{"id": "large-doc", "text": source}})}}
-	if err := validateCanvasAgentJSON(json.RawMessage(agentJSON([]map[string]any{control})), true); err == nil {
-		t.Fatal("fixture no longer reproduces the public history size limit")
+	controlJSON := json.RawMessage(agentJSON([]map[string]any{control}))
+	if len(controlJSON) <= 512<<10 {
+		t.Fatal("fixture does not exercise long history")
+	}
+	if err := validateCanvasAgentJSON(controlJSON, true); err != nil {
+		t.Fatalf("valid long history was rejected: %v", err)
 	}
 	var err error
 	if _, err = svc.Start(identity, doc.ID, req); err != nil {
@@ -362,7 +366,7 @@ func TestCanvasAgentSDKRestoredBatchPreservesOfflineUserEdits(t *testing.T) {
 func TestCanvasAgentSDKMediaRecoveryRejectsChangedGenerationInputs(t *testing.T) {
 	w := memoryWorker(t, nil)
 	approved := false
-	w.service.media = func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	w.service.media = func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		if !approved {
 			t.Error("changed inputs must not attach the old result")
 		}

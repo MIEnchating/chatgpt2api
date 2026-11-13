@@ -1,0 +1,10 @@
+{
+  "checks": [],
+  "pageErrors": [],
+  "browserMutations": 0,
+  "generationSubmissions": 0,
+  "rejectedPolls": 2,
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 2\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-agent-snapshot-recovery.mjs:61:10",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

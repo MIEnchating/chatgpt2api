@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ItemMedia } from "@/components/ui/item";
 import { Button } from "@/components/ui/button";
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { ComponentProps, MouseEvent as ReactMouseEvent } from "react";
+import type { ComponentProps, PointerEvent as ReactPointerEvent } from "react";
 import { AudioLines, Image as ImageIcon, SlidersHorizontal, Upload } from "lucide-react";
 
 import { AutoDLWorkflowFields } from "@/components/autodl-workflow-fields";
@@ -22,6 +22,7 @@ import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
+import { canvasGenerationNeedsRecovery } from "@/app/canvas/canvas-generation-context";
 import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
 import { CanvasNodeInputToolbar } from "@/app/canvas/canvas-node-input-toolbar";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
@@ -49,7 +50,10 @@ export function CanvasPanoramaViewer(props: ComponentProps<typeof LazyCanvasPano
   );
 }
 
-export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveStart }: { node: CanvasNode; onPanoramaOpen?: () => void; onPanoramaMoveStart?: (event: ReactMouseEvent<HTMLButtonElement>) => void }) {
+export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveStart }: { node: CanvasNode; onPanoramaOpen?: () => void; onPanoramaMoveStart?: (event: ReactPointerEvent<HTMLButtonElement>) => void }) {
+  if (node.generation_status !== "loading" && canvasGenerationNeedsRecovery(node)) {
+    return <EmptyState compact title="待同步" description={node.generation_error || "正在恢复原任务结果"} className="size-full min-h-0 px-4" />;
+  }
   if (node.type === "audio") {
     return node.url ? <div className="flex size-full flex-col items-center justify-center gap-3 px-4"><ItemMedia variant="icon" className="grid size-12 shrink-0 place-items-center"><AudioLines /></ItemMedia><audio aria-label={node.title || "画布音频"} data-canvas-no-pan data-canvas-no-zoom src={node.url} controls preload="metadata" className="w-full min-w-0" onMouseDown={(event) => event.stopPropagation()} /></div> : <EmptyState compact icon={AudioLines} title="空音频节点" description="可上传音频，或添加文字合成语音" className="size-full min-h-0 px-4" />;
   }
@@ -65,7 +69,7 @@ export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSel
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <PromptTextareaFrame className="min-h-0 flex-1">
+      <PromptTextareaFrame value={prompt} className="min-h-0 flex-1">
         <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={() => onPromptChange(prompt, true)} placeholder="输入需要合成的旁白、对白或音频内容" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden" />
       </PromptTextareaFrame>
       <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} onGenerate={onGenerate} onStop={onStop} />}>
@@ -133,7 +137,7 @@ export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReference
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <PromptTextareaFrame className="min-h-0 flex-1">
+      <PromptTextareaFrame value={prompt} className="min-h-0 flex-1">
         <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden" />
       </PromptTextareaFrame>
       <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} onGenerate={onGenerate} onStop={onStop} />}>

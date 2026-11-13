@@ -1,0 +1,19 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "method": "Existing arrange-canvas UI followed by current-production navigation; only node positions and view change",
+  "checks": [
+    {
+      "name": "all_current_production_nodes_separated_and_full_content_preserved",
+      "currentNodes": 17,
+      "totalNodes": 35,
+      "messageCount": 16,
+      "passed": true
+    },
+    {
+      "name": "mobile_second_shot_visible_with_correct_title_and_refresh_preserves_content",
+      "submissions": 0,
+      "passed": true
+    }
+  ],
+  "qualityApproved": false
+}

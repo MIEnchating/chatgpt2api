@@ -1,0 +1,46 @@
+{
+  "checkedAt": "2026-11-12",
+  "sources": [
+    {
+      "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/docs/VIDEO_PROMPT_WRITING_GUIDE_base_en.md",
+      "sha256": "2cfebc096a6e08370f288d468d90b60f7f9bcb938f94bf090816e910e48e75fc",
+      "bytes": 15773,
+      "localFile": "build/review/canvas-production/minimax-h3-official-base-guide.md"
+    },
+    {
+      "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/docs/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md",
+      "sha256": "1e574f356716ad55612247ffb7bbccbcdb484ad96599d63c7dca1af186b1fab7",
+      "bytes": 23553,
+      "localFile": "build/review/canvas-production/minimax-h3-official-ref-guide.md"
+    }
+  ],
+  "requestParameterChanged": false,
+  "modelChanged": false,
+  "referenceImagesChanged": false,
+  "scriptDialogueChanged": false,
+  "hypothesis": "Use official full-reference Context-IR and native dialogue markers to separate spoken words from on-screen text; no causal conclusion before result inspection.",
+  "qualityApproved": false,
+  "rules": {
+    "spokenDialogue": "<d>[Chinese] original dialogue</d>",
+    "speakerIdentity": "stable (S1), (S2), in actual vocal order",
+    "referenceLabels": "<Picture N> and <Subject N> with explicit source roles",
+    "onScreenText": "Double quotation marks designate actually visible text; omit desired text when none is requested",
+    "fullReferenceSections": [
+      "subject_definitions",
+      "summary",
+      "retention_analysis",
+      "detailed_description",
+      "overall_soundscape",
+      "non_diegetic_music"
+    ]
+  },
+  "previousPrompt": {
+    "nativeDialogueMarkers": false,
+    "phoneticMandarinTrialFailedToEliminateSubtitles": true
+  },
+  "newPrompt": {
+    "sha256": "499331e5435af6a81b520057ed945f9b0ad043e4847b208b6482d42ba5771ba0",
+    "nativeDialogueBlocks": 2,
+    "fullReferenceSectionsPresent": true
+  }
+}

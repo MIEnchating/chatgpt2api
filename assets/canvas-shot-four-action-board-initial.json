@@ -1,0 +1,27 @@
+{
+  "stage": "board",
+  "startedAt": "2026-11-11T22:55:36.609Z",
+  "observeOnly": false,
+  "qualityApproved": false,
+  "checks": [
+    {
+      "name": "submitted_through_product_ui",
+      "passed": true
+    },
+    {
+      "name": "original_results_and_chat_preserved",
+      "passed": true
+    }
+  ],
+  "submissions": 1,
+  "nodeID": "image-54425a78-6abb-4451-a75d-c77011780474",
+  "taskID": "canvas-edit-76a89bc3-b60f-4c12-bc2a-3ed79c699c6d",
+  "status": "success",
+  "progress": 100,
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/image-54425a78-6abb-4451-a75d-c77011780474.png",
+  "finishedAt": "2026-11-11T22:56:41.519Z",
+  "visualObservations": [
+    "Mother at left beside the bag and son at right with hands away; rainy night and two empty bowls retained.",
+    "Prompt mistakenly requested a flask handle; image added a bail handle absent from the formal prop reference. Not submitted to video."
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "at": "2026-11-12T11:41:02.628Z",
+  "runStatus": "running",
+  "confirmed": false,
+  "updates": [
+    {
+      "id": "call_58e4cb70d3c54b84bcf697ed19ce2984",
+      "diff": []
+    },
+    {
+      "id": "call_e3cb0286fe1642c2b01b4c7e721cd954",
+      "confirmed": true,
+      "diff": [
+        {
+          "path": "scriptProject.assets.0.description",
+          "before": "56岁中国女性，短灰黑发，米色针织开衫、深棕围裙，黑长裤，温暖自然。四视图身份参考。温暖略沙中低女声，普通话。",
+          "after": "56岁中国女性，短灰黑发，米色针织开衫、深棕围裙，黑长裤，温暖自然。温暖略沙中低女声，普通话。"
+        },
+        {
+          "path": "scriptProject.assets.1.description",
+          "before": "30岁中国男性，短黑发，海军蓝外套、灰色圆领衫，深色长裤，清晰克制青年中音，普通话。四视图身份参考。",
+          "after": "30岁中国男性，短黑发，海军蓝外套、灰色圆领衫，深色长裤，清晰克制青年中音，普通话。"
+        },
+        {
+          "path": "scriptProject.assets.2.description",
+          "before": "初冬夜晚小缝补店，暖灯，左侧玻璃门外冷蓝细雨；右侧木工作台、黑色老式缝纫机，后方无字布料架。台面固定一只红色针线盒。无字无标志。",
+          "after": "初冬夜晚小缝补店，暖灯，左侧玻璃门外冷蓝细雨；右侧木工作台、黑色老式缝纫机，后方无字布料架，红针线盒。"
+        },
+        {
+          "path": "scriptProject.assets.3.description",
+          "before": "无字无图案米白棉布手提袋，两根布提手，右上角短小开线。修补后同款同材质、细密米白线。",
+          "after": "无字米白棉布手提袋，两根提手，右上角短小开线。"
+        },
+        {
+          "path": "scriptProject.shots.0.camera",
+          "before": "固定机位",
+          "after": "固定"
+        },
+        {
+          "path": "scriptProject.shots.0.description",
+          "before": "剧本原文片段：林舟已站在台前，双手拿着布袋。陈姨看向他。\n林舟：陈姨，这么晚，还没收摊啊？\n陈姨：等雨小一点。袋子怎么了？\n环境声：门外细雨、室内钟表轻响。\n制作：建立与问候。林舟左陈姨右。仅抬眼交谈，袋子未放下。",
+          "after": "林舟已站在台前，双手拿着布袋。陈姨看向他。"
+        },
+        {
+          "path": "scriptProject.shots.0.framing",
+          "before": "竖屏双人中景，台面及袋子可见",
+          "after": "竖屏双人中景"
+        },
+        {
+          "path": "scriptProject.shots.0.lighting",
+          "before": "右上暖灯，门外冷蓝夜雨",
+          "after": "暖灯冷蓝夜雨"
+        },
+        {
+          "path": "scriptProject.shots.0.sound",
+          "before": "细雨、钟表轻响，无音乐；林舟青年中音，陈姨略沙中低女声，普通话",
+          "after": "细雨钟表，无音乐"
+        },
+        {
+          "path": "scriptProject.shots.1.camera",
+          "before": "固定机位",
+          "after": "固定"
+        },
+        {
+          "path": "scriptProject.shots.1.description",
+          "before": "剧本原文片段：林舟将布袋放到台面，手指轻点开线处。陈姨低头看。\n林舟：线开了。明天第一天上班，我想带点像样的东西。\n陈姨：袋子挺好，补两针就行。\n环境声：雨声、布料轻响。\n制作：坦露心事。起始布袋尚在林舟手中、位于台面上方；一放一指，陈姨仅低头。",
+          "after": "林舟将布袋放到台面，手指轻点开线处。陈姨低头看。"
+        },
+        {
+          "path": "scriptProject.shots.1.framing",
+          "before": "双人较近中景，手和布袋可见，同轴线硬切",
+          "after": "双人较近中景，手袋可见"
+        },
+        {
+          "path": "scriptProject.shots.1.lighting",
+          "before": "相同暖灯冷蓝夜雨",
+          "after": "暖灯冷蓝夜雨"
+        },
+        {
+          "path": "scriptProject.shots.1.sound",
+          "before": "雨声、布料轻响，无音乐；普通话声线延续",
+          "after": "雨声布料，无音乐"
+        },
+        {
+          "path": "scriptProject.shots.2.camera",
+          "before": "固定机位",
+          "after": "固定"
+        },
+        {
+          "path": "scriptProject.shots.2.description",
+          "before": "剧本原文片段：同一布袋已修补好，平放桌面。陈姨将袋子轻推向林舟；林舟看着她，未急着拿。\n林舟：多少钱？\n陈姨：等你下班，跟我说说第一天。就当工钱。\n环境声：雨声、布袋轻擦木台。\n制作：硬切省略修补。起点袋子已补好但未推，陈姨右手靠近袋子，林舟空手。",
+          "after": "同一布袋已修补好，平放桌面。陈姨将袋子轻推向林舟；林舟看着她，未急着拿。"
+        },
+        {
+          "path": "scriptProject.shots.2.framing",
+          "before": "双人中景，台面居下三分之一",
+          "after": "双人中景，台面可见"
+        },
+        {
+          "path": "scriptProject.shots.2.lighting",
+          "before": "相同暖灯冷蓝夜雨",
+          "after": "暖灯冷蓝夜雨"
+        },
+        {
+          "path": "scriptProject.shots.2.sound",
+          "before": "雨声、布袋擦木台，无音乐；普通话声线延续",
+          "after": "雨声布袋擦木台，无音乐"
+        },
+        {
+          "path": "scriptProject.shots.3.camera",
+          "before": "固定机位",
+          "after": "固定"
+        },
+        {
+          "path": "scriptProject.shots.3.description",
+          "before": "剧本原文片段：林舟已拿起补好的布袋，仍站在台前。陈姨在暖灯下看着他。\n林舟：那我明天，还能这么晚来吗？\n陈姨：来吧。我给你留盏灯。\n两人轻轻一笑，暖灯稳定亮着，最后两秒安静停留。\n环境声：门外细雨渐轻、钟表轻响。\n制作：温暖落点。开场林舟已持修好袋子；仅交谈微笑，不离开、不关灯。",
+          "after": "林舟已拿起补好的布袋，仍站在台前。陈姨在暖灯下看着他。两人轻轻一笑，暖灯稳定亮着，最后两秒安静停留。"
+        },
+        {
+          "path": "scriptProject.shots.3.framing",
+          "before": "双人中近景，暖灯可见",
+          "after": "双人中近景暖灯可见"
+        },
+        {
+          "path": "scriptProject.shots.3.lighting",
+          "before": "相同稳定暖灯及冷蓝夜雨",
+          "after": "暖灯冷蓝夜雨"
+        },
+        {
+          "path": "scriptProject.shots.3.sound",
+          "before": "细雨渐轻、钟表轻响，无音乐；普通话声线延续",
+          "after": "细雨钟表，无音乐"
+        },
+        {
+          "path": "scriptProject.confirmed",
+          "after": true
+        }
+      ]
+    }
+  ]
+}

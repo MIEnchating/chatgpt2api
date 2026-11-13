@@ -1,0 +1,34 @@
+{
+  "phase": "before",
+  "checks": [],
+  "pageErrors": [],
+  "browserSaves": [
+    {
+      "sessions": [],
+      "nodeTitle": "第一次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [
+        {
+          "id": "undo-history",
+          "messages": 2
+        }
+      ],
+      "nodeTitle": "第一次修改"
+    }
+  ],
+  "generationSubmissions": 0,
+  "beforeUndoMessageCount": 4,
+  "afterUndoMessageCount": 2,
+  "confirmedChatRollback": true,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

@@ -1,0 +1,15 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "startedAt": "2026-11-11T21:02:56.066Z",
+  "checks": [
+    {
+      "name": "single_shot_regeneration_via_script_ui",
+      "passed": true
+    }
+  ],
+  "qualityApproved": false,
+  "videoID": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+  "taskID": "canvas-video-75b1d194-5d14-43b3-ab21-a07036383a95",
+  "status": "loading",
+  "error": "Expected values to be strictly equal:\n\n401 !== 200\n"
+}

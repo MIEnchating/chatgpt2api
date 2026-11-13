@@ -12,12 +12,15 @@ function sameNodeContent(left: object, right: object) {
   return leftKeys.every((key) => GEOMETRY_KEYS.has(key) || (key in rightRecord && Object.is(leftRecord[key], rightRecord[key])));
 }
 
+export function contentStableNodes<T extends { id: string }>(previous: T[], nodes: T[]): T[] {
+  return previous === nodes || (previous.length === nodes.length && nodes.every((node, index) => sameNodeContent(previous[index], node))) ? previous : nodes;
+}
+
 // Returns the previous array while only node geometry changed, so consumers that read node content
 // (resource references, Markdown renderers) are not recomputed for every drag frame.
 export function useContentStableNodes<T extends { id: string }>(nodes: T[]): T[] {
   const previousRef = useRef(nodes);
-  const previous = previousRef.current;
-  const stable = previous === nodes || (previous.length === nodes.length && nodes.every((node, index) => sameNodeContent(previous[index], node))) ? previous : nodes;
+  const stable = contentStableNodes(previousRef.current, nodes);
   previousRef.current = stable;
   return stable;
 }

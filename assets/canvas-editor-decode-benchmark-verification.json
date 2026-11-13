@@ -1,0 +1,169 @@
+{
+  "scope": "Remove redundant string-to-bytes-to-string copy before stored JSON decoding; no SQL, schema, storage format, CAS, integrity checks, or pagination change.",
+  "beforeProfile": {
+    "cpu": "/tmp/canvas-editor-current-before.cpu",
+    "memory": "/tmp/canvas-editor-current-before.mem",
+    "focus": "readProjectWorkspace",
+    "finding": "Block decoding, JSON metadata/hash validation, and selected-session marshaling all contribute. SQL batching has not been implemented; redundant input conversion was measured first."
+  },
+  "chunkBenchmark": {
+    "command": "GOMAXPROCS=4 go test ./internal/storage -run ^TestDecodeJSONStringPreservesNumbersAndRejectsTrailingData$ -bench ^BenchmarkDecodeJSONHistoryChunk$ -benchtime=500ms -count=3 -benchmem",
+    "before": [
+      {
+        "ns": 859933,
+        "bytes": 441075,
+        "allocations": 19
+      },
+      {
+        "ns": 938157,
+        "bytes": 441065,
+        "allocations": 19
+      },
+      {
+        "ns": 1019104,
+        "bytes": 441066,
+        "allocations": 19
+      }
+    ],
+    "afterLog": "/tmp/canvas-editor-storage-after.log",
+    "after": [
+      {
+        "ns": 1404590,
+        "bytes": 350969,
+        "allocations": 18
+      },
+      {
+        "ns": 1166908,
+        "bytes": 350953,
+        "allocations": 18
+      },
+      {
+        "ns": 980569,
+        "bytes": 350955,
+        "allocations": 18
+      }
+    ]
+  },
+  "editorBenchmark": {
+    "command": "GOMAXPROCS=4 go test ./internal/service -run ^$ -bench ^BenchmarkCanvasDocumentLongHistoryEditorRead$ -benchtime=3x -count=1 -benchmem",
+    "beforeLog": "/tmp/canvas-editor-current-before.log",
+    "afterLog": "/tmp/canvas-editor-current-after.log",
+    "before": {
+      "ns": 765188803,
+      "bytes": 132762488,
+      "allocations": 12225
+    },
+    "after": {
+      "ns": 683468917,
+      "bytes": 120331133,
+      "allocations": 12131
+    },
+    "observedAllocationReductionPercent": 9.36,
+    "observedDurationReductionPercent": 10.68
+  },
+  "limitations": [
+    "Small benchmark samples and variable background load do not establish a fixed latency gain or end-to-end page performance acceptance.",
+    "Single active session and workspace root remain whole-document reads.",
+    "Database queries and persistence protocol are unchanged; isolated MySQL/PostgreSQL integration runs are not repeated in this round."
+  ],
+  "sourceHashes": {
+    "internal/storage/storage.go": "01183e8879b131526fe5bcc139c0063becd7f52d533a2c1592b149f243949c35",
+    "internal/storage/storage_test.go": "7f261b82228a06fda5e00ff58380f7d06d1092adbdd7f66f9547b485cb55c8c0",
+    "internal/service/canvas_document_test.go": "9e7c05781a57f133a674c80e812e822b63cbe2e78133bcd56f538dbefe07327c"
+  },
+  "regression": {
+    "command": "GOMAXPROCS=4 go test ./... -count=1",
+    "exitCode": 0,
+    "log": "/tmp/canvas-editor-decode-go-all.log",
+    "cacheReused": false,
+    "packageOutput": "?   \tchatgpt2api/build/review/minimax-contract-merge\t[no test files]\n?   \tchatgpt2api/build/review/xzapi-contract-merge\t[no test files]\n?   \tchatgpt2api/integrations/newapi/hirun\t[no test files]\nok  \tchatgpt2api/integrations/newapi/openai-fit-minimax\t0.206s\n?   \tchatgpt2api/integrations/newapi/xzapi\t[no test files]\nok  \tchatgpt2api/internal\t0.245s\nok  \tchatgpt2api/internal/config\t0.207s\nok  \tchatgpt2api/internal/httpapi\t98.730s\nok  \tchatgpt2api/internal/model\t0.035s\nok  \tchatgpt2api/internal/protocol\t0.999s\nok  \tchatgpt2api/internal/service\t232.217s\nok  \tchatgpt2api/internal/storage\t6.603s\nok  \tchatgpt2api/internal/translation\t3.101s\nok  \tchatgpt2api/internal/util\t0.049s\nok  \tchatgpt2api/internal/videocontract\t2.932s\nok  \tchatgpt2api/internal/web\t0.067s\n",
+    "frontend": "Subsequent real concurrent-page check found a pre-existing overlay obstruction. One frontend rendering condition was fixed. Full 194-file/1773-test suite passed (126.21s, exit 0); build/lint passed in this round. See overlay verification artifacts.",
+    "externalDatabases": "Optional destructive MySQL/PostgreSQL integration tests not configured and skipped; no database query/schema/persistence protocol changes."
+  },
+  "browserComparison": {
+    "before": {
+      "apiMs": [
+        803,
+        892,
+        862
+      ],
+      "readyMs": [
+        6583,
+        6864
+      ],
+      "longestMainThreadTaskMs": [
+        512,
+        342
+      ],
+      "completeTranscriptVerified": true,
+      "pageErrors": [],
+      "testProjectDeleted": true,
+      "originalHistoryUnchanged": true
+    },
+    "after": {
+      "apiMs": [
+        878,
+        922,
+        944
+      ],
+      "readyMs": [
+        8298,
+        5925
+      ],
+      "longestMainThreadTaskMs": [
+        509,
+        303
+      ],
+      "completeTranscriptVerified": true,
+      "pageErrors": [],
+      "testProjectDeleted": true,
+      "originalHistoryUnchanged": true
+    },
+    "conclusion": "Whole-page speedup is not established; no performance acceptance claimed."
+  },
+  "runtime": {
+    "backendService": "chatgpt2api.service",
+    "backendPort": 8090,
+    "sourceCommand": "go run ./internal",
+    "oldMainPID": 1541591,
+    "oldListenerPID": 1548631,
+    "newMainPID": 1738937,
+    "newListenerPID": 1739230,
+    "frontendPID": 806679,
+    "frontendPort": 8002,
+    "health": {
+      "status": "ok"
+    },
+    "activeAgentAndMediaBeforeRestart": 0
+  },
+  "frontendFollowup": {
+    "file": "web/src/app/canvas/page.tsx",
+    "sourceHash": "d83ffa9472c346a20cc273f330855e12a7df5938a48c133e65ff14a7d76b9176",
+    "before": "assets/canvas-editor-decode-concurrent-chat-before-verification.json",
+    "after": "assets/canvas-editor-decode-concurrent-chat-verification.json",
+    "ordinarySaveFailure": "assets/canvas-editor-conflict-unsaved-after-verification.json",
+    "testResult": {
+      "files": 194,
+      "pass": 1773,
+      "fail": 0,
+      "seconds": 126.21,
+      "exitCode": 0
+    },
+    "buildLog": "/tmp/canvas-editor-conflict-build.log",
+    "lintLog": "/tmp/canvas-editor-conflict-lint.log",
+    "embedded": {
+      "command": "go test ./internal/web",
+      "exitCode": 0,
+      "seconds": 0.021,
+      "log": "/tmp/canvas-editor-conflict-embedded.log"
+    }
+  },
+  "finalChecks": {
+    "sourceHashesUnchanged": true,
+    "onlyOriginalSourceServicesRunning": true,
+    "frontendPID": 806679,
+    "backendListenerPID": 1739230,
+    "temporaryBrowsersTestsBuildsExited": true,
+    "temporaryProfilingBinaryRemoved": true
+  }
+}

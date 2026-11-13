@@ -6,6 +6,7 @@ import {
   canCreateCanvasConnection,
   canvasConnectionPath,
   canvasConnectionRelations,
+  canvasScriptReferenceConnectionIDs,
   findCanvasConnectionDropTarget,
   resolveCanvasConnection,
 } from "../src/app/canvas/canvas-connections.ts";
@@ -13,6 +14,24 @@ import {
 function node(id, x, y, width = 100, height = 100) {
   return { id, type: "image", x, y, width, height };
 }
+
+test("script overview identifies only declared reference edges already represented through the script", () => {
+  const edge = (id, from_node_id, to_node_id) => ({ id, from_node_id, to_node_id });
+  const connections = [edge("input", "hero", "script"), edge("frame-output", "script", "frame"), edge("video-output", "script", "video"),
+    edge("hero-frame", "hero", "frame"), edge("hero-video", "hero", "video"), edge("frame-video", "frame", "video"),
+    edge("manual-reference", "extra", "video"), edge("unrelated", "hero", "other"), edge("unrepresented", "hero", "orphan")];
+  const nodes = [node("hero", 0, 0), node("extra", 0, 0), {
+    ...node("script", 0, 0), type: "script", script_project: { assets: [{ id: "character", image_node_id: "hero" }], shots: [
+      { asset_ids: [], dialogue: [{ asset_id: "character" }], image_node_id: "frame", video_node_id: "video" },
+      { asset_ids: ["character"], dialogue: [], image_node_id: "orphan" },
+    ] },
+  }];
+  const snapshot = structuredClone(connections);
+  assert.deepEqual([...canvasScriptReferenceConnectionIDs(nodes, connections)].sort(), ["hero-frame", "hero-video"]);
+  assert.deepEqual(connections, snapshot);
+  assert.equal(canvasScriptReferenceConnectionIDs(nodes, connections.filter(edge => edge.id !== "input")).size, 0);
+  assert.equal(canvasScriptReferenceConnectionIDs(nodes.filter(node => node.type !== "script"), connections).size, 0);
+});
 
 test("saved and active connection paths match the reference project formulas", () => {
   assert.equal(canvasConnectionPath({ x: 100, y: 50 }, { x: 140, y: 80 }), "M 100 50 C 150 50, 90 80, 140 80");

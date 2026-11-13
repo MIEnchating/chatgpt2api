@@ -1,0 +1,120 @@
+{
+  "scope": "Conversation copy/edit/retry actions reuse existing shared data-tooltip bridge; preserve AI Elements message/footer and shared button/copy components.",
+  "files": [
+    "web/src/app/canvas/canvas-agent-conversation.tsx"
+  ],
+  "sourceHashes": {
+    "web/src/app/canvas/canvas-agent-conversation.tsx": "5610c588290c623d6df0d76fd5fd02413578803d8a481d79abf3f370802d69d7",
+    "web/tests/shared-component-boundaries.test.mjs": "7d0ba6ea39b44c482686bfcb9a57c5f0aed343b1d505b7fa8be202f39e9fa2e0",
+    "web/tests/canvas-review-regressions.test.mjs": "0711ce18d67ae0bcf8668104292c96fb4f8835b05170135b54ae211adb3f5c06",
+    "web/tests/agent-run-presentation.test.mjs": "cb0f648a9265ef679927bc12d948693e6e3ee0073d212844ab4943b111ed9033"
+  },
+  "limitations": [
+    "Two Vite development-mode samples with varying background load do not establish a fixed speedup or overall initial-load acceptance.",
+    "Whole active transcript and workspace root still load completely.",
+    "No backend changes or new model/media generation."
+  ],
+  "before": {
+    "loads": [
+      {
+        "readyMs": 6596,
+        "tooltipRenderCount": 294,
+        "messageTooltipRoots": 61,
+        "messageDelegatedTooltips": 0,
+        "longestTaskMs": 600
+      },
+      {
+        "readyMs": 7319,
+        "tooltipRenderCount": 278,
+        "messageTooltipRoots": 61,
+        "messageDelegatedTooltips": 0,
+        "longestTaskMs": 373
+      }
+    ],
+    "checks": [
+      {
+        "name": "hover_keyboard_escape_copy_edit_cancel_and_retry_control_preserved",
+        "passed": true
+      },
+      {
+        "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+        "passed": true
+      }
+    ],
+    "pageErrors": [],
+    "browserWrites": 0,
+    "generationSubmissions": 0,
+    "originalHistoryUnchanged": true,
+    "testProjectDeleted": true
+  },
+  "after": {
+    "loads": [
+      {
+        "readyMs": 6112,
+        "tooltipRenderCount": 176,
+        "messageTooltipRoots": 0,
+        "messageDelegatedTooltips": 61,
+        "longestTaskMs": 337
+      },
+      {
+        "readyMs": 6376,
+        "tooltipRenderCount": 176,
+        "messageTooltipRoots": 0,
+        "messageDelegatedTooltips": 61,
+        "longestTaskMs": 303
+      }
+    ],
+    "checks": [
+      {
+        "name": "hover_keyboard_escape_copy_edit_cancel_and_retry_control_preserved",
+        "passed": true
+      },
+      {
+        "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+        "passed": true
+      }
+    ],
+    "pageErrors": [],
+    "browserWrites": 0,
+    "generationSubmissions": 0,
+    "originalHistoryUnchanged": true,
+    "testProjectDeleted": true
+  },
+  "focused": {
+    "command": "bun test tests/shared-component-boundaries.test.mjs tests/canvas-review-regressions.test.mjs tests/agent-run-presentation.test.mjs --timeout 20000",
+    "pass": 307,
+    "fail": 0,
+    "seconds": 84.52,
+    "exitCode": 0,
+    "log": "/tmp/canvas-conversation-actions-focused.log"
+  },
+  "full": {
+    "command": "npm run test -- --timeout 20000",
+    "files": 194,
+    "pass": 1773,
+    "fail": 0,
+    "seconds": 117.62,
+    "exitCode": 0,
+    "log": "/tmp/canvas-conversation-actions-full.log"
+  },
+  "build": {
+    "command": "npm run build",
+    "exitCode": 0,
+    "viteSeconds": 5.17,
+    "log": "/tmp/canvas-conversation-actions-build.log"
+  },
+  "lint": {
+    "command": "npm run lint",
+    "exitCode": 0,
+    "warnings": 0,
+    "errors": 0,
+    "log": "/tmp/canvas-conversation-actions-lint.log"
+  },
+  "embedded": {
+    "command": "go test ./internal/web",
+    "exitCode": 0,
+    "seconds": 0.025,
+    "log": "/tmp/canvas-conversation-actions-embedded.log"
+  },
+  "sourceHashesUnchanged": true
+}

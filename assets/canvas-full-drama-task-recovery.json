@@ -1,0 +1,12 @@
+{
+  "project_id": "canvas-092fd45e58e8eb1db469bd56",
+  "node_id": "video-canvas-22fda253fc0ab39b117f6ba6",
+  "task_id": "canvas-agent-media-canvas-4e6277c373089d861c63495d",
+  "model": "minimax-H3-super",
+  "task_status": "success",
+  "prompt_matches": true,
+  "method": "Existing completed task result attached through revision-checked canvas save after checking task ownership, model and exact submitted prompt. No generation endpoint called.",
+  "revision": 600,
+  "new_submissions": 0,
+  "original_conflict_trace_retained": true
+}

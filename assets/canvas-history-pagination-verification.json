@@ -1,0 +1,24 @@
+{
+  "checks": [
+    {
+      "name": "initial_render_twenty_of_one_hundred_tasks",
+      "passed": true,
+      "renderedMessages": 40,
+      "storedMessages": 200
+    },
+    {
+      "name": "prepend_preserves_reading_position_within_one_line",
+      "passed": true,
+      "shiftPixels": 11.75
+    },
+    {
+      "name": "all_earlier_tasks_accessible_without_truncating_history",
+      "passed": true
+    },
+    {
+      "name": "refresh_and_mobile_keep_bounded_initial_render",
+      "passed": true
+    }
+  ],
+  "pageErrors": []
+}

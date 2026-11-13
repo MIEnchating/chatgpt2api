@@ -1,0 +1,82 @@
+{
+  "phase": "worker",
+  "checks": [],
+  "pageErrors": [],
+  "browserWrites": 0,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 7653,
+      "estimateReadyMs": 8505,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    },
+    {
+      "readyMs": 5830,
+      "estimateReadyMs": 6263,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    },
+    {
+      "readyMs": 6875,
+      "estimateReadyMs": 7254,
+      "mainThread": {
+        "calls": 0,
+        "objectCalls": 0
+      },
+      "jobs": [
+        {
+          "submitted": true,
+          "completed": false,
+          "terminated": true,
+          "protocolMessages": 4000
+        },
+        {
+          "submitted": true,
+          "completed": true,
+          "terminated": true,
+          "protocolMessages": 4000,
+          "tokens": 2994174
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "error": "locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-agent-composer-input]')\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-token-estimate-worker.mjs:107:53",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

@@ -38,6 +38,16 @@ test("dynamic price tiers are split without losing conditions", () => {
   assert.match(formatModelPricing(pricing), /非\(分辨率 480P\) 且 duration = 10 · count/);
 });
 
+test("dynamic per-second resolution tiers hide redundant seconds labels", () => {
+  const pricing = { currency: "USD", mode: "dynamic", rates: [
+    { label: "resolution = 480p · seconds", amount: 0.025, unit: "second" },
+    { label: "非(resolution = 480p) 且 resolution = 720p · seconds", amount: 0.025, unit: "second" },
+    { label: "非(resolution = 480p) 且 非(resolution = 720p) 且 resolution = 768p · seconds", amount: 0.035, unit: "second" },
+    { label: "非(resolution = 480p) 且 非(resolution = 720p) 且 非(resolution = 768p) · seconds", amount: 0.08, unit: "second" },
+  ] };
+  assert.equal(formatModelPricing(pricing), "分辨率 480p $0.025/秒\n分辨率 720p $0.025/秒\n分辨率 768p $0.035/秒\n其他 $0.08/秒");
+});
+
 test("formats per-second, per-request and token prices with explicit units", () => {
   assert.equal(formatModelPricing({ currency: "USD", mode: "per_second", rates: [{ label: "", amount: 0.8, unit: "second" }] }), "$0.8/秒");
   assert.equal(formatModelPricing({ currency: "USD", mode: "per_request", rates: [{ label: "", amount: 6, unit: "request" }] }), "$6/次");

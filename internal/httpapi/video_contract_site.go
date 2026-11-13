@@ -12,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 )
@@ -47,6 +48,80 @@ type videoContractDocumentSite struct {
 	baseURL        *url.URL
 	remainingBytes int
 	links          []videoContractDocumentLink
+}
+
+func normalizeVideoContractDocumentURLs(values []string) ([]string, error) {
+	targets := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !isPublicReferenceURL(value) {
+			return nil, fmt.Errorf("第 %d 个文档地址无效，请提供公网可访问的 HTTP 或 HTTPS 链接", len(targets)+1)
+		}
+		target, _ := url.Parse(value)
+		target.Fragment, target.RawFragment = "", ""
+		value = target.String()
+		if !seen[value] {
+			seen[value] = true
+			targets = append(targets, value)
+		}
+	}
+	if len(targets) == 0 || len(targets) > maxVideoContractDocumentPages {
+		return nil, fmt.Errorf("请提供 1-%d 个文档地址", maxVideoContractDocumentPages)
+	}
+	return targets, nil
+}
+
+func fetchVideoContractDocumentSources(ctx context.Context, targets []string, client videoContractHTTPClient) (string, videoContractImportSource, error) {
+	var content strings.Builder
+	source := videoContractImportSource{Type: "url", Name: fmt.Sprintf("%d 份链接文档", len(targets))}
+	site := &videoContractDocumentSite{remainingBytes: maxVideoContractDocumentBytes}
+	seen := map[string]bool{}
+	for _, target := range targets {
+		seen[target] = true
+	}
+	for index, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return "", videoContractImportSource{}, err
+		}
+		text, document, err := fetchVideoContractDocumentSet(ctx, target, client)
+		if err != nil {
+			return "", videoContractImportSource{}, fmt.Errorf("读取第 %d 份文档失败：%w", index+1, err)
+		}
+		site.remainingBytes -= document.documentBytes
+		if site.remainingBytes < 0 {
+			return "", videoContractImportSource{}, errors.New("链接文档总大小不能超过 8 MB，请减少文档地址")
+		}
+		fmt.Fprintf(&content, "## 入口文档 %d：%s\n来源：%s\n\n%s\n\n", index+1, document.Name, target, text)
+		if utf8.RuneCountInString(content.String()) > maxVideoContractDocumentCharacters {
+			return "", videoContractImportSource{}, errors.New("合并后的文档超过字符上限，请减少文档地址")
+		}
+		source.Warnings = append(source.Warnings, document.Warnings...)
+		if document.Site == nil {
+			continue
+		}
+		if site.baseURL == nil {
+			site.baseURL = document.Site.baseURL
+		}
+		for _, link := range document.Site.links {
+			if !seen[link.url.String()] {
+				seen[link.url.String()] = true
+				link.index = len(site.links) + 1
+				site.links = append(site.links, link)
+			}
+		}
+	}
+	if len(site.links) > maxVideoContractDocumentLinks {
+		source.Warnings = append(source.Warnings, fmt.Sprintf("合并后有 %d 个候选页面，仅提供前 %d 个", len(site.links), maxVideoContractDocumentLinks))
+		site.links = site.links[:maxVideoContractDocumentLinks]
+	}
+	if len(site.links) > 0 {
+		source.Site = site
+	}
+	return strings.TrimSpace(content.String()), source, nil
 }
 
 func fetchVideoContractDocumentSet(ctx context.Context, value string, client videoContractHTTPClient) (string, videoContractImportSource, error) {
@@ -101,7 +176,7 @@ func fetchVideoContractDocumentSet(ctx context.Context, value string, client vid
 		if strings.TrimSpace(initialContent) == "" {
 			return "", videoContractImportSource{}, errors.New("链接页面没有可读取的正文或相关文档链接；若正文需要 JavaScript 加载，请提供 Markdown、OpenAPI 文档链接或上传文档")
 		}
-		return initialContent, videoContractImportSource{Type: "url", Name: initial.name}, nil
+		return initialContent, videoContractImportSource{Type: "url", Name: initial.name, documentBytes: maxVideoContractDocumentBytes - remainingBytes}, nil
 	}
 	warnings := make([]string, 0, 1)
 	if len(links) > maxVideoContractDocumentLinks {
@@ -112,7 +187,7 @@ func fetchVideoContractDocumentSet(ctx context.Context, value string, client vid
 		links[index].index = index + 1
 	}
 	return initialContent, videoContractImportSource{
-		Type: "url", Name: initial.name, Warnings: warnings,
+		Type: "url", Name: initial.name, Warnings: warnings, documentBytes: maxVideoContractDocumentBytes - remainingBytes,
 		Site: &videoContractDocumentSite{baseURL: initial.url, remainingBytes: remainingBytes, links: links},
 	}, nil
 }

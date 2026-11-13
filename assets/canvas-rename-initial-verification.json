@@ -1,0 +1,11 @@
+{
+  "phase": "after",
+  "errors": [],
+  "checks": [
+    "unsaved edit survives rename response and is persisted with the renamed project"
+  ],
+  "mediaSubmissions": 0,
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n409 !== 200\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-rename-canvas.mjs:60:43",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

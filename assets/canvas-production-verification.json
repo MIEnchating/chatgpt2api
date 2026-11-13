@@ -1,0 +1,54 @@
+{
+  "checks": [
+    {
+      "name": "native_60s_merge",
+      "passed": true,
+      "durationMS": 60000,
+      "audio": true
+    },
+    {
+      "name": "merge_reuses_unchanged_result",
+      "passed": true
+    },
+    {
+      "name": "movie_playback",
+      "passed": true,
+      "duration": 60,
+      "time": 0.856786,
+      "width": 768,
+      "height": 1376,
+      "muted": false
+    },
+    {
+      "name": "authenticated_movie_download",
+      "passed": true,
+      "bytes": 17515692
+    },
+    {
+      "name": "refresh_preserves_trace_and_movie",
+      "passed": true
+    },
+    {
+      "name": "quality_review_edit_and_reload",
+      "passed": true,
+      "kind": "automated_test_record"
+    },
+    {
+      "name": "mobile_review_layout",
+      "passed": true
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "assets/canvas-production-result-1440.png",
+    "assets/canvas-production-script-1440.png",
+    "assets/canvas-production-review-1440.png",
+    "assets/canvas-production-review-390.png",
+    "assets/canvas-production-result-390.png"
+  ],
+  "projectID": "canvas-d2c6b018fc3a19f407c73e62"
+}

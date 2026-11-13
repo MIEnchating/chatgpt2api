@@ -1,0 +1,35 @@
+{
+  "sourceHashes": {
+    "internal/service/canvas_script.go": "632a46135fd2956db5ee642c1350c15b01be6f543e2745f9fa4764a94befd3c4",
+    "internal/service/canvas_agent_video_merge.go": "a2fde2dd9e3a3a066fe9ce772bfa21f1b5f9a811f702ca611ddc86ca5162c382",
+    "internal/service/canvas_agent_video_merge_test.go": "e24291efbe66eea45f0e94c986585ce1b84254c2dcae92609541d4d28d90d28b",
+    "internal/service/canvas_agent_scripts_test.go": "30e4b80bd5dcccd230168e772c67fa16a98b81ba5fad80e130e2ebdf25d8f202",
+    "web/src/services/api/canvas.ts": "8ad7f53469bce8890eafec9411e6bf86446126c55dee708e9787a3d2d2b8735f",
+    "web/src/app/canvas/canvas-script.ts": "b5e55164f0c6ccf413d65f8a4eaa49eb1cf6de181f97dcb0dd93e9d0e93d2ad9",
+    "web/src/app/canvas/canvas-script-media.tsx": "ad814381b390d0f4baa7286c73c655eb9de64964f7a32b9c4249197c694b1f4c",
+    "web/tests/canvas-script.test.mjs": "b9de35a5a38a893a5f35c591573e5dc0de8b18695b59f2ae630f0071df24ef76"
+  },
+  "frontend": {
+    "passed": 1776,
+    "failed": 0,
+    "files": 194,
+    "durationSeconds": 150.33
+  },
+  "go": {
+    "passed": true,
+    "secondsByPackage": {
+      "internal/service": 240.344,
+      "internal/httpapi": 108.681,
+      "internal/web": 0.085
+    }
+  },
+  "build": {
+    "passed": true,
+    "viteSeconds": 11.41
+  },
+  "lint": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "databaseScope": "No SQL or schema changes. Stored JSON accepts older review records."
+}

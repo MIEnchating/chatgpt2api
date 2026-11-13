@@ -1,0 +1,321 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, complete 15-second waveform without VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "native-fresh-film-60s",
+      "expected_dialogue": "最后一单，怎么是家里的地址。三年了，她还留着。我点的不是外卖，是你。妈。妈，我回来了。回来就好，汤还热着。",
+      "duration_seconds": 60.0,
+      "audio_streams": 1,
+      "mean_volume_db": "-18.2",
+      "max_volume_db": "-0.0",
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 3.72,
+          "text": "最后一单,怎么是家里的地址?",
+          "words": [
+            {
+              "start": 0.0,
+              "end": 0.76,
+              "text": "最",
+              "probability": 0.2531
+            },
+            {
+              "start": 0.76,
+              "end": 0.96,
+              "text": "后",
+              "probability": 0.9979
+            },
+            {
+              "start": 0.96,
+              "end": 1.12,
+              "text": "一",
+              "probability": 0.9912
+            },
+            {
+              "start": 1.12,
+              "end": 1.34,
+              "text": "单,",
+              "probability": 0.872
+            },
+            {
+              "start": 1.86,
+              "end": 2.74,
+              "text": "怎么",
+              "probability": 0.9133
+            },
+            {
+              "start": 2.74,
+              "end": 2.94,
+              "text": "是",
+              "probability": 0.968
+            },
+            {
+              "start": 2.94,
+              "end": 3.16,
+              "text": "家",
+              "probability": 0.9942
+            },
+            {
+              "start": 3.16,
+              "end": 3.28,
+              "text": "里",
+              "probability": 0.9954
+            },
+            {
+              "start": 3.28,
+              "end": 3.38,
+              "text": "的",
+              "probability": 0.9688
+            },
+            {
+              "start": 3.38,
+              "end": 3.52,
+              "text": "地",
+              "probability": 0.9984
+            },
+            {
+              "start": 3.52,
+              "end": 3.72,
+              "text": "址?",
+              "probability": 0.9906
+            }
+          ]
+        },
+        {
+          "start": 18.02,
+          "end": 20.6,
+          "text": "三年了,它还留着",
+          "words": [
+            {
+              "start": 18.02,
+              "end": 18.46,
+              "text": "三",
+              "probability": 0.8424
+            },
+            {
+              "start": 18.46,
+              "end": 18.72,
+              "text": "年",
+              "probability": 0.9981
+            },
+            {
+              "start": 18.72,
+              "end": 19.02,
+              "text": "了,",
+              "probability": 0.9889
+            },
+            {
+              "start": 19.54,
+              "end": 19.94,
+              "text": "它",
+              "probability": 0.4069
+            },
+            {
+              "start": 19.94,
+              "end": 20.16,
+              "text": "还",
+              "probability": 0.9917
+            },
+            {
+              "start": 20.16,
+              "end": 20.36,
+              "text": "留",
+              "probability": 0.9905
+            },
+            {
+              "start": 20.36,
+              "end": 20.6,
+              "text": "着",
+              "probability": 0.9945
+            }
+          ]
+        },
+        {
+          "start": 32.88,
+          "end": 35.46,
+          "text": "我点的不是外卖,是你",
+          "words": [
+            {
+              "start": 32.88,
+              "end": 33.34,
+              "text": "我",
+              "probability": 0.7645
+            },
+            {
+              "start": 33.34,
+              "end": 33.48,
+              "text": "点",
+              "probability": 0.7225
+            },
+            {
+              "start": 33.48,
+              "end": 33.64,
+              "text": "的",
+              "probability": 0.9903
+            },
+            {
+              "start": 33.64,
+              "end": 33.86,
+              "text": "不是",
+              "probability": 0.9898
+            },
+            {
+              "start": 33.86,
+              "end": 34.16,
+              "text": "外",
+              "probability": 0.9979
+            },
+            {
+              "start": 34.16,
+              "end": 34.42,
+              "text": "卖,",
+              "probability": 0.9916
+            },
+            {
+              "start": 34.66,
+              "end": 35.18,
+              "text": "是",
+              "probability": 0.9577
+            },
+            {
+              "start": 35.18,
+              "end": 35.46,
+              "text": "你",
+              "probability": 0.9875
+            }
+          ]
+        },
+        {
+          "start": 37.54,
+          "end": 38.0,
+          "text": "妈",
+          "words": [
+            {
+              "start": 37.54,
+              "end": 38.0,
+              "text": "妈",
+              "probability": 0.8073
+            }
+          ]
+        },
+        {
+          "start": 54.0,
+          "end": 55.36,
+          "text": "妈,我回来了",
+          "words": [
+            {
+              "start": 54.0,
+              "end": 54.46,
+              "text": "妈,",
+              "probability": 0.9606
+            },
+            {
+              "start": 54.78,
+              "end": 54.96,
+              "text": "我",
+              "probability": 0.972
+            },
+            {
+              "start": 54.96,
+              "end": 55.12,
+              "text": "回",
+              "probability": 0.9984
+            },
+            {
+              "start": 55.12,
+              "end": 55.36,
+              "text": "来了",
+              "probability": 0.938
+            }
+          ]
+        },
+        {
+          "start": 56.14,
+          "end": 57.98,
+          "text": "回来就好,汤还热着",
+          "words": [
+            {
+              "start": 56.14,
+              "end": 56.6,
+              "text": "回",
+              "probability": 0.8657
+            },
+            {
+              "start": 56.6,
+              "end": 56.76,
+              "text": "来",
+              "probability": 0.9925
+            },
+            {
+              "start": 56.76,
+              "end": 56.88,
+              "text": "就",
+              "probability": 0.9964
+            },
+            {
+              "start": 56.88,
+              "end": 57.12,
+              "text": "好,",
+              "probability": 0.9987
+            },
+            {
+              "start": 57.28,
+              "end": 57.44,
+              "text": "汤",
+              "probability": 0.9895
+            },
+            {
+              "start": 57.44,
+              "end": 57.58,
+              "text": "还",
+              "probability": 0.9923
+            },
+            {
+              "start": 57.58,
+              "end": 57.78,
+              "text": "热",
+              "probability": 0.9968
+            },
+            {
+              "start": 57.78,
+              "end": 57.98,
+              "text": "着",
+              "probability": 0.9872
+            }
+          ]
+        }
+      ],
+      "transcript": "最后一单,怎么是家里的地址?三年了,它还留着我点的不是外卖,是你妈妈,我回来了回来就好,汤还热着",
+      "character_error_rate": 0.023809523809523808,
+      "dialogue_lines": [
+        {
+          "expected": "最后一单，怎么是家里的地址。",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "三年了，她还留着。",
+          "status": "not_fully_transcribed"
+        },
+        {
+          "expected": "我点的不是外卖，是你。",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "妈。",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "妈，我回来了。",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "回来就好，汤还热着。",
+          "status": "transcribed_in_order"
+        }
+      ],
+      "status": "requires_review"
+    }
+  ]
+}

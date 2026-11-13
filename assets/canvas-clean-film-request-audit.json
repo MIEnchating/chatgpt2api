@@ -1,0 +1,53 @@
+{
+  "scope": "Application request_args audit; no supplier internal rewrite visibility",
+  "requests": [
+    {
+      "taskID": "canvas-video-a3941420-448e-4c8c-8f28-8a34c7da64a2",
+      "shotID": "shot-04",
+      "logID": 79595,
+      "promptSHA256": "c713eabc4538c33288cfcea1401ead4ee127eb631b3a267b7bce75da22b789a3",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "resolution": "768P",
+      "audio": true
+    },
+    {
+      "taskID": "canvas-video-a1b8f109-6b89-4d01-85f6-9f69e7c71188",
+      "shotID": "shot-03",
+      "logID": 79593,
+      "promptSHA256": "3f53cd34941f514052632cf712e8e06d7f9bddff6506fe15a963e30c2579de74",
+      "promptMatchesAuthored": true,
+      "referenceImages": 6,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "resolution": "768P",
+      "audio": true
+    },
+    {
+      "taskID": "canvas-video-454f4db1-dd2e-4003-b3ae-63aad95ab57f",
+      "shotID": "shot-02",
+      "logID": 79591,
+      "promptSHA256": "d61220e2f3abf9a87d10c14ed9118fdc9a4a1d2125c3ae194b76e38eee0347e5",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "resolution": "768P",
+      "audio": true
+    },
+    {
+      "taskID": "canvas-video-0d33d650-4d5e-41c8-ae41-e64072ce7e54",
+      "shotID": "shot-01",
+      "logID": 79589,
+      "promptSHA256": "d3add5e7580a22d1d5d913730a77df570c4f6a5deaeb965c2a18c1cced67e80b",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "resolution": "768P",
+      "audio": true
+    }
+  ]
+}

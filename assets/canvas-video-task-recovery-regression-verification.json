@@ -1,0 +1,54 @@
+{
+  "scope": "original accepted video task recovery",
+  "paidGenerationRequests": 0,
+  "backend": {
+    "focusedRecoveryPassed": true,
+    "fullGoTestPassed": true,
+    "serviceSeconds": 265.839,
+    "httpapiSeconds": 111.887,
+    "otherPackages": "unchanged packages reused Go cache where reported",
+    "racePassed": true,
+    "raceSeconds": 5.084,
+    "embeddedAssetsRechecked": true
+  },
+  "frontend": {
+    "behaviorAndArchitectureTestsPassed": 273,
+    "presentationTestsPassed": 17,
+    "buildPassed": true,
+    "lintPassed": true
+  },
+  "databases": {
+    "isolated": [
+      "SQLite",
+      "MySQL 8.0",
+      "PostgreSQL 18"
+    ],
+    "claimAndReloadPassed": true,
+    "workersPerOriginalTask": 1,
+    "temporaryContainersRemoved": true
+  },
+  "covered": [
+    "original query contract and path survive service reload",
+    "query authentication failure can resume with current original credential",
+    "only GET queries during recovery, no generation POST",
+    "explicit provider failure clears recovery",
+    "simultaneous recovery calls claim one worker across database instances",
+    "late old worker progress, error and cleanup cannot overwrite new recovery",
+    "stale remote monitor snapshots cannot cancel new recovery",
+    "failed durable claim starts no worker",
+    "cached terminal SSE below claimed revision is ignored",
+    "persisted accepted videos are observed rather than submitted again",
+    "missing video observations preserve original ID",
+    "cancelled tasks require explicit action",
+    "ownership and authenticated recovery route"
+  ],
+  "pageFixtureReport": "assets/canvas-video-task-recovery-page-verification.json",
+  "runtimeReport": "assets/canvas-video-task-recovery-runtime-verification.json",
+  "limitations": [
+    "task query and download failures in browser validation use intercepted fixtures; they are not supplier availability guarantees",
+    "original acceptance metadata must have persisted and supplier task or artifact must still exist",
+    "video content quality and final revised movie remain outside this recovery verification"
+  ],
+  "oldMoviePlaybackReport": "assets/canvas-video-recovery-old-movie-verification.json",
+  "oldMovieStillOutdated": true
+}

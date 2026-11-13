@@ -1,0 +1,24 @@
+{
+  "full_packages": {
+    "command": "go test ./internal/service ./internal/httpapi -count=1",
+    "result": "passed",
+    "service_seconds": 304.115,
+    "httpapi_seconds": 92.992
+  },
+  "race": {
+    "command": "go test -race ./internal/service -run 'TestCanvasAgentGenerationIgnoresScriptNavigationAndReviews|TestAgentNodeDetailsDistinguishMeasuredMediaFromRequestedGeneration|TestCanvasAgentPublishesMediaProgress|TestCanvasAgentProgressSaveFailure|TestWaitCanvasAgentTask' -count=1",
+    "first_attempt": "compile_failed_no_space_left_on_device",
+    "after_expired_project_cache_cleanup": "passed",
+    "service_seconds": 4.496
+  },
+  "frontend": {
+    "result": "reused_current_unchanged_source_results",
+    "canvas_architecture_tests": 654,
+    "build": "passed",
+    "lint": "passed"
+  },
+  "source_service_restarted": true,
+  "new_paid_tasks_in_final_checks": 0,
+  "quality_approved": false,
+  "historical_writeback_root_cause": "not_established"
+}

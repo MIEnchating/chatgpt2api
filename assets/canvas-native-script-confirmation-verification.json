@@ -1,0 +1,40 @@
+{
+  "startedAt": "2026-11-12T12:12:47.261Z",
+  "checks": [
+    {
+      "name": "real_model_reads_and_confirms_existing_script_without_rewriting_or_generating",
+      "passed": true
+    },
+    {
+      "name": "refresh_mobile_history_and_zero_media_tasks",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "observations": [
+    {
+      "at": "2026-11-12T12:12:54.496Z",
+      "status": "running",
+      "nodes": 1
+    },
+    {
+      "at": "2026-11-12T12:13:26.663Z",
+      "status": "success",
+      "nodes": 1
+    }
+  ],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-4a595a624dc50213ea1edc42",
+  "submittedOnce": true,
+  "runID": "iuBzqn409qCfJyufZjAph",
+  "runStatus": "success",
+  "tools": [
+    "get_node",
+    "confirm_script_node",
+    "finish_task"
+  ],
+  "reply": "已读取并核对《原生确认隔离脚本》，制作就绪状态已确认。标题、完整主稿、镜头、动作顺序及所有提示词原文均未改动；未提交任何媒体生成，未改变模型，也未填写人工质量验收。",
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "finishedAt": "2026-11-12T12:13:32.079Z"
+}

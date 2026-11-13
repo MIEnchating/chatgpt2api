@@ -1,0 +1,101 @@
+{
+  "at": "2026-11-12T12:33:53.019Z",
+  "projectID": "canvas-04702de07993ea1fdf59d868",
+  "qualityApproved": false,
+  "clips": [
+    {
+      "shotID": "s1",
+      "nodeID": "video-canvas-68907edd4828bc282ffcc9c0",
+      "taskID": "canvas-agent-media-canvas-388ee8bf55b3d40967a0318a",
+      "status": "success",
+      "file": "/root/workspace/chatgpt2api/build/review/canvas-production/autonomous-media/video-1.mp4",
+      "bytes": 4611394,
+      "sha256": "2ce7a3d00d448e2625f6e13819108564317a8f7ac513dfdec802cc1a8e27aa20",
+      "durationSeconds": 15.083333,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "sampleRate": "32000"
+        }
+      ]
+    },
+    {
+      "shotID": "s2",
+      "nodeID": "video-canvas-468eb52d1feaee8c9b83227b",
+      "taskID": "canvas-agent-media-canvas-361f20d34374e138edb800b1",
+      "status": "success",
+      "file": "/root/workspace/chatgpt2api/build/review/canvas-production/autonomous-media/video-2.mp4",
+      "bytes": 4909195,
+      "sha256": "2bdb90677cc03b462e567ac641bf5c2132c8f615dd91827a2ae8ef70e3bcb08c",
+      "durationSeconds": 15.083333,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "sampleRate": "32000"
+        }
+      ]
+    },
+    {
+      "shotID": "s3",
+      "nodeID": "video-canvas-4b03e366153d957a8ed24198",
+      "taskID": "canvas-agent-media-canvas-5ebee353288f5b0774d9d6bd",
+      "status": "success",
+      "file": "/root/workspace/chatgpt2api/build/review/canvas-production/autonomous-media/video-3.mp4",
+      "bytes": 4875711,
+      "sha256": "0d77b4939d99bbc14095e8036aef9aaa12f3f9b66ddf8d07e7cd5c3d403631e4",
+      "durationSeconds": 15.083333,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "sampleRate": "32000"
+        }
+      ]
+    },
+    {
+      "shotID": "s4",
+      "nodeID": "video-canvas-c11c0fb5174848a465c348fe",
+      "taskID": "canvas-agent-media-canvas-9b835615cf82170d759d55c9",
+      "status": "success",
+      "file": "/root/workspace/chatgpt2api/build/review/canvas-production/autonomous-media/video-4.mp4",
+      "bytes": 4232119,
+      "sha256": "61e04706f13ae5143a67163f8bb753e0f2e83554f71cecf47d59ab6cc8423bb7",
+      "durationSeconds": 15.083333,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 768,
+          "height": 1376
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "sampleRate": "32000"
+        }
+      ]
+    }
+  ],
+  "runStatus": "running",
+  "completedClips": 4
+}

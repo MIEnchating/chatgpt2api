@@ -1,0 +1,56 @@
+{
+  "nodeID": "video-0db46a12-f8cf-4d46-9088-2aae62f94e47",
+  "taskID": "canvas-video-f674907a-e94b-415c-b268-0d29ccdb0dd4",
+  "qualityApproved": false,
+  "observations": {
+    "sampledSubtitleGibberishVisible": false,
+    "subtitleAbsenceProvenForWholeVideo": false,
+    "homeInteriorPreservedInSamples": true,
+    "mouthsVisibleAtSampledASRTimes": true,
+    "singleHelmetRemovedToLeftStoolInSamples": true,
+    "bagPreservedInSamples": true,
+    "helmetMotionSecondsApprox": [
+      10,
+      13
+    ],
+    "promptHelmetMotionSeconds": [
+      8,
+      12
+    ]
+  },
+  "audio": {
+    "method": "faster-whisper small multilingual CPU int8, zh, VAD, without expected-text prompting",
+    "transcript": "我点的不是外卖 是你妈",
+    "dialogueLines": [
+      {
+        "expected": "我点的不是外卖，是你。",
+        "status": "transcribed_in_order"
+      },
+      {
+        "expected": "妈。",
+        "status": "transcribed_in_order"
+      }
+    ],
+    "motherDialogueSeconds": [
+      2.83,
+      5.49
+    ],
+    "sonDialogueSeconds": [
+      7.54,
+      8.0
+    ],
+    "speakerIdentityAndFullLipSyncApproved": false
+  },
+  "ocr": {
+    "decodedFrames": 362,
+    "candidateFrames": 362,
+    "caution": "Texture false positives occur throughout the full-frame OCR. Candidate counts cannot establish subtitle presence or absence."
+  },
+  "comparisonLimits": "One actual generation using the same model and image inputs, but a revised full prompt. Improvement does not prove the dialogue markers alone caused it or guarantee future results.",
+  "mergedIntoNewMovie": false,
+  "remaining": [
+    "Full video subtitle absence verification",
+    "Complete lip synchronization, speaker identity and cross-shot timbre",
+    "Other shots and final film quality"
+  ]
+}

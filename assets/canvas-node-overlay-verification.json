@@ -1,0 +1,480 @@
+{
+  "checks": [
+    {
+      "name": "text_1440x1000",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 1440,
+          "bottom": 924,
+          "width": 1440,
+          "height": 924
+        },
+        "toolbar": {
+          "left": 128.5,
+          "top": 124,
+          "right": 331.5,
+          "bottom": 168,
+          "width": 203,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 648,
+          "bottom": 592,
+          "width": 640,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "文本模型",
+            "bottom": 581
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 583
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "text_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 123.5,
+          "top": 124,
+          "right": 326.5,
+          "bottom": 168,
+          "width": 203,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 422,
+          "right": 382,
+          "bottom": 702,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 459
+          },
+          {
+            "label": "文本模型",
+            "bottom": 691
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 693
+          },
+          {
+            "label": "开始生成",
+            "bottom": 693
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "image_320x740",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 320,
+          "bottom": 608,
+          "width": 320,
+          "height": 608
+        },
+        "toolbar": {
+          "left": 188,
+          "top": 358,
+          "right": 312,
+          "bottom": 402,
+          "width": 124,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 72,
+          "right": 312,
+          "bottom": 344,
+          "width": 304,
+          "height": 272
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 109
+          },
+          {
+            "label": "图片模型",
+            "bottom": 333
+          },
+          {
+            "label": "图片参数",
+            "bottom": 335
+          },
+          {
+            "label": "摄像机",
+            "bottom": 335
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 335
+          },
+          {
+            "label": "开始生成",
+            "bottom": 335
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "video_844x390",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 844,
+          "bottom": 258,
+          "width": 844,
+          "height": 258
+        },
+        "toolbar": {
+          "left": 588,
+          "top": 72,
+          "right": 712,
+          "bottom": 116,
+          "width": 124,
+          "height": 44
+        },
+        "input": {
+          "left": 196,
+          "top": 128,
+          "right": 836,
+          "bottom": 248,
+          "width": 640,
+          "height": 120
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 165
+          },
+          {
+            "label": "视频模型",
+            "bottom": 237
+          },
+          {
+            "label": "视频参数",
+            "bottom": 239
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 239
+          },
+          {
+            "label": "开始生成",
+            "bottom": 239
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "text_390x400",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 268,
+          "width": 390,
+          "height": 268
+        },
+        "toolbar": {
+          "left": 8,
+          "top": 114,
+          "right": 211,
+          "bottom": 158,
+          "width": 203,
+          "height": 44
+        },
+        "input": {
+          "left": 8,
+          "top": 170,
+          "right": 382,
+          "bottom": 258,
+          "width": 374,
+          "height": 88
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 207
+          },
+          {
+            "label": "文本模型",
+            "bottom": 247
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 249
+          },
+          {
+            "label": "开始生成",
+            "bottom": 249
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "audio_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 250,
+          "top": 124,
+          "right": 250,
+          "bottom": 124,
+          "width": 0,
+          "height": 0
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 382,
+          "bottom": 592,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "音频模型",
+            "bottom": 581
+          },
+          {
+            "label": "音频参数",
+            "bottom": 583
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 583
+          },
+          {
+            "label": "上传音频",
+            "bottom": 581
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "panorama_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 250,
+          "top": 124,
+          "right": 250,
+          "bottom": 124,
+          "width": 0,
+          "height": 0
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 382,
+          "bottom": 592,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "全景图模型",
+            "bottom": 581
+          },
+          {
+            "label": "图片参数",
+            "bottom": 583
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 583
+          },
+          {
+            "label": "替换图片",
+            "bottom": 581
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "script_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 8,
+          "top": 124,
+          "right": 382,
+          "bottom": 200,
+          "width": 374,
+          "height": 76
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 382,
+          "bottom": 592,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "上传脚本参考图",
+            "bottom": 353
+          },
+          {
+            "label": "脚本文本模型",
+            "bottom": 581
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "name": "config_390x844",
+      "bounds": {
+        "layer": {
+          "left": 0,
+          "top": 0,
+          "right": 390,
+          "bottom": 712,
+          "width": 390,
+          "height": 712
+        },
+        "toolbar": {
+          "left": 250,
+          "top": 124,
+          "right": 250,
+          "bottom": 124,
+          "width": 0,
+          "height": 0
+        },
+        "input": {
+          "left": 8,
+          "top": 312,
+          "right": 382,
+          "bottom": 592,
+          "width": 374,
+          "height": 280
+        },
+        "buttons": [
+          {
+            "label": "放大输入框",
+            "bottom": 349
+          },
+          {
+            "label": "生成模型",
+            "bottom": 581
+          },
+          {
+            "label": "生成设置",
+            "bottom": 583
+          },
+          {
+            "label": "图片参数",
+            "bottom": 583
+          },
+          {
+            "label": "摄像机",
+            "bottom": 583
+          },
+          {
+            "label": "打开提示词",
+            "bottom": 583
+          },
+          {
+            "label": "开始生成",
+            "bottom": 583
+          }
+        ]
+      },
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "originalHistoryUnchanged": true,
+  "testProjectDeleted": true
+}

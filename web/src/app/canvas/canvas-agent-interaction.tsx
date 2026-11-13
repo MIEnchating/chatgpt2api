@@ -1,5 +1,6 @@
 import { Spinner } from "@/components/ui/spinner";
 import { Confirmation } from "@/components/ai-elements/confirmation";
+import { Message, MessageContent } from "@/components/ai-elements/message";
 import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, X } from "lucide-react";
@@ -10,12 +11,14 @@ import { CanvasAgentAnswerInput } from "./canvas-agent-answer-input";
 import type { CanvasAgentQuestion } from "./agent/canvas-agent-types";
 
 export function CanvasAgentQuestionRecord({ question, answer, cancelled }: { question: string; answer?: string; cancelled?: boolean }) {
-  return <Bubble data-agent-question-record align="end" variant="muted" className="max-w-[84%]">
+  return <Message from="user" data-agent-question-record><MessageContent>
+    <Bubble align="end" variant="muted" className="max-w-[84%]">
     <BubbleContent className="w-full space-y-1.5">
       <p data-agent-question-prompt className="whitespace-pre-wrap break-words text-muted-foreground">{question}</p>
       {answer ? <p data-agent-question-answer className="whitespace-pre-wrap font-medium text-foreground">{answer}</p> : cancelled ? <p className="text-foreground">已取消</p> : <p className="text-muted-foreground">等待回答</p>}
     </BubbleContent>
-  </Bubble>;
+    </Bubble>
+  </MessageContent></Message>;
 }
 
 export function CanvasAgentQuestionCard({ question, busy, active: _active, onAnswer, onCancel }: {

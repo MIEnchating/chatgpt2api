@@ -36,7 +36,6 @@ type CanvasAgentPromptChipInputProps = {
   onSubmit?: (value?: string, referenceIDs?: string[]) => void;
   onPasteImage?: (file: File) => void;
   pendingReferences?: CanvasResourceReference[];
-  readOnly?: boolean;
   className?: string;
   style?: CSSProperties;
   placeholder?: string;
@@ -50,7 +49,27 @@ type PromptToken =
   | { type: "text"; value: string }
   | { type: "reference"; label: string; value: string };
 
-export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, attachments = EMPTY_ATTACHMENTS, onRemoveAttachments, readOnly, className, style, placeholder }: CanvasAgentPromptChipInputProps) {
+export function CanvasAgentPromptContent({ value, references }: Pick<CanvasAgentPromptChipInputProps, "value" | "references">) {
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const referenceByLabel = useMemo(() => new Map(references.filter(reference => reference.active).map(reference => [reference.label, reference])), [references]);
+  const tokens = useMemo(() => parsePromptTokens(value, [...referenceByLabel.keys()]), [referenceByLabel, value]);
+  return <div data-agent-prompt-content className="whitespace-pre-wrap break-words" onCopy={event => {
+    if (copyContentEditableSelection(event.currentTarget, event.clipboardData, serializePromptEditor)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }}>
+    {tokens.map((token, index) => {
+      const reference = token.type === "reference" ? referenceByLabel.get(token.label) : undefined;
+      return reference ? <span key={index} data-ref-label={token.value} data-ref-node-id={reference.nodeID} data-tooltip={reference.text || reference.title} className="mx-px inline-flex max-w-40 items-center align-middle">
+        <CanvasAgentAttachmentChip attachment={{ id: reference.id, type: reference.kind, title: reference.kind === "text" ? reference.text || reference.title : reference.label, url: reference.previewURL }} onPreview={setImagePreview} />
+      </span> : token.value;
+    })}
+    {imagePreview ? <ImageLightbox images={[{ id: "agent-reference", src: imagePreview }]} currentIndex={0} open onOpenChange={open => { if (!open) setImagePreview(null); }} onIndexChange={() => undefined} /> : null}
+  </div>;
+}
+
+export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, attachments = EMPTY_ATTACHMENTS, onRemoveAttachments, className, style, placeholder }: CanvasAgentPromptChipInputProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const referenceTargets = useContentEditableReferenceTargets(editorRef, "[data-ref-node-id]");
   const composingRef = useRef(false);
@@ -91,7 +110,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
 
   const removeUnavailableReferences = useCallback(() => {
     const editor = editorRef.current;
-    if (!editor || readOnly) return;
+    if (!editor) return;
     let removedCommittedReference = false;
     editor.querySelectorAll<HTMLElement>("[data-ref-node-id]").forEach((chip) => {
       if (activeNodeIDs.has(chip.dataset.refNodeId!)) return;
@@ -106,20 +125,26 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     lastEmittedRef.current = nextValue;
     onChange(nextValue);
     onReferenceIDsChange?.(referenceIDsFromEditor(committed));
-  }, [activeNodeIDs, onChange, onReferenceIDsChange, readOnly]);
+  }, [activeNodeIDs, onChange, onReferenceIDsChange]);
 
   useLayoutEffect(removeUnavailableReferences, [removeUnavailableReferences]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.querySelectorAll<HTMLElement>("[data-pending-reference='true']").forEach(removeReferenceChip);
-    const committed = new Set(Array.from(editor.querySelectorAll<HTMLElement>("[data-ref-node-id]")).map(chip => chip.dataset.refNodeId));
-    pendingReferences?.filter(reference => activeNodeIDs.has(reference.nodeID) && !committed.has(reference.nodeID)).forEach((reference) => appendReferenceChip(editor, reference, true));
+    const chips = Array.from(editor.querySelectorAll<HTMLElement>("[data-ref-node-id]"));
+    const pending = chips.filter(chip => chip.dataset.pendingReference === "true");
+    const committed = new Set(chips.filter(chip => chip.dataset.pendingReference !== "true").map(chip => chip.dataset.refNodeId));
+    const desired = pendingReferences?.filter(reference => activeNodeIDs.has(reference.nodeID) && !committed.has(reference.nodeID)) || [];
+    if (pending.length === desired.length && pending.every((chip, index) => {
+      const reference = desired[index];
+      return chip.dataset.refNodeId === reference.nodeID && chip.dataset.refLabel === reference.label && chip.dataset.tooltip === (reference.text || reference.title);
+    })) return;
+    pending.forEach(removeReferenceChip);
+    desired.forEach((reference) => appendReferenceChip(editor, reference, true));
   }, [pendingReferences, activeNodeIDs]);
 
   useEffect(() => {
-    if (readOnly) return;
     const rememberCaret = () => {
       const editor = editorRef.current;
       const selection = window.getSelection();
@@ -132,7 +157,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     };
     document.addEventListener("selectionchange", rememberCaret);
     return () => document.removeEventListener("selectionchange", rememberCaret);
-  }, [readOnly]);
+  }, []);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -265,11 +290,10 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
       {showPlaceholder && placeholder ? <div className="pointer-events-none absolute left-2.5 top-2 text-base text-muted-foreground md:text-sm">{placeholder}</div> : null}
       <div
         data-slot="input-group-control" ref={editorRef}
-        contentEditable={!readOnly}
+        contentEditable
         suppressContentEditableWarning
         role="textbox"
         aria-multiline="true"
-        aria-readonly={readOnly}
         aria-label={placeholder}
         className={`${className || ""} whitespace-pre-wrap break-words outline-none [&_[data-pending-reference=true]]:opacity-50`}
         style={{ ...style, cursor: "text" }}
@@ -349,7 +373,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
       })}
       {attachments.map((attachment) => {
         const target = attachmentTargets.get(attachment.id);
-        return target ? createPortal(<CanvasAgentAttachmentChip attachment={attachment} onPreview={setImagePreview} onRemove={readOnly ? undefined : () => {
+        return target ? createPortal(<CanvasAgentAttachmentChip attachment={attachment} onPreview={setImagePreview} onRemove={() => {
           const editor = editorRef.current;
           if (!editor) return;
           const caret = document.createRange();

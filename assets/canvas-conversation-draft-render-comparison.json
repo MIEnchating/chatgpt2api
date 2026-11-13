@@ -1,0 +1,28 @@
+{
+  "verifiedAt": "2026-11-12T15:00:07.179Z",
+  "draft": "draft-only-edit",
+  "characters": 15,
+  "beforeConversationInvocations": 30,
+  "afterConversationInvocations": 0,
+  "environment": "existing Vite development service with React development rendering",
+  "messages": 2000,
+  "protocolMessages": 4000,
+  "checks": {
+    "regressionTests": 382,
+    "build": "passed",
+    "lint": "passed",
+    "embeddedWebSeconds": 0.049,
+    "browserActions": "passed",
+    "completeHistory": "unchanged",
+    "originalProjects": "unchanged",
+    "generationSubmissions": 0
+  },
+  "sourceSHA256": {
+    "web/src/app/canvas/canvas-agent-conversation.tsx": "22e6b26fd5abd35c9804faede4b87d5fc8984c21ae31c8e4c2515b4d00f987a6",
+    "web/tests/canvas-agent-panel-review.test.mjs": "e85564c1223f98702031e879130af169cba77d64141a696fe5b70ea52cfa265f"
+  },
+  "limitations": [
+    "Counts development function invocations, not production commits.",
+    "Does not prove initial load, node editing, whole-page responsiveness or movie quality is solved."
+  ]
+}

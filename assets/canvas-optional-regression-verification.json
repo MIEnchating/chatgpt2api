@@ -1,0 +1,80 @@
+{
+  "checkedAt": "2026-11-12T18:39:20.395556+00:00",
+  "sourceHashes": {
+    "web/src/app/canvas/page.tsx": "0d3ada9bdf55e9f2de4f7689a0355cceff72424574b2deebb2592aa81d01f50a",
+    "web/src/app/canvas/canvas-agent-conversation.tsx": "aac6ca860a21aac46fec051570f667cc1b39b5f9aae7da4df8ca377b0a419f29",
+    "web/tests/shared-component-boundaries.test.mjs": "7d0ba6ea39b44c482686bfcb9a57c5f0aed343b1d505b7fa8be202f39e9fa2e0"
+  },
+  "sourceHashesUnchanged": true,
+  "initialFocused": {
+    "passed": 303,
+    "failed": 4,
+    "reason": "Four React harnesses did not provide lazy; their original assertions pass after adding the real React dependency."
+  },
+  "focusedFixtureTests": 4,
+  "initialFullRun": {
+    "passed": 1766,
+    "failed": 7,
+    "unhandledErrors": 2,
+    "seconds": 257.11,
+    "reason": "Transfer tests timed out with subsequent asynchronous mock failures; root cause not established by this run."
+  },
+  "isolatedTransferTests": 10,
+  "fullFrontendTests": 1773,
+  "testFiles": 194,
+  "command": "npm run test -- --timeout 20000",
+  "fullTestExitCode": 0,
+  "fullTestSeconds": 115.56,
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "embeddedSeconds": 0.023,
+  "optionalModuleBytesBefore": [
+    3356673,
+    3356673
+  ],
+  "optionalModuleBytesAfter": [
+    0,
+    0
+  ],
+  "readyMsBefore": [
+    6319,
+    5552
+  ],
+  "readyMsAfter": [
+    7535,
+    5705
+  ],
+  "browserUI": {
+    "checks": [
+      "script editor is not requested before opening; loading status, editing, saving, closing, cached reopening and refresh work",
+      "movie loading status resolves to the real player; original audio video plays, downloads and retains the complete conversation"
+    ],
+    "errors": [],
+    "mediaSubmissions": 0,
+    "workspaceRequests": 1,
+    "movieRequests": 1,
+    "movieFixture": {
+      "panel": {
+        "mode": "docked",
+        "open": true,
+        "width": 440
+      },
+      "activeSessionID": "yri59UzTeknHMjnSaOmsQ",
+      "messages": [
+        18
+      ]
+    },
+    "downloadPassed": true,
+    "testProjectsDeleted": 2,
+    "originalHistoryUnchanged": true
+  },
+  "productionProjectsUnchanged": true,
+  "mediaSubmissions": 0,
+  "limitations": [
+    "Module bytes refer to Vite development resources, not production bundle or compressed transfer sizes.",
+    "Overall opening speed has not passed: request waits, full conversation reads, structured copies and rendering remain.",
+    "Video content quality, standalone audio supplier generation and historical failure attribution remain open."
+  ]
+}

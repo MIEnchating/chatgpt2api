@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"chatgpt2api/internal/model"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/url"
 	"sort"
@@ -21,8 +23,9 @@ import (
 const (
 	canvasWorkspaceDir                         = "canvas_workspaces"
 	canvasActiveProjectDir                     = "canvas_active_projects"
+	canvasActiveProjectVersion                 = 1
 	canvasDocumentVersion                      = 1
-	canvasWorkspaceVersion                     = 1
+	canvasWorkspaceVersion                     = 4
 	canvasWorkspaceMaxProjects                 = 24
 	canvasWorkspaceMaxBytes                    = 12 << 20
 	canvasDocumentMaxNodes                     = 500
@@ -34,8 +37,6 @@ const (
 	canvasDocumentMaxNodeDim                   = 20000
 	canvasDocumentMaxGenerationReferenceImages = 14
 	canvasDocumentMaxGenerationCount           = 15
-	canvasDocumentMaxAgentMessages             = 100
-	canvasDocumentMaxAgentSessions             = 24
 	canvasDocumentMaxAgentDataBytes            = 512 << 10
 	canvasWorkspaceSaveAttempts                = 3
 )
@@ -70,6 +71,13 @@ type CanvasCameraControl struct {
 	Lens        string  `json:"lens,omitempty"`
 	FocalLength float64 `json:"focal_length,omitempty"`
 	Aperture    float64 `json:"aperture,omitempty"`
+}
+
+type CanvasMediaMetadata struct {
+	Width      int   `json:"width"`
+	Height     int   `json:"height"`
+	DurationMS int64 `json:"duration_ms"`
+	HasAudio   *bool `json:"has_audio,omitempty"`
 }
 
 type CanvasNode struct {
@@ -151,6 +159,9 @@ type CanvasNode struct {
 	GenerationAudioGeminiVoice           string                       `json:"generation_audio_gemini_voice,omitempty"`
 	AudioTaskID                          string                       `json:"audio_task_id,omitempty"`
 	AudioTaskResultID                    string                       `json:"audio_task_result_id,omitempty"`
+	MediaMetadata                        *CanvasMediaMetadata         `json:"media_metadata,omitempty"`
+	MediaProbeError                      string                       `json:"media_probe_error,omitempty"`
+	MediaSilentClips                     int                          `json:"media_silent_clips,omitempty"`
 	DurationMS                           int64                        `json:"duration_ms,omitempty"`
 	MimeType                             string                       `json:"mime_type,omitempty"`
 	PanoramaSourcePrompt                 string                       `json:"panorama_source_prompt,omitempty"`
@@ -187,28 +198,32 @@ type CanvasAgentPanel struct {
 }
 
 type CanvasDocument struct {
-	AgentRun                    *CanvasAgentRun      `json:"agent_run,omitempty"`
-	RetainedStorageObjectIDs    []string             `json:"retained_storage_object_ids,omitempty"`
-	RetainedStorageObjectURLs   []string             `json:"retained_storage_object_urls,omitempty"`
-	RetainedStorageObjectsUntil string               `json:"retained_storage_objects_until,omitempty"`
-	Version                     int                  `json:"version"`
-	ID                          string               `json:"id"`
-	Revision                    int64                `json:"revision"`
-	Title                       string               `json:"title"`
-	Background                  string               `json:"background"`
-	ShowImageInfo               bool                 `json:"show_image_info,omitempty"`
-	Nodes                       []CanvasNode         `json:"nodes"`
-	Connections                 []CanvasConnection   `json:"connections"`
-	AgentMessages               []CanvasAgentMessage `json:"agent_messages,omitempty"`
-	AgentSessions               json.RawMessage      `json:"agent_sessions,omitempty"`
-	ActiveAgentSessionID        string               `json:"active_agent_session_id,omitempty"`
-	AgentConfig                 json.RawMessage      `json:"agent_config,omitempty"`
-	AgentPanel                  *CanvasAgentPanel    `json:"agent_panel,omitempty"`
-	AgentAutoTitlePending       bool                 `json:"agent_auto_title_pending,omitempty"`
-	PendingAgentRequest         json.RawMessage      `json:"pending_agent_request,omitempty"`
-	Viewport                    CanvasViewport       `json:"viewport"`
-	CreatedAt                   string               `json:"created_at,omitempty"`
-	UpdatedAt                   string               `json:"updated_at,omitempty"`
+	AgentRun                    *CanvasAgentRun             `json:"agent_run,omitempty"`
+	RetainedStorageObjectIDs    []string                    `json:"retained_storage_object_ids,omitempty"`
+	RetainedStorageObjectURLs   []string                    `json:"retained_storage_object_urls,omitempty"`
+	RetainedStorageObjectsUntil string                      `json:"retained_storage_objects_until,omitempty"`
+	Version                     int                         `json:"version"`
+	ID                          string                      `json:"id"`
+	Revision                    int64                       `json:"revision"`
+	Title                       string                      `json:"title"`
+	Background                  string                      `json:"background"`
+	ShowImageInfo               bool                        `json:"show_image_info,omitempty"`
+	Nodes                       []CanvasNode                `json:"nodes"`
+	Connections                 []CanvasConnection          `json:"connections"`
+	AgentMessages               []CanvasAgentMessage        `json:"agent_messages,omitempty"`
+	AgentSessions               json.RawMessage             `json:"agent_sessions,omitempty"`
+	AgentHistoryPartial         bool                        `json:"agent_history_partial,omitempty"`
+	AgentSessionSummaries       []CanvasAgentSessionSummary `json:"agent_session_summaries,omitempty"`
+	AgentSessionUpdates         []CanvasAgentSessionUpdate  `json:"agent_session_updates,omitempty"`
+	DeletedAgentSessionIDs      []string                    `json:"deleted_agent_session_ids,omitempty"`
+	ActiveAgentSessionID        string                      `json:"active_agent_session_id,omitempty"`
+	AgentConfig                 json.RawMessage             `json:"agent_config,omitempty"`
+	AgentPanel                  *CanvasAgentPanel           `json:"agent_panel,omitempty"`
+	AgentAutoTitlePending       bool                        `json:"agent_auto_title_pending,omitempty"`
+	PendingAgentRequest         json.RawMessage             `json:"pending_agent_request,omitempty"`
+	Viewport                    CanvasViewport              `json:"viewport"`
+	CreatedAt                   string                      `json:"created_at,omitempty"`
+	UpdatedAt                   string                      `json:"updated_at,omitempty"`
 }
 
 type CanvasProjectSummary struct {
@@ -224,15 +239,23 @@ type CanvasWorkspaceResult struct {
 	Document        CanvasDocument         `json:"document"`
 	Projects        []CanvasProjectSummary `json:"projects"`
 	ActiveProjectID string                 `json:"active_project_id"`
+	historyDeferred bool
+}
+
+type CanvasProjectList struct {
+	Projects        []CanvasProjectSummary `json:"projects"`
+	ActiveProjectID string                 `json:"active_project_id"`
 }
 
 type canvasWorkspace struct {
-	Shares                        map[string]string `json:"shares,omitempty"`
-	Version                       int               `json:"version"`
-	Generation                    int64             `json:"generation"`
-	ActiveProjectID               string            `json:"active_project_id"`
-	Projects                      []CanvasDocument  `json:"projects"`
-	PendingStorageObjectDeletions []string          `json:"pending_storage_object_deletions,omitempty"`
+	verifiedAgentHistories        map[string]canvasVerifiedAgentHistory
+	AgentHistories                map[string]canvasAgentHistoryReference `json:"agent_histories,omitempty"`
+	Shares                        map[string]string                      `json:"shares,omitempty"`
+	Version                       int                                    `json:"version"`
+	Generation                    int64                                  `json:"generation"`
+	ActiveProjectID               string                                 `json:"active_project_id"`
+	Projects                      []CanvasDocument                       `json:"projects"`
+	PendingStorageObjectDeletions []string                               `json:"pending_storage_object_deletions,omitempty"`
 }
 
 type canvasActiveProject struct {
@@ -275,6 +298,69 @@ func DefaultCanvasDocument() CanvasDocument {
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
+}
+
+// ProjectList reads the workspace manifest without loading conversation bodies.
+func (s *CanvasDocumentService) ProjectList(ownerID string) (CanvasProjectList, error) {
+	ownerID = util.Clean(ownerID)
+	if ownerID == "" {
+		return CanvasProjectList{}, invalidCanvasDocument("owner_id is required")
+	}
+	if s.store == nil {
+		return CanvasProjectList{}, fmt.Errorf("storage document backend is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
+	if err != nil {
+		return CanvasProjectList{}, err
+	}
+	if raw == nil {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return CanvasProjectList{}, err
+		}
+		result := canvasWorkspaceResult(workspace)
+		return CanvasProjectList{Projects: result.Projects, ActiveProjectID: result.ActiveProjectID}, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return CanvasProjectList{}, err
+	}
+	var manifest struct {
+		Generation      int64  `json:"generation"`
+		ActiveProjectID string `json:"active_project_id"`
+		Projects        []struct {
+			CanvasProjectSummary
+			Nodes []struct{} `json:"nodes"`
+		} `json:"projects"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return CanvasProjectList{}, err
+	}
+	list := CanvasProjectList{Projects: make([]CanvasProjectSummary, 0, len(manifest.Projects))}
+	if len(manifest.Projects) == 0 {
+		return list, nil
+	}
+	active, err := s.loadActiveProjectLocked(ownerID, manifest.Generation)
+	if err != nil {
+		return CanvasProjectList{}, err
+	}
+	list.ActiveProjectID = manifest.Projects[0].ID
+	activeExists := false
+	for _, entry := range manifest.Projects {
+		project := entry.CanvasProjectSummary
+		project.NodeCount = len(entry.Nodes)
+		list.Projects = append(list.Projects, project)
+		if project.ID == manifest.ActiveProjectID {
+			list.ActiveProjectID = project.ID
+		}
+		activeExists = activeExists || project.ID == active
+	}
+	if activeExists {
+		list.ActiveProjectID = active
+	}
+	return list, nil
 }
 
 func (s *CanvasDocumentService) Workspace(ownerID string) (CanvasWorkspaceResult, error) {
@@ -334,20 +420,8 @@ func (s *CanvasDocumentService) ReferencesStorageObject(ownerID, storageKey stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
-	if err != nil || raw == nil {
-		return false, err
-	}
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return false, err
-	}
-	var workspace canvasWorkspace
-	if err := json.Unmarshal(data, &workspace); err != nil {
-		return false, err
-	}
-	workspace, err = normalizeCanvasWorkspace(workspace)
-	if err != nil {
+	workspace, found, err := s.readWorkspaceLocked(ownerID)
+	if err != nil || !found {
 		return false, err
 	}
 	for _, document := range workspace.Projects {
@@ -546,6 +620,18 @@ func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expec
 	return s.saveWithAgent(ownerID, input, expectedRevision, false)
 }
 func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocument, expectedRevision *int64, agentWrite bool) (CanvasDocument, error) {
+	partial := input.AgentHistoryPartial
+	deleted := input.DeletedAgentSessionIDs
+	expectedSessions := input.AgentSessionSummaries
+	updates := input.AgentSessionUpdates
+	if len(updates) > 0 && !partial {
+		return CanvasDocument{}, invalidCanvasDocument("session metadata updates require partial history")
+	}
+	if len(deleted) > 0 && !partial {
+		return CanvasDocument{}, invalidCanvasDocument("explicit history deletions require a partial history document")
+	}
+	input.AgentHistoryPartial, input.AgentSessionSummaries, input.DeletedAgentSessionIDs = false, nil, nil
+	input.AgentSessionUpdates = nil
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
@@ -593,32 +679,72 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 			return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
 		}
 		current := workspace.Projects[projectIndex]
+		if partial {
+			if agentWrite {
+				return CanvasDocument{}, invalidCanvasDocument("agent writes require complete history")
+			}
+			if (len(deleted) > 0 || len(updates) > 0) && current.AgentRun != nil && current.AgentRun.Status == "running" {
+				return CanvasDocument{}, ErrCanvasAgentBusy
+			}
+			normalized.AgentSessions, err = mergeCanvasPartialHistory(current.AgentSessions, input.AgentSessions, deleted, updates, expectedSessions)
+			if err != nil {
+				return CanvasDocument{}, err
+			}
+			normalized.AgentMessages = current.AgentMessages
+		}
 		if !agentWrite && current.AgentRun != nil && current.AgentRun.Status == "running" {
 			normalized.AgentSessions = mergeCanvasAgentMessageQueues(current.AgentSessions, normalized.AgentSessions)
 			normalized.ActiveAgentSessionID = current.ActiveAgentSessionID
 		}
 		if !agentWrite {
 			normalized.AgentRun = current.AgentRun
+		}
+		if !agentWrite && !bytes.Equal(normalized.AgentSessions, current.AgentSessions) {
 			// Browser snapshots cannot forge or erase server execution metadata.
-			var incoming, stored []map[string]any
+			metadataIDs := make(map[string]bool, len(updates))
+			for _, update := range updates {
+				metadataIDs[update.ID] = true
+			}
+			var incoming, stored []json.RawMessage
 			_ = json.Unmarshal(normalized.AgentSessions, &incoming)
 			_ = json.Unmarshal(current.AgentSessions, &stored)
-			for _, session := range incoming {
+			previousBodies := make(map[string]json.RawMessage, len(stored))
+			for _, body := range stored {
+				var identity struct {
+					ID string `json:"id"`
+				}
+				_ = json.Unmarshal(body, &identity)
+				previousBodies[identity.ID] = body
+			}
+			rebuilt := false
+			for index, body := range incoming {
+				var identity struct {
+					ID string `json:"id"`
+				}
+				_ = json.Unmarshal(body, &identity)
+				previousBody := previousBodies[identity.ID]
+				// Metadata updates were validated and merged from the stored body;
+				// they cannot overlap browser body writes or alter server fields.
+				if metadataIDs[identity.ID] || bytes.Equal(body, previousBody) {
+					continue
+				}
+				var session, previous map[string]json.RawMessage
+				_ = json.Unmarshal(body, &session)
+				if len(previousBody) > 0 {
+					_ = json.Unmarshal(previousBody, &previous)
+				}
 				delete(session, "toolReceipts")
 				delete(session, "contextUsage")
-				for _, previous := range stored {
-					if session["id"] == previous["id"] {
-						if receipts, ok := previous["toolReceipts"]; ok {
-							session["toolReceipts"] = receipts
-						}
-						if usage, ok := previous["contextUsage"]; ok {
-							session["contextUsage"] = usage
-						}
-						break
-					}
+				if receipts, ok := previous["toolReceipts"]; ok {
+					session["toolReceipts"] = receipts
 				}
+				if usage, ok := previous["contextUsage"]; ok {
+					session["contextUsage"] = usage
+				}
+				incoming[index], _ = json.Marshal(session)
+				rebuilt = true
 			}
-			if incoming != nil {
+			if rebuilt {
 				normalized.AgentSessions, _ = json.Marshal(incoming)
 			}
 		}
@@ -628,6 +754,10 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 		candidate := normalized
 		candidate.ID = current.ID
 		candidate.CreatedAt = current.CreatedAt
+		reconcileCanvasScriptDependencies(current, &candidate)
+		if len(candidate.Connections) > canvasDocumentMaxConnections {
+			return CanvasDocument{}, invalidCanvasDocument("script references exceed canvas connection limit")
+		}
 		candidate.Revision = current.Revision + 1
 		candidate.UpdatedAt = util.NowISO()
 		if s.storageObjectValidator != nil {
@@ -663,6 +793,20 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 				return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: -1}
 			}
 			return CanvasDocument{}, err
+		}
+		if partial {
+			var bodies []json.RawMessage
+			_ = json.Unmarshal(input.AgentSessions, &bodies)
+			var ids []string
+			for _, body := range bodies {
+				summary, _ := canvasAgentSessionSummary(body)
+				ids = append(ids, summary.ID)
+			}
+			acknowledged := make(map[string]string, len(expectedSessions))
+			for _, summary := range expectedSessions {
+				acknowledged[summary.ID] = summary.ContentHash
+			}
+			return canvasAgentHistoryView(candidate, ids, acknowledged, updates, workspace.verifiedAgentHistories[candidate.ID])
 		}
 		return candidate, nil
 	}
@@ -800,10 +944,13 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 	if s.store == nil {
 		return CanvasWorkspaceResult{}, fmt.Errorf("storage document backend is required")
 	}
+	if strings.EqualFold(strings.TrimSpace(action), "activate") {
+		return s.ActivateProjectWorkspace(ownerID, projectID, false)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	action = strings.ToLower(strings.TrimSpace(action))
-	if action != "create" && action != "activate" && action != "rename" && action != "delete" {
+	if action != "create" && action != "rename" && action != "delete" {
 		return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project action is invalid")
 	}
 	project := DefaultCanvasDocument()
@@ -827,19 +974,6 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 			}
 			workspace.Projects = append([]CanvasDocument{project}, workspace.Projects...)
 			workspace.ActiveProjectID = project.ID
-		case "activate":
-			if canvasProjectIndex(workspace, projectID) < 0 {
-				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
-			}
-			projectID = strings.TrimSpace(projectID)
-			if err := s.saveActiveProjectLocked(ownerID, projectID, workspace.Generation); err != nil {
-				if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
-					continue
-				}
-				return CanvasWorkspaceResult{}, err
-			}
-			workspace.ActiveProjectID = projectID
-			return canvasWorkspaceResult(workspace), nil
 		case "rename":
 			index := canvasProjectIndex(workspace, projectID)
 			title = strings.TrimSpace(title)
@@ -894,23 +1028,11 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 }
 
 func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorkspace, error) {
-	raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
+	workspace, found, err := s.readWorkspaceLocked(ownerID)
 	if err != nil {
 		return canvasWorkspace{}, err
 	}
-	if raw != nil {
-		data, err := json.Marshal(raw)
-		if err != nil {
-			return canvasWorkspace{}, err
-		}
-		var workspace canvasWorkspace
-		if err := json.Unmarshal(data, &workspace); err != nil {
-			return canvasWorkspace{}, err
-		}
-		workspace, err = normalizeCanvasWorkspace(workspace)
-		if err != nil {
-			return canvasWorkspace{}, err
-		}
+	if found {
 		activeProjectID, err := s.loadActiveProjectLocked(ownerID, workspace.Generation)
 		if err != nil {
 			return canvasWorkspace{}, err
@@ -922,7 +1044,7 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 	}
 
 	document := DefaultCanvasDocument()
-	workspace := canvasWorkspace{
+	workspace = canvasWorkspace{
 		Version:         canvasWorkspaceVersion,
 		ActiveProjectID: document.ID,
 		Projects:        []CanvasDocument{document},
@@ -934,6 +1056,46 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		return canvasWorkspace{}, err
 	}
 	return workspace, nil
+}
+
+func (s *CanvasDocumentService) readWorkspaceLocked(ownerID string) (canvasWorkspace, bool, error) {
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
+		if err != nil || raw == nil {
+			return canvasWorkspace{}, false, err
+		}
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return canvasWorkspace{}, false, err
+		}
+		var workspace canvasWorkspace
+		if err := json.Unmarshal(data, &workspace); err != nil {
+			return canvasWorkspace{}, false, err
+		}
+		historyErr := s.loadAgentHistoriesLocked(ownerID, &workspace)
+		if historyErr == nil {
+			normalized, err := normalizeCanvasWorkspace(workspace)
+			return normalized, true, err
+		}
+		if !errors.Is(historyErr, errCanvasAgentHistoryChunkMissing) {
+			return canvasWorkspace{}, false, historyErr
+		}
+		// A concurrent commit may have replaced the manifest and reclaimed its
+		// old chunks after this reader observed the previous root. Retry only
+		// when the root changed; genuine missing data must remain an error.
+		latest, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
+		if err != nil {
+			return canvasWorkspace{}, false, err
+		}
+		latestData, err := json.Marshal(latest)
+		if err != nil {
+			return canvasWorkspace{}, false, err
+		}
+		if bytes.Equal(data, latestData) {
+			return canvasWorkspace{}, false, historyErr
+		}
+	}
+	return canvasWorkspace{}, false, fmt.Errorf("canvas history changed repeatedly during reading: %w", storage.ErrConcurrentRowUpdate)
 }
 
 func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID string, workspaceGeneration int64) (string, error) {
@@ -949,7 +1111,7 @@ func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID string, workspac
 	if err := json.Unmarshal(data, &active); err != nil {
 		return "", err
 	}
-	if active.Version != canvasWorkspaceVersion || active.WorkspaceGeneration != workspaceGeneration {
+	if active.Version != canvasActiveProjectVersion || active.WorkspaceGeneration != workspaceGeneration {
 		return "", nil
 	}
 	return strings.TrimSpace(active.ProjectID), nil
@@ -957,7 +1119,7 @@ func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID string, workspac
 
 func (s *CanvasDocumentService) saveActiveProjectLocked(ownerID, projectID string, workspaceGeneration int64) error {
 	return saveStoredJSONBounded(s.store, canvasActiveProjectName(ownerID), canvasActiveProject{
-		Version:             canvasWorkspaceVersion,
+		Version:             canvasActiveProjectVersion,
 		ProjectID:           strings.TrimSpace(projectID),
 		WorkspaceGeneration: workspaceGeneration,
 	})
@@ -975,7 +1137,18 @@ func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace *c
 	if err != nil {
 		return err
 	}
-	if err := saveStoredJSONBounded(s.store, canvasWorkspaceName(ownerID), normalized); err != nil {
+	stored, err := s.archiveAgentHistoriesLocked(ownerID, normalized)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(stored)
+	if err != nil {
+		return err
+	}
+	if len(data) > canvasWorkspaceMaxBytes {
+		return invalidCanvasDocument("canvas workspace is too large")
+	}
+	if err := s.publishAgentHistoriesLocked(ownerID, stored); err != nil {
 		return err
 	}
 	*workspace = normalized
@@ -1026,7 +1199,12 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 	} else if _, exists := seen[workspace.ActiveProjectID]; !exists {
 		workspace.ActiveProjectID = workspace.Projects[0].ID
 	}
-	data, err := json.Marshal(workspace)
+	geometry := workspace
+	geometry.Projects = append([]CanvasDocument{}, workspace.Projects...)
+	for index := range geometry.Projects {
+		geometry.Projects[index].AgentSessions, geometry.Projects[index].AgentMessages = nil, nil
+	}
+	data, err := json.Marshal(geometry)
 	if err != nil {
 		return canvasWorkspace{}, err
 	}
@@ -1092,6 +1270,9 @@ func canvasProjectIndex(workspace canvasWorkspace, projectID string) int {
 }
 
 func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
+	if input.AgentHistoryPartial || len(input.DeletedAgentSessionIDs) > 0 || len(input.AgentSessionSummaries) > 0 || len(input.AgentSessionUpdates) > 0 {
+		return CanvasDocument{}, invalidCanvasDocument("complete history is required for this operation")
+	}
 	if len(input.RetainedStorageObjectIDs)+len(input.RetainedStorageObjectURLs) > 10000 {
 		return CanvasDocument{}, invalidCanvasDocument("canvas history contains too many storage references")
 	}
@@ -1155,9 +1336,6 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 	}
 	if len(input.Connections) > canvasDocumentMaxConnections {
 		return CanvasDocument{}, invalidCanvasDocument("canvas contains too many connections")
-	}
-	if len(input.AgentMessages) > canvasDocumentMaxAgentMessages {
-		return CanvasDocument{}, invalidCanvasDocument("canvas contains too many agent messages")
 	}
 	for index := range input.AgentMessages {
 		message := input.AgentMessages[index]
@@ -1309,7 +1487,9 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 	if input.Connections == nil {
 		input.Connections = []CanvasConnection{}
 	}
-	data, err := json.Marshal(input)
+	geometry := input
+	geometry.AgentSessions, geometry.AgentMessages = nil, nil
+	data, err := json.Marshal(geometry)
 	if err != nil {
 		return CanvasDocument{}, err
 	}
@@ -1323,22 +1503,33 @@ func validateCanvasAgentJSON(value json.RawMessage, sessions bool) error {
 	if len(value) == 0 || string(value) == "null" {
 		return nil
 	}
-	if len(value) > canvasDocumentMaxAgentDataBytes || !json.Valid(value) {
+	if !sessions && len(value) > canvasDocumentMaxAgentDataBytes {
 		return invalidCanvasDocument("canvas agent data is invalid")
 	}
 	if sessions {
-		var items []json.RawMessage
-		if err := json.Unmarshal(value, &items); err != nil || len(items) > canvasDocumentMaxAgentSessions {
+		decoder := json.NewDecoder(bytes.NewReader(value))
+		token, err := decoder.Token()
+		if err != nil || token != json.Delim('[') {
 			return invalidCanvasDocument("canvas agent sessions are invalid")
 		}
-		for _, item := range items {
-			var session map[string]any
-			if json.Unmarshal(item, &session) != nil {
+		for decoder.More() {
+			var session map[string]json.RawMessage
+			if decoder.Decode(&session) != nil || session == nil {
 				return invalidCanvasDocument("canvas agent session is invalid")
 			}
-			if queue, exists := session["messageQueue"]; exists && !validateCanvasAgentMessageQueue(queue) {
-				return invalidCanvasDocument("canvas agent message queue is invalid")
+			if queueJSON, exists := session["messageQueue"]; exists {
+				var queue any
+				if json.Unmarshal(queueJSON, &queue) != nil || !validateCanvasAgentMessageQueue(queue) {
+					return invalidCanvasDocument("canvas agent message queue is invalid")
+				}
 			}
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+			return invalidCanvasDocument("canvas agent sessions are invalid")
+		}
+		var trailing json.RawMessage
+		if decoder.Decode(&trailing) != io.EOF {
+			return invalidCanvasDocument("canvas agent sessions are invalid")
 		}
 		return nil
 	}
@@ -1517,14 +1708,14 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.GenerationMode != "" && node.GenerationMode != "image" && node.GenerationMode != "text" && node.GenerationMode != "video" && node.GenerationMode != "audio" {
 		return CanvasNode{}, invalidCanvasDocument("node generation mode is invalid")
 	}
-	if node.Type == "config" && node.GenerationMode == "text" && (node.GenerationTextModel == "" || len(node.GenerationTextModel) > 256) {
+	if node.Type == "config" && node.GenerationMode == "text" && len(node.GenerationTextModel) > 256 {
 		return CanvasNode{}, invalidCanvasDocument("text node generation model is invalid")
 	}
 	if len(node.GenerationVideoFirstFrameNodeID) > 128 || len(node.GenerationVideoLastFrameNodeID) > 128 {
 		return CanvasNode{}, invalidCanvasDocument("video node frame references are invalid")
 	}
 	if node.Type == "audio" || node.Type == "config" && node.GenerationMode == "audio" {
-		if node.GenerationAudioModel == "" || len(node.GenerationAudioModel) > 256 {
+		if len(node.GenerationAudioModel) > 256 {
 			return CanvasNode{}, invalidCanvasDocument("audio node generation model is invalid")
 		}
 		if len(node.GenerationAudioVoice) > 256 || len(node.GenerationAudioGrokVoice) > 256 || len(node.GenerationAudioGLMVoice) > 256 || len(node.GenerationAudioMiMoVoice) > 256 || len(node.GenerationAudioGeminiVoice) > 256 {
@@ -1570,6 +1761,15 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 			return CanvasNode{}, invalidCanvasDocument("audio node task metadata is invalid")
 		}
 	}
+	if info := node.MediaMetadata; info != nil && (info.Width < 1 || info.Height < 1 || info.Width > 32768 || info.Height > 32768 || info.DurationMS < 1 || info.DurationMS > 24*60*60*1000) {
+		return CanvasNode{}, invalidCanvasDocument("actual media metadata is invalid")
+	}
+	if len(node.MediaProbeError) > 1024 {
+		return CanvasNode{}, invalidCanvasDocument("media probe error is too large")
+	}
+	if node.MediaSilentClips < 0 || node.MediaSilentClips > 200 {
+		return CanvasNode{}, invalidCanvasDocument("silent clip count is invalid")
+	}
 	if node.DurationMS < 0 || node.DurationMS > 24*60*60*1000 {
 		return CanvasNode{}, invalidCanvasDocument("node media duration is invalid")
 	}
@@ -1593,13 +1793,13 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, invalidCanvasDocument("node generation model is invalid")
 	}
 	if node.Type == "video" || node.Type == "config" && node.GenerationMode == "video" {
-		if node.GenerationVideoModel == "" || len(node.GenerationVideoModel) > 256 {
+		if len(node.GenerationVideoModel) > 256 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation model is invalid")
 		}
 		if len(node.GenerationVideoSize) > 64 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation size is invalid")
 		}
-		if node.GenerationVideoSeconds < 1 || node.GenerationVideoSeconds > 9007199254740991 {
+		if node.GenerationVideoModel != "" && node.GenerationVideoModel != "local-video-merge" && node.GenerationVideoSeconds < 1 || node.GenerationVideoSeconds > 9007199254740991 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
 		}
 		if len(node.GenerationVideoResolution) > 64 {

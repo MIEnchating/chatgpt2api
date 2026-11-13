@@ -1,0 +1,20 @@
+{
+  "method": "Isolated imported fixture: backend material replacement, real UI storyboard replacement and regeneration; intercepted paid submission",
+  "checks": [
+    {
+      "name": "backend_material_reference_slot_updated",
+      "passed": true
+    },
+    {
+      "name": "ui_storyboard_slot_updated_and_saved_in_order",
+      "passed": true
+    },
+    {
+      "name": "references_survive_reload",
+      "passed": true
+    }
+  ],
+  "supplierSubmissions": 0,
+  "qualityApproved": false,
+  "error": "Expected values to be strictly equal:\n\n'768P' !== '768p'\n"
+}

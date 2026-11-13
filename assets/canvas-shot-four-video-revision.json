@@ -1,0 +1,25 @@
+{
+  "stage": "video",
+  "startedAt": "2026-11-11T21:57:06.954Z",
+  "observeOnly": true,
+  "qualityApproved": false,
+  "checks": [
+    {
+      "name": "original_results_and_chat_preserved",
+      "passed": true
+    }
+  ],
+  "submissions": 0,
+  "nodeID": "video-d5adc160-4e8c-4bec-aaca-eeccf8ac3743",
+  "taskID": "canvas-video-9d990529-0fe2-48b5-8c77-8b4a31f42c92",
+  "status": "success",
+  "progress": 100,
+  "observationInterruptions": 165,
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-d5adc160-4e8c-4bec-aaca-eeccf8ac3743.mp4",
+  "mediaMetadata": {
+    "width": 768,
+    "height": 1376,
+    "duration_ms": 15075
+  },
+  "finishedAt": "2026-11-11T22:04:10.541Z"
+}

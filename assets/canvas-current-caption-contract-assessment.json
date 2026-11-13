@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-11-12",
+  "scope": "Current local enabled contract plus public API descriptions; no access to supplier internal dispatch or rewriting.",
+  "liveContract": [
+    {
+      "contractID": "e4275063-c2ce-4a9d-acc4-cccae19affbd",
+      "revision": 20,
+      "enabled": true,
+      "model": "minimax-H3-super",
+      "audioControl": "always",
+      "referenceImages": 9,
+      "referenceAudio": 0,
+      "requestFieldNames": [
+        "image_urls",
+        "ratio",
+        "resolution",
+        "seconds"
+      ],
+      "subtitleOrCaptionControlDeclared": false
+    }
+  ],
+  "publicDocs": {
+    "url": "https://openai.fit/downloads/docs/openai.fit-api-docs.md",
+    "sha256": "4fdf6f9e9aa6057a097a8c63e27b92b92edf520b5333a6ef9dd2015e5c10fd8b",
+    "bytes": 176680,
+    "minimaxSuperSectionContainsSubtitleControl": false,
+    "mentionsSeed": true,
+    "scopeCaution": "Public openai.fit documentation does not prove www.yunmian.tech internal supplier identity or configuration."
+  },
+  "actualRoutingPublicRead": {
+    "host": "www.yunmian.tech",
+    "pricingHTTPStatus": 403,
+    "statusHTTPStatus": 403,
+    "meaning": "Public fetch denied; does not show authenticated generation or DNS failure."
+  },
+  "additionalVideoSubmissions": 0,
+  "qualityApproved": false
+}

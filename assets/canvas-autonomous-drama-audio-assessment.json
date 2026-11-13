@@ -1,0 +1,625 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "s1",
+      "expected_dialogue": "陈姨，这么晚，还没收摊啊？等雨小一点。袋子怎么了？",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-16.2",
+      "max_volume_db": "-0.1",
+      "segments": [
+        {
+          "start": 4.02,
+          "end": 8.06,
+          "text": "陈义 这么晚还没收摊啊",
+          "words": [
+            {
+              "start": 4.02,
+              "end": 4.54,
+              "text": "陈",
+              "probability": 0.6985
+            },
+            {
+              "start": 4.54,
+              "end": 4.74,
+              "text": "义",
+              "probability": 0.5736
+            },
+            {
+              "start": 5.84,
+              "end": 6.08,
+              "text": " 这么",
+              "probability": 0.9209
+            },
+            {
+              "start": 6.08,
+              "end": 6.42,
+              "text": "晚",
+              "probability": 0.9993
+            },
+            {
+              "start": 6.42,
+              "end": 7.26,
+              "text": "还",
+              "probability": 0.8962
+            },
+            {
+              "start": 7.26,
+              "end": 7.4,
+              "text": "没",
+              "probability": 0.9939
+            },
+            {
+              "start": 7.4,
+              "end": 7.56,
+              "text": "收",
+              "probability": 0.9363
+            },
+            {
+              "start": 7.56,
+              "end": 7.8,
+              "text": "摊",
+              "probability": 0.8669
+            },
+            {
+              "start": 7.8,
+              "end": 8.06,
+              "text": "啊",
+              "probability": 0.8545
+            }
+          ]
+        },
+        {
+          "start": 9.98,
+          "end": 13.32,
+          "text": "等于小一点 袋子怎么了",
+          "words": [
+            {
+              "start": 9.98,
+              "end": 10.76,
+              "text": "等",
+              "probability": 0.7901
+            },
+            {
+              "start": 10.76,
+              "end": 10.96,
+              "text": "于",
+              "probability": 0.9946
+            },
+            {
+              "start": 10.96,
+              "end": 11.18,
+              "text": "小",
+              "probability": 0.9578
+            },
+            {
+              "start": 11.18,
+              "end": 11.56,
+              "text": "一点",
+              "probability": 0.9961
+            },
+            {
+              "start": 12.62,
+              "end": 12.8,
+              "text": " 袋",
+              "probability": 0.8917
+            },
+            {
+              "start": 12.8,
+              "end": 12.96,
+              "text": "子",
+              "probability": 0.9995
+            },
+            {
+              "start": 12.96,
+              "end": 13.32,
+              "text": "怎么了",
+              "probability": 0.9688
+            }
+          ]
+        }
+      ],
+      "transcript": "陈义 这么晚还没收摊啊等于小一点 袋子怎么了",
+      "character_error_rate": 0.1,
+      "dialogue_lines": [
+        {
+          "expected": "陈姨，这么晚，还没收摊啊？",
+          "status": "not_fully_transcribed"
+        },
+        {
+          "expected": "等雨小一点。袋子怎么了？",
+          "status": "not_fully_transcribed"
+        }
+      ],
+      "status": "requires_review"
+    },
+    {
+      "shot_id": "s2",
+      "expected_dialogue": "线开了。明天第一天上班，我想带点像样的东西。袋子挺好，补两针就行。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-16.2",
+      "max_volume_db": "0.0",
+      "segments": [
+        {
+          "start": 5.36,
+          "end": 6.4,
+          "text": "限开了",
+          "words": [
+            {
+              "start": 5.36,
+              "end": 5.86,
+              "text": "限",
+              "probability": 0.4153
+            },
+            {
+              "start": 5.86,
+              "end": 6.06,
+              "text": "开",
+              "probability": 0.8344
+            },
+            {
+              "start": 6.06,
+              "end": 6.4,
+              "text": "了",
+              "probability": 0.9302
+            }
+          ]
+        },
+        {
+          "start": 7.24,
+          "end": 8.94,
+          "text": "明天第一天上班",
+          "words": [
+            {
+              "start": 7.24,
+              "end": 7.68,
+              "text": "明",
+              "probability": 0.4904
+            },
+            {
+              "start": 7.68,
+              "end": 8.04,
+              "text": "天",
+              "probability": 0.9979
+            },
+            {
+              "start": 8.04,
+              "end": 8.3,
+              "text": "第一",
+              "probability": 0.92
+            },
+            {
+              "start": 8.3,
+              "end": 8.5,
+              "text": "天",
+              "probability": 0.9995
+            },
+            {
+              "start": 8.5,
+              "end": 8.66,
+              "text": "上",
+              "probability": 0.9989
+            },
+            {
+              "start": 8.66,
+              "end": 8.94,
+              "text": "班",
+              "probability": 0.9995
+            }
+          ]
+        },
+        {
+          "start": 8.94,
+          "end": 11.24,
+          "text": "我想带点像样的东西",
+          "words": [
+            {
+              "start": 8.94,
+              "end": 9.62,
+              "text": "我想",
+              "probability": 0.7399
+            },
+            {
+              "start": 9.62,
+              "end": 9.84,
+              "text": "带",
+              "probability": 0.9795
+            },
+            {
+              "start": 9.84,
+              "end": 10.02,
+              "text": "点",
+              "probability": 0.9948
+            },
+            {
+              "start": 10.02,
+              "end": 10.18,
+              "text": "像",
+              "probability": 0.8592
+            },
+            {
+              "start": 10.18,
+              "end": 10.32,
+              "text": "样",
+              "probability": 0.9891
+            },
+            {
+              "start": 10.32,
+              "end": 10.42,
+              "text": "的",
+              "probability": 0.999
+            },
+            {
+              "start": 10.42,
+              "end": 10.56,
+              "text": "东",
+              "probability": 0.9974
+            },
+            {
+              "start": 10.56,
+              "end": 11.24,
+              "text": "西",
+              "probability": 0.9999
+            }
+          ]
+        },
+        {
+          "start": 11.86,
+          "end": 13.04,
+          "text": "带子挺好",
+          "words": [
+            {
+              "start": 11.86,
+              "end": 12.3,
+              "text": "带",
+              "probability": 0.6872
+            },
+            {
+              "start": 12.3,
+              "end": 12.48,
+              "text": "子",
+              "probability": 0.761
+            },
+            {
+              "start": 12.48,
+              "end": 12.68,
+              "text": "挺",
+              "probability": 0.9793
+            },
+            {
+              "start": 12.68,
+              "end": 13.04,
+              "text": "好",
+              "probability": 0.988
+            }
+          ]
+        },
+        {
+          "start": 13.04,
+          "end": 14.58,
+          "text": "补两针就行",
+          "words": [
+            {
+              "start": 13.04,
+              "end": 13.7,
+              "text": "补",
+              "probability": 0.6874
+            },
+            {
+              "start": 13.7,
+              "end": 13.88,
+              "text": "两",
+              "probability": 0.9089
+            },
+            {
+              "start": 13.88,
+              "end": 14.1,
+              "text": "针",
+              "probability": 0.8921
+            },
+            {
+              "start": 14.1,
+              "end": 14.28,
+              "text": "就",
+              "probability": 0.9869
+            },
+            {
+              "start": 14.28,
+              "end": 14.58,
+              "text": "行",
+              "probability": 0.9951
+            }
+          ]
+        }
+      ],
+      "transcript": "限开了明天第一天上班我想带点像样的东西带子挺好补两针就行",
+      "character_error_rate": 0.07142857142857142,
+      "dialogue_lines": [
+        {
+          "expected": "线开了。明天第一天上班，我想带点像样的东西。",
+          "status": "not_fully_transcribed"
+        },
+        {
+          "expected": "袋子挺好，补两针就行。",
+          "status": "not_fully_transcribed"
+        }
+      ],
+      "status": "requires_review"
+    },
+    {
+      "shot_id": "s3",
+      "expected_dialogue": "多少钱？等你下班，跟我说说第一天。就当工钱。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-16.6",
+      "max_volume_db": "-0.4",
+      "segments": [
+        {
+          "start": 2.99,
+          "end": 3.83,
+          "text": "多少钱",
+          "words": [
+            {
+              "start": 2.99,
+              "end": 3.53,
+              "text": "多少",
+              "probability": 0.8635
+            },
+            {
+              "start": 3.53,
+              "end": 3.83,
+              "text": "钱",
+              "probability": 0.8647
+            }
+          ]
+        },
+        {
+          "start": 8.23,
+          "end": 14.17,
+          "text": "等你下班 跟我说说第一天 就当工钱",
+          "words": [
+            {
+              "start": 8.23,
+              "end": 8.49,
+              "text": "等",
+              "probability": 0.5796
+            },
+            {
+              "start": 8.49,
+              "end": 8.67,
+              "text": "你",
+              "probability": 0.9951
+            },
+            {
+              "start": 8.67,
+              "end": 8.85,
+              "text": "下",
+              "probability": 0.9984
+            },
+            {
+              "start": 8.85,
+              "end": 9.23,
+              "text": "班",
+              "probability": 0.9994
+            },
+            {
+              "start": 10.25,
+              "end": 10.49,
+              "text": " 跟我",
+              "probability": 0.9874
+            },
+            {
+              "start": 10.49,
+              "end": 10.75,
+              "text": "说",
+              "probability": 0.9968
+            },
+            {
+              "start": 10.75,
+              "end": 10.93,
+              "text": "说",
+              "probability": 0.9926
+            },
+            {
+              "start": 10.93,
+              "end": 11.17,
+              "text": "第一",
+              "probability": 0.9635
+            },
+            {
+              "start": 11.17,
+              "end": 11.57,
+              "text": "天",
+              "probability": 0.9088
+            },
+            {
+              "start": 11.57,
+              "end": 13.49,
+              "text": " 就",
+              "probability": 0.4861
+            },
+            {
+              "start": 13.49,
+              "end": 13.69,
+              "text": "当",
+              "probability": 0.9972
+            },
+            {
+              "start": 13.69,
+              "end": 13.91,
+              "text": "工",
+              "probability": 0.8599
+            },
+            {
+              "start": 13.91,
+              "end": 14.17,
+              "text": "钱",
+              "probability": 0.983
+            }
+          ]
+        }
+      ],
+      "transcript": "多少钱等你下班 跟我说说第一天 就当工钱",
+      "character_error_rate": 0.0,
+      "dialogue_lines": [
+        {
+          "expected": "多少钱？",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "等你下班，跟我说说第一天。就当工钱。",
+          "status": "transcribed_in_order"
+        }
+      ],
+      "status": "text_consistent"
+    },
+    {
+      "shot_id": "s4",
+      "expected_dialogue": "那我明天，还能这么晚来吗？来吧。我给你留盏灯。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-15.6",
+      "max_volume_db": "-0.4",
+      "segments": [
+        {
+          "start": 1.84,
+          "end": 5.34,
+          "text": "那我明天還能這麼晚來嗎?",
+          "words": [
+            {
+              "start": 1.84,
+              "end": 2.42,
+              "text": "那",
+              "probability": 0.9282
+            },
+            {
+              "start": 2.42,
+              "end": 2.58,
+              "text": "我",
+              "probability": 0.9807
+            },
+            {
+              "start": 2.58,
+              "end": 2.74,
+              "text": "明",
+              "probability": 0.9958
+            },
+            {
+              "start": 2.74,
+              "end": 3.16,
+              "text": "天",
+              "probability": 0.9989
+            },
+            {
+              "start": 3.16,
+              "end": 4.3,
+              "text": "還",
+              "probability": 0.5321
+            },
+            {
+              "start": 4.3,
+              "end": 4.46,
+              "text": "能",
+              "probability": 0.9956
+            },
+            {
+              "start": 4.46,
+              "end": 4.68,
+              "text": "這麼",
+              "probability": 0.9661
+            },
+            {
+              "start": 4.68,
+              "end": 4.88,
+              "text": "晚",
+              "probability": 0.9948
+            },
+            {
+              "start": 4.88,
+              "end": 5.06,
+              "text": "來",
+              "probability": 0.996
+            },
+            {
+              "start": 5.06,
+              "end": 5.34,
+              "text": "嗎?",
+              "probability": 0.9159
+            }
+          ]
+        },
+        {
+          "start": 7.79,
+          "end": 10.75,
+          "text": "來吧,我給你流盞燈。",
+          "words": [
+            {
+              "start": 7.79,
+              "end": 8.27,
+              "text": "來",
+              "probability": 0.9786
+            },
+            {
+              "start": 8.27,
+              "end": 8.63,
+              "text": "吧,",
+              "probability": 0.9976
+            },
+            {
+              "start": 9.41,
+              "end": 9.91,
+              "text": "我",
+              "probability": 0.9328
+            },
+            {
+              "start": 9.91,
+              "end": 10.03,
+              "text": "給",
+              "probability": 0.9981
+            },
+            {
+              "start": 10.03,
+              "end": 10.15,
+              "text": "你",
+              "probability": 0.9929
+            },
+            {
+              "start": 10.15,
+              "end": 10.31,
+              "text": "流",
+              "probability": 0.5411
+            },
+            {
+              "start": 10.31,
+              "end": 10.49,
+              "text": "盞",
+              "probability": 0.6557
+            },
+            {
+              "start": 10.49,
+              "end": 10.75,
+              "text": "燈。",
+              "probability": 0.9937
+            }
+          ]
+        }
+      ],
+      "transcript": "那我明天還能這麼晚來嗎?來吧,我給你流盞燈。",
+      "character_error_rate": 0.05263157894736842,
+      "dialogue_lines": [
+        {
+          "expected": "那我明天，还能这么晚来吗？",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "来吧。我给你留盏灯。",
+          "status": "not_fully_transcribed"
+        }
+      ],
+      "status": "requires_review"
+    }
+  ]
+}

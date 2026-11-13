@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "script editor is not requested before opening; loading status, editing, saving, closing, cached reopening and refresh work",
+    "movie loading status resolves to the real player; original audio video plays, downloads and retains the complete conversation"
+  ],
+  "errors": [],
+  "mediaSubmissions": 0,
+  "workspaceRequests": 1,
+  "movieRequests": 1,
+  "movieFixture": {
+    "panel": {
+      "mode": "docked",
+      "open": true,
+      "width": 440
+    },
+    "activeSessionID": "yri59UzTeknHMjnSaOmsQ",
+    "messages": [
+      18
+    ]
+  },
+  "downloadPassed": true,
+  "testProjectsDeleted": 2,
+  "originalHistoryUnchanged": true
+}

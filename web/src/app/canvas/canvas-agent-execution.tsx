@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import { CircleAlert, CircleCheck, Clock, Terminal, Wrench } from "lucide-react";
 
 import { CodeBlock, CodeBlockContent, CodeBlockActions, CodeBlockCopyButton } from "@/components/ui/code-block";
@@ -25,11 +26,10 @@ export function CanvasAgentExecution({ entry, nodes, running, onFocusNode }: {
   const detailLines = canvasAgentTraceDetailLines(entry.detail, node, entry);
   const detail = detailLines.join("\n");
   const nodeOperation = Boolean(node && ["create", "generate", "edit"].includes(entry.kind));
-  const mediaStatus = nodeOperation && entry.status !== "error" && (entry.kind === "generate" || entry.status === "waiting") ? node?.generation_status : undefined;
-  const status = mediaStatus === "success" ? "success" : mediaStatus === "error" ? "error" : mediaStatus === "loading" ? "running" : entry.status === "running" && !running ? "waiting" : entry.status;
+  const status = entry.status === "running" && !running ? "waiting" : entry.status;
   const Icon = status === "error" ? CircleAlert : status === "waiting" ? Clock : entry.kind === "command" ? Terminal : status === "running" ? Wrench : CircleCheck;
   const statusLabel = entry.resolvedBy ? "已修正" : AGENT_STEP_STATUS[status].label;
-  const nodeLabel = status === "error" ? canvasAgentOperationLabel(entry.label, status) : status === "running" ? entry.kind === "generate" || mediaStatus === "loading" ? "生成中" : entry.kind === "edit" ? "更新节点中" : "创建节点中" : status === "waiting" ? "节点" : entry.kind === "edit" ? "已更新" : entry.kind === "generate" || mediaStatus === "success" ? "已完成" : "已创建节点";
+  const nodeLabel = status === "error" ? canvasAgentOperationLabel(entry.label, status) : status === "running" ? entry.kind === "generate" ? "生成中" : entry.kind === "edit" ? "更新节点中" : "创建节点中" : status === "waiting" ? "节点" : entry.kind === "edit" ? "已更新" : entry.kind === "generate" ? "已完成" : "已创建节点";
   const plan = entry.kind === "plan" && status !== "error" ? canvasAgentToolPlan(entry.tool?.input) : undefined;
   const stack = status === "error" ? canvasAgentErrorStack(entry.tool?.output) || canvasAgentErrorStack(detail) : undefined;
   const toolMessage = status === "error" ? canvasAgentToolMessage(entry.tool?.output) || detail : undefined;
@@ -42,7 +42,7 @@ export function CanvasAgentExecution({ entry, nodes, running, onFocusNode }: {
   return <Trace data-agent-operation={entry.id}>
     <Tool title={target ? `${title} · ${target}` : title} state={status === "running" ? "input-available" : status === "error" ? "output-error" : status === "waiting" ? "pending" : "output-available"} statusLabel={nodeOperation && status === "waiting" ? "待生成" : statusLabel} icon={<AgentStepIcon icon={Icon} status={status} />} expandOnRunning={false} expandOnSuccess={entry.kind === "workflow"}>
       {details ? <>
-        {entry.resolvedBy ? <p className="mb-2 text-xs text-muted-foreground">后续交付核验已通过，以下保留本次未通过的原始记录。</p> : null}
+        {entry.resolvedBy ? <p className="mb-2 text-xs text-muted-foreground">后续操作已恢复，以下保留本次未通过的原始记录。</p> : null}
         {toolMessage ? <p role="status" className="text-sm leading-6 text-destructive">{toolMessage}</p> : null}
         {operationDetails.length ? <div className="mb-2 text-sm leading-6"><p className="text-muted-foreground">{entry.tool?.name === "create_canvas_workflow" ? "创建的节点及依赖" : "执行的节点"}</p><ul className="list-inside list-disc">{operationDetails.map((item, index) => <li key={index} className="break-words">{item}</li>)}</ul></div> : null}
         {entry.terminal ? <TerminalOutput {...entry.terminal} /> : subagent ? <Subagent {...subagent} /> : plan ? <Plan {...plan} running={status === "running"} /> : visibleDetail && visibleDetail !== toolMessage ? <CodeBlock size="sm" variant={status === "error" ? "destructive" : "default"}>
@@ -52,6 +52,6 @@ export function CanvasAgentExecution({ entry, nodes, running, onFocusNode }: {
         {stack ? <StackTrace stack={stack} /> : null}
       </> : null}
     </Tool>
-    {node && onFocusNode ? <CanvasAgentNodeChip node={node} onFocus={onFocusNode} className="ml-6 max-w-[calc(100%-1.5rem)] self-start" /> : null}
+    {node && onFocusNode ? <div className="ml-6 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2"><CanvasAgentNodeChip node={node} onFocus={onFocusNode} />{["image", "video", "audio"].includes(node.type) ? <Badge variant="outline">当前：{node.generation_status === "loading" ? "生成中" : node.generation_status === "error" ? "生成失败" : node.url ? "有成品" : "待生成"}</Badge> : null}</div> : null}
   </Trace>;
 }

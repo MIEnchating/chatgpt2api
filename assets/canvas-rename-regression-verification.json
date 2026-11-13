@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-11-12T18:22:46.011392+00:00",
+  "sourceHashes": {
+    "web/src/app/canvas/page.tsx": "d03594b526b6dd8f4b29cc9e6b368e2de4bba539f2481cb710ac0d45a0c38645",
+    "web/tests/canvas-review-regressions.test.mjs": "0711ce18d67ae0bcf8668104292c96fb4f8835b05170135b54ae211adb3f5c06"
+  },
+  "sourceHashesUnchanged": true,
+  "focusedTests": 4,
+  "regressionsFailedBeforeFix": 2,
+  "fullFrontendTests": 1773,
+  "testFiles": 194,
+  "command": "npm run test -- --timeout 20000",
+  "fullTestExitCode": 0,
+  "fullTestSeconds": 122.28,
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "embeddedSeconds": 0.026,
+  "browserBefore": {
+    "phase": "before",
+    "errors": [],
+    "checks": [
+      "late rename response replaces an unsaved node edit with its old snapshot"
+    ],
+    "mediaSubmissions": 0,
+    "testProjectDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "browserAfter": {
+    "phase": "after",
+    "errors": [],
+    "checks": [
+      "unsaved edit survives rename response and is persisted with the renamed project",
+      "older rename response cannot replace a newer accepted save",
+      "mobile refresh retains the latest node and complete conversation"
+    ],
+    "mediaSubmissions": 0,
+    "saveStatuses": [
+      200,
+      409,
+      200
+    ],
+    "testProjectDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "productionProjectsUnchanged": true,
+  "initialBrowserRun": "The verifier selected an expected 409 instead of waiting for the successful version-merge retry; original report retained.",
+  "limitations": [
+    "This reproduces one lost-edit path; it does not establish the cause of every prior missing conversation.",
+    "Browser testing used node edits and complete preexisting conversations; chat edits during rename were verified with the actual page-handler regression.",
+    "Long-conversation initial loading, video quality, standalone audio generation and historical failures remain open."
+  ]
+}

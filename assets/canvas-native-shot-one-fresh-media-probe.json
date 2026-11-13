@@ -1,0 +1,23 @@
+{
+  "durationSeconds": 15.083333,
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 768,
+      "height": 1376,
+      "sample_rate": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "32000"
+    }
+  ],
+  "expectedLines": [
+    "最后一单……怎么是家里的地址。"
+  ],
+  "qualityApproved": false
+}

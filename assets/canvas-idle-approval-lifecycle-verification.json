@@ -1,0 +1,17 @@
+{
+  "scope": "Browser-only isolated approval requests; no Codex execution or supplier calls",
+  "checks": [
+    {
+      "name": "confirmation_rejection_escape_and_abort_resolve_once_and_close",
+      "passed": true
+    },
+    {
+      "name": "mobile_dialog_and_original_chat_media_preserved",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "currentDecision": "取消",
+  "finishedAt": "2026-11-12T11:03:45.304Z"
+}

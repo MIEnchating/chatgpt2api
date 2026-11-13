@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {
+      "name": "invalid_read_shows_persistent_error_and_blocks_empty_workspace_writes",
+      "passed": true
+    },
+    {
+      "name": "retry_recovers_exact_original_history_without_resaving_or_regenerating",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "documentWrites": 0,
+  "generationSubmissions": 0,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

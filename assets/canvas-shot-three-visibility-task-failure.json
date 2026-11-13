@@ -1,0 +1,22 @@
+{
+  "taskID": "canvas-edit-495aa212-91bd-4b5a-b3d5-74aa29e70921",
+  "nodeID": "image-dcd1c6e2-fe6d-4765-8c98-720c48270075",
+  "model": "gpt-image-2.6-flare",
+  "status": "error",
+  "httpStatus": 524,
+  "durationMS": 125202,
+  "apiMode": "images",
+  "streamParameterPresent": false,
+  "referenceImages": 5,
+  "promptSHA256": "61b613ce24cd9525452f9c4f64d043ad0e2540699200d752dd8e7baf80f8bfb6",
+  "promptMatchesAuthored": false,
+  "promptStartsWithAuthored": false,
+  "requestSize": "864x1536",
+  "outputFormat": "png",
+  "rawError": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond.",
+  "classification": "Upstream HTTP 524 after connection established; not DNS resolution failure. Task lookup confirms terminal error and no output. No automatic retry.",
+  "qualityApproved": false,
+  "authoredPromptPreserved": true,
+  "applicationReferenceNumberingPrefix": "参考图片编号：图片1、图片2、图片3、图片4、图片5。请按这些编号理解提示词中的图片引用。\r\n\r\n",
+  "authoredPromptSHA256": "df1c24070202ec24d2c9dee59cb6d2a49bd3fc4c87e2a28504cddb2e0e321c45"
+}

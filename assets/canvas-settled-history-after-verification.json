@@ -1,0 +1,78 @@
+{
+  "stage": "after",
+  "reads": [
+    {
+      "ms": 802,
+      "bytes": 9145095,
+      "partial": true,
+      "sessions": [
+        "current"
+      ]
+    },
+    {
+      "ms": 831,
+      "bytes": 9145095,
+      "partial": true,
+      "sessions": [
+        "current"
+      ]
+    },
+    {
+      "ms": 802,
+      "bytes": 9145095,
+      "partial": true,
+      "sessions": [
+        "current"
+      ]
+    }
+  ],
+  "editor": [
+    {
+      "visibleMs": 5626,
+      "bodyBytes": 9145095,
+      "longestTaskMs": 327,
+      "api": [
+        {
+          "ms": 264,
+          "bytes": 0
+        },
+        {
+          "ms": 1253,
+          "bytes": 9145095
+        }
+      ]
+    },
+    {
+      "visibleMs": 3954,
+      "bodyBytes": 9145095,
+      "longestTaskMs": 298,
+      "api": [
+        {
+          "ms": 205,
+          "bytes": 0
+        },
+        {
+          "ms": 1387,
+          "bytes": 9145095
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "browserWrites": 1,
+  "editorState": {
+    "alerts": [],
+    "messages": [
+      "current-a-998",
+      "current-u-999",
+      "current-a-999",
+      "fixture-tool-request",
+      "fixture-tool"
+    ]
+  },
+  "olderMessagesAndArchiveOpened": true,
+  "completeHistoryUnchanged": true,
+  "fixtureDeleted": true,
+  "originalHistoryUnchanged": true
+}

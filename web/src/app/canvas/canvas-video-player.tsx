@@ -4,10 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Download, Maximize, Maximize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { formatCanvasVideoTime } from "@/app/canvas/canvas-video-time";
 import { TooltipButton } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+
+async function toggleVideoPlayback(video: HTMLVideoElement | null) {
+  if (!video) return;
+  if (!video.paused) {
+    video.pause();
+    return;
+  }
+  try {
+    await video.play();
+  } catch (error) {
+    // Pausing or closing a preview can cancel a pending play request.
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    toast.error("视频播放失败，请检查视频地址、文件格式或浏览器支持");
+  }
+}
 
 export function CanvasVideoNodePlayer({
   src,
@@ -20,7 +36,7 @@ export function CanvasVideoNodePlayer({
   title: string;
   selected: boolean;
   onOpen: () => void;
-  onMediaLoad: (width: number, height: number) => void;
+  onMediaLoad: (width: number, height: number, durationMS: number) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -35,10 +51,7 @@ export function CanvasVideoNodePlayer({
   }, [selected, src]);
 
   function togglePlayback() {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
+    void toggleVideoPlayback(videoRef.current);
   }
 
   const controlClassName = "dark absolute bottom-2 z-20";
@@ -69,7 +82,7 @@ export function CanvasVideoNodePlayer({
         onLoadedMetadata={(event) => {
           const video = event.currentTarget;
           setDuration(Number.isFinite(video.duration) ? video.duration : 0);
-          onMediaLoad(video.videoWidth, video.videoHeight);
+          onMediaLoad(video.videoWidth, video.videoHeight, Number.isFinite(video.duration) ? Math.round(video.duration*1000) : 0);
         }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
@@ -91,6 +104,7 @@ export function CanvasVideoNodePlayer({
         tooltip={playing ? "暂停" : "播放"}
         variant="secondary"
         aria-label={playing ? "暂停" : "播放"}
+        data-canvas-no-pan
         className={cn(controlClassName, "left-2")}
         onMouseDown={keepVideoFocus}
         onClick={(event) => {
@@ -122,6 +136,7 @@ export function CanvasVideoNodePlayer({
         tooltip="放大预览"
         variant="secondary"
         aria-label="放大预览"
+        data-canvas-no-pan
         className={cn(controlClassName, "right-2")}
         onMouseDown={keepVideoFocus}
         onClick={(event) => {
@@ -158,10 +173,7 @@ export function CanvasVideoPreview({
   const [volume, setVolume] = useState(1);
 
   function togglePlayback() {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
+    void toggleVideoPlayback(videoRef.current);
   }
 
   return (

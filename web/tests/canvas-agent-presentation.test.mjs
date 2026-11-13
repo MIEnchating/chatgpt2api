@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canvasAgentDisplayTraces, canvasAgentToolPlan, canvasAgentLatestTracePlan, canvasAgentResponsePresentation, canvasAgentErrorStack, canvasAgentOperationContext } from "../src/app/canvas/agent/canvas-agent-presentation.ts";
+import { canvasAgentDisplayTraces, canvasAgentTraceIndex, canvasAgentToolPlan, canvasAgentLatestTracePlan, canvasAgentResponsePresentation, canvasAgentErrorStack, canvasAgentOperationContext } from "../src/app/canvas/agent/canvas-agent-presentation.ts";
 import { planProgressLabel } from "../src/components/ai-elements/plan-progress.ts";
 
 test("tool presentation joins input and output by call ID without changing saved traces", () => {
@@ -11,6 +11,58 @@ test("tool presentation joins input and output by call ID without changing saved
   assert.deepEqual(display.tool, { name: "get_canvas_summary", input: { includeNodes: true }, output: { ok: true, nodes: [] } });
   assert.equal(entries[0].tool, undefined);
   assert.deepEqual(canvasAgentDisplayTraces(entries, []), entries);
+});
+
+test("visible traces do not read or parse tool bodies from undisplayed history", () => {
+  let historicalReads = 0;
+  const protocol = Array.from({ length: 1000 }, (_, i) => ({
+    role: "tool", toolCallId: `old-${i}`, name: "get_canvas_summary",
+    get content() { historicalReads++; return '{"ok":true}'; },
+  }));
+  protocol.push(
+    { role: "assistant", toolCalls: [{ id: "visible", name: "get_canvas_summary", arguments: { includeNodes: true } }] },
+    { role: "tool", toolCallId: "visible", name: "get_canvas_summary", content: '{"ok":true,"nodes":[]}' },
+  );
+  const entries = [{ id: "tool:visible", type: "operation", kind: "tool", label: "读取画布", status: "success", detail: "" }];
+  const [display] = canvasAgentDisplayTraces(entries, protocol);
+  assert.equal(historicalReads, 0, "rendering a visible task must not read unrelated tool bodies");
+  assert.deepEqual(display.tool, { name: "get_canvas_summary", input: { includeNodes: true }, output: { ok: true, nodes: [] } });
+  assert.equal(protocol.length, 1002, "display scoping preserves the complete protocol");
+  canvasAgentDisplayTraces([], protocol);
+  assert.equal(historicalReads, 0);
+});
+
+test("scoped trace indexes preserve absolute positions and the last matching call and output", () => {
+  const first = { id: "read", name: "get_canvas_summary", arguments: {} };
+  const latest = { ...first, arguments: { includeNodes: true } };
+  const protocol = [
+    { role: "assistant", toolCalls: [first, { ...first, id: "unseen" }] },
+    { role: "tool", toolCallId: "read", content: '{"ok":false}' },
+    { role: "tool", toolCallId: "unseen", get content() { throw new Error("Unseen tool body read"); } },
+    { role: "assistant", toolCalls: [latest] },
+    { role: "tool", toolCallId: "read", content: "plain text result" },
+  ];
+  const entries = [{ id: "read", type: "operation", kind: "read", label: "读取", status: "success", detail: "" }];
+  const index = canvasAgentTraceIndex(protocol, entries);
+  assert.deepEqual([...index.calls], [["read", latest]]);
+  assert.deepEqual([...index.outputs], [["read", "plain text result"]]);
+  assert.deepEqual([...index.positions], [["read", 4]]);
+  assert.equal(canvasAgentDisplayTraces(entries, protocol, index)[0].tool.output, "plain text result");
+  const missing = { ...entries[0], id: "tool:missing" };
+  assert.deepEqual(canvasAgentDisplayTraces([missing], protocol), [missing]);
+});
+
+test("a shared visible index does not resolve delivery checks using another task's success", () => {
+  const rejected = { id: "tool:rejected", type: "operation", kind: "tool", label: "交付", status: "error", detail: "" };
+  const accepted = { ...rejected, id: "tool:accepted", status: "success" };
+  const protocol = [
+    { role: "assistant", toolCalls: [{ id: "accepted", name: "finish_task", arguments: {} }, { id: "rejected", name: "finish_task", arguments: {} }] },
+    { role: "tool", toolCallId: "rejected", content: '{"ok":false,"code":"task_incomplete"}' },
+    { role: "tool", toolCallId: "accepted", content: '{"ok":true}' },
+  ];
+  const index = canvasAgentTraceIndex(protocol, [rejected, accepted]);
+  assert.equal(canvasAgentDisplayTraces([rejected], protocol, index)[0].resolvedBy, undefined);
+  assert.equal(canvasAgentDisplayTraces([rejected, accepted], protocol, index)[0].resolvedBy, "accepted");
 });
 
 test("a later accepted delivery resolves only earlier rejected delivery checks in the same task", () => {
@@ -25,7 +77,7 @@ test("a later accepted delivery resolves only earlier rejected delivery checks i
     { role: "tool", toolCallId: "accepted", name: "finish_task", content: '{"ok":true}' },
   ];
   const display = canvasAgentDisplayTraces(entries, protocol);
-  assert.equal(display[0].status, "success");
+  assert.equal(display[0].status, "error");
   assert.equal(display[0].resolvedBy, "accepted");
   assert.deepEqual(display[0].tool.output, { ok: false, code: "task_incomplete", message: "计划尚未完成" });
   assert.equal(entries[0].status, "error");
@@ -105,4 +157,29 @@ test("ordinary errors do not become fabricated stack traces", () => {
   const stack = "Error: tool failed\n    at execute (/app/tool.ts:12:3)";
   assert.equal(canvasAgentErrorStack(stack), stack);
   assert.equal(canvasAgentErrorStack({ error: { stack } }), stack);
+});
+
+test("reporting a technical blocker preserves earlier rejected delivery checks", () => {
+  const entries = [
+    { id: "tool:rejected", type: "operation", label: "交付", status: "error" },
+    { id: "tool:blocked", type: "operation", label: "说明阻塞", status: "error" },
+  ];
+  const protocol = [
+    { role: "assistant", toolCalls: [{ id: "rejected", name: "finish_task", arguments: { text: "完成" } }, { id: "blocked", name: "finish_task", arguments: { text: "素材服务不可用" } }] },
+    { role: "tool", toolCallId: "rejected", content: JSON.stringify({ ok: false, code: "task_incomplete" }) },
+    { role: "tool", toolCallId: "blocked", content: JSON.stringify({ ok: true, status: "error", text: "素材服务不可用" }) },
+  ];
+  const traces = canvasAgentDisplayTraces(entries, protocol);
+  assert.equal(traces[0].status, "error");
+  assert.equal(traces[0].resolvedBy, undefined);
+  assert.equal(traces[1].status, "error");
+});
+
+test("a successful retry links the original failure without rewriting its outcome",()=>{
+ const entries=[{id:"tool:failed",type:"operation",kind:"generate",nodeId:"clip",label:"生成视频",status:"error",detail:"DNS failed"},{id:"tool:retry",type:"operation",kind:"generate",nodeId:"clip",label:"生成完成",status:"success",detail:""}];
+ const protocol=[{role:"assistant",toolCalls:[{id:"failed",name:"generate_node",arguments:{nodeId:"clip"}},{id:"retry",name:"generate_node",arguments:{nodeId:"clip"}}]},{role:"tool",toolCallId:"failed",name:"generate_node",content:'{"ok":false}'},{role:"tool",toolCallId:"retry",name:"generate_node",content:'{"ok":true,"status":"success"}'}];
+ const display=canvasAgentDisplayTraces(entries,protocol);
+ assert.equal(display[0].status,"error");assert.equal(display[0].resolvedBy,"tool:retry");assert.equal(display[0].detail,"DNS failed");
+ entries[1].nodeId="different";
+ assert.equal(canvasAgentDisplayTraces(entries,protocol)[0].resolvedBy,undefined);
 });

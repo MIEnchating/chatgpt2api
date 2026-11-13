@@ -24,7 +24,7 @@ func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, status, message)
 			return
 		}
-		payload, err := a.images.ListImages(a.resolveImageBaseURL(), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
+		payload, err := a.images.ListImages(a.resolveImageBaseURL(r.Context()), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
 		if err != nil {
 			a.writeImageStorageError(w, "list images", err)
 			return

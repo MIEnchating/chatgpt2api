@@ -10,6 +10,8 @@ func TestCanvasAgentToolKinds(t *testing.T) {
 		"read_skill_file": "file", "get_node": "read", "query_canvas_nodes": "read",
 		"generate_image": "generate", "edit_image": "generate", "create_group": "create",
 		"update_node": "edit", "delete_connection": "edit", "arrange_nodes": "edit",
+		"list_video_models": "read", "set_video_model": "edit",
+		"confirm_script_node": "edit",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := agentToolKind(name); got != want {

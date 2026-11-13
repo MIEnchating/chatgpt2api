@@ -1,0 +1,20 @@
+{
+  "duration": "15.075000",
+  "streams": [
+    {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 768,
+      "height": 1376,
+      "duration": "15.041667"
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "32000",
+      "duration": "15.075000"
+    }
+  ],
+  "qualityApproved": false,
+  "knownInputDefect": "Submitted before reference reconciliation fix, seven mixed old/new image references."
+}

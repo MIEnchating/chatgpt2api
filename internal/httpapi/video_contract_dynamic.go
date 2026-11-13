@@ -246,5 +246,6 @@ func fetchVideoContractDynamicCatalog(ctx context.Context, initial fetchedVideoC
 	}
 	return strings.TrimSpace(content.String()), videoContractImportSource{
 		Type: "url", Name: fmt.Sprintf("%s（公开视频文档 %d 份）", initial.url.Hostname(), len(slugs)),
+		documentBytes: maxVideoContractDocumentBytes - remainingBytes,
 	}, nil
 }

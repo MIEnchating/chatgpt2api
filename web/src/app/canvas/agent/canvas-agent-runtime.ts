@@ -48,6 +48,7 @@ export async function resumeCanvasAgentMedia(input: RunCanvasAgentInput) {
   let protocolMessages = [...input.protocolMessages];
   const mediaGenerationChoice = input.mediaGenerationChoice || (state.pendingQuestion
     ? canvasAgentQuestionMediaChoice(state.pendingQuestion, input.userText)
+      || (!state.pendingQuestion.purpose ? canvasAgentUserMediaChoice(input.userText) : undefined)
     : !input.resume || input.editPreviousRequest ? canvasAgentUserMediaChoice(input.userText) : undefined);
   let answeredMediaQuestion = false;
   if (mediaGenerationChoice) {

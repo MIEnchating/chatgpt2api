@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-11-12T07:04:16.242614+00:00",
+  "qualityApproved": false,
+  "scope": "Application execution audit; no upstream task ID captured. HTTP 503 is recorded for all three executions. Supplier-internal acceptance, billing and failure location are not independently observed.",
+  "failures": [
+    {
+      "auditID": 81251,
+      "at": "2026-11-12 07:01:20",
+      "shot": 4,
+      "taskID": "canvas-video-13316847-327c-4632-9779-7ff021d440d4",
+      "status": 503,
+      "error": "服务暂时不可用，请稍后重试",
+      "durationMS": 73669,
+      "model": "minimax-H3-super",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "audio": true,
+      "seconds": 15
+    },
+    {
+      "auditID": 81252,
+      "at": "2026-11-12 07:01:21",
+      "shot": 2,
+      "taskID": "canvas-video-2d9ec285-bd35-4e0a-aecd-94a98a4a4a37",
+      "status": 503,
+      "error": "服务暂时不可用，请稍后重试",
+      "durationMS": 76273,
+      "model": "minimax-H3-super",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "audio": true,
+      "seconds": 15
+    },
+    {
+      "auditID": 81256,
+      "at": "2026-11-12 07:01:26",
+      "shot": 1,
+      "taskID": "canvas-video-bef2ac0f-40ba-4184-8a99-0a2bf94400de",
+      "status": 503,
+      "error": "服务暂时不可用，请稍后重试",
+      "durationMS": 77294,
+      "model": "minimax-H3-super",
+      "promptMatchesAuthored": true,
+      "referenceImages": 5,
+      "audio": true,
+      "seconds": 15
+    }
+  ]
+}

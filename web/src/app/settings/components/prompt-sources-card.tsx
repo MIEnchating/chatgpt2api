@@ -202,7 +202,7 @@ export function PromptSourcesCard() {
                   </div>
                   <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground lg:max-w-[330px] lg:justify-end">
                     {typeof pullState.count === "number" ? <span className="shrink-0 tabular-nums">{pullState.count} 条</span> : null}
-                    <TooltipHint content={pullState.error || (isPulling ? "拉取中" : pullState.status === "success" ? "正常" : pullState.status === "error" ? "失败" : "尚未拉取")}><Badge variant="destructive"
+                    <TooltipHint content={pullState.error || (isPulling ? "拉取中" : pullState.status === "success" ? "正常" : pullState.status === "error" ? "失败" : "尚未拉取")}><Badge variant={isPulling ? "secondary" : pullState.status === "error" ? "destructive" : pullState.status === "success" ? "default" : "secondary"}
                       className="shrink-0"
                     >
                       {isPulling ? "检查中" : pullState.status === "success" ? "正常" : pullState.status === "error" ? "失败" : "尚未检查"}

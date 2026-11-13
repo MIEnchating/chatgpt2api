@@ -1,0 +1,115 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, complete 15-second waveform without VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "shot-04-fresh-native",
+      "expected_dialogue": "妈，我回来了。回来就好，汤还热着。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-18.7",
+      "max_volume_db": "-0.0",
+      "segments": [
+        {
+          "start": 9.3,
+          "end": 10.42,
+          "text": "妈 我回来了",
+          "words": [
+            {
+              "start": 9.3,
+              "end": 9.66,
+              "text": "妈",
+              "probability": 0.6746
+            },
+            {
+              "start": 9.66,
+              "end": 10.02,
+              "text": " 我",
+              "probability": 0.5749
+            },
+            {
+              "start": 10.02,
+              "end": 10.18,
+              "text": "回",
+              "probability": 0.9996
+            },
+            {
+              "start": 10.18,
+              "end": 10.42,
+              "text": "来了",
+              "probability": 0.9411
+            }
+          ]
+        },
+        {
+          "start": 11.3,
+          "end": 13.04,
+          "text": "回来就好 汤还热着",
+          "words": [
+            {
+              "start": 11.3,
+              "end": 11.66,
+              "text": "回",
+              "probability": 0.9721
+            },
+            {
+              "start": 11.66,
+              "end": 11.82,
+              "text": "来",
+              "probability": 0.999
+            },
+            {
+              "start": 11.82,
+              "end": 11.94,
+              "text": "就",
+              "probability": 0.9985
+            },
+            {
+              "start": 11.94,
+              "end": 12.2,
+              "text": "好",
+              "probability": 0.9985
+            },
+            {
+              "start": 12.36,
+              "end": 12.52,
+              "text": " 汤",
+              "probability": 0.9934
+            },
+            {
+              "start": 12.52,
+              "end": 12.64,
+              "text": "还",
+              "probability": 0.9948
+            },
+            {
+              "start": 12.64,
+              "end": 12.86,
+              "text": "热",
+              "probability": 0.9983
+            },
+            {
+              "start": 12.86,
+              "end": 13.04,
+              "text": "着",
+              "probability": 0.9922
+            }
+          ]
+        }
+      ],
+      "transcript": "妈 我回来了回来就好 汤还热着",
+      "character_error_rate": 0.0,
+      "dialogue_lines": [
+        {
+          "expected": "妈，我回来了。",
+          "status": "transcribed_in_order"
+        },
+        {
+          "expected": "回来就好，汤还热着。",
+          "status": "transcribed_in_order"
+        }
+      ],
+      "status": "text_consistent"
+    }
+  ]
+}

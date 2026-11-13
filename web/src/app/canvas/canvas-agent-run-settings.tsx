@@ -23,7 +23,7 @@ export function CanvasAgentRunSettings({ config, mode, busy, onChange }: {
 
   return <>
     <TooltipHint content={"运行设置"}><Button type="button" size="icon" variant="ghost" aria-label="运行设置" aria-haspopup="dialog" aria-expanded={open && !busy}  disabled={busy} onClick={() => setOpen(true)}><Settings2  /></Button></TooltipHint>
-    <Dialog open={open && !busy} onOpenChange={setOpen}>
+    {open && !busy ? <Dialog open onOpenChange={setOpen}>
       <DialogContent className="w-[min(460px,calc(100vw-2rem))] sm:max-w-none">
         <DialogHeader>
           <DialogTitle className="flex items-center"><Settings2 className="size-5 text-primary" />运行设置</DialogTitle>
@@ -52,7 +52,7 @@ export function CanvasAgentRunSettings({ config, mode, busy, onChange }: {
         </div>
         </ScrollArea><DialogFooter><Button type="button" onClick={() => setOpen(false)}>完成</Button></DialogFooter>
       </DialogContent>
-    </Dialog>
+    </Dialog> : null}
   </>;
 }
 

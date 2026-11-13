@@ -1,38 +1,66 @@
 {
-  "checked_at": "2026-11-07",
+  "checked_at": "2026-11-10",
+  "plugin_version": "1.1.0",
+  "contract_count": 1,
   "contract_models": 23,
   "contract_modes": 46,
   "node_tests": {
     "passed": 50,
-    "total": 50
+    "total": 50,
+    "command": "node integrations/newapi/xzapi/plugin.test.mjs --fixture integrations/newapi/xzapi/newapi-host-fixture.json",
+    "executed_this_run": true
   },
   "newapi_host": {
-    "source_revision": "73f1a565963f457f49b7d00004c7a1dbf111327f",
+    "runtime": "running new-api Docker container; CLI only, no plugin installation",
+    "image": "mienvirtuoso/new-api:latest",
+    "image_id": "sha256:6c6c9668c9dd48db296476f0d30e3f59c2cbfb31bf9b1a8e7206c23f30463d0f",
     "lint_passed": true,
     "passed": 437,
-    "total": 437
+    "total": 437,
+    "executed_this_run": true
   },
   "live_provider_generation_verified": false,
+  "production_plugin_uploaded": false,
   "go_checks": [
     {
-      "command": "go test ./internal/httpapi -run '^Test(XZAPI|NewAPIVideoContract|Dramaya)' -count=1",
-      "result": "passed"
+      "command": "go test ./internal/protocol ./internal/videocontract ./integrations/newapi/xzapi",
+      "result": "protocol passed; xzapi has no Go tests; videocontract failed TestDramayaWan3PluginArtifact because existing Dramaya artifact differs from current generator output"
     },
     {
-      "command": "go test ./internal/protocol ./internal/videocontract ./integrations/newapi/xzapi",
-      "result": "passed; protocol reused Go test cache"
+      "command": "go test ./internal/videocontract -run 'TestGenerateNewAPIVideoPlugin|TestVideoModelContractImportMerges|TestVideoMaterialUpload' -count=1",
+      "result": "passed; executed this run"
+    },
+    {
+      "command": "go test ./internal/httpapi -run '^Test(XZAPI|VideoContractDocumentImportPromptUsesCurrentSchema|VideoContractGeneration|GeneratedVideoContract)' -count=1",
+      "result": "passed; executed this run"
+    },
+    {
+      "command": "go test ./internal -run '^$'",
+      "result": "passed; main package compilation only"
     }
   ],
   "current_service_import": {
-    "created": 3,
-    "preserved": 1,
-    "total": 4,
+    "applied": true,
+    "created": 0,
+    "updated": 1,
+    "xzapi_contracts_before": 3,
+    "xzapi_contracts_after": 1,
+    "total_contracts_before": 6,
+    "total_contracts_after": 4,
+    "models": 23,
+    "profiles": 23,
     "enabled": true,
+    "isolated_sqlite_rehearsal": true,
+    "per_model_resolved_configuration_preserved": true,
+    "unrelated_contracts_and_credentials_preserved": true,
+    "backup_created": true,
     "persisted_contracts_verified": true,
-    "registered_models_verified": 23,
-    "health_http_status": 200,
-    "recent_refresh_errors": 0
+    "source_service_restarted": true,
+    "health_http_status": 200
   },
+  "model_limit": 100,
+  "frontend_changed": false,
+  "frontend_build_and_lint_executed": false,
   "reproducible_build": true,
-  "plugin_sha256": "1a1abe72a0de545d9e1968ae92f8612e7e7043a5bae2c7924ad6e25d550a1d0e"
+  "plugin_sha256": "d836f2d73520a3da5ee2c8cd8afdbfe49ca0b061bb15dc57f0e6257941f7cf40"
 }

@@ -1,0 +1,76 @@
+{
+  "project_id": "canvas-092fd45e58e8eb1db469bd56",
+  "revision": 314,
+  "confirmed": true,
+  "shots": [
+    {
+      "id": "shot-01",
+      "dialogue": [
+        {
+          "id": "d01",
+          "kind": "dialogue",
+          "asset_id": "lin",
+          "text": "最后一单……怎么是家里的地址。"
+        }
+      ],
+      "image_prompt_reviewed": true,
+      "video_prompt_reviewed": true,
+      "unsubmitted_node_retained": true
+    },
+    {
+      "id": "shot-02",
+      "dialogue": [
+        {
+          "id": "d02",
+          "kind": "dialogue",
+          "asset_id": "lin",
+          "text": "三年了，她还留着。"
+        }
+      ],
+      "image_prompt_reviewed": true,
+      "video_prompt_reviewed": true,
+      "unsubmitted_node_retained": true
+    },
+    {
+      "id": "shot-03",
+      "dialogue": [
+        {
+          "id": "d03a",
+          "kind": "dialogue",
+          "asset_id": "mother",
+          "text": "我点的不是外卖，是你。"
+        },
+        {
+          "id": "d03b",
+          "kind": "dialogue",
+          "asset_id": "lin",
+          "text": "妈。"
+        }
+      ],
+      "image_prompt_reviewed": true,
+      "video_prompt_reviewed": true,
+      "unsubmitted_node_retained": true
+    },
+    {
+      "id": "shot-04",
+      "dialogue": [
+        {
+          "id": "d04a",
+          "kind": "dialogue",
+          "asset_id": "lin",
+          "text": "妈，我回来了。"
+        },
+        {
+          "id": "d04b",
+          "kind": "dialogue",
+          "asset_id": "mother",
+          "text": "回来就好，汤还热着。"
+        }
+      ],
+      "image_prompt_reviewed": true,
+      "video_prompt_reviewed": true,
+      "unsubmitted_node_retained": true
+    }
+  ],
+  "manual_quality_pass": false
+}

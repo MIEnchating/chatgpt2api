@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,80 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestVideoContractDocumentURLsNormalizeAndValidateEveryEntry(t *testing.T) {
+	values, err := normalizeVideoContractDocumentURLs([]string{" https://docs.example.com/create#overview ", "", "https://docs.example.com/create#params", "https://docs.example.com/query"})
+	if err != nil || len(values) != 2 || values[0] != "https://docs.example.com/create" || values[1] != "https://docs.example.com/query" {
+		t.Fatalf("normalized addresses=%v error=%v", values, err)
+	}
+	for _, invalid := range [][]string{
+		nil,
+		{"https://docs.example.com/create", "file:///invalid"},
+		{"https://docs.example.com/create", "http://127.0.0.1/private"},
+		{"https://docs.example.com/create", "https://user:password@docs.example.com/query"},
+	} {
+		if _, err := normalizeVideoContractDocumentURLs(invalid); err == nil {
+			t.Fatalf("invalid addresses accepted: %v", invalid)
+		}
+	}
+	for index := range maxVideoContractDocumentPages + 1 {
+		values = append(values, fmt.Sprintf("https://docs.example.com/%d", index))
+	}
+	if _, err := normalizeVideoContractDocumentURLs(values); err == nil {
+		t.Fatal("too many addresses accepted")
+	}
+}
+
+func TestVideoContractDocumentsMergeEntriesAndRetainRelatedPagesAcrossSites(t *testing.T) {
+	servers := make([]*httptest.Server, 0, 2)
+	for _, model := range []string{"alpha-video", "beta-video"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			switch r.URL.Path {
+			case "/create":
+				fmt.Fprintf(w, `<h1>%s create</h1><a href="/video-query">Video query</a>`, model)
+			case "/video-query":
+				fmt.Fprintf(w, "<p>%s query endpoint</p>", model)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+		servers = append(servers, server)
+	}
+	content, source, err := fetchVideoContractDocumentSources(context.Background(), []string{servers[0].URL + "/create", servers[1].URL + "/create"}, servers[0].Client())
+	if err != nil || !strings.Contains(content, "alpha-video create") || !strings.Contains(content, "beta-video create") || source.Site == nil || len(source.Site.links) != 2 {
+		t.Fatalf("merged content=%q source=%+v error=%v", content, source, err)
+	}
+	state := &videoContractAgentState{source: source, content: content, read: map[int]string{}, client: servers[0].Client()}
+	stored := captureVideoContractAgentState(state)
+	state = &videoContractAgentState{client: servers[0].Client()}
+	if err := restoreVideoContractSnapshot(state, stored); err != nil {
+		t.Fatal(err)
+	}
+	output, err := state.readDocuments(context.Background(), []int{1, 2}, nil)
+	if err != nil || !strings.Contains(output, "alpha-video query") || !strings.Contains(output, "beta-video query") || len(state.read) != 2 {
+		t.Fatalf("related pages=%s error=%v", output, err)
+	}
+	if _, _, err := fetchVideoContractDocumentSources(context.Background(), []string{servers[0].URL + "/create", servers[1].URL + "/missing"}, servers[0].Client()); err == nil || !strings.Contains(err.Error(), "第 2 份") {
+		t.Fatalf("failed entry was silently ignored: %v", err)
+	}
+}
+
+func TestVideoContractDocumentsEnforceCombinedSize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/large.html" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<p>Video API</p><!--"+strings.Repeat("x", maxVideoContractDocumentBytes/2)+"-->")
+	}))
+	defer server.Close()
+	if _, _, err := fetchVideoContractDocumentSources(context.Background(), []string{server.URL + "/large.html?a", server.URL + "/large.html?b"}, server.Client()); err == nil || !strings.Contains(err.Error(), "总大小") {
+		t.Fatalf("combined size limit missing: %v", err)
+	}
+}
 
 func TestFetchVideoContractDocumentSetUsesLLMSIndex(t *testing.T) {
 	var imageRequests atomic.Int32

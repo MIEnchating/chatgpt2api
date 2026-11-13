@@ -1,0 +1,34 @@
+{
+  "sourceHashes": {
+    "internal/service/canvas_document.go": "0a40e221c8ce20c7d97a86ab4c79875ec08eab28d745ff9fd337958298ad384b",
+    "internal/httpapi/canvas.go": "9bebe18c06cb45da21ab848394c6759fd7161b8f436a9d68319a43bb35dbc867",
+    "internal/httpapi/canvas_test.go": "414b34b919c2c0e7a3c3ce4260e96773ee3b1c4954c0d0b9284fa7894da0014c",
+    "web/src/app/canvas/library-page.tsx": "cce3107bfa8a0a798d7197a151fdb6d5a8857c2a550d4dd36699c6492a0d64ae",
+    "web/src/services/api/canvas.ts": "d0c42dba4478b7b4975c3d6265f718351fc37ade1eebc0417711108112dc42d7",
+    "web/tests/canvas-library-import.test.mjs": "0b09b8827f1d1ff4f26c105a324e1cdd027856ea8abbf88b4c2a7ea2ed06e659",
+    "web/tests/canvas-review-regressions.test.mjs": "a46f83eae8e94655ee1c5d08c305e807bd4dee8f46784e247e2c3a643d0d2b77"
+  },
+  "fullFrontend": {
+    "passed": 1775,
+    "failed": 0,
+    "files": 194,
+    "durationSeconds": 142.21
+  },
+  "fullGo": {
+    "passed": true,
+    "secondsByPackage": {
+      "internal/service": 237.496,
+      "internal/httpapi": 101.089,
+      "internal/web": 0.075
+    }
+  },
+  "build": {
+    "passed": true,
+    "viteSeconds": 10.6
+  },
+  "lint": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "databaseScope": "Isolated SQLite. No SQL or schema changes. MySQL and PostgreSQL were not rerun."
+}

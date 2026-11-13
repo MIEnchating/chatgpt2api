@@ -1,0 +1,58 @@
+{
+  "phase": "after",
+  "loads": [
+    {
+      "round": 0,
+      "readyMs": 4398,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 2538,
+          "requestedProject": null,
+          "documentID": "canvas-5f922ea5cfe9c7ef03c90834",
+          "partial": true,
+          "history": "editor",
+          "activeSessionID": "target",
+          "sessionBodies": 0
+        }
+      ],
+      "timing": [
+        {
+          "path": "/src/app/canvas/page.tsx",
+          "startMs": 1600,
+          "endMs": 1706,
+          "decodedBytes": 1272112
+        },
+        {
+          "path": "/api/model-config",
+          "startMs": 3493,
+          "endMs": 3511,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 3496,
+          "endMs": 3785,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 3551,
+          "endMs": 3659,
+          "decodedBytes": 2538
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "historyOpenedAfterRetry": true,
+  "closedGeometrySaveSentNoHistory": true,
+  "onDemandResponseBytes": 9005882,
+  "openPanelRefreshLoadsSavedConversation": true,
+  "anonymousRedirectWithoutCanvasRequest": true,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 1
+}

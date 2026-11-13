@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "ask_user_question",
-      "description": "必要交付参数尚未由用户明确或委托决定时必须提问，不能用默认值代替确认；存在歧义或需用户确认时也使用此工具。调用后暂停，不得同批执行依赖答案的操作。已明确授权且信息足够时直接执行，不重复询问。",
+      "description": "仅在真正阻塞的歧义、约束冲突、超出已有范围或需要真实用户审核时提问。同阶段必要缺口合并为一次提问；常规默认、技术错误或配置通知不使用此工具，已回答或接受的限制不重复确认。调用后暂停，不得同批执行依赖答案的操作；沉默或超时不代表批准。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -218,7 +218,7 @@
     "type": "function",
     "function": {
       "name": "get_node",
-      "description": "按真实节点 ID 读取节点。 图片节点同时提供原图作为视觉输入。",
+      "description": "按真实节点 ID 读取节点。脚本的 production 按镜头顺序一次返回当前绑定的分镜图片、视频任务状态、实测属性、过期标记和已有质量记录；canMerge 仅表示技术上可合并，不代表质量通过，无需再为相同状态逐个读取视频。图片节点同时提供原图作为视觉输入。mediaMetadata 为已探测的实测时长、尺寸与音轨，mediaProbeError 表示探测失败；generation 仅为请求参数，不得当作实测结果。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -294,10 +294,42 @@
     "type": "function",
     "function": {
       "name": "get_generation_config",
-      "description": "读取当前模型、支持的图片比例/画质和视频尺寸/清晰度/时长/声音能力，以及非关键技术参数的默认值。默认值不是用户要求，按创作目标为每次生成选择参数。",
+      "description": "读取当前模型、支持的图片比例/画质和视频尺寸/清晰度/时长/声音能力，以及非关键技术参数的默认值。默认值不是用户要求，按创作目标为每次生成选择参数。 视频 audioControl 为 always 表示固定原生有声（无需声音开关），toggle 表示可开关，none 表示不支持，unknown 表示契约缺失、不能断言不支持。需要查询或切换模型时使用 list_video_models 和 set_video_model。 defaultMode 只是默认模式，全部支持模式与各类素材限制见 capabilities.video.referenceMaterials.modes；不能将默认文生视频误读为不支持参考图。原生有声视频无需配置独立音频模型。",
       "parameters": {
         "type": "object",
         "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_video_models",
+      "description": "查询服务端配置的全部视频模型及当前启用契约的尺寸、清晰度、时长、声音和素材引用能力。契约缺失时声音为 unknown，不猜测型号或声音能力。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_video_model",
+      "description": "按用户指定或明确委托切换当前画布的视频生成模型，先用 list_video_models 核对真实模型 ID 和能力。只修改当前画布选择，不修改管理员模型配置、不改动已有节点、不提交生成；之后的新视频使用此模型。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "model"
+        ],
         "additionalProperties": false
       }
     }
@@ -380,7 +412,7 @@
     "type": "function",
     "function": {
       "name": "create_primary_script_node",
-      "description": "新创作首次创建原生脚本节点，保存正式故事并可打开分镜编辑器；随后用 update_script_node 保存结构化镜头和资产。已有主稿应原位 update_script_node，不重复创建。",
+      "description": "新创作首次创建原生脚本节点，保存正式故事并可打开分镜编辑器；随后用 update_script_node 保存结构化镜头和素材。已有主稿应原位 update_script_node，不重复创建。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -414,7 +446,7 @@
     "type": "function",
     "function": {
       "name": "create_script_node",
-      "description": "创建新的原生脚本版本或分支，不修改项目标题；已有主稿整理优先 update_script_node 原位转换，避免重复创建。随后用 update_script_node 保存镜头、资产和已有素材关联。",
+      "description": "创建新的原生脚本版本或分支，不修改项目标题；已有主稿整理优先 update_script_node 原位转换，避免重复创建。随后用 update_script_node 保存镜头、素材和已有素材关联。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -444,7 +476,7 @@
     "type": "function",
     "function": {
       "name": "create_text_node",
-      "description": "创建镜头、角色、产品、场景、声音说明和其他普通文本节点；不得用于首次正式主剧本。",
+      "description": "创建镜头、角色、产品、场景、声音说明和其他普通文本节点；不得用于首次正式主剧本。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -460,6 +492,18 @@
               "type": "string"
             },
             "maxItems": 50
+          },
+          "scriptNodeId": {
+            "type": "string",
+            "description": "所属结构化脚本节点 ID；脚本素材或镜头生成必须提供，并且指定 assetId 或 shotId。"
+          },
+          "assetId": {
+            "type": "string",
+            "description": "脚本素材 ID，仅用于图片设定图；创建图片时同步写入素材 image_node_id，已有绑定须复用原节点。"
+          },
+          "shotId": {
+            "type": "string",
+            "description": "脚本镜头 ID；创建文本、图片或视频时同步绑定对应节点，媒体提示词同步写入镜头。与 assetId 互斥。"
           }
         },
         "required": [
@@ -499,7 +543,7 @@
     "type": "function",
     "function": {
       "name": "update_script_node",
-      "description": "保存脚本内的结构化分镜、角色/场景资产与提示词；也可原位把已有文本主稿转换为脚本，保持 nodeId、正文和连线。先 get_node 读取原稿、镜头及素材，再将分镜整理到 scriptProject；source_node_id 记录原镜头文本，image_node_id/video_node_id 关联已有素材。保留已有 shot/asset ID 和媒体绑定，不创建或重提生成任务。来源文本不会自动删除；删除仍使用原删除确认流程。",
+      "description": "保存脚本内的结构化分镜、角色/场景素材与提示词；也可原位把已有文本主稿转换为脚本，保持 nodeId、正文和连线。先 get_node 读取原稿、镜头及素材，再将分镜整理到 scriptProject；source_node_id 记录原镜头文本，image_node_id/video_node_id 关联已有素材。保留已有 shot/asset ID 和媒体绑定，不创建或重提生成任务。来源文本不会自动删除；删除仍使用原删除确认流程。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -524,7 +568,8 @@
                 "maximum": 2
               },
               "confirmed": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "内容修改仍会使确认失效。核对已保存脚本后使用 confirm_script_node 单独确认，不为确认而重写完整镜头或素材说明。"
               },
               "assets": {
                 "type": "array",
@@ -661,6 +706,14 @@
                         "#bdbdbd"
                       ]
                     },
+                    "image_outdated": {
+                      "type": "boolean",
+                      "description": "已有分镜是否因脚本改动待更新"
+                    },
+                    "video_outdated": {
+                      "type": "boolean",
+                      "description": "已有视频是否因脚本改动待更新"
+                    },
                     "source_node_id": {
                       "type": "string",
                       "maxLength": 128
@@ -672,6 +725,14 @@
                     "video_node_id": {
                       "type": "string",
                       "maxLength": 128
+                    },
+                    "image_prompt_outdated": {
+                      "type": "boolean",
+                      "description": "Set false only after reviewing this prompt against the current shot."
+                    },
+                    "video_prompt_outdated": {
+                      "type": "boolean",
+                      "description": "Set false only after reviewing this prompt against the current shot."
                     }
                   },
                   "required": [
@@ -694,6 +755,33 @@
         "required": [
           "nodeId",
           "scriptProject"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "confirm_script_node",
+      "description": "确认刚刚读取并核对的原生脚本，只更新制作就绪状态，不重传或改写脚本、镜头、素材、提示词和人工质量记录，不提交媒体。先 get_node 读取完整脚本及 confirmationFingerprint，再原样传入指纹；版本变化时拒绝确认，重新读取核对。仅在用户已明确确认脚本，或委托自主创作并完整制作且没有要求先审核时使用；用户要求先审核或暂不生成时仍等待真实回答。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "confirmationFingerprint": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "get_node 返回的已核对脚本指纹，必须原样传入。"
+          }
+        },
+        "required": [
+          "nodeId",
+          "confirmationFingerprint"
         ],
         "additionalProperties": false
       }
@@ -756,7 +844,7 @@
               "seconds": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 600
+                "maximum": 9007199254740991
               },
               "generateAudio": {
                 "type": "boolean"
@@ -767,6 +855,38 @@
                   "reference",
                   "first-frame"
                 ]
+              },
+              "videoParameters": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "voice": {
                 "type": "string"
@@ -805,7 +925,10 @@
           },
           "nodeIds": {
             "type": "array",
-            "items": { "type": "string", "minLength": 1 },
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
             "minItems": 1,
             "maxItems": 100,
             "uniqueItems": true
@@ -908,7 +1031,7 @@
     "type": "function",
     "function": {
       "name": "generate_image",
-      "description": "创建图片节点，size/count 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片依次编号。",
+      "description": "创建图片节点，显式填写 size/count，优先用户要求和已有方案，未指定时按用途与当前配置选择比例、数量默认一张。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片依次编号。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -950,6 +1073,18 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 15
+          },
+          "scriptNodeId": {
+            "type": "string",
+            "description": "所属结构化脚本节点 ID；脚本素材或镜头生成必须提供，并且指定 assetId 或 shotId。"
+          },
+          "assetId": {
+            "type": "string",
+            "description": "脚本素材 ID，仅用于图片设定图；创建图片时同步写入素材 image_node_id，已有绑定须复用原节点。"
+          },
+          "shotId": {
+            "type": "string",
+            "description": "脚本镜头 ID；创建文本、图片或视频时同步绑定对应节点，媒体提示词同步写入镜头。与 assetId 互斥。"
           }
         },
         "required": [
@@ -966,7 +1101,7 @@
     "type": "function",
     "function": {
       "name": "edit_image",
-      "description": "创建图片编辑节点，size/count 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务，必须通过 sourceNodeIds 或 attachmentIds 提供至少一个图片节点或消息附件；先按节点顺序、再按附件顺序编号。",
+      "description": "创建图片编辑节点，显式填写 size/count，优先用户要求和已有方案，未指定时按用途与当前配置选择比例、数量默认一张。并仅在自动生成开启时提交任务，必须通过 sourceNodeIds 或 attachmentIds 提供至少一个图片节点或消息附件；先按节点顺序、再按附件顺序编号。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1008,6 +1143,18 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 15
+          },
+          "scriptNodeId": {
+            "type": "string",
+            "description": "所属结构化脚本节点 ID；脚本素材或镜头生成必须提供，并且指定 assetId 或 shotId。"
+          },
+          "assetId": {
+            "type": "string",
+            "description": "脚本素材 ID，仅用于图片设定图；创建图片时同步写入素材 image_node_id，已有绑定须复用原节点。"
+          },
+          "shotId": {
+            "type": "string",
+            "description": "脚本镜头 ID；创建文本、图片或视频时同步绑定对应节点，媒体提示词同步写入镜头。与 assetId 互斥。"
           }
         },
         "required": [
@@ -1024,7 +1171,7 @@
     "type": "function",
     "function": {
       "name": "generate_video",
-      "description": "创建视频节点，size/seconds/generateAudio 须来自用户要求、已确认方案或明确委托；缺失时先 ask_user_question。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片、视频、音频分别按各自顺序编号。",
+      "description": "创建视频节点，显式填写 size/seconds/generateAudio，优先用户要求和已有方案，未指定时按用途与当前模型配置选择合法值并简短说明，不逐项追问。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片、视频、音频分别按各自顺序编号。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1061,6 +1208,50 @@
           },
           "generateAudio": {
             "type": "boolean"
+          },
+          "videoParameters": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "scriptNodeId": {
+            "type": "string",
+            "description": "所属结构化脚本节点 ID；脚本素材或镜头生成必须提供，并且指定 assetId 或 shotId。"
+          },
+          "assetId": {
+            "type": "string",
+            "description": "脚本素材 ID，仅用于图片设定图；创建图片时同步写入素材 image_node_id，已有绑定须复用原节点。"
+          },
+          "shotId": {
+            "type": "string",
+            "description": "脚本镜头 ID；创建文本、图片或视频时同步绑定对应节点，媒体提示词同步写入镜头。与 assetId 互斥。"
           }
         },
         "required": [
@@ -1305,7 +1496,7 @@
     "type": "function",
     "function": {
       "name": "run_saved_workflow",
-      "description": "将已读取模板应用到当前画布。每项是一份明确内容；多图系列应先确认主题和数量，再给出每项变量。可用 sourceNodeIds 或 attachmentIds 指定本项产品参考图；必须显式提供交付尺寸、数量，不用模板默认值替代用户确认。系列提示词审核完成前不提交生成，遵循当前媒体生成授权。",
+      "description": "将已读取模板应用到当前画布。每项是一份明确内容；多图系列应先确认主题和数量，再给出每项变量。可用 sourceNodeIds 或 attachmentIds 指定本项产品参考图；必须显式提供交付尺寸、数量，未指定时可按用途与模板选择合理默认，不冒充用户确认。系列提示词审核完成前不提交生成，遵循当前媒体生成授权。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1390,7 +1581,7 @@
     "type": "function",
     "function": {
       "name": "create_canvas_workflow",
-      "description": "创建画布节点及真实来源连线，不提交生成。多张独立图片优先一次建图，再 run_canvas_workflow 并行生成。同批交付传 groupTitle 分组；已有素材不加入结果组。sourceNodeIds 是已有来源节点，dependsOn 是实际依赖的本批 key，独立步骤不要串联。必须先确认媒体必要参数；图片要求 size/count，视频要求 size/seconds/generateAudio。每个步骤显式提供 sourceNodeIds 和 attachmentIds，无来源传空数组。系列提示词需要审核时，创建后必须询问用户；用户明确确认前不得执行生成。禁止循环。",
+      "description": "创建画布节点及真实来源连线，不提交生成。多张独立图片优先一次建图，再 run_canvas_workflow 并行生成。同批交付传 groupTitle 分组；已有素材不加入结果组。sourceNodeIds 是已有来源节点，dependsOn 是实际依赖的本批 key，独立步骤不要串联。按用户要求或合理默认选择并显式填写媒体参数；图片要求 size/count，视频要求 size/seconds/generateAudio。每个步骤显式提供 sourceNodeIds 和 attachmentIds，无来源传空数组。系列提示词需要审核时，创建后必须询问用户；用户明确确认前不得执行生成。禁止循环。 脚本步骤必须传 scriptNodeId 与 assetId 或 shotId，整批节点与脚本关联一起保存。镜头依赖的设定图步骤须加入 dependsOn；已有设定图直接复用。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1445,6 +1636,38 @@
                 "generateAudio": {
                   "type": "boolean"
                 },
+                "videoParameters": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "voice": {
                   "type": "string"
                 },
@@ -1466,6 +1689,18 @@
                     "type": "string"
                   },
                   "description": "按视觉参考使用顺序提供当前对话附件 ID；没有附件时传空数组。"
+                },
+                "scriptNodeId": {
+                  "type": "string",
+                  "description": "所属结构化脚本节点 ID；脚本素材或镜头生成必须提供，并且指定 assetId 或 shotId。"
+                },
+                "assetId": {
+                  "type": "string",
+                  "description": "脚本素材 ID，仅用于图片设定图；创建图片时同步写入素材 image_node_id，已有绑定须复用原节点。"
+                },
+                "shotId": {
+                  "type": "string",
+                  "description": "脚本镜头 ID；创建文本、图片或视频时同步绑定对应节点，媒体提示词同步写入镜头。与 assetId 互斥。"
                 }
               },
               "required": [
@@ -1516,17 +1751,46 @@
     "type": "function",
     "function": {
       "name": "finish_task",
-      "description": "仅在核对真实画布、执行计划和已提交任务后调用。未完成的计划或失败操作会拒绝结束；用户选择暂不生成时保留进度并等待。",
+      "description": "核对真实画布、执行计划和已提交任务后调用。任务完成时交付真实结果；已发生且无法在现有能力内修复的技术错误可设 status=error，用此工具说明具体阻塞和所需操作，运行会保留失败状态并结束，不需要用提问暂停。仍在进行的任务或未执行的计划不能冒充成功。",
       "parameters": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "maxLength": 12000
+            "maxLength": 12000,
+            "description": "直接展示给用户的最终回复，遵循公共执行手册“最终交付回复”。默认2—4个短句，用自然语言说明成品、实测属性、真实未完成项，指向成片卡；不复制工具字段名、状态枚举、节点/任务ID或内部路径。用户明确要求技术细节或长文交付时按请求展开。"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "error"
+            ],
+            "description": "已完成交付使用 success（可省略）；无法自行解决的技术阻塞使用 error，保留失败状态并结束本轮，不要求用户回答无实际选择的问题。"
           }
         },
         "required": [
           "text"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "merge_script_videos",
+      "description": "将已完成的脚本分镜视频按 shots 顺序合并为独立 MP4 成片节点，保留每段原声，缺音轨片段保持静音；统一画幅但不裁切。全部分镜必须有可用视频，绝不跳过缺失镜头或重新调用生成模型。多镜头视频制作完成后、finish_task 前调用；相同分镜及顺序复用已有成片。只需真实脚本节点 ID，不能传任意 URL。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scriptNodeId": {
+            "type": "string",
+            "description": "原生脚本节点的真实 ID"
+          }
+        },
+        "required": [
+          "scriptNodeId"
         ],
         "additionalProperties": false
       }

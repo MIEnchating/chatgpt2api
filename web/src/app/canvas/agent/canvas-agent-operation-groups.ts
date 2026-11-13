@@ -15,25 +15,6 @@ export function canvasAgentOperationCategory(entry: CanvasAgentOperation): Canva
 }
 
 type OperationGroup = { type: "operations"; id: string; entries: CanvasAgentOperation[] };
-export function canvasAgentSummarizeNodeOperations(entries: readonly CanvasAgentOperation[]) {
-  const result: CanvasAgentOperation[] = [];
-  const positions = new Map<string, number>();
-  for (const entry of entries) {
-    const nodeId = entry.nodeId;
-    if (!nodeId || !["create", "generate", "edit"].includes(entry.kind) || entry.status === "error") {
-      result.push(entry);
-      continue;
-    }
-    const position = positions.get(nodeId);
-    if (position === undefined) {
-      positions.set(nodeId, result.length);
-      result.push(entry);
-    } else {
-      result[position] = { ...entry, id: result[position].id };
-    }
-  }
-  return result;
-}
 
 export function canvasAgentOperationGroups(entries: readonly CanvasAgentTraceEntry[]) {
   const groups: (OperationGroup | Exclude<CanvasAgentTraceEntry, CanvasAgentOperation>)[] = [];

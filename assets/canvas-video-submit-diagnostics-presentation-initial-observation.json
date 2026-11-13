@@ -1,0 +1,8 @@
+{
+  "kind": "isolated-display-fixture-not-supplier-recovery",
+  "startedAt": "2026-11-12T07:13:30.797Z",
+  "checks": [],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n400 !== 200\n\n    at api (file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-video-submit-diagnostic-presentation.mjs:6:120)\n    at async file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-video-submit-diagnostic-presentation.mjs:9:15"
+}

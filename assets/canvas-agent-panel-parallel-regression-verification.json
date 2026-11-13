@@ -1,0 +1,113 @@
+{
+  "sourceSHA256": "063640f7671cc5ce26580217bfcf6457409fa8310d282dd9655d58c9a9a9c9ed",
+  "before": {
+    "stage": "before",
+    "generationSubmissions": 0,
+    "errors": [],
+    "closedEditorRequestedNoPanel": true,
+    "panelRequestedWhileHistoryHeld": false,
+    "historyRequestMs": 208,
+    "moduleRequestMs": 715,
+    "historyReleasedMs": 626,
+    "completeHistoryPreserved": true,
+    "fixtureDeleted": true
+  },
+  "after": {
+    "stage": "after",
+    "generationSubmissions": 0,
+    "errors": [],
+    "closedEditorRequestedNoPanel": true,
+    "panelRequestedWhileHistoryHeld": true,
+    "historyRequestMs": 293,
+    "moduleRequestMs": 294,
+    "historyReleasedMs": 476,
+    "completeHistoryPreserved": true,
+    "fixtureDeleted": true
+  },
+  "longHistory": {
+    "phase": "after",
+    "loads": [
+      {
+        "round": 0,
+        "readyMs": 2528,
+        "reads": [
+          {
+            "method": "POST",
+            "status": 200,
+            "bytes": 2542,
+            "requestedProject": null,
+            "documentID": "canvas-2314b011cdbdb82fd7a0b94c",
+            "partial": true,
+            "history": "editor",
+            "activeSessionID": "target",
+            "sessionBodies": 0
+          }
+        ],
+        "timing": [
+          {
+            "path": "/src/app/canvas/page.tsx",
+            "startMs": 742,
+            "endMs": 796,
+            "decodedBytes": 1303384
+          },
+          {
+            "path": "/api/model-config",
+            "startMs": 1720,
+            "endMs": 1728,
+            "decodedBytes": 62086
+          },
+          {
+            "path": "/api/canvas",
+            "startMs": 1723,
+            "endMs": 1981,
+            "decodedBytes": 0
+          },
+          {
+            "path": "/api/canvas",
+            "startMs": 1765,
+            "endMs": 1794,
+            "decodedBytes": 2542
+          }
+        ]
+      }
+    ],
+    "pageErrors": [],
+    "generationSubmissions": 0,
+    "historyOpenedAfterRetry": true,
+    "closedGeometrySaveSentNoHistory": true,
+    "onDemandResponseBytes": 9005884,
+    "openPanelRefreshLoadsSavedConversation": true,
+    "anonymousRedirectWithoutCanvasRequest": true,
+    "completeHistoryPreserved": true,
+    "originalProjectsUnchanged": true,
+    "temporaryProjectsDeleted": 1
+  },
+  "checks": {
+    "frontendTests": 1777,
+    "frontendFiles": 194,
+    "frontendBuild": "passed",
+    "frontendLint": "passed",
+    "goEmbeddedAssets": "passed"
+  },
+  "originalProjects": {
+    "checkedAt": "2026-11-12T22:00:54.996Z",
+    "stage": "before",
+    "projectCount": 6,
+    "runningAgents": 0,
+    "projects": [
+      {
+        "id": "canvas-092fd45e58e8eb1db469bd56",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      },
+      {
+        "id": "canvas-04702de07993ea1fdf59d868",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      }
+    ],
+    "activeMedia": 0
+  }
+}

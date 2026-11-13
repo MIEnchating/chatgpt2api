@@ -1,3 +1,4 @@
+import { detachScriptNodes } from "./canvas-script.ts";
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 
 export type CanvasBatchRootReplacement = {
@@ -52,7 +53,8 @@ export function expandCanvasBatchNodeIDs(ids: ReadonlySet<string>, nodes: readon
 export function reconcileCanvasBatchesAfterRemoval(nodes: readonly CanvasNode[], removedIDs: ReadonlySet<string>) {
   const remaining = nodes.filter((node) => !removedIDs.has(node.id));
   const nodeByID = new Map(remaining.map((node) => [node.id, node]));
-  return remaining.map((node): CanvasNode => {
+  return remaining.map((original): CanvasNode => {
+    const node = original.script_project ? { ...original, script_project: detachScriptNodes(original.script_project, removedIDs) } : original;
     if (node.batch_root_id) {
       const root = nodeByID.get(node.batch_root_id);
       const remainingSiblingIDs = root ? canvasBatchChildIDs(root).filter((childID) => nodeByID.has(childID)) : [];

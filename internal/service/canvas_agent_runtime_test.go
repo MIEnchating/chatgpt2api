@@ -3,12 +3,42 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"chatgpt2api/internal/util"
 )
+
+func TestCanvasAgentSaveRejectsUnserializableSessionWithoutLosingHistory(t *testing.T) {
+	for _, name := range []string{"cycle", "unsupported value"} {
+		t.Run(name, func(t *testing.T) {
+			w := memoryWorker(t, nil)
+			before := cloneCanvasAgentDocument(w.doc)
+			result := map[string]any{"ok": false}
+			if name == "cycle" {
+				result["results"] = []map[string]any{result}
+			} else {
+				result["invalid"] = func() {}
+			}
+			w.session["toolReceipts"] = map[string]any{"failed": result}
+			if err := w.save(); err == nil || !strings.Contains(err.Error(), "encode canvas agent sessions") {
+				t.Fatalf("expected serialization failure, got %v", err)
+			}
+			if string(w.doc.AgentSessions) != string(before.AgentSessions) {
+				t.Fatal("serialization failure replaced the worker transcript")
+			}
+			project, err := w.service.canvas.Project(canvasAgentOwner(w.identity), w.doc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if project.Revision != before.Revision || string(project.AgentSessions) != string(before.AgentSessions) {
+				t.Fatal("serialization failure overwrote persisted history")
+			}
+		})
+	}
+}
 
 func TestCanvasAgentCancelledQuestionNeverApprovesDeletion(t *testing.T) {
 	w := memoryWorker(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
@@ -321,7 +351,8 @@ func TestCanvasAgentSnapshotReclaimsSavedResponseCopiesBeforeNextUserMessage(t *
 	if _, err := w.service.canvas.saveAgent(w.identity.ID, w.doc); err != nil {
 		t.Fatal(err)
 	}
-	doc, err := w.service.Snapshot(w.identity, w.doc.ID)
+	workspace, err := w.service.Workspace(w.identity, w.doc.ID, nil, CanvasHistoryActive)
+	doc := workspace.Document
 	if err != nil || len(doc.AgentSessions) > canvasDocumentMaxAgentDataBytes/2 || !strings.Contains(string(doc.AgentSessions), "Visible original reply") {
 		t.Fatalf("snapshot did not release room for the next request: %v", err)
 	}
@@ -369,20 +400,45 @@ func TestCanvasAgentUserContentOnlyAttachesImageReferences(t *testing.T) {
 	}
 }
 
-func TestCanvasAgentStorageLimitIsNotReportedAsModelContextLimit(t *testing.T) {
+func TestCanvasAgentLongHistoryFinalSaveSurvivesReopening(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.messages = []map[string]any{{"role": "tool", "content": strings.Repeat("large receipt", 50000)}}
+	if err := w.finish("success", "done"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+	if err != nil || saved.AgentRun.Status != "success" || len(saved.AgentSessions) <= 512<<10 {
+		t.Fatal("long transcript did not complete", err)
+	}
+	_, session, err := agentSession(saved, w.req.SessionID)
+	if err != nil || agentJSON(session["protocolMessages"]) != agentJSON(w.messages) {
+		t.Fatal("final save changed long protocol history", err)
+	}
+}
+
+func TestCanvasAgentStorageFailureIsNotReportedAsModelContextLimit(t *testing.T) {
 	w := memoryWorker(t, nil)
 	if err := w.save(); err != nil {
 		t.Fatal(err)
 	}
 	w.messages = []map[string]any{{"role": "tool", "content": strings.Repeat("large receipt", 50000)}}
-	if err := w.finish("success", "done"); err == nil {
-		t.Fatal("oversized public session unexpectedly saved")
+	injected := errors.New("storage temporarily unavailable")
+	failed := false
+	w.service.canvas.store = &countingCanvasDocumentBackend{documents: w.service.canvas.store, saves: make(map[string]int), failSave: func(name string) error {
+		if strings.HasPrefix(name, "canvas_agent_history/") && !failed {
+			failed = true
+			return injected
+		}
+		return nil
+	}}
+	if err := w.finish("success", "done"); !errors.Is(err, injected) {
+		t.Fatalf("storage failure was not returned: %v", err)
 	}
 	saved, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.AgentRun.Status != "error" || !strings.Contains(saved.AgentRun.Error, "512 KB 存储上限") || !strings.Contains(saved.AgentRun.Error, "与模型上下文 token 上限无关") {
+	if saved.AgentRun.Status != "error" || strings.Contains(saved.AgentRun.Error, "512 KB") || !strings.Contains(saved.AgentRun.Error, "与模型上下文 token 上限无关") || strings.Contains(string(saved.AgentSessions), "large receipt") {
 		t.Fatalf("storage failure conflated with model context: %+v", saved.AgentRun)
 	}
 }

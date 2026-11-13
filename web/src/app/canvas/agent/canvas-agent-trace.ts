@@ -45,7 +45,7 @@ export function canvasAgentTraceProgress(entries: readonly CanvasAgentTraceEntry
 
 export function upsertCanvasAgentTrace(entries: readonly CanvasAgentTraceEntry[] = [], entry: CanvasAgentTraceEntry): CanvasAgentTraceEntry[] {
   const existing = entries.find((item) => item.id === entry.id);
-  if (!existing) return [...entries, entry].slice(-256);
+  if (!existing) return [...entries, entry];
   return entries.map((item) => item.id === entry.id ? entry : item);
 }
 

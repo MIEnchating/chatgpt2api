@@ -1,0 +1,7705 @@
+{
+  "method": "Tesseract chi_sim+eng, every decoded frame, lower 55 percent, PSM 11; candidates require visual review and do not establish quality approval",
+  "media": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-b87398da-b455-4b67-98c5-675c1d1e7024.mp4",
+  "durationSeconds": 15.075,
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 768,
+      "height": 1376,
+      "sample_rate": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "32000"
+    }
+  ],
+  "decodedFrames": 361,
+  "candidateFrames": 309,
+  "candidates": [
+    {
+      "frame": 0,
+      "seconds": 0.0,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 62.3
+        },
+        {
+          "text": "-一",
+          "confidence": 92.4
+        }
+      ]
+    },
+    {
+      "frame": 1,
+      "seconds": 0.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 51.1
+        },
+        {
+          "text": "-一",
+          "confidence": 70.6
+        },
+        {
+          "text": "一",
+          "confidence": 87.9
+        }
+      ]
+    },
+    {
+      "frame": 2,
+      "seconds": 0.083333,
+      "words": [
+        {
+          "text": "站",
+          "confidence": 36.4
+        },
+        {
+          "text": "一",
+          "confidence": 42.5
+        }
+      ]
+    },
+    {
+      "frame": 3,
+      "seconds": 0.125,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 47.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.4
+        },
+        {
+          "text": "-一",
+          "confidence": 81.4
+        }
+      ]
+    },
+    {
+      "frame": 4,
+      "seconds": 0.166667,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 46.2
+        },
+        {
+          "text": "一",
+          "confidence": 92.3
+        }
+      ]
+    },
+    {
+      "frame": 5,
+      "seconds": 0.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 84.4
+        },
+        {
+          "text": "一",
+          "confidence": 85.3
+        }
+      ]
+    },
+    {
+      "frame": 7,
+      "seconds": 0.291667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 76.3
+        }
+      ]
+    },
+    {
+      "frame": 8,
+      "seconds": 0.333333,
+      "words": [
+        {
+          "text": "中",
+          "confidence": 39.0
+        },
+        {
+          "text": "-二",
+          "confidence": 59.6
+        },
+        {
+          "text": "一",
+          "confidence": 54.6
+        },
+        {
+          "text": "一",
+          "confidence": 86.0
+        },
+        {
+          "text": "二",
+          "confidence": 56.4
+        }
+      ]
+    },
+    {
+      "frame": 9,
+      "seconds": 0.375,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 83.2
+        },
+        {
+          "text": "了",
+          "confidence": 57.9
+        }
+      ]
+    },
+    {
+      "frame": 11,
+      "seconds": 0.458333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 79.9
+        }
+      ]
+    },
+    {
+      "frame": 12,
+      "seconds": 0.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 76.2
+        },
+        {
+          "text": "一",
+          "confidence": 76.2
+        },
+        {
+          "text": "二",
+          "confidence": 77.3
+        },
+        {
+          "text": "一",
+          "confidence": 46.6
+        },
+        {
+          "text": "一",
+          "confidence": 66.3
+        }
+      ]
+    },
+    {
+      "frame": 13,
+      "seconds": 0.541667,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 35.2
+        },
+        {
+          "text": "一",
+          "confidence": 85.7
+        },
+        {
+          "text": "之",
+          "confidence": 50.6
+        },
+        {
+          "text": "一",
+          "confidence": 76.4
+        },
+        {
+          "text": "-一",
+          "confidence": 77.0
+        },
+        {
+          "text": "一",
+          "confidence": 45.3
+        }
+      ]
+    },
+    {
+      "frame": 14,
+      "seconds": 0.583333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 86.9
+        },
+        {
+          "text": "了、",
+          "confidence": 60.2
+        },
+        {
+          "text": "一",
+          "confidence": 88.1
+        },
+        {
+          "text": "之",
+          "confidence": 47.1
+        },
+        {
+          "text": "一",
+          "confidence": 69.6
+        },
+        {
+          "text": "-一",
+          "confidence": 81.4
+        },
+        {
+          "text": "一",
+          "confidence": 71.2
+        },
+        {
+          "text": "一",
+          "confidence": 67.9
+        },
+        {
+          "text": "一",
+          "confidence": 85.9
+        }
+      ]
+    },
+    {
+      "frame": 15,
+      "seconds": 0.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.0
+        },
+        {
+          "text": "一",
+          "confidence": 64.4
+        }
+      ]
+    },
+    {
+      "frame": 16,
+      "seconds": 0.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 57.2
+        },
+        {
+          "text": "全",
+          "confidence": 40.7
+        }
+      ]
+    },
+    {
+      "frame": 17,
+      "seconds": 0.708333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 47.3
+        },
+        {
+          "text": "一",
+          "confidence": 92.6
+        },
+        {
+          "text": "一",
+          "confidence": 87.4
+        },
+        {
+          "text": "一",
+          "confidence": 59.8
+        }
+      ]
+    },
+    {
+      "frame": 18,
+      "seconds": 0.75,
+      "words": [
+        {
+          "text": "角",
+          "confidence": 40.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.0
+        },
+        {
+          "text": "一",
+          "confidence": 79.9
+        },
+        {
+          "text": "一",
+          "confidence": 47.7
+        }
+      ]
+    },
+    {
+      "frame": 19,
+      "seconds": 0.791667,
+      "words": [
+        {
+          "text": "天",
+          "confidence": 67.2
+        },
+        {
+          "text": "一",
+          "confidence": 50.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.3
+        },
+        {
+          "text": "一",
+          "confidence": 96.2
+        },
+        {
+          "text": "二",
+          "confidence": 45.8
+        },
+        {
+          "text": "一",
+          "confidence": 76.6
+        },
+        {
+          "text": "-一",
+          "confidence": 89.2
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        }
+      ]
+    },
+    {
+      "frame": 20,
+      "seconds": 0.833333,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 66.7
+        }
+      ]
+    },
+    {
+      "frame": 21,
+      "seconds": 0.875,
+      "words": [
+        {
+          "text": "三",
+          "confidence": 67.1
+        }
+      ]
+    },
+    {
+      "frame": 22,
+      "seconds": 0.916667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 56.6
+        },
+        {
+          "text": "-一",
+          "confidence": 75.8
+        },
+        {
+          "text": "一",
+          "confidence": 35.4
+        },
+        {
+          "text": "-一",
+          "confidence": 62.2
+        },
+        {
+          "text": "一",
+          "confidence": 81.7
+        },
+        {
+          "text": "一",
+          "confidence": 72.0
+        }
+      ]
+    },
+    {
+      "frame": 23,
+      "seconds": 0.958333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 49.1
+        },
+        {
+          "text": "人",
+          "confidence": 50.4
+        }
+      ]
+    },
+    {
+      "frame": 24,
+      "seconds": 1.0,
+      "words": [
+        {
+          "text": "全",
+          "confidence": 63.0
+        },
+        {
+          "text": "三",
+          "confidence": 49.4
+        }
+      ]
+    },
+    {
+      "frame": 25,
+      "seconds": 1.041667,
+      "words": [
+        {
+          "text": "全",
+          "confidence": 75.8
+        },
+        {
+          "text": "三",
+          "confidence": 62.7
+        }
+      ]
+    },
+    {
+      "frame": 26,
+      "seconds": 1.083333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 73.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "一",
+          "confidence": 41.9
+        },
+        {
+          "text": "一",
+          "confidence": 46.2
+        },
+        {
+          "text": "一",
+          "confidence": 56.8
+        }
+      ]
+    },
+    {
+      "frame": 28,
+      "seconds": 1.166667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 43.0
+        },
+        {
+          "text": "外",
+          "confidence": 50.9
+        }
+      ]
+    },
+    {
+      "frame": 30,
+      "seconds": 1.25,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 58.0
+        },
+        {
+          "text": "一",
+          "confidence": 54.2
+        },
+        {
+          "text": "前",
+          "confidence": 39.8
+        },
+        {
+          "text": "一",
+          "confidence": 55.2
+        },
+        {
+          "text": "二",
+          "confidence": 35.1
+        }
+      ]
+    },
+    {
+      "frame": 31,
+      "seconds": 1.291667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 37.7
+        },
+        {
+          "text": "-三",
+          "confidence": 46.1
+        }
+      ]
+    },
+    {
+      "frame": 32,
+      "seconds": 1.333333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 54.5
+        }
+      ]
+    },
+    {
+      "frame": 33,
+      "seconds": 1.375,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 51.9
+        },
+        {
+          "text": "-一",
+          "confidence": 78.0
+        },
+        {
+          "text": "一",
+          "confidence": 95.7
+        },
+        {
+          "text": "一",
+          "confidence": 85.3
+        }
+      ]
+    },
+    {
+      "frame": 34,
+      "seconds": 1.416667,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 65.9
+        },
+        {
+          "text": "人",
+          "confidence": 81.4
+        },
+        {
+          "text": "一",
+          "confidence": 58.5
+        }
+      ]
+    },
+    {
+      "frame": 35,
+      "seconds": 1.458333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 87.3
+        },
+        {
+          "text": "了",
+          "confidence": 64.9
+        }
+      ]
+    },
+    {
+      "frame": 36,
+      "seconds": 1.5,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 76.6
+        },
+        {
+          "text": "-一",
+          "confidence": 90.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.6
+        },
+        {
+          "text": "一",
+          "confidence": 82.9
+        },
+        {
+          "text": "一",
+          "confidence": 46.8
+        },
+        {
+          "text": "-二",
+          "confidence": 69.9
+        },
+        {
+          "text": "三",
+          "confidence": 81.9
+        },
+        {
+          "text": "一",
+          "confidence": 47.8
+        }
+      ]
+    },
+    {
+      "frame": 38,
+      "seconds": 1.583333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 91.3
+        },
+        {
+          "text": "一",
+          "confidence": 96.7
+        },
+        {
+          "text": "-一",
+          "confidence": 81.4
+        },
+        {
+          "text": "一",
+          "confidence": 74.2
+        },
+        {
+          "text": "一",
+          "confidence": 53.8
+        },
+        {
+          "text": "一",
+          "confidence": 94.3
+        },
+        {
+          "text": "二",
+          "confidence": 36.3
+        },
+        {
+          "text": "一",
+          "confidence": 62.6
+        },
+        {
+          "text": "一",
+          "confidence": 83.2
+        },
+        {
+          "text": "-一",
+          "confidence": 60.5
+        },
+        {
+          "text": "一",
+          "confidence": 59.5
+        }
+      ]
+    },
+    {
+      "frame": 39,
+      "seconds": 1.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 89.6
+        },
+        {
+          "text": "二",
+          "confidence": 75.5
+        },
+        {
+          "text": "一",
+          "confidence": 84.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        },
+        {
+          "text": "-一",
+          "confidence": 87.2
+        },
+        {
+          "text": "一",
+          "confidence": 49.3
+        },
+        {
+          "text": "一",
+          "confidence": 42.0
+        },
+        {
+          "text": "一",
+          "confidence": 47.3
+        },
+        {
+          "text": "一",
+          "confidence": 94.8
+        },
+        {
+          "text": "-一",
+          "confidence": 43.9
+        },
+        {
+          "text": "一",
+          "confidence": 70.1
+        }
+      ]
+    },
+    {
+      "frame": 40,
+      "seconds": 1.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.9
+        },
+        {
+          "text": "-一",
+          "confidence": 56.6
+        }
+      ]
+    },
+    {
+      "frame": 41,
+      "seconds": 1.708333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 38.8
+        },
+        {
+          "text": "一",
+          "confidence": 88.3
+        },
+        {
+          "text": "一",
+          "confidence": 42.3
+        },
+        {
+          "text": "一",
+          "confidence": 71.8
+        },
+        {
+          "text": "一",
+          "confidence": 95.6
+        },
+        {
+          "text": "二",
+          "confidence": 87.7
+        },
+        {
+          "text": "一",
+          "confidence": 84.8
+        },
+        {
+          "text": "一",
+          "confidence": 36.5
+        },
+        {
+          "text": "-一",
+          "confidence": 60.5
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        }
+      ]
+    },
+    {
+      "frame": 42,
+      "seconds": 1.75,
+      "words": [
+        {
+          "text": "医",
+          "confidence": 72.1
+        },
+        {
+          "text": "“一",
+          "confidence": 41.4
+        },
+        {
+          "text": "一",
+          "confidence": 95.0
+        },
+        {
+          "text": "一",
+          "confidence": 39.0
+        }
+      ]
+    },
+    {
+      "frame": 43,
+      "seconds": 1.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 46.5
+        },
+        {
+          "text": "一",
+          "confidence": 62.5
+        },
+        {
+          "text": "一",
+          "confidence": 56.0
+        },
+        {
+          "text": "一",
+          "confidence": 48.4
+        }
+      ]
+    },
+    {
+      "frame": 44,
+      "seconds": 1.833333,
+      "words": [
+        {
+          "text": "和",
+          "confidence": 35.5
+        },
+        {
+          "text": "/大",
+          "confidence": 37.4
+        },
+        {
+          "text": "-一",
+          "confidence": 44.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.2
+        }
+      ]
+    },
+    {
+      "frame": 46,
+      "seconds": 1.916667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 51.9
+        },
+        {
+          "text": "一",
+          "confidence": 65.2
+        },
+        {
+          "text": "一",
+          "confidence": 84.9
+        },
+        {
+          "text": "三",
+          "confidence": 81.8
+        },
+        {
+          "text": "一",
+          "confidence": 64.9
+        }
+      ]
+    },
+    {
+      "frame": 47,
+      "seconds": 1.958333,
+      "words": [
+        {
+          "text": "全",
+          "confidence": 56.8
+        },
+        {
+          "text": "一",
+          "confidence": 37.5
+        },
+        {
+          "text": "一",
+          "confidence": 84.4
+        },
+        {
+          "text": "一",
+          "confidence": 60.6
+        },
+        {
+          "text": "二",
+          "confidence": 41.5
+        },
+        {
+          "text": "二",
+          "confidence": 66.9
+        },
+        {
+          "text": "一",
+          "confidence": 61.2
+        },
+        {
+          "text": "一",
+          "confidence": 62.6
+        }
+      ]
+    },
+    {
+      "frame": 48,
+      "seconds": 2.0,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 74.0
+        },
+        {
+          "text": "一",
+          "confidence": 86.2
+        },
+        {
+          "text": "一",
+          "confidence": 58.0
+        },
+        {
+          "text": "一",
+          "confidence": 77.5
+        },
+        {
+          "text": "一",
+          "confidence": 87.1
+        }
+      ]
+    },
+    {
+      "frame": 49,
+      "seconds": 2.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 84.2
+        },
+        {
+          "text": "二",
+          "confidence": 41.7
+        },
+        {
+          "text": "一",
+          "confidence": 38.1
+        }
+      ]
+    },
+    {
+      "frame": 50,
+      "seconds": 2.083333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 40.0
+        },
+        {
+          "text": "一",
+          "confidence": 40.4
+        }
+      ]
+    },
+    {
+      "frame": 51,
+      "seconds": 2.125,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 39.8
+        },
+        {
+          "text": "一",
+          "confidence": 43.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "三",
+          "confidence": 85.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "-一",
+          "confidence": 76.2
+        },
+        {
+          "text": "一",
+          "confidence": 89.4
+        },
+        {
+          "text": "一",
+          "confidence": 42.3
+        }
+      ]
+    },
+    {
+      "frame": 52,
+      "seconds": 2.166667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 64.4
+        },
+        {
+          "text": "一",
+          "confidence": 59.7
+        },
+        {
+          "text": "一",
+          "confidence": 84.8
+        },
+        {
+          "text": "一",
+          "confidence": 88.6
+        },
+        {
+          "text": "一",
+          "confidence": 43.9
+        }
+      ]
+    },
+    {
+      "frame": 53,
+      "seconds": 2.208333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 42.2
+        }
+      ]
+    },
+    {
+      "frame": 54,
+      "seconds": 2.25,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 67.1
+        }
+      ]
+    },
+    {
+      "frame": 56,
+      "seconds": 2.333333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 69.6
+        },
+        {
+          "text": "一",
+          "confidence": 53.7
+        },
+        {
+          "text": "一",
+          "confidence": 61.4
+        },
+        {
+          "text": "一",
+          "confidence": 83.6
+        }
+      ]
+    },
+    {
+      "frame": 57,
+      "seconds": 2.375,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 52.5
+        }
+      ]
+    },
+    {
+      "frame": 58,
+      "seconds": 2.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 44.2
+        }
+      ]
+    },
+    {
+      "frame": 59,
+      "seconds": 2.458333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 47.9
+        },
+        {
+          "text": "一",
+          "confidence": 42.4
+        },
+        {
+          "text": "一",
+          "confidence": 52.4
+        },
+        {
+          "text": "一",
+          "confidence": 94.3
+        },
+        {
+          "text": "“一",
+          "confidence": 50.4
+        }
+      ]
+    },
+    {
+      "frame": 62,
+      "seconds": 2.583333,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 74.5
+        },
+        {
+          "text": "一",
+          "confidence": 43.7
+        }
+      ]
+    },
+    {
+      "frame": 63,
+      "seconds": 2.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 51.1
+        },
+        {
+          "text": "一",
+          "confidence": 94.1
+        },
+        {
+          "text": "-一",
+          "confidence": 89.8
+        }
+      ]
+    },
+    {
+      "frame": 64,
+      "seconds": 2.666667,
+      "words": [
+        {
+          "text": "外",
+          "confidence": 51.0
+        },
+        {
+          "text": "一",
+          "confidence": 50.4
+        }
+      ]
+    },
+    {
+      "frame": 65,
+      "seconds": 2.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 58.9
+        },
+        {
+          "text": "一",
+          "confidence": 81.3
+        }
+      ]
+    },
+    {
+      "frame": 67,
+      "seconds": 2.791667,
+      "words": [
+        {
+          "text": "有",
+          "confidence": 62.3
+        }
+      ]
+    },
+    {
+      "frame": 68,
+      "seconds": 2.833333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 92.7
+        }
+      ]
+    },
+    {
+      "frame": 69,
+      "seconds": 2.875,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 75.7
+        }
+      ]
+    },
+    {
+      "frame": 73,
+      "seconds": 3.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 36.0
+        }
+      ]
+    },
+    {
+      "frame": 75,
+      "seconds": 3.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 91.6
+        },
+        {
+          "text": "一",
+          "confidence": 92.4
+        },
+        {
+          "text": "一",
+          "confidence": 94.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.4
+        },
+        {
+          "text": "一",
+          "confidence": 87.0
+        }
+      ]
+    },
+    {
+      "frame": 76,
+      "seconds": 3.166667,
+      "words": [
+        {
+          "text": "加",
+          "confidence": 37.9
+        },
+        {
+          "text": "一",
+          "confidence": 83.2
+        }
+      ]
+    },
+    {
+      "frame": 77,
+      "seconds": 3.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 89.0
+        },
+        {
+          "text": "一",
+          "confidence": 64.3
+        }
+      ]
+    },
+    {
+      "frame": 78,
+      "seconds": 3.25,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 78.1
+        },
+        {
+          "text": "一",
+          "confidence": 89.0
+        },
+        {
+          "text": "了",
+          "confidence": 39.1
+        }
+      ]
+    },
+    {
+      "frame": 79,
+      "seconds": 3.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.8
+        },
+        {
+          "text": "二",
+          "confidence": 54.8
+        },
+        {
+          "text": "二",
+          "confidence": 90.6
+        },
+        {
+          "text": "一",
+          "confidence": 80.7
+        },
+        {
+          "text": "-一",
+          "confidence": 90.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.0
+        }
+      ]
+    },
+    {
+      "frame": 80,
+      "seconds": 3.333333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 91.5
+        },
+        {
+          "text": "本",
+          "confidence": 46.5
+        }
+      ]
+    },
+    {
+      "frame": 81,
+      "seconds": 3.375,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 57.8
+        }
+      ]
+    },
+    {
+      "frame": 83,
+      "seconds": 3.458333,
+      "words": [
+        {
+          "text": "三",
+          "confidence": 92.5
+        },
+        {
+          "text": "一",
+          "confidence": 50.2
+        }
+      ]
+    },
+    {
+      "frame": 85,
+      "seconds": 3.541667,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 42.8
+        },
+        {
+          "text": "一",
+          "confidence": 55.1
+        },
+        {
+          "text": "一",
+          "confidence": 56.7
+        }
+      ]
+    },
+    {
+      "frame": 88,
+      "seconds": 3.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 85.4
+        },
+        {
+          "text": "一",
+          "confidence": 69.9
+        },
+        {
+          "text": "一",
+          "confidence": 45.4
+        },
+        {
+          "text": "-一",
+          "confidence": 53.7
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "二",
+          "confidence": 69.3
+        },
+        {
+          "text": "一",
+          "confidence": 57.5
+        },
+        {
+          "text": "一",
+          "confidence": 39.6
+        }
+      ]
+    },
+    {
+      "frame": 90,
+      "seconds": 3.75,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 52.4
+        }
+      ]
+    },
+    {
+      "frame": 91,
+      "seconds": 3.791667,
+      "words": [
+        {
+          "text": "这",
+          "confidence": 37.7
+        },
+        {
+          "text": "一",
+          "confidence": 37.4
+        }
+      ]
+    },
+    {
+      "frame": 92,
+      "seconds": 3.833333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 43.7
+        },
+        {
+          "text": "二",
+          "confidence": 48.0
+        },
+        {
+          "text": "一",
+          "confidence": 74.1
+        },
+        {
+          "text": "-二",
+          "confidence": 42.7
+        },
+        {
+          "text": "一",
+          "confidence": 85.5
+        }
+      ]
+    },
+    {
+      "frame": 93,
+      "seconds": 3.875,
+      "words": [
+        {
+          "text": "机",
+          "confidence": 40.7
+        },
+        {
+          "text": "一",
+          "confidence": 54.7
+        },
+        {
+          "text": "二",
+          "confidence": 55.0
+        },
+        {
+          "text": "一",
+          "confidence": 68.2
+        },
+        {
+          "text": "-二",
+          "confidence": 36.9
+        },
+        {
+          "text": "一",
+          "confidence": 86.7
+        }
+      ]
+    },
+    {
+      "frame": 95,
+      "seconds": 3.958333,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 82.3
+        },
+        {
+          "text": "“一",
+          "confidence": 74.8
+        },
+        {
+          "text": "一",
+          "confidence": 92.7
+        }
+      ]
+    },
+    {
+      "frame": 97,
+      "seconds": 4.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 38.2
+        },
+        {
+          "text": "一",
+          "confidence": 41.3
+        }
+      ]
+    },
+    {
+      "frame": 99,
+      "seconds": 4.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 87.3
+        },
+        {
+          "text": "有",
+          "confidence": 63.5
+        },
+        {
+          "text": "全、",
+          "confidence": 46.3
+        },
+        {
+          "text": "一",
+          "confidence": 75.5
+        },
+        {
+          "text": "号",
+          "confidence": 38.7
+        }
+      ]
+    },
+    {
+      "frame": 100,
+      "seconds": 4.166667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 49.5
+        }
+      ]
+    },
+    {
+      "frame": 101,
+      "seconds": 4.208333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 55.1
+        },
+        {
+          "text": "二",
+          "confidence": 56.2
+        }
+      ]
+    },
+    {
+      "frame": 102,
+      "seconds": 4.25,
+      "words": [
+        {
+          "text": "全、",
+          "confidence": 49.4
+        },
+        {
+          "text": "一",
+          "confidence": 60.4
+        },
+        {
+          "text": "二",
+          "confidence": 55.8
+        },
+        {
+          "text": "一",
+          "confidence": 93.7
+        },
+        {
+          "text": "一",
+          "confidence": 49.0
+        },
+        {
+          "text": "一",
+          "confidence": 58.4
+        },
+        {
+          "text": "-二",
+          "confidence": 50.3
+        },
+        {
+          "text": "一",
+          "confidence": 91.4
+        }
+      ]
+    },
+    {
+      "frame": 103,
+      "seconds": 4.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 87.0
+        },
+        {
+          "text": "一",
+          "confidence": 45.6
+        },
+        {
+          "text": "-二",
+          "confidence": 47.9
+        },
+        {
+          "text": "一",
+          "confidence": 87.5
+        }
+      ]
+    },
+    {
+      "frame": 104,
+      "seconds": 4.333333,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 47.9
+        }
+      ]
+    },
+    {
+      "frame": 105,
+      "seconds": 4.375,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 56.8
+        },
+        {
+          "text": "一",
+          "confidence": 51.9
+        },
+        {
+          "text": "一",
+          "confidence": 58.1
+        },
+        {
+          "text": "“一",
+          "confidence": 45.9
+        }
+      ]
+    },
+    {
+      "frame": 106,
+      "seconds": 4.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 39.6
+        }
+      ]
+    },
+    {
+      "frame": 108,
+      "seconds": 4.5,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 52.0
+        },
+        {
+          "text": "一",
+          "confidence": 44.1
+        },
+        {
+          "text": "一",
+          "confidence": 38.5
+        },
+        {
+          "text": "到",
+          "confidence": 50.1
+        },
+        {
+          "text": "二",
+          "confidence": 54.1
+        }
+      ]
+    },
+    {
+      "frame": 109,
+      "seconds": 4.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 60.7
+        },
+        {
+          "text": "一",
+          "confidence": 57.3
+        },
+        {
+          "text": "一",
+          "confidence": 81.2
+        },
+        {
+          "text": "二",
+          "confidence": 50.7
+        },
+        {
+          "text": "一",
+          "confidence": 46.9
+        },
+        {
+          "text": "一",
+          "confidence": 52.0
+        },
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "二",
+          "confidence": 50.7
+        }
+      ]
+    },
+    {
+      "frame": 110,
+      "seconds": 4.583333,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 68.3
+        },
+        {
+          "text": "一",
+          "confidence": 38.2
+        },
+        {
+          "text": "一",
+          "confidence": 59.4
+        },
+        {
+          "text": "三",
+          "confidence": 38.2
+        }
+      ]
+    },
+    {
+      "frame": 111,
+      "seconds": 4.625,
+      "words": [
+        {
+          "text": "“一",
+          "confidence": 61.8
+        },
+        {
+          "text": "一",
+          "confidence": 41.9
+        }
+      ]
+    },
+    {
+      "frame": 112,
+      "seconds": 4.666667,
+      "words": [
+        {
+          "text": "从",
+          "confidence": 78.6
+        }
+      ]
+    },
+    {
+      "frame": 113,
+      "seconds": 4.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 45.3
+        },
+        {
+          "text": "一",
+          "confidence": 44.6
+        }
+      ]
+    },
+    {
+      "frame": 115,
+      "seconds": 4.791667,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 56.9
+        },
+        {
+          "text": "了",
+          "confidence": 39.2
+        }
+      ]
+    },
+    {
+      "frame": 116,
+      "seconds": 4.833333,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 40.3
+        },
+        {
+          "text": "一",
+          "confidence": 45.6
+        },
+        {
+          "text": "一",
+          "confidence": 47.8
+        }
+      ]
+    },
+    {
+      "frame": 117,
+      "seconds": 4.875,
+      "words": [
+        {
+          "text": "三",
+          "confidence": 64.8
+        }
+      ]
+    },
+    {
+      "frame": 118,
+      "seconds": 4.916667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 50.9
+        }
+      ]
+    },
+    {
+      "frame": 119,
+      "seconds": 4.958333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 36.2
+        },
+        {
+          "text": "一",
+          "confidence": 87.0
+        }
+      ]
+    },
+    {
+      "frame": 120,
+      "seconds": 5.0,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 45.4
+        },
+        {
+          "text": "-一",
+          "confidence": 38.9
+        },
+        {
+          "text": "过",
+          "confidence": 80.9
+        },
+        {
+          "text": "一",
+          "confidence": 47.9
+        },
+        {
+          "text": "-二",
+          "confidence": 46.7
+        },
+        {
+          "text": "一",
+          "confidence": 87.4
+        },
+        {
+          "text": "一",
+          "confidence": 42.4
+        }
+      ]
+    },
+    {
+      "frame": 121,
+      "seconds": 5.041667,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 77.7
+        },
+        {
+          "text": "一",
+          "confidence": 96.1
+        },
+        {
+          "text": "一",
+          "confidence": 87.5
+        },
+        {
+          "text": "一",
+          "confidence": 46.3
+        }
+      ]
+    },
+    {
+      "frame": 122,
+      "seconds": 5.083333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 48.0
+        },
+        {
+          "text": "一",
+          "confidence": 91.4
+        },
+        {
+          "text": "一",
+          "confidence": 73.3
+        },
+        {
+          "text": "一",
+          "confidence": 91.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "一",
+          "confidence": 58.0
+        }
+      ]
+    },
+    {
+      "frame": 123,
+      "seconds": 5.125,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 45.9
+        },
+        {
+          "text": "二",
+          "confidence": 86.0
+        },
+        {
+          "text": "一",
+          "confidence": 68.6
+        },
+        {
+          "text": "一",
+          "confidence": 93.7
+        }
+      ]
+    },
+    {
+      "frame": 124,
+      "seconds": 5.166667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 63.8
+        },
+        {
+          "text": "之",
+          "confidence": 49.3
+        },
+        {
+          "text": "二",
+          "confidence": 48.8
+        },
+        {
+          "text": "一",
+          "confidence": 52.0
+        },
+        {
+          "text": "二",
+          "confidence": 54.4
+        },
+        {
+          "text": "一",
+          "confidence": 74.5
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        }
+      ]
+    },
+    {
+      "frame": 125,
+      "seconds": 5.208333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 40.7
+        },
+        {
+          "text": "一",
+          "confidence": 55.0
+        },
+        {
+          "text": "一",
+          "confidence": 63.0
+        },
+        {
+          "text": "之",
+          "confidence": 54.9
+        },
+        {
+          "text": "二",
+          "confidence": 37.0
+        },
+        {
+          "text": "一",
+          "confidence": 77.7
+        }
+      ]
+    },
+    {
+      "frame": 128,
+      "seconds": 5.333333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 80.5
+        },
+        {
+          "text": "一",
+          "confidence": 65.2
+        },
+        {
+          "text": "-三",
+          "confidence": 66.4
+        },
+        {
+          "text": "一",
+          "confidence": 51.1
+        },
+        {
+          "text": "一",
+          "confidence": 94.8
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        }
+      ]
+    },
+    {
+      "frame": 129,
+      "seconds": 5.375,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 50.6
+        },
+        {
+          "text": "一",
+          "confidence": 91.0
+        },
+        {
+          "text": "一",
+          "confidence": 94.4
+        }
+      ]
+    },
+    {
+      "frame": 130,
+      "seconds": 5.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 46.5
+        },
+        {
+          "text": "一",
+          "confidence": 89.6
+        },
+        {
+          "text": "一",
+          "confidence": 68.6
+        },
+        {
+          "text": "二",
+          "confidence": 81.0
+        },
+        {
+          "text": "一",
+          "confidence": 49.6
+        },
+        {
+          "text": "一",
+          "confidence": 92.4
+        }
+      ]
+    },
+    {
+      "frame": 131,
+      "seconds": 5.458333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 63.9
+        },
+        {
+          "text": "月",
+          "confidence": 59.8
+        },
+        {
+          "text": "一",
+          "confidence": 39.8
+        },
+        {
+          "text": "之",
+          "confidence": 56.7
+        },
+        {
+          "text": "一",
+          "confidence": 85.8
+        }
+      ]
+    },
+    {
+      "frame": 132,
+      "seconds": 5.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 47.0
+        },
+        {
+          "text": "月",
+          "confidence": 59.3
+        },
+        {
+          "text": "一",
+          "confidence": 56.9
+        }
+      ]
+    },
+    {
+      "frame": 133,
+      "seconds": 5.541667,
+      "words": [
+        {
+          "text": "之",
+          "confidence": 56.1
+        },
+        {
+          "text": "一",
+          "confidence": 48.3
+        },
+        {
+          "text": "人",
+          "confidence": 37.4
+        }
+      ]
+    },
+    {
+      "frame": 134,
+      "seconds": 5.583333,
+      "words": [
+        {
+          "text": "全",
+          "confidence": 39.9
+        },
+        {
+          "text": "一",
+          "confidence": 85.9
+        },
+        {
+          "text": "一",
+          "confidence": 88.3
+        },
+        {
+          "text": "一",
+          "confidence": 69.2
+        },
+        {
+          "text": "一",
+          "confidence": 40.8
+        },
+        {
+          "text": "一",
+          "confidence": 95.1
+        }
+      ]
+    },
+    {
+      "frame": 135,
+      "seconds": 5.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 42.6
+        },
+        {
+          "text": "一",
+          "confidence": 56.8
+        },
+        {
+          "text": "二",
+          "confidence": 53.4
+        }
+      ]
+    },
+    {
+      "frame": 136,
+      "seconds": 5.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 63.7
+        },
+        {
+          "text": "一",
+          "confidence": 61.9
+        }
+      ]
+    },
+    {
+      "frame": 137,
+      "seconds": 5.708333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 85.9
+        },
+        {
+          "text": "一",
+          "confidence": 58.0
+        },
+        {
+          "text": "一",
+          "confidence": 83.0
+        },
+        {
+          "text": "一",
+          "confidence": 37.2
+        }
+      ]
+    },
+    {
+      "frame": 138,
+      "seconds": 5.75,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 61.7
+        },
+        {
+          "text": "一",
+          "confidence": 55.4
+        },
+        {
+          "text": "一",
+          "confidence": 75.0
+        },
+        {
+          "text": "一",
+          "confidence": 38.7
+        },
+        {
+          "text": "一",
+          "confidence": 82.1
+        }
+      ]
+    },
+    {
+      "frame": 139,
+      "seconds": 5.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.7
+        },
+        {
+          "text": "-一",
+          "confidence": 70.4
+        },
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 47.9
+        },
+        {
+          "text": "一",
+          "confidence": 50.1
+        }
+      ]
+    },
+    {
+      "frame": 140,
+      "seconds": 5.833333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.6
+        },
+        {
+          "text": "-一",
+          "confidence": 63.3
+        },
+        {
+          "text": "一",
+          "confidence": 87.5
+        },
+        {
+          "text": "一",
+          "confidence": 93.9
+        },
+        {
+          "text": "一",
+          "confidence": 60.6
+        }
+      ]
+    },
+    {
+      "frame": 141,
+      "seconds": 5.875,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 63.8
+        },
+        {
+          "text": "一",
+          "confidence": 87.2
+        },
+        {
+          "text": "一",
+          "confidence": 92.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        },
+        {
+          "text": "二",
+          "confidence": 64.9
+        },
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "-二",
+          "confidence": 44.9
+        }
+      ]
+    },
+    {
+      "frame": 142,
+      "seconds": 5.916667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 41.8
+        },
+        {
+          "text": "一",
+          "confidence": 60.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "-二",
+          "confidence": 38.0
+        }
+      ]
+    },
+    {
+      "frame": 144,
+      "seconds": 6.0,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 52.2
+        },
+        {
+          "text": "-一",
+          "confidence": 63.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        }
+      ]
+    },
+    {
+      "frame": 146,
+      "seconds": 6.083333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 49.4
+        }
+      ]
+    },
+    {
+      "frame": 147,
+      "seconds": 6.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 61.4
+        },
+        {
+          "text": "一",
+          "confidence": 37.6
+        },
+        {
+          "text": "一",
+          "confidence": 74.6
+        },
+        {
+          "text": "一",
+          "confidence": 92.9
+        },
+        {
+          "text": "一",
+          "confidence": 87.4
+        }
+      ]
+    },
+    {
+      "frame": 148,
+      "seconds": 6.166667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 49.2
+        },
+        {
+          "text": "一",
+          "confidence": 69.8
+        },
+        {
+          "text": "一",
+          "confidence": 52.3
+        },
+        {
+          "text": "一",
+          "confidence": 53.2
+        },
+        {
+          "text": "一",
+          "confidence": 66.6
+        }
+      ]
+    },
+    {
+      "frame": 149,
+      "seconds": 6.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 92.8
+        },
+        {
+          "text": "工",
+          "confidence": 68.0
+        }
+      ]
+    },
+    {
+      "frame": 150,
+      "seconds": 6.25,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 96.1
+        },
+        {
+          "text": "-一",
+          "confidence": 59.8
+        },
+        {
+          "text": "一",
+          "confidence": 87.7
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        }
+      ]
+    },
+    {
+      "frame": 154,
+      "seconds": 6.416667,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 40.1
+        },
+        {
+          "text": "一",
+          "confidence": 56.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.5
+        },
+        {
+          "text": "-二",
+          "confidence": 37.9
+        }
+      ]
+    },
+    {
+      "frame": 156,
+      "seconds": 6.5,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 41.3
+        }
+      ]
+    },
+    {
+      "frame": 157,
+      "seconds": 6.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 68.2
+        },
+        {
+          "text": "一",
+          "confidence": 77.7
+        },
+        {
+          "text": "多",
+          "confidence": 47.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        }
+      ]
+    },
+    {
+      "frame": 158,
+      "seconds": 6.583333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 92.2
+        },
+        {
+          "text": "-一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 67.3
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        },
+        {
+          "text": "一",
+          "confidence": 94.0
+        }
+      ]
+    },
+    {
+      "frame": 159,
+      "seconds": 6.625,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 48.3
+        },
+        {
+          "text": "一",
+          "confidence": 49.5
+        }
+      ]
+    },
+    {
+      "frame": 160,
+      "seconds": 6.666667,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 42.2
+        },
+        {
+          "text": "一",
+          "confidence": 93.8
+        },
+        {
+          "text": "-一",
+          "confidence": 94.4
+        },
+        {
+          "text": "一",
+          "confidence": 81.3
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "了",
+          "confidence": 83.6
+        }
+      ]
+    },
+    {
+      "frame": 161,
+      "seconds": 6.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.4
+        },
+        {
+          "text": "-一",
+          "confidence": 94.7
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "了",
+          "confidence": 86.0
+        },
+        {
+          "text": "-一",
+          "confidence": 54.9
+        }
+      ]
+    },
+    {
+      "frame": 162,
+      "seconds": 6.75,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 37.4
+        },
+        {
+          "text": "一",
+          "confidence": 41.8
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "-一",
+          "confidence": 76.4
+        },
+        {
+          "text": "一",
+          "confidence": 91.1
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "了",
+          "confidence": 59.6
+        },
+        {
+          "text": "一",
+          "confidence": 49.1
+        },
+        {
+          "text": "-一",
+          "confidence": 68.7
+        }
+      ]
+    },
+    {
+      "frame": 163,
+      "seconds": 6.791667,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 38.5
+        },
+        {
+          "text": "二",
+          "confidence": 55.8
+        },
+        {
+          "text": "一",
+          "confidence": 73.6
+        },
+        {
+          "text": "一",
+          "confidence": 54.3
+        },
+        {
+          "text": "一",
+          "confidence": 63.3
+        },
+        {
+          "text": "一",
+          "confidence": 37.7
+        }
+      ]
+    },
+    {
+      "frame": 164,
+      "seconds": 6.833333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 64.2
+        },
+        {
+          "text": "一",
+          "confidence": 85.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.7
+        },
+        {
+          "text": "多",
+          "confidence": 48.1
+        },
+        {
+          "text": "二",
+          "confidence": 44.3
+        },
+        {
+          "text": "一",
+          "confidence": 77.7
+        },
+        {
+          "text": "一",
+          "confidence": 86.0
+        },
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 70.7
+        },
+        {
+          "text": "一",
+          "confidence": 91.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "二",
+          "confidence": 37.5
+        }
+      ]
+    },
+    {
+      "frame": 165,
+      "seconds": 6.875,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 42.2
+        },
+        {
+          "text": "二",
+          "confidence": 43.5
+        },
+        {
+          "text": "一",
+          "confidence": 72.1
+        },
+        {
+          "text": "一",
+          "confidence": 85.7
+        }
+      ]
+    },
+    {
+      "frame": 166,
+      "seconds": 6.916667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 68.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "二",
+          "confidence": 69.3
+        }
+      ]
+    },
+    {
+      "frame": 167,
+      "seconds": 6.958333,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 49.9
+        },
+        {
+          "text": "一",
+          "confidence": 68.6
+        }
+      ]
+    },
+    {
+      "frame": 168,
+      "seconds": 7.0,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 42.7
+        }
+      ]
+    },
+    {
+      "frame": 169,
+      "seconds": 7.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        },
+        {
+          "text": "一",
+          "confidence": 92.1
+        },
+        {
+          "text": "二",
+          "confidence": 70.2
+        }
+      ]
+    },
+    {
+      "frame": 170,
+      "seconds": 7.083333,
+      "words": [
+        {
+          "text": "三",
+          "confidence": 47.1
+        },
+        {
+          "text": "一",
+          "confidence": 49.8
+        }
+      ]
+    },
+    {
+      "frame": 171,
+      "seconds": 7.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 59.3
+        },
+        {
+          "text": "一",
+          "confidence": 91.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.6
+        },
+        {
+          "text": "二",
+          "confidence": 51.1
+        },
+        {
+          "text": "一",
+          "confidence": 94.8
+        },
+        {
+          "text": "-一",
+          "confidence": 81.9
+        },
+        {
+          "text": "一",
+          "confidence": 95.7
+        },
+        {
+          "text": "一",
+          "confidence": 91.1
+        },
+        {
+          "text": "一",
+          "confidence": 40.1
+        },
+        {
+          "text": "-一",
+          "confidence": 68.7
+        }
+      ]
+    },
+    {
+      "frame": 173,
+      "seconds": 7.208333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 83.1
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        }
+      ]
+    },
+    {
+      "frame": 174,
+      "seconds": 7.25,
+      "words": [
+        {
+          "text": "一-",
+          "confidence": 54.3
+        },
+        {
+          "text": "一",
+          "confidence": 57.2
+        }
+      ]
+    },
+    {
+      "frame": 178,
+      "seconds": 7.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.6
+        },
+        {
+          "text": "一",
+          "confidence": 53.7
+        }
+      ]
+    },
+    {
+      "frame": 179,
+      "seconds": 7.458333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 62.1
+        },
+        {
+          "text": "一",
+          "confidence": 88.3
+        },
+        {
+          "text": "一",
+          "confidence": 74.1
+        },
+        {
+          "text": "一",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 58.9
+        }
+      ]
+    },
+    {
+      "frame": 180,
+      "seconds": 7.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "-一",
+          "confidence": 40.7
+        }
+      ]
+    },
+    {
+      "frame": 181,
+      "seconds": 7.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "-一",
+          "confidence": 43.1
+        }
+      ]
+    },
+    {
+      "frame": 182,
+      "seconds": 7.583333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.4
+        },
+        {
+          "text": "-一",
+          "confidence": 42.1
+        }
+      ]
+    },
+    {
+      "frame": 183,
+      "seconds": 7.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 65.0
+        },
+        {
+          "text": "-一",
+          "confidence": 65.2
+        }
+      ]
+    },
+    {
+      "frame": 184,
+      "seconds": 7.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 48.5
+        },
+        {
+          "text": "一",
+          "confidence": 38.8
+        },
+        {
+          "text": "一",
+          "confidence": 53.1
+        },
+        {
+          "text": "一",
+          "confidence": 56.9
+        }
+      ]
+    },
+    {
+      "frame": 185,
+      "seconds": 7.708333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 60.6
+        },
+        {
+          "text": "了",
+          "confidence": 83.1
+        }
+      ]
+    },
+    {
+      "frame": 186,
+      "seconds": 7.75,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 75.7
+        },
+        {
+          "text": "一",
+          "confidence": 94.6
+        }
+      ]
+    },
+    {
+      "frame": 187,
+      "seconds": 7.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 96.2
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "二",
+          "confidence": 51.5
+        }
+      ]
+    },
+    {
+      "frame": 188,
+      "seconds": 7.833333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 82.5
+        },
+        {
+          "text": "一",
+          "confidence": 74.6
+        },
+        {
+          "text": "一",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 86.5
+        },
+        {
+          "text": "一",
+          "confidence": 87.0
+        },
+        {
+          "text": "一",
+          "confidence": 40.7
+        }
+      ]
+    },
+    {
+      "frame": 189,
+      "seconds": 7.875,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 86.6
+        },
+        {
+          "text": "一",
+          "confidence": 74.4
+        },
+        {
+          "text": "一",
+          "confidence": 91.9
+        },
+        {
+          "text": "一",
+          "confidence": 90.3
+        },
+        {
+          "text": "“一",
+          "confidence": 69.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "二",
+          "confidence": 44.6
+        }
+      ]
+    },
+    {
+      "frame": 190,
+      "seconds": 7.916667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 59.2
+        },
+        {
+          "text": "一",
+          "confidence": 54.5
+        },
+        {
+          "text": "一",
+          "confidence": 82.4
+        },
+        {
+          "text": "一",
+          "confidence": 90.5
+        },
+        {
+          "text": "一",
+          "confidence": 56.5
+        },
+        {
+          "text": "一-",
+          "confidence": 62.0
+        }
+      ]
+    },
+    {
+      "frame": 191,
+      "seconds": 7.958333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 83.5
+        },
+        {
+          "text": "一",
+          "confidence": 75.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        }
+      ]
+    },
+    {
+      "frame": 192,
+      "seconds": 8.0,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 56.4
+        },
+        {
+          "text": "一",
+          "confidence": 70.1
+        },
+        {
+          "text": "一",
+          "confidence": 66.3
+        }
+      ]
+    },
+    {
+      "frame": 193,
+      "seconds": 8.041667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 76.6
+        },
+        {
+          "text": "上",
+          "confidence": 50.5
+        },
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "一",
+          "confidence": 83.0
+        }
+      ]
+    },
+    {
+      "frame": 194,
+      "seconds": 8.083333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 80.6
+        },
+        {
+          "text": "一",
+          "confidence": 67.1
+        }
+      ]
+    },
+    {
+      "frame": 195,
+      "seconds": 8.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "一",
+          "confidence": 76.3
+        },
+        {
+          "text": "-一",
+          "confidence": 82.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "“一",
+          "confidence": 40.1
+        }
+      ]
+    },
+    {
+      "frame": 196,
+      "seconds": 8.166667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.6
+        },
+        {
+          "text": "多",
+          "confidence": 54.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.4
+        },
+        {
+          "text": "一",
+          "confidence": 88.8
+        },
+        {
+          "text": "一",
+          "confidence": 94.7
+        },
+        {
+          "text": "一",
+          "confidence": 82.7
+        },
+        {
+          "text": "一",
+          "confidence": 95.5
+        },
+        {
+          "text": "一",
+          "confidence": 76.0
+        }
+      ]
+    },
+    {
+      "frame": 197,
+      "seconds": 8.208333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 55.9
+        },
+        {
+          "text": "-一",
+          "confidence": 84.5
+        }
+      ]
+    },
+    {
+      "frame": 199,
+      "seconds": 8.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 93.1
+        },
+        {
+          "text": "-一",
+          "confidence": 50.6
+        }
+      ]
+    },
+    {
+      "frame": 200,
+      "seconds": 8.333333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 70.5
+        },
+        {
+          "text": "-一",
+          "confidence": 73.2
+        },
+        {
+          "text": "一",
+          "confidence": 82.3
+        },
+        {
+          "text": "一",
+          "confidence": 38.2
+        }
+      ]
+    },
+    {
+      "frame": 202,
+      "seconds": 8.416667,
+      "words": [
+        {
+          "text": "扩",
+          "confidence": 43.9
+        },
+        {
+          "text": "一",
+          "confidence": 93.5
+        },
+        {
+          "text": "-一",
+          "confidence": 44.9
+        },
+        {
+          "text": "一",
+          "confidence": 65.1
+        },
+        {
+          "text": "一",
+          "confidence": 47.2
+        }
+      ]
+    },
+    {
+      "frame": 203,
+      "seconds": 8.458333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        }
+      ]
+    },
+    {
+      "frame": 204,
+      "seconds": 8.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 52.4
+        },
+        {
+          "text": "一",
+          "confidence": 50.7
+        }
+      ]
+    },
+    {
+      "frame": 209,
+      "seconds": 8.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.5
+        },
+        {
+          "text": "一",
+          "confidence": 89.5
+        },
+        {
+          "text": "二",
+          "confidence": 91.1
+        },
+        {
+          "text": "和",
+          "confidence": 36.9
+        },
+        {
+          "text": "二",
+          "confidence": 43.7
+        },
+        {
+          "text": "一",
+          "confidence": 87.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.6
+        }
+      ]
+    },
+    {
+      "frame": 210,
+      "seconds": 8.75,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 78.6
+        },
+        {
+          "text": "一",
+          "confidence": 90.9
+        },
+        {
+          "text": "一",
+          "confidence": 79.7
+        }
+      ]
+    },
+    {
+      "frame": 211,
+      "seconds": 8.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.9
+        },
+        {
+          "text": "一",
+          "confidence": 64.3
+        },
+        {
+          "text": "一",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 48.2
+        }
+      ]
+    },
+    {
+      "frame": 212,
+      "seconds": 8.833333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 91.0
+        },
+        {
+          "text": "一",
+          "confidence": 50.2
+        },
+        {
+          "text": "一",
+          "confidence": 39.0
+        },
+        {
+          "text": "“了",
+          "confidence": 54.1
+        }
+      ]
+    },
+    {
+      "frame": 213,
+      "seconds": 8.875,
+      "words": [
+        {
+          "text": "太一",
+          "confidence": 40.9
+        }
+      ]
+    },
+    {
+      "frame": 214,
+      "seconds": 8.916667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 75.8
+        },
+        {
+          "text": "一",
+          "confidence": 43.5
+        }
+      ]
+    },
+    {
+      "frame": 215,
+      "seconds": 8.958333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 66.0
+        },
+        {
+          "text": "人",
+          "confidence": 38.5
+        },
+        {
+          "text": "一",
+          "confidence": 45.5
+        },
+        {
+          "text": "-一",
+          "confidence": 71.0
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 58.6
+        }
+      ]
+    },
+    {
+      "frame": 216,
+      "seconds": 9.0,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "一",
+          "confidence": 81.8
+        },
+        {
+          "text": "了",
+          "confidence": 79.8
+        }
+      ]
+    },
+    {
+      "frame": 217,
+      "seconds": 9.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "一",
+          "confidence": 66.0
+        },
+        {
+          "text": "一",
+          "confidence": 92.9
+        }
+      ]
+    },
+    {
+      "frame": 218,
+      "seconds": 9.083333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 90.3
+        },
+        {
+          "text": "一",
+          "confidence": 54.7
+        },
+        {
+          "text": "了",
+          "confidence": 54.1
+        }
+      ]
+    },
+    {
+      "frame": 219,
+      "seconds": 9.125,
+      "words": [
+        {
+          "text": "者",
+          "confidence": 39.1
+        },
+        {
+          "text": "一",
+          "confidence": 95.4
+        },
+        {
+          "text": "一",
+          "confidence": 64.3
+        },
+        {
+          "text": "了",
+          "confidence": 78.3
+        }
+      ]
+    },
+    {
+      "frame": 220,
+      "seconds": 9.166667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 61.4
+        }
+      ]
+    },
+    {
+      "frame": 221,
+      "seconds": 9.208333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 50.6
+        },
+        {
+          "text": "一",
+          "confidence": 43.2
+        },
+        {
+          "text": "-一",
+          "confidence": 58.4
+        },
+        {
+          "text": "一",
+          "confidence": 36.2
+        },
+        {
+          "text": "一",
+          "confidence": 66.5
+        },
+        {
+          "text": "一",
+          "confidence": 73.1
+        }
+      ]
+    },
+    {
+      "frame": 223,
+      "seconds": 9.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 73.9
+        },
+        {
+          "text": "了",
+          "confidence": 79.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.7
+        },
+        {
+          "text": "一",
+          "confidence": 76.1
+        }
+      ]
+    },
+    {
+      "frame": 224,
+      "seconds": 9.333333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 93.5
+        },
+        {
+          "text": "一",
+          "confidence": 45.0
+        },
+        {
+          "text": "-一",
+          "confidence": 84.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.0
+        },
+        {
+          "text": "一",
+          "confidence": 90.0
+        },
+        {
+          "text": "一",
+          "confidence": 90.9
+        }
+      ]
+    },
+    {
+      "frame": 226,
+      "seconds": 9.416667,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 96.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.4
+        },
+        {
+          "text": "一",
+          "confidence": 92.5
+        },
+        {
+          "text": "一",
+          "confidence": 58.1
+        }
+      ]
+    },
+    {
+      "frame": 227,
+      "seconds": 9.458333,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 96.8
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "一",
+          "confidence": 56.1
+        },
+        {
+          "text": "一",
+          "confidence": 84.8
+        },
+        {
+          "text": "一",
+          "confidence": 79.1
+        }
+      ]
+    },
+    {
+      "frame": 228,
+      "seconds": 9.5,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 96.7
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "二",
+          "confidence": 91.0
+        },
+        {
+          "text": "-一",
+          "confidence": 61.1
+        },
+        {
+          "text": "一",
+          "confidence": 94.1
+        }
+      ]
+    },
+    {
+      "frame": 229,
+      "seconds": 9.541667,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 95.8
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        }
+      ]
+    },
+    {
+      "frame": 230,
+      "seconds": 9.583333,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 35.7
+        },
+        {
+          "text": "回来",
+          "confidence": 96.8
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "一",
+          "confidence": 53.7
+        },
+        {
+          "text": "二",
+          "confidence": 87.0
+        },
+        {
+          "text": "-一",
+          "confidence": 64.9
+        },
+        {
+          "text": "一",
+          "confidence": 92.8
+        }
+      ]
+    },
+    {
+      "frame": 231,
+      "seconds": 9.625,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 64.7
+        },
+        {
+          "text": "一",
+          "confidence": 93.3
+        },
+        {
+          "text": "回来",
+          "confidence": 47.0
+        },
+        {
+          "text": "了",
+          "confidence": 94.9
+        },
+        {
+          "text": "二",
+          "confidence": 61.8
+        },
+        {
+          "text": "一",
+          "confidence": 56.1
+        }
+      ]
+    },
+    {
+      "frame": 232,
+      "seconds": 9.666667,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 84.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.3
+        },
+        {
+          "text": "回来",
+          "confidence": 41.8
+        },
+        {
+          "text": "了",
+          "confidence": 88.2
+        }
+      ]
+    },
+    {
+      "frame": 233,
+      "seconds": 9.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 68.5
+        },
+        {
+          "text": "一",
+          "confidence": 48.0
+        },
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 96.8
+        },
+        {
+          "text": "了",
+          "confidence": 95.6
+        },
+        {
+          "text": "二",
+          "confidence": 62.9
+        },
+        {
+          "text": "-一",
+          "confidence": 60.7
+        }
+      ]
+    },
+    {
+      "frame": 234,
+      "seconds": 9.75,
+      "words": [
+        {
+          "text": "于",
+          "confidence": 61.1
+        },
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.7
+        },
+        {
+          "text": "了",
+          "confidence": 95.2
+        }
+      ]
+    },
+    {
+      "frame": 235,
+      "seconds": 9.791667,
+      "words": [
+        {
+          "text": "于",
+          "confidence": 65.6
+        },
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.7
+        },
+        {
+          "text": "了",
+          "confidence": 95.0
+        },
+        {
+          "text": "二",
+          "confidence": 69.9
+        },
+        {
+          "text": "一",
+          "confidence": 75.4
+        },
+        {
+          "text": "-一",
+          "confidence": 70.4
+        },
+        {
+          "text": "一",
+          "confidence": 87.1
+        }
+      ]
+    },
+    {
+      "frame": 236,
+      "seconds": 9.833333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 96.3
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "人",
+          "confidence": 75.1
+        }
+      ]
+    },
+    {
+      "frame": 237,
+      "seconds": 9.875,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 66.3
+        },
+        {
+          "text": "一",
+          "confidence": 61.7
+        },
+        {
+          "text": "回来",
+          "confidence": 96.2
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "人",
+          "confidence": 62.9
+        },
+        {
+          "text": "二",
+          "confidence": 92.9
+        },
+        {
+          "text": "一",
+          "confidence": 43.1
+        },
+        {
+          "text": "-一",
+          "confidence": 75.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.6
+        }
+      ]
+    },
+    {
+      "frame": 238,
+      "seconds": 9.916667,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.6
+        },
+        {
+          "text": "回来",
+          "confidence": 95.7
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "二",
+          "confidence": 93.1
+        },
+        {
+          "text": "-一",
+          "confidence": 63.4
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        }
+      ]
+    },
+    {
+      "frame": 239,
+      "seconds": 9.958333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.1
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "二",
+          "confidence": 91.1
+        },
+        {
+          "text": "-一",
+          "confidence": 57.7
+        },
+        {
+          "text": "一",
+          "confidence": 94.0
+        },
+        {
+          "text": "一",
+          "confidence": 40.6
+        }
+      ]
+    },
+    {
+      "frame": 240,
+      "seconds": 10.0,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 92.1
+        },
+        {
+          "text": "我",
+          "confidence": 96.7
+        },
+        {
+          "text": "回来",
+          "confidence": 95.4
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 50.2
+        },
+        {
+          "text": "一",
+          "confidence": 81.7
+        },
+        {
+          "text": "一",
+          "confidence": 80.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        }
+      ]
+    },
+    {
+      "frame": 241,
+      "seconds": 10.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 92.0
+        },
+        {
+          "text": "我",
+          "confidence": 96.5
+        },
+        {
+          "text": "回来",
+          "confidence": 95.8
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "人",
+          "confidence": 38.9
+        },
+        {
+          "text": "一",
+          "confidence": 48.6
+        },
+        {
+          "text": "二",
+          "confidence": 75.7
+        },
+        {
+          "text": "一",
+          "confidence": 52.2
+        }
+      ]
+    },
+    {
+      "frame": 242,
+      "seconds": 10.083333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.2
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "-一",
+          "confidence": 67.0
+        },
+        {
+          "text": "一",
+          "confidence": 87.4
+        },
+        {
+          "text": "-一",
+          "confidence": 72.9
+        },
+        {
+          "text": "一",
+          "confidence": 47.2
+        }
+      ]
+    },
+    {
+      "frame": 243,
+      "seconds": 10.125,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.6
+        },
+        {
+          "text": "一-",
+          "confidence": 78.9
+        },
+        {
+          "text": "我",
+          "confidence": 96.5
+        },
+        {
+          "text": "回来",
+          "confidence": 96.6
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "名",
+          "confidence": 59.6
+        },
+        {
+          "text": "一",
+          "confidence": 80.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "一",
+          "confidence": 94.7
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        }
+      ]
+    },
+    {
+      "frame": 244,
+      "seconds": 10.166667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 81.7
+        },
+        {
+          "text": "我",
+          "confidence": 96.7
+        },
+        {
+          "text": "回来",
+          "confidence": 96.4
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 83.8
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "一",
+          "confidence": 51.2
+        },
+        {
+          "text": "一",
+          "confidence": 79.4
+        }
+      ]
+    },
+    {
+      "frame": 245,
+      "seconds": 10.208333,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 80.1
+        },
+        {
+          "text": "我",
+          "confidence": 96.5
+        },
+        {
+          "text": "回来",
+          "confidence": 96.7
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "一",
+          "confidence": 90.5
+        },
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "一",
+          "confidence": 94.5
+        },
+        {
+          "text": "一",
+          "confidence": 92.8
+        },
+        {
+          "text": "一",
+          "confidence": 92.0
+        },
+        {
+          "text": "一",
+          "confidence": 36.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.0
+        },
+        {
+          "text": "一",
+          "confidence": 57.3
+        }
+      ]
+    },
+    {
+      "frame": 246,
+      "seconds": 10.25,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.5
+        },
+        {
+          "text": "回来",
+          "confidence": 96.7
+        },
+        {
+          "text": "了",
+          "confidence": 97.0
+        },
+        {
+          "text": "一",
+          "confidence": 86.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "一",
+          "confidence": 94.6
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        }
+      ]
+    },
+    {
+      "frame": 247,
+      "seconds": 10.291667,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.0
+        },
+        {
+          "text": "了",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 91.9
+        },
+        {
+          "text": "一",
+          "confidence": 95.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 89.4
+        },
+        {
+          "text": "一",
+          "confidence": 51.6
+        },
+        {
+          "text": "一",
+          "confidence": 54.1
+        },
+        {
+          "text": "一",
+          "confidence": 87.9
+        }
+      ]
+    },
+    {
+      "frame": 248,
+      "seconds": 10.333333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 95.6
+        },
+        {
+          "text": "了",
+          "confidence": 96.7
+        },
+        {
+          "text": "-一",
+          "confidence": 77.1
+        },
+        {
+          "text": "一",
+          "confidence": 95.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 70.6
+        },
+        {
+          "text": "一",
+          "confidence": 90.3
+        },
+        {
+          "text": "一",
+          "confidence": 91.3
+        },
+        {
+          "text": "一",
+          "confidence": 92.1
+        },
+        {
+          "text": "二",
+          "confidence": 52.3
+        },
+        {
+          "text": "一",
+          "confidence": 53.1
+        },
+        {
+          "text": "一",
+          "confidence": 83.1
+        }
+      ]
+    },
+    {
+      "frame": 249,
+      "seconds": 10.375,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.8
+        },
+        {
+          "text": "回来",
+          "confidence": 96.0
+        },
+        {
+          "text": "了",
+          "confidence": 96.3
+        },
+        {
+          "text": "-一",
+          "confidence": 86.0
+        },
+        {
+          "text": "一",
+          "confidence": 94.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        }
+      ]
+    },
+    {
+      "frame": 250,
+      "seconds": 10.416667,
+      "words": [
+        {
+          "text": "三",
+          "confidence": 46.0
+        }
+      ]
+    },
+    {
+      "frame": 251,
+      "seconds": 10.458333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 95.8
+        },
+        {
+          "text": "了",
+          "confidence": 96.6
+        }
+      ]
+    },
+    {
+      "frame": 252,
+      "seconds": 10.5,
+      "words": [
+        {
+          "text": "有",
+          "confidence": 35.7
+        },
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 95.5
+        },
+        {
+          "text": "了",
+          "confidence": 96.7
+        },
+        {
+          "text": "一",
+          "confidence": 38.9
+        }
+      ]
+    },
+    {
+      "frame": 253,
+      "seconds": 10.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 51.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.1
+        },
+        {
+          "text": "一",
+          "confidence": 85.7
+        },
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 96.6
+        },
+        {
+          "text": "了",
+          "confidence": 96.7
+        },
+        {
+          "text": "一",
+          "confidence": 81.9
+        },
+        {
+          "text": "一",
+          "confidence": 37.2
+        },
+        {
+          "text": "一",
+          "confidence": 83.6
+        },
+        {
+          "text": "-一",
+          "confidence": 89.6
+        }
+      ]
+    },
+    {
+      "frame": 254,
+      "seconds": 10.583333,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.7
+        },
+        {
+          "text": "回来",
+          "confidence": 96.5
+        },
+        {
+          "text": "了",
+          "confidence": 96.6
+        },
+        {
+          "text": "一",
+          "confidence": 66.3
+        },
+        {
+          "text": "-一",
+          "confidence": 66.3
+        }
+      ]
+    },
+    {
+      "frame": 255,
+      "seconds": 10.625,
+      "words": [
+        {
+          "text": "过",
+          "confidence": 42.0
+        },
+        {
+          "text": "人",
+          "confidence": 42.7
+        }
+      ]
+    },
+    {
+      "frame": 256,
+      "seconds": 10.666667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 74.9
+        },
+        {
+          "text": "-一",
+          "confidence": 86.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.0
+        }
+      ]
+    },
+    {
+      "frame": 257,
+      "seconds": 10.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "一",
+          "confidence": 94.1
+        }
+      ]
+    },
+    {
+      "frame": 258,
+      "seconds": 10.75,
+      "words": [
+        {
+          "text": "我",
+          "confidence": 96.9
+        },
+        {
+          "text": "回来",
+          "confidence": 96.1
+        },
+        {
+          "text": "了",
+          "confidence": 96.8
+        },
+        {
+          "text": "-一",
+          "confidence": 77.8
+        },
+        {
+          "text": "-一",
+          "confidence": 80.8
+        }
+      ]
+    },
+    {
+      "frame": 259,
+      "seconds": 10.791667,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 90.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 70.7
+        },
+        {
+          "text": "一",
+          "confidence": 90.4
+        }
+      ]
+    },
+    {
+      "frame": 260,
+      "seconds": 10.833333,
+      "words": [
+        {
+          "text": "一-",
+          "confidence": 78.2
+        },
+        {
+          "text": "一",
+          "confidence": 61.5
+        },
+        {
+          "text": "一",
+          "confidence": 94.3
+        },
+        {
+          "text": "一",
+          "confidence": 52.3
+        },
+        {
+          "text": "-一",
+          "confidence": 93.8
+        },
+        {
+          "text": "一",
+          "confidence": 96.6
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 84.1
+        },
+        {
+          "text": "一",
+          "confidence": 93.7
+        },
+        {
+          "text": "一-",
+          "confidence": 62.6
+        }
+      ]
+    },
+    {
+      "frame": 261,
+      "seconds": 10.875,
+      "words": [
+        {
+          "text": "一-",
+          "confidence": 78.8
+        },
+        {
+          "text": "一",
+          "confidence": 90.2
+        },
+        {
+          "text": "-一",
+          "confidence": 91.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.4
+        },
+        {
+          "text": "一",
+          "confidence": 92.4
+        },
+        {
+          "text": "一",
+          "confidence": 84.1
+        },
+        {
+          "text": "一",
+          "confidence": 82.9
+        },
+        {
+          "text": "-一",
+          "confidence": 65.3
+        }
+      ]
+    },
+    {
+      "frame": 262,
+      "seconds": 10.916667,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 35.1
+        },
+        {
+          "text": "一-",
+          "confidence": 82.1
+        },
+        {
+          "text": "人",
+          "confidence": 39.5
+        },
+        {
+          "text": "二",
+          "confidence": 48.8
+        },
+        {
+          "text": "一",
+          "confidence": 93.2
+        },
+        {
+          "text": "二",
+          "confidence": 63.1
+        },
+        {
+          "text": "-一",
+          "confidence": 93.0
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        },
+        {
+          "text": "-一",
+          "confidence": 82.0
+        },
+        {
+          "text": "一",
+          "confidence": 87.6
+        },
+        {
+          "text": "一",
+          "confidence": 80.0
+        },
+        {
+          "text": "-一",
+          "confidence": 49.2
+        }
+      ]
+    },
+    {
+      "frame": 263,
+      "seconds": 10.958333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 93.5
+        },
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "一",
+          "confidence": 86.0
+        }
+      ]
+    },
+    {
+      "frame": 264,
+      "seconds": 11.0,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 81.2
+        },
+        {
+          "text": "一",
+          "confidence": 96.7
+        },
+        {
+          "text": "-一",
+          "confidence": 81.8
+        }
+      ]
+    },
+    {
+      "frame": 267,
+      "seconds": 11.125,
+      "words": [
+        {
+          "text": "四",
+          "confidence": 60.9
+        },
+        {
+          "text": "-一",
+          "confidence": 45.5
+        }
+      ]
+    },
+    {
+      "frame": 268,
+      "seconds": 11.166667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 58.0
+        },
+        {
+          "text": "一",
+          "confidence": 71.2
+        },
+        {
+          "text": "一",
+          "confidence": 71.4
+        }
+      ]
+    },
+    {
+      "frame": 269,
+      "seconds": 11.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 90.4
+        },
+        {
+          "text": "一",
+          "confidence": 86.1
+        },
+        {
+          "text": "一",
+          "confidence": 95.5
+        },
+        {
+          "text": "一",
+          "confidence": 38.5
+        },
+        {
+          "text": "一",
+          "confidence": 56.7
+        },
+        {
+          "text": "一",
+          "confidence": 89.3
+        },
+        {
+          "text": "-一",
+          "confidence": 57.4
+        }
+      ]
+    },
+    {
+      "frame": 270,
+      "seconds": 11.25,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 93.9
+        },
+        {
+          "text": "一",
+          "confidence": 78.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        },
+        {
+          "text": "一",
+          "confidence": 82.2
+        },
+        {
+          "text": "一",
+          "confidence": 65.6
+        }
+      ]
+    },
+    {
+      "frame": 271,
+      "seconds": 11.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 60.6
+        },
+        {
+          "text": "一",
+          "confidence": 93.9
+        },
+        {
+          "text": "-一",
+          "confidence": 78.5
+        },
+        {
+          "text": "一",
+          "confidence": 95.2
+        }
+      ]
+    },
+    {
+      "frame": 272,
+      "seconds": 11.333333,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 35.9
+        },
+        {
+          "text": "一",
+          "confidence": 65.2
+        }
+      ]
+    },
+    {
+      "frame": 273,
+      "seconds": 11.375,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 45.7
+        }
+      ]
+    },
+    {
+      "frame": 274,
+      "seconds": 11.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 63.4
+        },
+        {
+          "text": "-一",
+          "confidence": 48.3
+        },
+        {
+          "text": "一",
+          "confidence": 89.4
+        },
+        {
+          "text": "一",
+          "confidence": 69.7
+        }
+      ]
+    },
+    {
+      "frame": 276,
+      "seconds": 11.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 68.7
+        }
+      ]
+    },
+    {
+      "frame": 277,
+      "seconds": 11.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 44.6
+        }
+      ]
+    },
+    {
+      "frame": 278,
+      "seconds": 11.583333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 72.5
+        },
+        {
+          "text": "汤",
+          "confidence": 72.5
+        },
+        {
+          "text": "还",
+          "confidence": 70.9
+        },
+        {
+          "text": "热",
+          "confidence": 90.3
+        },
+        {
+          "text": "着",
+          "confidence": 92.2
+        }
+      ]
+    },
+    {
+      "frame": 279,
+      "seconds": 11.625,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.1
+        },
+        {
+          "text": "汤",
+          "confidence": 89.4
+        },
+        {
+          "text": "还",
+          "confidence": 93.1
+        },
+        {
+          "text": "热",
+          "confidence": 89.8
+        },
+        {
+          "text": "着",
+          "confidence": 92.5
+        },
+        {
+          "text": "多",
+          "confidence": 66.8
+        }
+      ]
+    },
+    {
+      "frame": 280,
+      "seconds": 11.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 66.6
+        },
+        {
+          "text": "好",
+          "confidence": 64.6
+        },
+        {
+          "text": "汤",
+          "confidence": 64.6
+        },
+        {
+          "text": "还",
+          "confidence": 81.4
+        },
+        {
+          "text": "热",
+          "confidence": 92.0
+        },
+        {
+          "text": "着",
+          "confidence": 92.4
+        }
+      ]
+    },
+    {
+      "frame": 281,
+      "seconds": 11.708333,
+      "words": [
+        {
+          "text": "[一",
+          "confidence": 41.1
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 63.1
+        },
+        {
+          "text": "还",
+          "confidence": 79.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.6
+        },
+        {
+          "text": "着",
+          "confidence": 92.8
+        }
+      ]
+    },
+    {
+      "frame": 282,
+      "seconds": 11.75,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 87.1
+        },
+        {
+          "text": "还",
+          "confidence": 82.2
+        },
+        {
+          "text": "热",
+          "confidence": 92.9
+        },
+        {
+          "text": "着",
+          "confidence": 96.8
+        }
+      ]
+    },
+    {
+      "frame": 283,
+      "seconds": 11.791667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.1
+        },
+        {
+          "text": "汤",
+          "confidence": 82.4
+        },
+        {
+          "text": "还",
+          "confidence": 86.1
+        },
+        {
+          "text": "热",
+          "confidence": 92.6
+        },
+        {
+          "text": "着",
+          "confidence": 92.5
+        }
+      ]
+    },
+    {
+      "frame": 284,
+      "seconds": 11.833333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 81.9
+        },
+        {
+          "text": "还",
+          "confidence": 89.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.7
+        },
+        {
+          "text": "着",
+          "confidence": 92.9
+        }
+      ]
+    },
+    {
+      "frame": 285,
+      "seconds": 11.875,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 96.8
+        },
+        {
+          "text": "-一",
+          "confidence": 89.9
+        },
+        {
+          "text": "-一",
+          "confidence": 77.9
+        },
+        {
+          "text": "一",
+          "confidence": 94.6
+        },
+        {
+          "text": "一",
+          "confidence": 54.1
+        }
+      ]
+    },
+    {
+      "frame": 286,
+      "seconds": 11.916667,
+      "words": [
+        {
+          "text": "多",
+          "confidence": 39.6
+        },
+        {
+          "text": "一",
+          "confidence": 50.6
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 69.2
+        },
+        {
+          "text": "还",
+          "confidence": 81.1
+        },
+        {
+          "text": "热",
+          "confidence": 92.2
+        },
+        {
+          "text": "着",
+          "confidence": 91.8
+        }
+      ]
+    },
+    {
+      "frame": 287,
+      "seconds": 11.958333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 81.4
+        },
+        {
+          "text": "还",
+          "confidence": 90.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.8
+        },
+        {
+          "text": "着",
+          "confidence": 92.2
+        },
+        {
+          "text": "一",
+          "confidence": 50.8
+        },
+        {
+          "text": "一",
+          "confidence": 50.7
+        },
+        {
+          "text": "一",
+          "confidence": 68.1
+        }
+      ]
+    },
+    {
+      "frame": 288,
+      "seconds": 12.0,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 45.5
+        },
+        {
+          "text": "一",
+          "confidence": 42.4
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 85.3
+        },
+        {
+          "text": "还",
+          "confidence": 91.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.3
+        },
+        {
+          "text": "着",
+          "confidence": 92.7
+        },
+        {
+          "text": "一",
+          "confidence": 48.5
+        },
+        {
+          "text": "一",
+          "confidence": 43.4
+        },
+        {
+          "text": "一",
+          "confidence": 73.8
+        }
+      ]
+    },
+    {
+      "frame": 289,
+      "seconds": 12.041667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 53.1
+        },
+        {
+          "text": "一",
+          "confidence": 65.3
+        },
+        {
+          "text": "好",
+          "confidence": 64.1
+        },
+        {
+          "text": "汤",
+          "confidence": 64.1
+        },
+        {
+          "text": "还",
+          "confidence": 65.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.9
+        },
+        {
+          "text": "着",
+          "confidence": 91.3
+        },
+        {
+          "text": "一",
+          "confidence": 96.2
+        },
+        {
+          "text": "一",
+          "confidence": 82.5
+        }
+      ]
+    },
+    {
+      "frame": 290,
+      "seconds": 12.083333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 72.5
+        },
+        {
+          "text": "还",
+          "confidence": 88.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.4
+        },
+        {
+          "text": "着",
+          "confidence": 92.0
+        },
+        {
+          "text": "二",
+          "confidence": 86.8
+        },
+        {
+          "text": "二",
+          "confidence": 50.6
+        },
+        {
+          "text": "-一",
+          "confidence": 54.0
+        },
+        {
+          "text": "-一",
+          "confidence": 75.5
+        },
+        {
+          "text": "-一",
+          "confidence": 86.4
+        },
+        {
+          "text": "一",
+          "confidence": 82.5
+        },
+        {
+          "text": "一",
+          "confidence": 73.8
+        }
+      ]
+    },
+    {
+      "frame": 291,
+      "seconds": 12.125,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 75.3
+        },
+        {
+          "text": "还",
+          "confidence": 59.6
+        },
+        {
+          "text": "热",
+          "confidence": 90.4
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        }
+      ]
+    },
+    {
+      "frame": 292,
+      "seconds": 12.166667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 88.9
+        },
+        {
+          "text": "还",
+          "confidence": 90.6
+        },
+        {
+          "text": "热",
+          "confidence": 91.3
+        },
+        {
+          "text": "着",
+          "confidence": 90.7
+        },
+        {
+          "text": "一",
+          "confidence": 94.2
+        },
+        {
+          "text": "一",
+          "confidence": 93.9
+        }
+      ]
+    },
+    {
+      "frame": 293,
+      "seconds": 12.208333,
+      "words": [
+        {
+          "text": "了",
+          "confidence": 41.2
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.1
+        },
+        {
+          "text": "还",
+          "confidence": 90.7
+        },
+        {
+          "text": "热",
+          "confidence": 91.4
+        },
+        {
+          "text": "着",
+          "confidence": 90.8
+        }
+      ]
+    },
+    {
+      "frame": 294,
+      "seconds": 12.25,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 87.7
+        },
+        {
+          "text": "还",
+          "confidence": 82.5
+        },
+        {
+          "text": "热",
+          "confidence": 82.6
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        },
+        {
+          "text": "二",
+          "confidence": 36.8
+        },
+        {
+          "text": "一",
+          "confidence": 46.7
+        },
+        {
+          "text": "一",
+          "confidence": 94.3
+        },
+        {
+          "text": "一",
+          "confidence": 47.2
+        }
+      ]
+    },
+    {
+      "frame": 295,
+      "seconds": 12.291667,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 87.0
+        },
+        {
+          "text": "还",
+          "confidence": 81.7
+        },
+        {
+          "text": "热",
+          "confidence": 82.4
+        },
+        {
+          "text": "着",
+          "confidence": 96.8
+        }
+      ]
+    },
+    {
+      "frame": 296,
+      "seconds": 12.333333,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 87.3
+        },
+        {
+          "text": "还",
+          "confidence": 80.5
+        },
+        {
+          "text": "热",
+          "confidence": 91.1
+        },
+        {
+          "text": "着",
+          "confidence": 96.8
+        },
+        {
+          "text": "-一",
+          "confidence": 66.4
+        },
+        {
+          "text": "-一",
+          "confidence": 76.1
+        }
+      ]
+    },
+    {
+      "frame": 297,
+      "seconds": 12.375,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 90.7
+        },
+        {
+          "text": "还",
+          "confidence": 91.1
+        },
+        {
+          "text": "热",
+          "confidence": 92.9
+        },
+        {
+          "text": "着",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 94.8
+        },
+        {
+          "text": "-一",
+          "confidence": 78.3
+        }
+      ]
+    },
+    {
+      "frame": 298,
+      "seconds": 12.416667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 90.8
+        },
+        {
+          "text": "还",
+          "confidence": 90.8
+        },
+        {
+          "text": "热",
+          "confidence": 92.9
+        },
+        {
+          "text": "着",
+          "confidence": 91.5
+        },
+        {
+          "text": "一",
+          "confidence": 96.8
+        },
+        {
+          "text": "一",
+          "confidence": 94.7
+        }
+      ]
+    },
+    {
+      "frame": 299,
+      "seconds": 12.458333,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 49.2
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 88.9
+        },
+        {
+          "text": "还",
+          "confidence": 90.8
+        },
+        {
+          "text": "热",
+          "confidence": 93.0
+        },
+        {
+          "text": "着",
+          "confidence": 91.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        }
+      ]
+    },
+    {
+      "frame": 300,
+      "seconds": 12.5,
+      "words": [
+        {
+          "text": "后",
+          "confidence": 35.1
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.5
+        },
+        {
+          "text": "还",
+          "confidence": 91.2
+        },
+        {
+          "text": "热",
+          "confidence": 93.0
+        },
+        {
+          "text": "着",
+          "confidence": 91.6
+        }
+      ]
+    },
+    {
+      "frame": 301,
+      "seconds": 12.541667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.2
+        },
+        {
+          "text": "还",
+          "confidence": 91.0
+        },
+        {
+          "text": "热",
+          "confidence": 92.9
+        },
+        {
+          "text": "着",
+          "confidence": 91.2
+        },
+        {
+          "text": "一",
+          "confidence": 94.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        }
+      ]
+    },
+    {
+      "frame": 303,
+      "seconds": 12.625,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.5
+        },
+        {
+          "text": "还",
+          "confidence": 89.8
+        },
+        {
+          "text": "热",
+          "confidence": 92.8
+        },
+        {
+          "text": "着",
+          "confidence": 91.6
+        }
+      ]
+    },
+    {
+      "frame": 304,
+      "seconds": 12.666667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.3
+        },
+        {
+          "text": "还",
+          "confidence": 88.8
+        },
+        {
+          "text": "热",
+          "confidence": 92.8
+        },
+        {
+          "text": "着",
+          "confidence": 91.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.2
+        },
+        {
+          "text": "一",
+          "confidence": 96.4
+        }
+      ]
+    },
+    {
+      "frame": 305,
+      "seconds": 12.708333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 89.5
+        },
+        {
+          "text": "还",
+          "confidence": 89.7
+        },
+        {
+          "text": "热",
+          "confidence": 92.7
+        },
+        {
+          "text": "着",
+          "confidence": 91.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "一",
+          "confidence": 96.7
+        }
+      ]
+    },
+    {
+      "frame": 306,
+      "seconds": 12.75,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 88.4
+        },
+        {
+          "text": "好",
+          "confidence": 51.8
+        },
+        {
+          "text": "汤",
+          "confidence": 86.8
+        },
+        {
+          "text": "还",
+          "confidence": 78.5
+        },
+        {
+          "text": "热",
+          "confidence": 92.0
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.7
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        }
+      ]
+    },
+    {
+      "frame": 307,
+      "seconds": 12.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 67.7
+        },
+        {
+          "text": "区",
+          "confidence": 49.1
+        },
+        {
+          "text": "好",
+          "confidence": 93.1
+        },
+        {
+          "text": "汤",
+          "confidence": 76.4
+        },
+        {
+          "text": "还",
+          "confidence": 85.5
+        },
+        {
+          "text": "热",
+          "confidence": 92.4
+        },
+        {
+          "text": "着",
+          "confidence": 92.9
+        },
+        {
+          "text": "-一",
+          "confidence": 54.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        },
+        {
+          "text": "-一",
+          "confidence": 89.6
+        },
+        {
+          "text": "一",
+          "confidence": 97.0
+        }
+      ]
+    },
+    {
+      "frame": 308,
+      "seconds": 12.833333,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 86.4
+        },
+        {
+          "text": "还",
+          "confidence": 89.4
+        },
+        {
+          "text": "热",
+          "confidence": 92.1
+        },
+        {
+          "text": "着",
+          "confidence": 92.8
+        }
+      ]
+    },
+    {
+      "frame": 309,
+      "seconds": 12.875,
+      "words": [
+        {
+          "text": "也",
+          "confidence": 73.4
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 83.6
+        },
+        {
+          "text": "还",
+          "confidence": 90.0
+        },
+        {
+          "text": "热",
+          "confidence": 88.2
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        },
+        {
+          "text": "二",
+          "confidence": 42.6
+        },
+        {
+          "text": "一",
+          "confidence": 59.1
+        },
+        {
+          "text": "一",
+          "confidence": 44.4
+        },
+        {
+          "text": "一",
+          "confidence": 68.5
+        }
+      ]
+    },
+    {
+      "frame": 310,
+      "seconds": 12.916667,
+      "words": [
+        {
+          "text": "也",
+          "confidence": 67.9
+        },
+        {
+          "text": "回来",
+          "confidence": 92.1
+        },
+        {
+          "text": "好",
+          "confidence": 91.8
+        },
+        {
+          "text": "汤",
+          "confidence": 87.9
+        },
+        {
+          "text": "还",
+          "confidence": 81.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.2
+        },
+        {
+          "text": "着",
+          "confidence": 92.1
+        },
+        {
+          "text": "一",
+          "confidence": 66.3
+        },
+        {
+          "text": "二",
+          "confidence": 42.1
+        },
+        {
+          "text": "一",
+          "confidence": 49.1
+        }
+      ]
+    },
+    {
+      "frame": 311,
+      "seconds": 12.958333,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 92.6
+        },
+        {
+          "text": "好",
+          "confidence": 91.4
+        },
+        {
+          "text": "汤",
+          "confidence": 89.7
+        },
+        {
+          "text": "还",
+          "confidence": 82.4
+        },
+        {
+          "text": "热",
+          "confidence": 91.4
+        },
+        {
+          "text": "着",
+          "confidence": 96.8
+        },
+        {
+          "text": "一-",
+          "confidence": 35.1
+        },
+        {
+          "text": "一",
+          "confidence": 64.4
+        }
+      ]
+    },
+    {
+      "frame": 312,
+      "seconds": 13.0,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.1
+        },
+        {
+          "text": "汤",
+          "confidence": 85.7
+        },
+        {
+          "text": "还",
+          "confidence": 89.6
+        },
+        {
+          "text": "热",
+          "confidence": 91.7
+        },
+        {
+          "text": "着",
+          "confidence": 93.0
+        }
+      ]
+    },
+    {
+      "frame": 313,
+      "seconds": 13.041667,
+      "words": [
+        {
+          "text": "有",
+          "confidence": 36.1
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 87.7
+        },
+        {
+          "text": "还",
+          "confidence": 89.7
+        },
+        {
+          "text": "热",
+          "confidence": 91.0
+        },
+        {
+          "text": "着",
+          "confidence": 92.9
+        }
+      ]
+    },
+    {
+      "frame": 314,
+      "seconds": 13.083333,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 88.3
+        },
+        {
+          "text": "还",
+          "confidence": 81.8
+        },
+        {
+          "text": "热",
+          "confidence": 92.0
+        },
+        {
+          "text": "着",
+          "confidence": 92.2
+        },
+        {
+          "text": "-一",
+          "confidence": 48.5
+        },
+        {
+          "text": "一",
+          "confidence": 89.9
+        },
+        {
+          "text": "一",
+          "confidence": 92.9
+        },
+        {
+          "text": "一",
+          "confidence": 80.9
+        },
+        {
+          "text": "一",
+          "confidence": 55.5
+        },
+        {
+          "text": "一",
+          "confidence": 92.6
+        },
+        {
+          "text": "一",
+          "confidence": 72.1
+        }
+      ]
+    },
+    {
+      "frame": 315,
+      "seconds": 13.125,
+      "words": [
+        {
+          "text": "/一",
+          "confidence": 42.1
+        },
+        {
+          "text": "汤",
+          "confidence": 90.0
+        },
+        {
+          "text": "还",
+          "confidence": 83.5
+        },
+        {
+          "text": "热",
+          "confidence": 92.1
+        },
+        {
+          "text": "着",
+          "confidence": 92.1
+        }
+      ]
+    },
+    {
+      "frame": 316,
+      "seconds": 13.166667,
+      "words": [
+        {
+          "text": "回来",
+          "confidence": 88.7
+        },
+        {
+          "text": "一",
+          "confidence": 55.2
+        },
+        {
+          "text": "一",
+          "confidence": 95.4
+        },
+        {
+          "text": "一",
+          "confidence": 67.0
+        },
+        {
+          "text": "二",
+          "confidence": 43.2
+        },
+        {
+          "text": "-一",
+          "confidence": 54.4
+        }
+      ]
+    },
+    {
+      "frame": 317,
+      "seconds": 13.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 55.7
+        },
+        {
+          "text": "回来",
+          "confidence": 92.7
+        },
+        {
+          "text": "好",
+          "confidence": 91.9
+        },
+        {
+          "text": "汤",
+          "confidence": 89.7
+        },
+        {
+          "text": "还",
+          "confidence": 81.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.3
+        },
+        {
+          "text": "着",
+          "confidence": 92.4
+        },
+        {
+          "text": "一",
+          "confidence": 47.5
+        },
+        {
+          "text": "一",
+          "confidence": 82.6
+        },
+        {
+          "text": "一",
+          "confidence": 88.3
+        }
+      ]
+    },
+    {
+      "frame": 318,
+      "seconds": 13.25,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 88.9
+        },
+        {
+          "text": "还",
+          "confidence": 81.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.0
+        },
+        {
+          "text": "着",
+          "confidence": 91.9
+        },
+        {
+          "text": "一",
+          "confidence": 92.4
+        },
+        {
+          "text": "一",
+          "confidence": 45.5
+        },
+        {
+          "text": "一",
+          "confidence": 82.1
+        },
+        {
+          "text": "-一",
+          "confidence": 75.4
+        }
+      ]
+    },
+    {
+      "frame": 319,
+      "seconds": 13.291667,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 89.2
+        },
+        {
+          "text": "还",
+          "confidence": 81.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.1
+        },
+        {
+          "text": "着",
+          "confidence": 92.2
+        },
+        {
+          "text": "一",
+          "confidence": 38.3
+        },
+        {
+          "text": "-一",
+          "confidence": 61.3
+        },
+        {
+          "text": "-一",
+          "confidence": 93.1
+        },
+        {
+          "text": "一",
+          "confidence": 70.6
+        }
+      ]
+    },
+    {
+      "frame": 320,
+      "seconds": 13.333333,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 88.9
+        },
+        {
+          "text": "还",
+          "confidence": 79.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.3
+        },
+        {
+          "text": "着",
+          "confidence": 92.3
+        },
+        {
+          "text": "一",
+          "confidence": 85.7
+        },
+        {
+          "text": "一",
+          "confidence": 94.5
+        },
+        {
+          "text": "一",
+          "confidence": 84.7
+        },
+        {
+          "text": "一",
+          "confidence": 57.8
+        }
+      ]
+    },
+    {
+      "frame": 321,
+      "seconds": 13.375,
+      "words": [
+        {
+          "text": "汤",
+          "confidence": 88.9
+        },
+        {
+          "text": "还",
+          "confidence": 82.7
+        },
+        {
+          "text": "热",
+          "confidence": 92.6
+        },
+        {
+          "text": "着",
+          "confidence": 92.6
+        }
+      ]
+    },
+    {
+      "frame": 322,
+      "seconds": 13.416667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 36.5
+        },
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 87.4
+        },
+        {
+          "text": "还",
+          "confidence": 89.8
+        },
+        {
+          "text": "热",
+          "confidence": 91.6
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        }
+      ]
+    },
+    {
+      "frame": 323,
+      "seconds": 13.458333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 53.9
+        },
+        {
+          "text": "汤",
+          "confidence": 88.5
+        },
+        {
+          "text": "还",
+          "confidence": 75.6
+        },
+        {
+          "text": "热",
+          "confidence": 92.8
+        },
+        {
+          "text": "着",
+          "confidence": 92.7
+        },
+        {
+          "text": "二",
+          "confidence": 74.2
+        },
+        {
+          "text": "一",
+          "confidence": 78.9
+        },
+        {
+          "text": "-一",
+          "confidence": 87.0
+        },
+        {
+          "text": "一",
+          "confidence": 96.5
+        }
+      ]
+    },
+    {
+      "frame": 324,
+      "seconds": 13.5,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 77.4
+        },
+        {
+          "text": "一",
+          "confidence": 61.9
+        },
+        {
+          "text": "回来",
+          "confidence": 92.8
+        },
+        {
+          "text": "汤",
+          "confidence": 90.3
+        },
+        {
+          "text": "还",
+          "confidence": 88.9
+        },
+        {
+          "text": "热",
+          "confidence": 92.1
+        },
+        {
+          "text": "着",
+          "confidence": 92.1
+        }
+      ]
+    },
+    {
+      "frame": 325,
+      "seconds": 13.541667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 61.6
+        },
+        {
+          "text": "一",
+          "confidence": 74.3
+        },
+        {
+          "text": "一",
+          "confidence": 45.7
+        },
+        {
+          "text": "一",
+          "confidence": 86.3
+        },
+        {
+          "text": "汤",
+          "confidence": 81.2
+        },
+        {
+          "text": "还",
+          "confidence": 63.7
+        },
+        {
+          "text": "热",
+          "confidence": 92.8
+        },
+        {
+          "text": "着",
+          "confidence": 92.3
+        },
+        {
+          "text": "二",
+          "confidence": 76.0
+        },
+        {
+          "text": "一",
+          "confidence": 79.8
+        },
+        {
+          "text": "-一",
+          "confidence": 69.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.8
+        }
+      ]
+    },
+    {
+      "frame": 326,
+      "seconds": 13.583333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 75.8
+        },
+        {
+          "text": "好",
+          "confidence": 93.1
+        },
+        {
+          "text": "汤",
+          "confidence": 73.3
+        },
+        {
+          "text": "还",
+          "confidence": 90.7
+        },
+        {
+          "text": "热",
+          "confidence": 92.4
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 74.1
+        }
+      ]
+    },
+    {
+      "frame": 327,
+      "seconds": 13.625,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 48.5
+        }
+      ]
+    },
+    {
+      "frame": 328,
+      "seconds": 13.666667,
+      "words": [
+        {
+          "text": "好",
+          "confidence": 93.2
+        },
+        {
+          "text": "汤",
+          "confidence": 72.4
+        },
+        {
+          "text": "还",
+          "confidence": 90.3
+        },
+        {
+          "text": "热",
+          "confidence": 93.2
+        },
+        {
+          "text": "着",
+          "confidence": 96.9
+        }
+      ]
+    },
+    {
+      "frame": 329,
+      "seconds": 13.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 49.8
+        },
+        {
+          "text": "一",
+          "confidence": 87.3
+        },
+        {
+          "text": "还",
+          "confidence": 93.2
+        },
+        {
+          "text": "热",
+          "confidence": 89.6
+        },
+        {
+          "text": "着",
+          "confidence": 92.9
+        },
+        {
+          "text": "二",
+          "confidence": 78.4
+        },
+        {
+          "text": "一",
+          "confidence": 51.3
+        },
+        {
+          "text": "一",
+          "confidence": 39.2
+        }
+      ]
+    },
+    {
+      "frame": 330,
+      "seconds": 13.75,
+      "words": [
+        {
+          "text": "器",
+          "confidence": 43.0
+        }
+      ]
+    },
+    {
+      "frame": 331,
+      "seconds": 13.791667,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 78.4
+        },
+        {
+          "text": "一",
+          "confidence": 80.8
+        }
+      ]
+    },
+    {
+      "frame": 332,
+      "seconds": 13.833333,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 82.9
+        },
+        {
+          "text": "一",
+          "confidence": 55.0
+        },
+        {
+          "text": "一",
+          "confidence": 88.4
+        }
+      ]
+    },
+    {
+      "frame": 333,
+      "seconds": 13.875,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 91.9
+        },
+        {
+          "text": "一",
+          "confidence": 51.9
+        },
+        {
+          "text": "一",
+          "confidence": 84.9
+        },
+        {
+          "text": "-一",
+          "confidence": 80.4
+        },
+        {
+          "text": "一",
+          "confidence": 97.0
+        },
+        {
+          "text": "一",
+          "confidence": 93.0
+        },
+        {
+          "text": "-一",
+          "confidence": 49.8
+        }
+      ]
+    },
+    {
+      "frame": 334,
+      "seconds": 13.916667,
+      "words": [
+        {
+          "text": "上",
+          "confidence": 75.6
+        },
+        {
+          "text": "一",
+          "confidence": 36.1
+        },
+        {
+          "text": "-一",
+          "confidence": 89.5
+        },
+        {
+          "text": "一",
+          "confidence": 97.0
+        }
+      ]
+    },
+    {
+      "frame": 336,
+      "seconds": 14.0,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 72.3
+        },
+        {
+          "text": "一",
+          "confidence": 49.5
+        },
+        {
+          "text": "一",
+          "confidence": 69.4
+        }
+      ]
+    },
+    {
+      "frame": 337,
+      "seconds": 14.041667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 84.3
+        },
+        {
+          "text": "一",
+          "confidence": 96.0
+        }
+      ]
+    },
+    {
+      "frame": 338,
+      "seconds": 14.083333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 47.6
+        },
+        {
+          "text": "一",
+          "confidence": 72.9
+        },
+        {
+          "text": "一",
+          "confidence": 69.4
+        },
+        {
+          "text": "一",
+          "confidence": 42.7
+        },
+        {
+          "text": "一",
+          "confidence": 86.1
+        }
+      ]
+    },
+    {
+      "frame": 340,
+      "seconds": 14.166667,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 55.0
+        },
+        {
+          "text": "二",
+          "confidence": 62.2
+        },
+        {
+          "text": "一",
+          "confidence": 62.0
+        },
+        {
+          "text": "一",
+          "confidence": 35.8
+        },
+        {
+          "text": "一",
+          "confidence": 47.3
+        },
+        {
+          "text": "一",
+          "confidence": 73.0
+        },
+        {
+          "text": "一",
+          "confidence": 49.0
+        }
+      ]
+    },
+    {
+      "frame": 341,
+      "seconds": 14.208333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 58.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.0
+        },
+        {
+          "text": "-一",
+          "confidence": 56.0
+        }
+      ]
+    },
+    {
+      "frame": 342,
+      "seconds": 14.25,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 48.5
+        },
+        {
+          "text": "十",
+          "confidence": 49.6
+        },
+        {
+          "text": "一",
+          "confidence": 56.7
+        },
+        {
+          "text": "一",
+          "confidence": 61.6
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        },
+        {
+          "text": "一",
+          "confidence": 40.5
+        },
+        {
+          "text": "一休",
+          "confidence": 49.2
+        }
+      ]
+    },
+    {
+      "frame": 343,
+      "seconds": 14.291667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.1
+        },
+        {
+          "text": "一",
+          "confidence": 63.7
+        },
+        {
+          "text": "一",
+          "confidence": 66.1
+        }
+      ]
+    },
+    {
+      "frame": 344,
+      "seconds": 14.333333,
+      "words": [
+        {
+          "text": ":一",
+          "confidence": 36.8
+        },
+        {
+          "text": "一",
+          "confidence": 66.5
+        },
+        {
+          "text": "一",
+          "confidence": 89.1
+        },
+        {
+          "text": "一",
+          "confidence": 49.3
+        },
+        {
+          "text": "一",
+          "confidence": 90.4
+        },
+        {
+          "text": "一",
+          "confidence": 92.5
+        }
+      ]
+    },
+    {
+      "frame": 345,
+      "seconds": 14.375,
+      "words": [
+        {
+          "text": "用",
+          "confidence": 47.7
+        }
+      ]
+    },
+    {
+      "frame": 346,
+      "seconds": 14.416667,
+      "words": [
+        {
+          "text": "人",
+          "confidence": 36.6
+        }
+      ]
+    },
+    {
+      "frame": 347,
+      "seconds": 14.458333,
+      "words": [
+        {
+          "text": "-二",
+          "confidence": 52.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.7
+        },
+        {
+          "text": "一",
+          "confidence": 54.9
+        },
+        {
+          "text": "一",
+          "confidence": 93.4
+        },
+        {
+          "text": "一",
+          "confidence": 71.0
+        },
+        {
+          "text": "一",
+          "confidence": 67.0
+        }
+      ]
+    },
+    {
+      "frame": 349,
+      "seconds": 14.541667,
+      "words": [
+        {
+          "text": "区",
+          "confidence": 45.8
+        },
+        {
+          "text": "一",
+          "confidence": 83.8
+        },
+        {
+          "text": "一",
+          "confidence": 89.6
+        },
+        {
+          "text": "人",
+          "confidence": 63.6
+        },
+        {
+          "text": "一",
+          "confidence": 41.5
+        },
+        {
+          "text": "-二",
+          "confidence": 66.2
+        },
+        {
+          "text": "一",
+          "confidence": 79.8
+        },
+        {
+          "text": "-一",
+          "confidence": 68.9
+        },
+        {
+          "text": "一",
+          "confidence": 96.6
+        }
+      ]
+    },
+    {
+      "frame": 351,
+      "seconds": 14.625,
+      "words": [
+        {
+          "text": "主",
+          "confidence": 51.9
+        },
+        {
+          "text": "三",
+          "confidence": 54.6
+        },
+        {
+          "text": "一",
+          "confidence": 94.7
+        },
+        {
+          "text": "一",
+          "confidence": 52.5
+        },
+        {
+          "text": "一",
+          "confidence": 81.5
+        }
+      ]
+    },
+    {
+      "frame": 352,
+      "seconds": 14.666667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 89.8
+        },
+        {
+          "text": "二",
+          "confidence": 43.6
+        },
+        {
+          "text": "二",
+          "confidence": 58.7
+        },
+        {
+          "text": "一",
+          "confidence": 92.0
+        },
+        {
+          "text": "一",
+          "confidence": 51.2
+        }
+      ]
+    },
+    {
+      "frame": 353,
+      "seconds": 14.708333,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 86.9
+        },
+        {
+          "text": "一",
+          "confidence": 54.6
+        },
+        {
+          "text": "二",
+          "confidence": 66.0
+        },
+        {
+          "text": "一",
+          "confidence": 65.9
+        }
+      ]
+    },
+    {
+      "frame": 354,
+      "seconds": 14.75,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 70.5
+        }
+      ]
+    },
+    {
+      "frame": 355,
+      "seconds": 14.791667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 59.3
+        },
+        {
+          "text": "一",
+          "confidence": 95.9
+        }
+      ]
+    },
+    {
+      "frame": 356,
+      "seconds": 14.833333,
+      "words": [
+        {
+          "text": "二",
+          "confidence": 80.8
+        },
+        {
+          "text": "一",
+          "confidence": 49.6
+        },
+        {
+          "text": "一",
+          "confidence": 55.7
+        },
+        {
+          "text": "一",
+          "confidence": 95.8
+        },
+        {
+          "text": "一",
+          "confidence": 94.9
+        },
+        {
+          "text": "一",
+          "confidence": 91.1
+        },
+        {
+          "text": "-一",
+          "confidence": 73.6
+        },
+        {
+          "text": "一",
+          "confidence": 77.0
+        }
+      ]
+    },
+    {
+      "frame": 357,
+      "seconds": 14.875,
+      "words": [
+        {
+          "text": "和",
+          "confidence": 45.8
+        },
+        {
+          "text": "一",
+          "confidence": 46.5
+        },
+        {
+          "text": "一",
+          "confidence": 89.2
+        }
+      ]
+    },
+    {
+      "frame": 358,
+      "seconds": 14.916667,
+      "words": [
+        {
+          "text": "一",
+          "confidence": 95.2
+        },
+        {
+          "text": "二",
+          "confidence": 89.9
+        },
+        {
+          "text": "人",
+          "confidence": 80.1
+        },
+        {
+          "text": "一",
+          "confidence": 42.5
+        },
+        {
+          "text": "-一",
+          "confidence": 36.7
+        },
+        {
+          "text": "一",
+          "confidence": 89.4
+        },
+        {
+          "text": "一",
+          "confidence": 96.8
+        },
+        {
+          "text": "-一",
+          "confidence": 55.1
+        },
+        {
+          "text": "一",
+          "confidence": 96.9
+        },
+        {
+          "text": "一",
+          "confidence": 80.8
+        },
+        {
+          "text": "一",
+          "confidence": 56.5
+        },
+        {
+          "text": "一",
+          "confidence": 40.3
+        }
+      ]
+    },
+    {
+      "frame": 359,
+      "seconds": 14.958333,
+      "words": [
+        {
+          "text": "-一",
+          "confidence": 56.9
+        },
+        {
+          "text": "一",
+          "confidence": 88.4
+        },
+        {
+          "text": "人",
+          "confidence": 74.1
+        },
+        {
+          "text": "全",
+          "confidence": 41.0
+        },
+        {
+          "text": "一",
+          "confidence": 68.8
+        }
+      ]
+    },
+    {
+      "frame": 360,
+      "seconds": 15.0,
+      "words": [
+        {
+          "text": "-二",
+          "confidence": 64.6
+        },
+        {
+          "text": "一",
+          "confidence": 96.3
+        },
+        {
+          "text": "一",
+          "confidence": 90.3
+        }
+      ]
+    }
+  ],
+  "manualQualityPass": false,
+  "multiCharacterCandidateFrames": 36,
+  "candidateLimitations": "Many single-character candidates are table/clothing strokes misread as 一 or 二. Candidate-frame count is not a subtitle-frame count; sampled subtitle phrases were visually confirmed.",
+  "multiCharacterCandidateExamples": [
+    {
+      "seconds": 8.875,
+      "text": "太一"
+    },
+    {
+      "seconds": 9.583333,
+      "text": "上 回来 了 一 二 -一 一"
+    },
+    {
+      "seconds": 9.75,
+      "text": "于 我 回来 了"
+    },
+    {
+      "seconds": 9.916667,
+      "text": "我 回来 了 二 -一 一"
+    },
+    {
+      "seconds": 10.083333,
+      "text": "我 回来 了 -一 一 -一 一"
+    },
+    {
+      "seconds": 10.25,
+      "text": "我 回来 了 一 一 一 一"
+    },
+    {
+      "seconds": 10.458333,
+      "text": "我 回来 了"
+    },
+    {
+      "seconds": 10.75,
+      "text": "我 回来 了 -一 -一"
+    },
+    {
+      "seconds": 13.166667,
+      "text": "回来 一 一 一 二 -一"
+    }
+  ],
+  "parserCorrection": "Disable CSV quote interpretation for TSV OCR output; three affected frames were decoded and OCRed again."
+}

@@ -1,4 +1,5 @@
 
+import type { scriptProductionSummary } from "./canvas-script";
 import { FieldError } from "@/components/ui/field";
 import { useRef } from "react";
 import { Card } from "@/components/ui/card";
@@ -23,13 +24,14 @@ import { CanvasNodeInputToolbar } from "./canvas-node-input-toolbar";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import type { CanvasResourceReference } from "./canvas-resources";
 
-export function CanvasScriptNode({ node, completedSteps = [false, false, false], onOpen }: { node: CanvasNode; completedSteps?: readonly boolean[]; onOpen: () => void }) {
+export function CanvasScriptNode({ node, completedSteps = [false, false, false], summary, onOpen, onFocusMovie }: { node: CanvasNode; completedSteps?: readonly boolean[]; summary?: ReturnType<typeof scriptProductionSummary>; onOpen: () => void; onFocusMovie: (id: string) => void }) {
   const currentStep = completedSteps.findIndex((complete) => !complete);
   return (
     <div className="flex size-full flex-col items-center justify-center gap-5 bg-card p-5 text-center">
       <AlignLeft className="size-8 text-muted-foreground" />
+      {node.prompt ? <p className="line-clamp-3 w-full whitespace-pre-wrap text-left text-sm">{node.prompt}</p> : null}
       <ol aria-label="脚本制作进度" className="grid w-full grid-cols-3 text-xs">
-        {["确认镜头", "准备资产", "合成提示词"].map((label, index) => {
+        {["确认镜头", "准备素材", "合成提示词"].map((label, index) => {
           const complete = completedSteps[index];
           const current = index === currentStep;
           return <li key={label} aria-current={current ? "step" : undefined} aria-label={`${label}：${complete ? "已完成" : current ? "进行中" : "未完成"}`} className={cn("relative flex min-w-0 flex-col items-center gap-1 text-muted-foreground", (complete || current) && "text-foreground")}>
@@ -42,9 +44,11 @@ export function CanvasScriptNode({ node, completedSteps = [false, false, false],
         })}
       </ol>
       <p className="text-xs text-muted-foreground">
-        {node.script_project?.shots.length ?? 2} 个镜头 · {node.script_project?.assets.length || 0}{" "}
-        个资产
+        {node.script_project?.shots.length ?? 0} 个镜头 · {node.script_project?.assets.length || 0}{" "}
+        个素材
       </p>
+      {summary ? <div className="grid w-full grid-cols-2 gap-2 text-left text-xs"><span>计划 {summary.plannedSeconds} 秒</span><span>视频 {summary.delivered}/{summary.total}</span><span>{summary.measured === summary.total && summary.total ? `实测 ${summary.actualSeconds.toFixed(2)} 秒` : `时长检测 ${summary.measured}/${summary.total}`}</span></div> : null}
+      {node.script_project?.merged_video_node_id ? <Button variant="outline" size="sm" className="w-full" data-canvas-no-pan onMouseDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();onFocusMovie(node.script_project!.merged_video_node_id!);}}>定位成片{node.script_project.merged_video_outdated ? " · 待更新" : ""}</Button> : null}
       <Button
         size="sm"
         className="w-full"
@@ -107,7 +111,7 @@ export function CanvasScriptPromptPanel({
           }}
         />
       </div>
-      <PromptTextareaFrame className="min-h-0 flex-1">
+      <PromptTextareaFrame value={node.prompt || ""} className="min-h-0 flex-1">
         <CanvasResourceMentionTextarea
           aria-label="故事描述"
           value={node.prompt || ""}

@@ -36,6 +36,44 @@ func openSQLiteStorageTestBackend(t *testing.T, path string) *DatabaseBackend {
 	return backend
 }
 
+func TestDecodeJSONStringPreservesNumbersAndRejectsTrailingData(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		data string
+		want any
+	}{
+		{"history", ` {"data":"5a6M5pW05Y6G5Y+y8J+YgA==","count":9007199254740993,"text":"完整历史😀\n<>&\u2028","optional":null} `,
+			map[string]any{"data": "5a6M5pW05Y6G5Y+y8J+YgA==", "count": json.Number("9007199254740993"), "text": "完整历史😀\n<>&\u2028", "optional": nil}},
+		{"array", "[1e1000, -0, true, [], {}]\n\t", []any{json.Number("1e1000"), json.Number("-0"), true, []any{}, map[string]any{}}},
+		{"null", "null", nil},
+		{"string", `"retained"`, "retained"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := decodeJSONString(test.data)
+			if err != nil || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("decoded value changed: got=%#v, err=%v", got, err)
+			}
+		})
+	}
+	for _, data := range []string{"", " ", `{"data":`, `{} {}`, "null true", "[] trailing", "{}\x00"} {
+		if value, err := decodeJSONString(data); err == nil || value != nil {
+			t.Fatalf("invalid or trailing JSON accepted: %q", data)
+		}
+	}
+}
+
+func BenchmarkDecodeJSONHistoryChunk(b *testing.B) {
+	data := `{"data":"` + strings.Repeat("a", 87384) + `"}`
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	for b.Loop() {
+		value, err := decodeJSONString(data)
+		if err != nil || len(value.(map[string]any)["data"].(string)) != 87384 {
+			b.Fatal("history chunk changed", err)
+		}
+	}
+}
+
 func TestSQLiteConnectionSettingsSurviveReconnect(t *testing.T) {
 	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "reconnect.db"))
 	for _, reconnect := range []bool{false, true} {
@@ -687,6 +725,109 @@ func TestDatabaseBackendListJSONDocumentsRejectsNonCanonicalPrefix(t *testing.T)
 				t.Fatalf("ListJSONDocuments(%q) succeeded, want error", prefix)
 			}
 		})
+	}
+}
+
+func TestDatabaseBackendDocumentPruningCommitsWithParentCAS(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			databaseURL := os.Getenv("TEST_CANVAS_" + strings.ToUpper(dialect) + "_DATABASE_URL")
+			if dialect == "sqlite" {
+				databaseURL = "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "pruning.db"))
+			} else if databaseURL == "" {
+				t.Skip("isolated canvas database not configured")
+			}
+			first, err := NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer first.Close()
+			second, err := NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer second.Close()
+			parent, prefix := "pruning-parent.json", "pruning-test/"
+			ctx := context.Background()
+			for name, value := range map[string]any{parent: "v1", prefix + "active.json": "active", "other-pruning-test/untouched.json": "other owner"} {
+				if err := first.SaveJSONDocument(name, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := second.LoadJSONDocument(parent); err != nil {
+				t.Fatal(err)
+			}
+			for index := range 405 {
+				if err := second.SaveJSONDocument(fmt.Sprintf("%sobsolete-%03d.json", prefix, index), index); err != nil {
+					t.Fatal(err)
+				}
+			}
+			candidate := prefix + "in-flight.json"
+			if err := second.SaveJSONDocument(candidate, "new candidate"); err != nil {
+				t.Fatal(err)
+			}
+			if err := first.SaveJSONDocumentAndPrune(ctx, parent, "v2", prefix, []string{prefix + "active.json"}); err != nil {
+				t.Fatal(err)
+			}
+			children, err := first.ListJSONDocuments(prefix)
+			if err != nil || len(children) != 1 || children[prefix+"active.json"] != "active" {
+				t.Fatalf("pruning did not retain only the committed child: %v %v", children, err)
+			}
+			if err := second.SaveJSONDocumentAndPrune(ctx, parent, "stale", prefix, nil); !errors.Is(err, ErrConcurrentRowUpdate) {
+				t.Fatalf("stale writer bypassed parent CAS: %v", err)
+			}
+			if value, err := first.LoadJSONDocument(prefix + "active.json"); err != nil || value != "active" {
+				t.Fatal("stale prune deleted committed history", err)
+			}
+			// Rebuild a child removed by a competing commit before publishing it.
+			if _, err := second.LoadJSONDocument(parent); err != nil {
+				t.Fatal(err)
+			}
+			if value, err := second.LoadJSONDocument(candidate); err != nil || value != nil {
+				t.Fatal("pruned candidate unexpectedly survived", err)
+			}
+			if err := second.SaveJSONDocument(candidate, "new candidate"); err != nil {
+				t.Fatal(err)
+			}
+			if err := second.SaveJSONDocumentAndPrune(ctx, parent, "v3", prefix, []string{candidate}); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range map[string]any{parent: "v3", candidate: "new candidate", "other-pruning-test/untouched.json": "other owner"} {
+				if got, err := first.LoadJSONDocument(name); err != nil || got != want {
+					t.Fatalf("document %s changed: %v %v", name, got, err)
+				}
+			}
+		})
+	}
+}
+
+func TestDatabaseBackendDocumentPruningRollsBackOnDeleteFailure(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "pruning-rollback.db"))
+	for name, value := range map[string]any{"parent.json": "old parent", "children/old.json": "old child"} {
+		if err := backend.SaveJSONDocument(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := backend.db.Exec(`CREATE TRIGGER fail_child_delete BEFORE DELETE ON json_documents WHEN OLD.name = 'children/old.json' BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.SaveJSONDocumentAndPrune(context.Background(), "parent.json", "new parent", "children/", nil); err == nil {
+		t.Fatal("delete failure was ignored")
+	}
+	for name, want := range map[string]any{"parent.json": "old parent", "children/old.json": "old child"} {
+		if got, err := backend.LoadJSONDocument(name); err != nil || got != want {
+			t.Fatalf("partial commit after pruning error: %s = %v %v", name, got, err)
+		}
+	}
+	for _, fixture := range []struct {
+		name, prefix string
+		retained     []string
+	}{
+		{"parent.json", "", nil}, {"parent.json", "../", nil}, {"children/parent.json", "children/", nil}, {"parent.json", "children/", []string{"outside.json"}},
+	} {
+		if err := backend.SaveJSONDocumentAndPrune(context.Background(), fixture.name, "invalid", fixture.prefix, fixture.retained); err == nil {
+			t.Fatal("invalid pruning namespace was accepted", fixture)
+		}
 	}
 }
 

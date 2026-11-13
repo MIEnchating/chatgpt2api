@@ -444,6 +444,30 @@ func TestDeclaredVideoContractGenerationModeValidation(t *testing.T) {
 	}
 }
 
+func TestVideoContractEmptyReferenceModeInfersText(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	for _, referenceMode := range []string{"reference", "first-frame"} {
+		body := map[string]any{"model": contract.Models[0], "prompt": "Clouds moving slowly", "reference_mode": referenceMode}
+		if err := normalizeVideoContractInput(body, contract); err != nil {
+			t.Fatalf("empty %s mode rejected: %v", referenceMode, err)
+		}
+		if body["generation_mode"] != "text-to-video" || body["reference_mode"] != "first-frame" {
+			t.Fatalf("empty mode did not infer text generation: %#v", body)
+		}
+	}
+	body := map[string]any{
+		"model": contract.Models[0], "prompt": "Use the reference", "reference_mode": "reference",
+		"reference_image_urls": []string{"https://cdn.example.com/ref.png"},
+	}
+	if err := normalizeVideoContractInput(body, contract); err != nil || body["generation_mode"] != "reference-to-video" {
+		t.Fatalf("reference materials lost their mode: %#v, %v", body, err)
+	}
+	body = map[string]any{"model": contract.Models[0], "prompt": "Clouds", "generation_mode": "reference-to-video"}
+	if err := normalizeVideoContractInput(body, contract); err == nil {
+		t.Fatal("explicit reference generation accepted missing materials")
+	}
+}
+
 func TestDeclaredVideoContractRouteRejectsInvalidOrMismatchedGenerationMode(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

@@ -1,0 +1,17 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "nodeID": "video-da3d89b4-fbc1-48f1-938e-47336e7ce43a",
+  "action": "Corrected future regeneration settings and recorded explicit automated needs-fix observations; existing generated file preserved",
+  "referenceImages": 5,
+  "referenceRoles": [
+    "current storyboard",
+    "son",
+    "mother",
+    "prop",
+    "current rainy-night room"
+  ],
+  "mediaSubmissions": 0,
+  "originalTaskAndMediaPreserved": true,
+  "chatMessages": 14,
+  "qualityApproved": false
+}

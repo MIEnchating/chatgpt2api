@@ -1,0 +1,81 @@
+{
+  "method": "Sample at 2 fps. OCR lower crop; exact four-CJK-character match to one scripted line, repeated in adjacent samples at similar height. Candidates require frame review.",
+  "scope": "One movie's four original clips. No detection of unrelated captions, garbled text, or speaker quality is claimed.",
+  "results": [
+    {
+      "shotID": "s1",
+      "sampledFrames": 30,
+      "framesWithDialogueMatches": 8,
+      "repeatedMatches": [
+        {
+          "phrase": "么晚还没",
+          "approxSeconds": 6.5,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "晚还没收",
+          "approxSeconds": 6.5,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "么晚还没",
+          "approxSeconds": 7.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "晚还没收",
+          "approxSeconds": 7.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "还没收摊",
+          "approxSeconds": 7.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "没收摊啊",
+          "approxSeconds": 7.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "袋子怎么",
+          "approxSeconds": 13.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "子怎么了",
+          "approxSeconds": 13.0,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "袋子怎么",
+          "approxSeconds": 13.5,
+          "cropTopPx": 526
+        },
+        {
+          "phrase": "子怎么了",
+          "approxSeconds": 13.5,
+          "cropTopPx": 526
+        }
+      ]
+    },
+    {
+      "shotID": "s2",
+      "sampledFrames": 30,
+      "framesWithDialogueMatches": 0,
+      "repeatedMatches": []
+    },
+    {
+      "shotID": "s3",
+      "sampledFrames": 30,
+      "framesWithDialogueMatches": 0,
+      "repeatedMatches": []
+    },
+    {
+      "shotID": "s4",
+      "sampledFrames": 30,
+      "framesWithDialogueMatches": 0,
+      "repeatedMatches": []
+    }
+  ]
+}

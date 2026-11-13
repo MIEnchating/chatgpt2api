@@ -32,6 +32,36 @@ func (s *CanvasDocumentService) CanvasShare(ownerID, projectID, action string) (
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if action == "get" {
+		// Share status belongs to the owner manifest, not conversation bodies.
+		// Keep writes on the full workspace path so they preserve every history.
+		raw, err := loadStoredJSONBounded(s.store, canvasWorkspaceName(ownerID))
+		if err != nil {
+			return CanvasShare{}, err
+		}
+		if raw == nil {
+			return CanvasShare{}, ErrCanvasShareNotFound
+		}
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return CanvasShare{}, err
+		}
+		var manifest struct {
+			Projects []struct {
+				ID string `json:"id"`
+			} `json:"projects"`
+			Shares map[string]string `json:"shares"`
+		}
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return CanvasShare{}, err
+		}
+		for _, project := range manifest.Projects {
+			if project.ID == projectID {
+				return CanvasShare{Token: manifest.Shares[projectID]}, nil
+			}
+		}
+		return CanvasShare{}, ErrCanvasShareNotFound
+	}
 	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
 		workspace, err := s.loadWorkspaceLocked(ownerID)
 		if err != nil {
@@ -42,8 +72,6 @@ func (s *CanvasDocumentService) CanvasShare(ownerID, projectID, action string) (
 		}
 		token := workspace.Shares[projectID]
 		switch action {
-		case "get":
-			return CanvasShare{Token: token}, nil
 		case "create":
 			if token != "" {
 				return CanvasShare{Token: token}, nil

@@ -1,0 +1,33 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "nodeID": "video-b87398da-b455-4b67-98c5-675c1d1e7024",
+  "checkedAt": "2026-11-11T23:47:01.660Z",
+  "authenticatedAfterRestart": true,
+  "chatMessages": 14,
+  "videoSystemPromptEmpty": true,
+  "nodePromptSHA256": "c21b89c7ff382adb4cd08b1466dd1f379f49fd4c6855a80e073b7898b5a9b90c",
+  "nodePromptExplicitlyRequiresTextFreeFrames": true,
+  "nodePromptRequiresMotherToOpenLid": true,
+  "nodePromptRequiresMotherToServe": true,
+  "knownOutputViolatesSubtitleAndLidRequirements": true,
+  "originalSupplierRequestCaptured": false,
+  "conclusion": "Application request audit hashes match the saved authored prompt. Historical task records themselves omit payloads, but request_args audit logs retain application-side inputs. Script regeneration retained obsolete storyboard and daytime-room reference URLs alongside current connected images. This is an application input defect; generated deviations cannot all be attributed to the model. Remote relay internal transforms remain unobserved.",
+  "followupApplicationRequestEvidence": [
+    {
+      "logID": 79044,
+      "promptSHA256": "c21b89c7ff382adb4cd08b1466dd1f379f49fd4c6855a80e073b7898b5a9b90c",
+      "model": "minimax-H3-super",
+      "referenceImages": 7,
+      "scope": "application_request_args"
+    },
+    {
+      "logID": 79035,
+      "promptSHA256": "c21b89c7ff382adb4cd08b1466dd1f379f49fd4c6855a80e073b7898b5a9b90c",
+      "model": "minimax-H3-super",
+      "referenceImages": 7,
+      "scope": "application_request_args"
+    }
+  ],
+  "supplierRequestBoundary": "Remote relay internal request and any provider-side rewrites remain unobserved.",
+  "referenceDefectConfirmed": true
+}

@@ -21,10 +21,13 @@ export function canvasAgentMediaCapabilities(imageModel: string, videoModel: str
       maxReferenceImages: imageReferenceImageLimit(imageModel),
     },
     video: {
-      sizes: videoSizeOptions(videoModel),
-      resolutions: videoResolutionOptions(videoModel),
-      duration: canvasAgentVideoDurationHint(videoModel),
-      audioControl: videoAudioControl(videoModel),
+      contractConfigured: Boolean(video),
+      sizes: video ? videoSizeOptions(video) : [],
+      resolutions: video ? videoResolutionOptions(video) : [],
+      duration: canvasAgentVideoDurationHint(video || videoModel),
+      audioControl: video?.capability.audio_control ?? "unknown",
+      parameters: video?.capability.parameters || [],
+      defaultMode: video?.generation.modes.find((mode) => mode.id === video.generation.default_mode)?.kind || "text",
       referenceMaterials: video ? {
         transport: transports[0],
         transports,
@@ -45,19 +48,22 @@ type MediaSettingsResult =
 export function resolveCanvasAgentMediaSettings(action: CanvasAgentAction, model: string, defaults: Partial<CanvasNode>): MediaSettingsResult {
   const required = action.name === "generate_video" ? ["size", "seconds", "generateAudio"] : ["size", "count"];
   const missing = required.filter((field) => action.arguments[field] === undefined || (typeof action.arguments[field] === "string" && !action.arguments[field].trim()));
-  if (missing.length) return { ok: false, code: "missing_media_parameters", message: `缺少必要交付参数：${missing.join("、")}。请先通过 ask_user_question 询问用户；已明确要求或委托的参数可直接填写，不得静默使用默认值。`, supported: { required, missing } };
+  if (missing.length) return { ok: false, code: "missing_media_parameters", message: `缺少必要交付参数：${missing.join("、")}。请按用户要求、已有方案或模型支持的合理默认显式填写；只有真正阻塞或超出已有范围时才调用 ask_user_question。`, supported: { required, missing } };
   const size = typeof action.arguments.size === "string" ? action.arguments.size.trim() : "";
   if (action.name === "generate_video") {
+    const contract = videoModelContract(model);
+    if (!contract) return { ok: false, code: "video_contract_missing", message: "当前视频模型未配置启用的契约，声音能力未知。请先核对模型契约，不要将未知能力判断为不支持声音。", supported: { audioControl: "unknown" } };
     const resolution = typeof action.arguments.resolution === "string" ? action.arguments.resolution.trim() : "";
-    const sizes = videoSizeOptions(model);
-    const resolutions = videoResolutionOptions(model);
-    const audioControl = videoAudioControl(model);
+    const sizes = videoSizeOptions(contract);
+    const resolutions = videoResolutionOptions(contract);
+    const audioControl = videoAudioControl(contract);
+    if (action.arguments.generateAudio === true && audioControl === "none") return { ok: false, code: "video_audio_unsupported", message: "当前视频模型契约不支持原生声音，请核对其他可用视频模型。", supported: { audioControl } };
     if (action.arguments.generateAudio === false && audioControl === "always") return { ok: false, code: "video_audio_required", message: "当前视频模型总是生成声音，不能生成静音视频。请确认是否接受有声视频或选择支持静音的模型。", supported: { audioControl } };
     if (size && !sizes.includes(size)) return { ok: false, code: "unsupported_video_size", message: "当前视频模型不支持此尺寸，请根据支持列表重新选择。", supported: sizes };
     if (resolution && !resolutions.includes(resolution)) return { ok: false, code: "unsupported_video_resolution", message: "当前视频模型不支持此清晰度，请根据支持列表重新选择。", supported: resolutions };
     return { ok: true, parameters: {
-      generation_video_size: size || videoDefaultSize(model),
-      generation_video_resolution: resolution || videoDefaultResolution(model),
+      generation_video_size: size || videoDefaultSize(contract),
+      generation_video_resolution: resolution || videoDefaultResolution(contract),
     } };
   }
   const capabilities = canvasAgentMediaCapabilities(model, "").image;

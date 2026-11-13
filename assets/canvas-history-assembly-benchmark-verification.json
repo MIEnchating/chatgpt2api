@@ -1,0 +1,37 @@
+{
+  "sourceBefore": {
+    "path": "internal/service/canvas_agent_history.go",
+    "sha256": "ad6de1e2140fc4d959fd3924ebe89004de5b60394c1c876ab007826431ae3359"
+  },
+  "baselineBenchmarkLog": "/tmp/canvas-editor-read-before.log",
+  "baselineAllocationBytesPerRead": 157226365,
+  "baselineNSPerRead": 620785765,
+  "iterations": 3,
+  "profileIncludesSetup": true,
+  "browserEvidence": "assets/canvas-history-editor-read-before-verification.json",
+  "sourceAfter": {
+    "path": "internal/service/canvas_agent_history.go",
+    "sha256": "3bde73e8230208ba5b8aa7f54ce775a28b83813d140d6fd2ca1627ecd66f5a64"
+  },
+  "afterFocusedBenchmark": {
+    "iterations": 3,
+    "nsPerRead": 644548837,
+    "allocationBytesPerRead": 133009856,
+    "allocationsPerRead": 12283,
+    "log": "/tmp/canvas-history-assembly-focused.log"
+  },
+  "afterPureBenchmark": {
+    "iterations": 3,
+    "nsPerRead": 901158425,
+    "allocationBytesPerRead": 132778141,
+    "allocationsPerRead": 12268,
+    "log": "/tmp/canvas-editor-read-after-pure.log"
+  },
+  "allocationReductionPercent": 15.54969740602984,
+  "limits": [
+    "CPU and memory profiles include fixture setup.",
+    "Background load differs between samples; latency is not a controlled comparison.",
+    "Allocation totals are cumulative, not resident memory.",
+    "SQLite was isolated; storage format and database queries are unchanged."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "checks": [
+    {
+      "name": "full_and_partial_canvas_and_run_snapshot",
+      "passed": true,
+      "messages": 16
+    },
+    {
+      "name": "current_shot_playback_and_existing_review",
+      "passed": true,
+      "duration": 15.083333,
+      "time": 0.452503
+    },
+    {
+      "name": "refresh_and_mobile_preserve_complete_history_and_production",
+      "passed": true,
+      "messages": 16,
+      "oldMovieOutdated": true
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "qualityApproved": false,
+  "finishedAt": "2026-11-12T05:20:10.408Z"
+}

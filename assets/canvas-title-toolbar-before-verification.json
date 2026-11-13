@@ -1,0 +1,26 @@
+{
+  "rects": {
+    "title": {
+      "x": 80,
+      "y": 84,
+      "width": 91.1875,
+      "height": 28,
+      "top": 84,
+      "right": 171.1875,
+      "bottom": 112,
+      "left": 80
+    },
+    "toolbar": {
+      "x": 128.5,
+      "y": 72,
+      "width": 203,
+      "height": 44,
+      "top": 72,
+      "right": 331.5,
+      "bottom": 116,
+      "left": 128.5
+    },
+    "topAtTitle": "<span class=\"block shrink-0\">初始节点</span>"
+  },
+  "renameOpened": true
+}

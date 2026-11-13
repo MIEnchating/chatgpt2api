@@ -1,0 +1,27 @@
+{
+  "startedAt": "2026-11-12T11:56:05.354Z",
+  "checks": [
+    {
+      "name": "real_get_node_fingerprint_and_confirmation_preserve_every_content_field",
+      "passed": true
+    },
+    {
+      "name": "confirmed_state_and_tool_label_survive_refresh_desktop_and_mobile",
+      "passed": true
+    },
+    {
+      "name": "stale_fingerprint_rejected_without_approving_or_overwriting_new_content",
+      "passed": true
+    },
+    {
+      "name": "strict_arguments_authentication_and_no_new_media_tasks",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-322f94177e33d77311e11ee1",
+  "originalHistoryUnchanged": true,
+  "fixtureRemoved": true,
+  "finishedAt": "2026-11-12T11:56:19.404Z"
+}

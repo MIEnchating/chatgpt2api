@@ -22,7 +22,7 @@ export const personalSettingsSections: SettingsNavigationItem[] = [
 const systemSettingsSections: SettingsNavigationItem[] = [
   { id: "config", label: "站点与运行", icon: Settings2, group: "系统管理", href: "/settings#config", keywords: "网站 品牌 数据库 网络 代理 限制" },
   { id: "model-config", label: "模型服务", icon: Sparkles, group: "系统管理", href: "/settings#model-config", keywords: "全局 模型 渠道 文本 图片 视频 音频" },
-  { id: "video-model-contracts", label: "视频模型", icon: Clapperboard, group: "系统管理", href: "/settings#video-model-contracts", keywords: "视频 契约 请求 参数 轮询", adminOnly: true },
+  { id: "video-model-contracts", label: "视频契约", icon: Clapperboard, group: "系统管理", href: "/settings#video-model-contracts", keywords: "视频 契约 请求 参数 轮询", adminOnly: true },
   { id: "image-object-storage", label: "全局存储", icon: Database, group: "系统管理", href: "/settings#image-object-storage", keywords: "S3 R2 WebDAV 外部存储 配置" },
   { id: "media-storage-governance", label: "媒体清理", icon: Archive, group: "系统管理", href: "/settings#media-storage-governance", keywords: "图片 视频 音频 素材 空间 保留 治理" },
   { id: "announcements", label: "公告发布", icon: Bell, group: "系统管理", href: "/settings#announcements", keywords: "公告 通知 消息", adminOnly: true },

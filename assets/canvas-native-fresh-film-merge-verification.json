@@ -1,0 +1,28 @@
+{
+  "startedAt": "2026-11-12T10:43:05.269Z",
+  "checks": [
+    {
+      "name": "merge_requested_via_real_agent_ui",
+      "passed": true
+    },
+    {
+      "name": "latest_shots_old_movie_and_prior_chat_preserved_without_media_submission",
+      "passed": true
+    }
+  ],
+  "qualityApproved": false,
+  "previousMovie": "video-canvas-45208aa5d352ec168f3ee7d4",
+  "movieID": "video-canvas-f6acdf392f4a612343cfe528",
+  "newMediaTasks": [],
+  "assistantReply": "已按当前绑定的四段最新视频顺序完成内置合并，成片实测60秒、768×1376像素，含音轨，可在最新成片卡播放或下载。旧成片与原素材均保留，本轮未生成新素材。第二镜抽帧发现字幕，第一镜存在疑似乱码；动作、声音连续性及说话人与口型仍待验收，当前没有画面质量通过记录。",
+  "replyCharacters": 131,
+  "traceTools": [],
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-canvas-f6acdf392f4a612343cfe528.mp4",
+  "metadata": {
+    "width": 768,
+    "height": 1376,
+    "duration_ms": 60000,
+    "has_audio": true
+  },
+  "finishedAt": "2026-11-12T10:44:27.687Z"
+}

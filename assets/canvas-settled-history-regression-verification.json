@@ -1,0 +1,207 @@
+{
+  "sourceSHA256": {
+    "internal/service/canvas_agent.go": "a749a33091bdd7c6c1ce07eb6513ce5abe1cf129cbaa281d00ee3414d6f81ab3",
+    "internal/service/canvas_agent_runtime.go": "fa87ec351a5e9e4e4a1a38671fdd5b4ae2ebe050c654e10dcbbd446f349e817d",
+    "internal/service/canvas_agent_test.go": "44b59bf4955de4160a0bedb4f831c3c6b7f1198313ed7a479f2d4690853f7ed5",
+    "internal/service/canvas_document_test.go": "a17af62be7b30f823698ce26b1d017692a32f5e552eca3804f3aee93bc89f36a"
+  },
+  "benchmark": {
+    "iterations": 3,
+    "before": {
+      "nsPerOp": 1527781575,
+      "bytesPerOp": 309022821
+    },
+    "after": {
+      "nsPerOp": 552831068,
+      "bytesPerOp": 120376765
+    }
+  },
+  "before": {
+    "stage": "before",
+    "reads": [
+      {
+        "ms": 2476,
+        "bytes": 12345553,
+        "partial": false,
+        "sessions": [
+          "current",
+          "archived"
+        ]
+      },
+      {
+        "ms": 2371,
+        "bytes": 12345553,
+        "partial": false,
+        "sessions": [
+          "current",
+          "archived"
+        ]
+      },
+      {
+        "ms": 2703,
+        "bytes": 12345553,
+        "partial": false,
+        "sessions": [
+          "current",
+          "archived"
+        ]
+      }
+    ],
+    "editor": [
+      {
+        "visibleMs": 8940,
+        "bodyBytes": 12345553,
+        "longestTaskMs": 391,
+        "api": [
+          {
+            "ms": 257,
+            "bytes": 0
+          },
+          {
+            "ms": 4518,
+            "bytes": 12345553
+          }
+        ]
+      },
+      {
+        "visibleMs": 6908,
+        "bodyBytes": 12345553,
+        "longestTaskMs": 315,
+        "api": [
+          {
+            "ms": 248,
+            "bytes": 0
+          },
+          {
+            "ms": 4111,
+            "bytes": 12345553
+          }
+        ]
+      }
+    ],
+    "pageErrors": [],
+    "generationSubmissions": 0,
+    "browserWrites": 1,
+    "editorState": {
+      "alerts": [],
+      "messages": [
+        "current-a-998",
+        "current-u-999",
+        "current-a-999",
+        "fixture-tool-request",
+        "fixture-tool"
+      ]
+    },
+    "olderMessagesAndArchiveOpened": true,
+    "completeHistoryUnchanged": true,
+    "fixtureDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "after": {
+    "stage": "after",
+    "reads": [
+      {
+        "ms": 884,
+        "bytes": 9145093,
+        "partial": true,
+        "sessions": [
+          "current"
+        ]
+      },
+      {
+        "ms": 1888,
+        "bytes": 9145093,
+        "partial": true,
+        "sessions": [
+          "current"
+        ]
+      },
+      {
+        "ms": 820,
+        "bytes": 9145093,
+        "partial": true,
+        "sessions": [
+          "current"
+        ]
+      }
+    ],
+    "editor": [
+      {
+        "visibleMs": 6018,
+        "bodyBytes": 9145093,
+        "longestTaskMs": 307,
+        "api": [
+          {
+            "ms": 231,
+            "bytes": 0
+          },
+          {
+            "ms": 1619,
+            "bytes": 9145093
+          }
+        ]
+      },
+      {
+        "visibleMs": 4251,
+        "bodyBytes": 9145093,
+        "longestTaskMs": 293,
+        "api": [
+          {
+            "ms": 248,
+            "bytes": 0
+          },
+          {
+            "ms": 1476,
+            "bytes": 9145093
+          }
+        ]
+      }
+    ],
+    "pageErrors": [],
+    "generationSubmissions": 0,
+    "browserWrites": 1,
+    "editorState": {
+      "alerts": [],
+      "messages": [
+        "current-a-998",
+        "current-u-999",
+        "current-a-999",
+        "fixture-tool-request",
+        "fixture-tool"
+      ]
+    },
+    "olderMessagesAndArchiveOpened": true,
+    "completeHistoryUnchanged": true,
+    "fixtureDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "tests": {
+    "sqliteGoServiceSeconds": 236.303,
+    "goHTTPAPISeconds": 89.458,
+    "exitCode": 0
+  },
+  "originalProjects": {
+    "checkedAt": "2026-11-12T21:38:51.804Z",
+    "stage": "before",
+    "projectCount": 6,
+    "runningAgents": 0,
+    "projects": [
+      {
+        "id": "canvas-092fd45e58e8eb1db469bd56",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      },
+      {
+        "id": "canvas-04702de07993ea1fdf59d868",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      }
+    ],
+    "activeMedia": 0
+  },
+  "sourceServiceHealth": {
+    "status": "ok"
+  }
+}

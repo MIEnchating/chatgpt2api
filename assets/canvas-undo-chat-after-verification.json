@@ -1,0 +1,67 @@
+{
+  "phase": "after",
+  "checks": [
+    {
+      "name": "new_conversation_and_active_session_survive_undo_and_redo",
+      "passed": true
+    },
+    {
+      "name": "undo_redo_and_reload_preserve_latest_transcript_after_concurrent_save",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserSaves": [
+    {
+      "sessions": [],
+      "nodeTitle": "第一次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第一次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [
+        {
+          "id": "DBWqOyREOTRLnehrR8q-g",
+          "messages": 0
+        }
+      ],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [
+        {
+          "id": "undo-history",
+          "messages": 4
+        }
+      ],
+      "nodeTitle": "第一次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    },
+    {
+      "sessions": [],
+      "nodeTitle": "第二次修改"
+    }
+  ],
+  "generationSubmissions": 0,
+  "beforeUndoMessageCount": 4,
+  "afterUndoMessageCount": 4,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

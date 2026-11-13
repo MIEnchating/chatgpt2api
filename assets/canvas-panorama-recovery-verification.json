@@ -1,0 +1,14 @@
+{
+  "method": "Real browser recovery with an existing image task on a temporary panorama fixture; no new panorama generation",
+  "checks": [
+    {
+      "name": "pending_preserves_task_and_disables_node_generation",
+      "passed": true
+    },
+    {
+      "name": "refresh_restores_original_media_without_generation",
+      "passed": true
+    }
+  ],
+  "mediaSubmissions": 0
+}

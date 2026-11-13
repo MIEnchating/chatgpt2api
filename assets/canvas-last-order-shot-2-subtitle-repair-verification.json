@@ -1,0 +1,91 @@
+{
+  "source": "build/review/canvas-production/full-media/video-canvas-f6acdf392f4a612343cfe528.mp4",
+  "sourceSha256": "17321fde9e51cdf7f504525b28f3345905e1aaebfdfdb88ad613e73f22418a9c",
+  "revised": "build/review/canvas-production/full-media/last-order-shot-2-subtitle-repair.mp4",
+  "revisedSha256": "047bee72100f9f81c91afc20de2e8f36ce27cdf2b176245fac590b81af10e3ba",
+  "revisedBytes": 221956750,
+  "streams": [
+    {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 768,
+      "height": 1376,
+      "pix_fmt": "yuv420p",
+      "avg_frame_rate": "30/1",
+      "time_base": "1/16000",
+      "start_time": "0.000000",
+      "duration": "60.000000",
+      "nb_frames": "1800"
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "avg_frame_rate": "0/0",
+      "time_base": "1/48000",
+      "start_time": "0.000000",
+      "duration": "60.000000",
+      "nb_frames": "2814"
+    }
+  ],
+  "comparedVideoFrames": 1800,
+  "maximumVideoFrameTimestampDeltaMs": 0.3125,
+  "changedVideoFrames": 115,
+  "firstChangedFrameZeroBased": 544,
+  "lastChangedFrameZeroBased": 658,
+  "frameRangeSeconds": [
+    18.133333333333333,
+    21.933333333333334
+  ],
+  "subtitleSwitchFrame": 592,
+  "firstClearFrameAfterRepairRange": 659,
+  "comparisonBoundsXYWH": [
+    208,
+    996,
+    352,
+    224
+  ],
+  "changedYUVSamples": 1459952,
+  "decodedSamplesOutsideBoundsAndTimeRangeIdentical": true,
+  "comparedAudioPackets": 2814,
+  "audioPacketPayloadAndTimingIdentical": true,
+  "chromePlayback": {
+    "duration": 60,
+    "width": 768,
+    "height": 1376,
+    "playedThroughSecond": 22.1
+  },
+  "projectProtection": {
+    "checkedAt": "2026-11-12T21:03:07.298Z",
+    "stage": "before",
+    "projectCount": 6,
+    "runningAgents": 0,
+    "projects": [
+      {
+        "id": "canvas-092fd45e58e8eb1db469bd56",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      },
+      {
+        "id": "canvas-04702de07993ea1fdf59d868",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      }
+    ],
+    "activeMedia": 0
+  },
+  "visualReview": {
+    "sampleFramesZeroBased": [
+      544,
+      592,
+      625,
+      658
+    ],
+    "readableDialogueOverlayPresentAfterRepairInSamples": false,
+    "remainingArtifact": "Mild edge deformation on the paper bag.",
+    "comparison": "assets/canvas-last-order-shot-2-subtitle-repair.jpg"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "phase": "after",
+  "errors": [],
+  "checks": [
+    "persistent error, cancelled reload, narrow layout, disabled retry, successful save, clean reload and complete history"
+  ],
+  "mediaSubmissions": 0,
+  "saveAttempts": 2,
+  "dialogs": [
+    "beforeunload"
+  ],
+  "unloadProtected": true,
+  "persistentError": 1,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

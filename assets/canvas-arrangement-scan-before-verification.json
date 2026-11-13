@@ -1,0 +1,199 @@
+{
+  "phase": "before",
+  "checks": [
+    {
+      "name": "six_geometry_receipts_validate_merged_history_without_redundant_cached_arrangement_scan",
+      "passed": true
+    },
+    {
+      "name": "undo_redo_earlier_messages_tool_details_and_mobile_reload_retain_2000_messages_4000_protocol_entries",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "generationSubmissions": 0,
+  "saves": [
+    {
+      "status": 200,
+      "revision": 1,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 2,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 3,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 4,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 5,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 6,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    }
+  ],
+  "fixtureBytes": 9301962,
+  "testProjectID": "canvas-bd25b325a41791f2ad1f77ac",
+  "readyMS": 7298,
+  "snapshots": [
+    {
+      "incomingBodies": 0,
+      "revision": 1,
+      "baselineRevision": 0,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 10.200000047683716
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 2,
+      "baselineRevision": 1,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 7
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 3,
+      "baselineRevision": 2,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 4.600000023841858
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 4,
+      "baselineRevision": 3,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 4.899999976158142
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 5,
+      "baselineRevision": 4,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 3.899999976158142
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 6,
+      "baselineRevision": 5,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": true,
+          "bodyCount": 1,
+          "messages": 2000
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 4.5
+    }
+  ],
+  "cachedMessagesScanned": 12000,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

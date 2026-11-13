@@ -1,0 +1,10 @@
+{
+  "phase": "before",
+  "errors": [],
+  "checks": [
+    "late rename response replaces an unsaved node edit with its old snapshot"
+  ],
+  "mediaSubmissions": 0,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

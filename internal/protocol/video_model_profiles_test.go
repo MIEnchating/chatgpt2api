@@ -2,10 +2,40 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 )
+
+func TestVideoModelProfilesSupportSharedUpstreamModelLimit(t *testing.T) {
+	for _, count := range []int{23, 100, 101} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			contract := dramayaTestContract(t)
+			profile := contract.ModelProfiles[0]
+			contract.Models = nil
+			contract.ModelProfiles = nil
+			for index := 0; index < count; index++ {
+				model := fmt.Sprintf("shared-video-%d", index)
+				contract.Models = append(contract.Models, model)
+				profile.Model = model
+				contract.ModelProfiles = append(contract.ModelProfiles, profile)
+			}
+			_, err := NormalizeVideoModelContract(contract)
+			if count <= 100 && err != nil {
+				t.Fatalf("shared upstream with %d models rejected: %v", count, err)
+			}
+			if count > 100 && err == nil {
+				t.Fatal("model limit was not enforced")
+			}
+			contract.ModelProfiles = nil
+			_, err = NormalizeVideoModelContract(contract)
+			if (count <= 100) != (err == nil) {
+				t.Fatalf("model-only contract with %d models: %v", count, err)
+			}
+		})
+	}
+}
 
 func dramayaTestContract(t *testing.T) VideoModelContract {
 	t.Helper()
@@ -78,7 +108,13 @@ func TestVideoModelProfilesRejectInvalidOverrides(t *testing.T) {
 		}},
 		{"duplicate", func(c *VideoModelContract) { c.ModelProfiles[1].Model = strings.ToUpper(c.ModelProfiles[0].Model) }},
 		{"invalid default", func(c *VideoModelContract) { c.ModelProfiles[0].Capability.DefaultResolution = "1080p" }},
-		{"missing material mapping", func(c *VideoModelContract) { c.Request.ReferenceImagesField = "" }},
+		{"missing material mapping", func(c *VideoModelContract) {
+			for i := range c.ModelProfiles {
+				request := *c.ModelProfiles[i].Request
+				request.ReferenceImagesField = ""
+				c.ModelProfiles[i].Request = &request
+			}
+		}},
 		{"invalid material mode", func(c *VideoModelContract) { c.ModelProfiles[1].Generation.Modes[0].Materials.Image.Max = 1 }},
 	} {
 		t.Run(test.name, func(t *testing.T) {

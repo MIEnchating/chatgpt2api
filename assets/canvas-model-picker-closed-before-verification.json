@@ -1,0 +1,2075 @@
+{
+  "phase": "before",
+  "checks": [
+    {
+      "name": "six_small_save_receipts_without_transcript_retransmission_or_large_edit_serialization",
+      "passed": true
+    },
+    {
+      "name": "initial_full_transcript_clone_count",
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "four_node_renames_do_not_retransmit_complete_protocol_history",
+      "passed": true
+    },
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 6,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 9921,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.20000004768371582,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 113.39999997615814,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 88.19999992847443,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1172.6000000238419,
+          "ms": 320
+        },
+        {
+          "start": 1496.3999999761581,
+          "ms": 83
+        },
+        {
+          "start": 3155.2000000476837,
+          "ms": 104
+        },
+        {
+          "start": 3266.5,
+          "ms": 69
+        },
+        {
+          "start": 3477.5,
+          "ms": 369
+        },
+        {
+          "start": 3860.100000023842,
+          "ms": 124
+        },
+        {
+          "start": 4035.7000000476837,
+          "ms": 110
+        },
+        {
+          "start": 5864.100000023842,
+          "ms": 392
+        },
+        {
+          "start": 6258.300000071526,
+          "ms": 595
+        },
+        {
+          "start": 6876.100000023842,
+          "ms": 203
+        },
+        {
+          "start": 7451.100000023842,
+          "ms": 59
+        },
+        {
+          "start": 8004,
+          "ms": 87
+        },
+        {
+          "start": 8094.100000023842,
+          "ms": 96
+        },
+        {
+          "start": 8292.600000023842,
+          "ms": 54
+        },
+        {
+          "start": 8987.800000071526,
+          "ms": 781
+        },
+        {
+          "start": 9769.5,
+          "ms": 74
+        }
+      ],
+      "tokenWorkerTransfers": [
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 23.700000047683716
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0.19999992847442627
+        },
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 23.699999928474426
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0
+        }
+      ],
+      "closedModelOptions": [
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        }
+      ]
+    },
+    {
+      "readyMs": 8802,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 147.60000002384186,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 79.60000002384186,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 1051.0999999046326,
+          "ms": 54
+        },
+        {
+          "start": 2767.6999999284744,
+          "ms": 276
+        },
+        {
+          "start": 3056.1999999284744,
+          "ms": 119
+        },
+        {
+          "start": 3184.899999976158,
+          "ms": 192
+        },
+        {
+          "start": 3380.1999999284744,
+          "ms": 92
+        },
+        {
+          "start": 5282.599999904633,
+          "ms": 370
+        },
+        {
+          "start": 5653.699999928474,
+          "ms": 608
+        },
+        {
+          "start": 6270.699999928474,
+          "ms": 194
+        },
+        {
+          "start": 8070.299999952316,
+          "ms": 605
+        },
+        {
+          "start": 8676.099999904633,
+          "ms": 67
+        }
+      ],
+      "tokenWorkerTransfers": [
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 58.699999928474426
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0.20000004768371582
+        },
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 21.700000047683716
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0
+        }
+      ],
+      "closedModelOptions": [
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        }
+      ]
+    },
+    {
+      "readyMs": 6612,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 131.79999995231628,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 87.39999997615814,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 2288.8000000715256,
+          "ms": 317
+        },
+        {
+          "start": 2618.899999976158,
+          "ms": 118
+        },
+        {
+          "start": 2747.600000023842,
+          "ms": 78
+        },
+        {
+          "start": 2827.899999976158,
+          "ms": 103
+        },
+        {
+          "start": 3535,
+          "ms": 56
+        },
+        {
+          "start": 3607.8000000715256,
+          "ms": 338
+        },
+        {
+          "start": 3947.399999976158,
+          "ms": 491
+        },
+        {
+          "start": 4445,
+          "ms": 196
+        },
+        {
+          "start": 6042,
+          "ms": 409
+        },
+        {
+          "start": 6451.899999976158,
+          "ms": 65
+        }
+      ],
+      "tokenWorkerTransfers": [
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 24
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0.10000002384185791
+        },
+        {
+          "type": "history",
+          "messages": 4000,
+          "contentChars": 8687670,
+          "postMs": 59.39999997615814
+        },
+        {
+          "type": "estimate",
+          "requestID": 1,
+          "messages": 0,
+          "contentChars": 0,
+          "postMs": 0.10000002384185791
+        }
+      ],
+      "closedModelOptions": [
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        },
+        {
+          "open": false,
+          "count": 3
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "saveResponses": [
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    },
+    {
+      "status": 200,
+      "bytes": 893,
+      "bodyCount": 0,
+      "summaries": 1,
+      "requestBytes": 1001
+    }
+  ],
+  "canvasReadRequests": 6,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "editCopies": [
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 819,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    }
+  ],
+  "editSerializations": [],
+  "editLongTasks": [
+    {
+      "start": 6755.700000047684,
+      "ms": 893
+    },
+    {
+      "start": 7660.5,
+      "ms": 86
+    },
+    {
+      "start": 7854,
+      "ms": 738
+    },
+    {
+      "start": 8655.700000047684,
+      "ms": 93
+    },
+    {
+      "start": 13323.399999976158,
+      "ms": 790
+    },
+    {
+      "start": 14188.399999976158,
+      "ms": 234
+    },
+    {
+      "start": 14427.5,
+      "ms": 104
+    },
+    {
+      "start": 14689.300000071526,
+      "ms": 646
+    },
+    {
+      "start": 21358.200000047684,
+      "ms": 640
+    },
+    {
+      "start": 22144.399999976158,
+      "ms": 279
+    },
+    {
+      "start": 22432.100000023842,
+      "ms": 91
+    },
+    {
+      "start": 22619.800000071526,
+      "ms": 618
+    },
+    {
+      "start": 27840,
+      "ms": 593
+    },
+    {
+      "start": 28438.700000047684,
+      "ms": 72
+    },
+    {
+      "start": 28569.600000023842,
+      "ms": 244
+    },
+    {
+      "start": 28938.899999976158,
+      "ms": 660
+    },
+    {
+      "start": 29639.800000071526,
+      "ms": 50
+    },
+    {
+      "start": 34182.300000071526,
+      "ms": 544
+    },
+    {
+      "start": 34732.700000047684,
+      "ms": 79
+    }
+  ],
+  "editModelOptionRenders": [
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    },
+    {
+      "open": false,
+      "count": 3
+    }
+  ],
+  "editTokenTransfers": [
+    {
+      "type": "estimate",
+      "requestID": 2,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 3,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.09999990463256836
+    },
+    {
+      "type": "estimate",
+      "requestID": 4,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0
+    },
+    {
+      "type": "estimate",
+      "requestID": 5,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.20000004768371582
+    },
+    {
+      "type": "estimate",
+      "requestID": 6,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0
+    },
+    {
+      "type": "estimate",
+      "requestID": 7,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 8,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 9,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.09999990463256836
+    },
+    {
+      "type": "estimate",
+      "requestID": 10,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.20000004768371582
+    },
+    {
+      "type": "estimate",
+      "requestID": 11,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 12,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.09999990463256836
+    },
+    {
+      "type": "estimate",
+      "requestID": 13,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0
+    },
+    {
+      "type": "estimate",
+      "requestID": 14,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.09999990463256836
+    },
+    {
+      "type": "estimate",
+      "requestID": 15,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 16,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.10000002384185791
+    },
+    {
+      "type": "estimate",
+      "requestID": 17,
+      "messages": 0,
+      "contentChars": 0,
+      "postMs": 0.09999990463256836
+    }
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

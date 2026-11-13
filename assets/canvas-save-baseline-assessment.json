@@ -1,0 +1,42 @@
+{
+  "scope": "Four real geometry edits and successful saves on a complete isolated long-session fixture; instrumentation counts actual product JSON clones. No transcript truncation.",
+  "before": {
+    "fixtureBytes": 9269960,
+    "fullCopies": 8,
+    "serializedCharacters": 73670121,
+    "sampledCopyMS": 713.3,
+    "openingMS": [
+      7163,
+      8593,
+      7208
+    ],
+    "temporaryProjectDeleted": true,
+    "sourceChatUnchanged": true,
+    "generationSubmissions": 0
+  },
+  "after": {
+    "fixtureBytes": 9269960,
+    "fullCopies": 4,
+    "serializedCharacters": 36835060,
+    "sampledCopyMS": 385.8,
+    "openingMS": [
+      9158,
+      7364,
+      7973
+    ],
+    "temporaryProjectDeleted": true,
+    "sourceChatUnchanged": true,
+    "generationSubmissions": 0
+  },
+  "validation": {
+    "relatedTests": 763,
+    "testFiles": 67,
+    "build": "passed",
+    "lint": "passed",
+    "embeddedWebTest": "passed 0.038s",
+    "backendBusinessChanged": false,
+    "backendBusinessTestsRunThisTurn": false
+  },
+  "qualityApproved": false,
+  "limits": "Opening performance remains unapproved; one complete active session is still transferred, and the service still reads the workspace root. Reduced save cloning does not close film content issues."
+}

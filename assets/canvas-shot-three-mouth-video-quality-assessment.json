@@ -1,0 +1,30 @@
+{
+  "nodeID": "video-622d82cf-662d-4fe8-be17-aa5e35e82abd",
+  "taskID": "canvas-video-1839caa1-289b-4b32-afde-164b8d2daf86",
+  "qualityApproved": false,
+  "observations": {
+    "doorwayHomeInteriorPreserved": true,
+    "mouthsVisibleDuringSampledDialogue": true,
+    "singleHelmetRemovedToLeftStoolInSamples": true,
+    "bagRetainedInRightHandInSamples": true,
+    "visibleSubtitleGibberish": true,
+    "subtitleExampleSeconds": 4.0,
+    "phoneticPromptEliminatedSubtitles": false
+  },
+  "audio": {
+    "transcript": "我店地不是外买,是你妈",
+    "status": "requires_review",
+    "note": "Homophone transcription differences do not alone establish pronunciation errors. Speaker identity, timbre continuity and complete lip synchronization remain unapproved."
+  },
+  "ocr": {
+    "decodedFrames": 362,
+    "candidateFrames": 361,
+    "note": "Full-frame textures create many false positives. Candidate count is not the subtitle frame count."
+  },
+  "mergedIntoNewMovie": false,
+  "remaining": [
+    "Subtitles and gibberish",
+    "Full dialogue and voice inspection",
+    "Full lip synchronization and cross-shot continuity"
+  ]
+}

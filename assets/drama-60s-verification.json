@@ -1,0 +1,53 @@
+{
+  "projectID": "canvas-96f0acaa7e48b3c25c83733a",
+  "title": "最后一单",
+  "runStatus": "success",
+  "messageCount": 10,
+  "sessionCount": 1,
+  "phase": "complete",
+  "plan": {
+    "explanation": "已读取最终节点，确认success、hasMedia=true，脚本merged_video_node_id指向video-last-delivery-final-60s且4段绑定保留。采用用户提供的FFmpeg/ffprobe最终验收：音视频均60.000000秒，音轨可完整解码且非静音；未进行独立逐句对白听检。",
+    "steps": [
+      {
+        "id": "script",
+        "status": "completed",
+        "title": "保存完整结构化脚本与素材设定"
+      },
+      {
+        "id": "assets",
+        "status": "completed",
+        "title": "生成角色、道具与场景参考素材"
+      },
+      {
+        "id": "boards",
+        "status": "completed",
+        "title": "引用素材生成4张单幅竖屏分镜"
+      },
+      {
+        "id": "videos",
+        "status": "completed",
+        "title": "生成4段原生有声视频"
+      },
+      {
+        "id": "merge",
+        "status": "completed",
+        "title": "合并成片、精确修整60秒并完成技术验收"
+      }
+    ]
+  },
+  "finalBound": true,
+  "savedFileMatches": true,
+  "imageCheck": {
+    "failed": false,
+    "loaded": 29
+  },
+  "playback": {
+    "duration": 60,
+    "width": 768,
+    "height": 1376,
+    "canPlay": "probably",
+    "advanced": true,
+    "seekOK": true
+  },
+  "pageErrors": []
+}

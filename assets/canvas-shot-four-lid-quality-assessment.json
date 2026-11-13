@@ -1,0 +1,16 @@
+{
+  "method": "Eight sampled frames at 0,2,4,6,8,10,12,14 seconds plus independent unprompted transcription and ffprobe",
+  "qualityApproved": false,
+  "inputDefect": "Generation predates reference reconciliation; seven mixed old/new reference images.",
+  "observations": {
+    "motherServesSoupInSamples": true,
+    "lidDetachedAndOpenMouthVisibleInSamples": true,
+    "subtitlesSeenInSamples": false,
+    "allFramesCheckedForText": false,
+    "unexpectedCutsToHands": true,
+    "endingBowlActionDiffersFromPrompt": true,
+    "dialogueTranscriptionConsistent": true,
+    "speakerAndLipSyncApproved": false
+  },
+  "limitations": "Sampled frames cannot establish subtitle absence or motion/voice synchronization. No human quality pass recorded."
+}

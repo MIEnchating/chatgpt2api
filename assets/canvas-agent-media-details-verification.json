@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {
+      "name": "live_agent_get_node_measured_media",
+      "passed": true,
+      "mediaMetadata": {
+        "duration_ms": 60000,
+        "has_audio": true,
+        "height": 1376,
+        "width": 768
+      },
+      "requestedSeconds": 0
+    },
+    {
+      "name": "test_project_removed_original_history_unchanged",
+      "passed": true
+    }
+  ],
+  "newMediaSubmissions": 0
+}

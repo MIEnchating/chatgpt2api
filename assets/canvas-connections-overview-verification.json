@@ -1,0 +1,39 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "checks": [
+    {
+      "name": "overview_keeps_script_paths",
+      "passed": true,
+      "total": 57,
+      "visible": 23,
+      "collapsed": 34
+    },
+    {
+      "name": "hover_reveals_direct_references",
+      "passed": true,
+      "visible": 27,
+      "related": 7
+    },
+    {
+      "name": "selection_reveals_direct_references",
+      "passed": true,
+      "visible": 27
+    },
+    {
+      "name": "refresh_keeps_graph_history_and_tasks",
+      "passed": true,
+      "messages": 10
+    },
+    {
+      "name": "mobile_canvas_controls",
+      "passed": true,
+      "width": 390
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "qualityApproved": false
+}

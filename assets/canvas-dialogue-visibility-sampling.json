@@ -1,0 +1,74 @@
+[
+  {
+    "shotID": "shot-01",
+    "sampleTimes": [
+      1.8,
+      2.2,
+      2.6,
+      3.0,
+      3.4,
+      3.8,
+      4.2,
+      4.6
+    ],
+    "image": "canvas-shot-01-dialogue-visibility.jpg",
+    "scope": "Dense samples during independent ASR speech intervals; upper 64% of original frame. Visibility evidence only; does not prove synchronized speech, voice identity or quality approval.",
+    "visibility": "mouth_visible",
+    "visualObservation": "Speech-interval samples show the son face and changing mouth shapes. Timing accuracy and voice identity remain unapproved.",
+    "qualityApproved": false
+  },
+  {
+    "shotID": "shot-02",
+    "sampleTimes": [
+      6.4,
+      6.8,
+      7.2,
+      7.6,
+      8.0,
+      8.4,
+      8.8,
+      9.2
+    ],
+    "image": "canvas-shot-02-dialogue-visibility.jpg",
+    "scope": "Dense samples during independent ASR speech intervals; upper 64% of original frame. Visibility evidence only; does not prove synchronized speech, voice identity or quality approval.",
+    "visibility": "mouth_visible",
+    "visualObservation": "Speech-interval samples show the son face and changing mouth shapes. Text near lower frame remains covered by separate full-frame inspection.",
+    "qualityApproved": false
+  },
+  {
+    "shotID": "shot-03",
+    "sampleTimes": [
+      3.12,
+      3.7,
+      4.3,
+      4.9,
+      5.5,
+      5.96,
+      8.08,
+      8.6
+    ],
+    "image": "canvas-shot-03-dialogue-visibility.jpg",
+    "scope": "Dense samples during independent ASR speech intervals; upper 64% of original frame. Visibility evidence only; does not prove synchronized speech, voice identity or quality approval.",
+    "visibility": "son_mouth_hidden",
+    "visualObservation": "Mother face and mouth are visible during her line. Son faces away from camera during the 8.08-8.60s utterance; these samples cannot support son lip-sync approval. Original board already imposes this composition.",
+    "qualityApproved": false
+  },
+  {
+    "shotID": "shot-04",
+    "sampleTimes": [
+      9.42,
+      9.9,
+      10.4,
+      10.9,
+      11.4,
+      11.9,
+      12.4,
+      12.98
+    ],
+    "image": "canvas-shot-04-dialogue-visibility.jpg",
+    "scope": "Dense samples during independent ASR speech intervals; upper 64% of original frame. Visibility evidence only; does not prove synchronized speech, voice identity or quality approval.",
+    "visibility": "both_mouths_visible",
+    "visualObservation": "Both faces visible, son mouth changes during first line and mother during response. Dense still sampling does not prove complete synchronized speech or consistent timbre.",
+    "qualityApproved": false
+  }
+]

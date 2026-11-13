@@ -1,0 +1,19 @@
+{
+  "phase": "after",
+  "loads": [],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "switch": {
+    "firstVisibleMs": 4643,
+    "observationMs": 9152,
+    "startedRequests": 2,
+    "successfulBytes": [
+      8995671
+    ]
+  },
+  "backRestoresSource": true,
+  "targetLoadFailureCanRetry": true,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 2
+}

@@ -13,6 +13,8 @@ test("composer prioritizes a new draft over resume and allows enqueueing during 
   }
   assert.equal(canvasAgentComposerAction({busy:false,hasDraft:false,resumable:true,queued:false}),"resume");
   assert.equal(canvasAgentComposerAction({busy:false,hasDraft:false,resumable:false,queued:false}),"send");
+  assert.equal(canvasAgentComposerAction({busy:false,hasDraft:false,resumable:false,queued:true,waitingForAnswer:true}),"send");
+  assert.equal(canvasAgentComposerAction({busy:false,hasDraft:true,resumable:false,queued:true,waitingForAnswer:true}),"send");
 });
 
 test("only the active conversation's interrupted or failed run can resume", () => {

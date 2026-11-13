@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchInput } from "@/components/ui/search-input";
 import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -290,8 +291,19 @@ function RBACContent() {
     <ManagementPage data-rbac-layout aria-label="角色权限" className="p-4 sm:p-6">
       <ManagementHeader title="角色权限" description="管理角色可访问的页面与 API 权限。" className="px-0 pt-0 sm:px-0" />
       {/* Bound Radix's content wrapper so nested panels keep their own scroll height. */}
-      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain xl:h-full [&>div]:block! xl:[&>div]:h-full"><div className="min-w-0 grid content-start gap-[var(--page-section-gap)] xl:h-full xl:content-stretch xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
-        <ManagementPanel className="h-56 min-h-48 sm:h-64 xl:h-auto xl:min-h-0">
+      <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain xl:h-full [&>div]:block! xl:[&>div]:h-full"><div className="min-w-0 grid h-full grid-rows-[auto_minmax(40rem,1fr)] gap-[var(--page-section-gap)] xl:grid-rows-1 xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="flex min-w-0 items-center gap-2 xl:hidden">
+          <Select value={selectedRoleId || ""} disabled={isLoading || isMutating} onValueChange={(id) => {
+            const role = roles.find((item) => item.id === id);
+            if (role) requestRoleSelection(role);
+          }}>
+            <SelectTrigger aria-label="选择角色" className="min-w-0 flex-1"><SelectValue placeholder="选择角色" /></SelectTrigger>
+            <SelectContent>{roles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" aria-label="刷新角色权限" disabled={isLoading || isDirty || isMutating} onClick={() => void loadRBAC()}>{isLoading ? <Spinner /> : <RefreshCw />}</Button>
+          <Button size="icon" aria-label="创建角色" disabled={isLoading || isMutating} onClick={() => setIsCreateDialogOpen(true)}><Plus /></Button>
+        </div>
+        <ManagementPanel className="hidden min-h-0 xl:flex">
             <ManagementToolbar className="flex items-center gap-2 px-4 py-3">
               <div className="relative min-w-0 flex-1">
                 <SearchInput value={searchText} onValueChange={setSearchText} placeholder="搜索角色" />
@@ -362,7 +374,7 @@ function RBACContent() {
             </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
         </ManagementPanel>
 
-        <ManagementPanel className="h-[max(42rem,80dvh)] min-h-0 xl:h-auto">
+        <ManagementPanel className="min-h-0">
             <ManagementToolbar className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">

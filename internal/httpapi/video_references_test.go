@@ -178,6 +178,50 @@ func TestReferenceUploadStoresValidatedMedia(t *testing.T) {
 	}
 }
 
+func TestReferenceUploadUsesCurrentSiteWhenBaseURLIsEmpty(t *testing.T) {
+	t.Setenv("IMAGE_BASE_URL", "")
+	app := newTestApp(t)
+	defer app.Close()
+	data := httpTestPNGBytes(t)
+	request := newReferenceUploadRequest(t, "https://canvas.example.test/api/creation-tasks/video-image-reference-uploads", "image", "frame.png", "image/png", data)
+	setRequestAuthCookie(request, adminSessionToken(t, app))
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("upload = %d %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(payload.URL, "https://canvas.example.test/video-image-references/") {
+		t.Fatalf("reference did not use the current site: %q", payload.URL)
+	}
+	file, local, err := app.localVideoReferenceFile(payload.URL)
+	if err != nil || !local || !bytes.Equal(file.Data, data) {
+		t.Fatalf("same-site reference not resolved locally: local=%v err=%v", local, err)
+	}
+	download := httptest.NewRecorder()
+	app.Handler().ServeHTTP(download, httptest.NewRequest(http.MethodGet, payload.URL, nil))
+	if download.Code != http.StatusOK || !bytes.Equal(download.Body.Bytes(), data) {
+		t.Fatalf("signed reference download = %d", download.Code)
+	}
+	parsed, _ := url.Parse(payload.URL)
+	query := parsed.Query()
+	query.Set("signature", "invalid")
+	parsed.RawQuery = query.Encode()
+	if _, local, err := app.localVideoReferenceFile(parsed.String()); local || err != nil {
+		t.Fatalf("forged capability was treated as a local file: local=%v err=%v", local, err)
+	}
+	parsed.RawQuery = ""
+	expired := app.signedReferenceURL(parsed.String(), time.Now().Add(-time.Minute))
+	if _, local, err := app.localVideoReferenceFile(expired); !local || err == nil {
+		t.Fatalf("expired capability did not report expiration: local=%v err=%v", local, err)
+	}
+}
+
 func TestServeReferenceFile(t *testing.T) {
 	app := &App{}
 	root := t.TempDir()

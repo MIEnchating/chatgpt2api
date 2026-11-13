@@ -3,12 +3,6 @@ import { setCanvasAgentProcessing } from "./canvas-agent-timing";
 import type { CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentState, CanvasAssistantReference, CanvasAssistantSession } from "./canvas-agent-types";
 
-export const MAX_CANVAS_AGENT_SESSIONS = 24;
-
-export function canCreateCanvasAgentSession(sessions: readonly CanvasAssistantSession[]) {
-  return sessions.length < MAX_CANVAS_AGENT_SESSIONS;
-}
-
 export function isCanvasAgentSession(value: unknown): value is CanvasAssistantSession {
   if (!record(value) || !strings(value, ["id", "title", "createdAt", "updatedAt"])) return false;
   if (!Array.isArray(value.messages) || !value.messages.every((message) => record(message)
@@ -64,6 +58,14 @@ export function isCanvasAgentSession(value: unknown): value is CanvasAssistantSe
     });
 }
 
+export function parseCanvasAgentSessions(value: unknown): CanvasAssistantSession[] {
+  const sessions = value ?? [];
+  if (!Array.isArray(sessions) || !sessions.every(isCanvasAgentSession)) throw new Error("对话记录数据无效，原记录未被替换");
+  const ids = sessions.map(session => session.id);
+  if (ids.some(id => !id.trim()) || new Set(ids).size !== ids.length) throw new Error("对话记录数据无效，原记录未被替换");
+  return sessions;
+}
+
 function isCanvasAgentState(value: unknown): value is CanvasAgentState {
   if (!record(value) || !["intake", "concept", "script", "breakdown", "references", "storyboard", "video", "audio", "review", "complete"].includes(String(value.phase))
     || !["approvedNodeIds", "referenceNodeIds", "pendingTaskIds", "completedTaskIds"].every((key) => stringArray(value[key]))
@@ -89,14 +91,23 @@ export function syncCanvasAgentSessions(
   restoreInterrupted = false,
 ) {
   const nodeByID = new Map(nodes.map((node) => [node.id, node]));
-  return sessions.map((session): CanvasAssistantSession => ({
-    ...session,
-    resumeAssistantMessageId: restoreInterrupted
+  return sessions.map((session): CanvasAssistantSession => {
+    const resumeAssistantMessageId = restoreInterrupted
       ? session.messages.findLast((message) => message.role === "assistant" && (message.status === "thinking" || message.status === "running" || message.processingStartedAt !== undefined))?.id || session.resumeAssistantMessageId
-      : session.resumeAssistantMessageId,
-    messages: session.messages.map((message) => {
+      : session.resumeAssistantMessageId;
+    const messages = session.messages.map((message) => {
       const interrupted = restoreInterrupted && (message.status === "thinking" || message.status === "running" || message.processingStartedAt !== undefined);
-      return {
+      const references = message.references?.map((reference) => {
+        if (reference.source === "attachment") return reference;
+        const node = nodeByID.get(reference.id);
+        const content = node ? canvasAgentReferenceContent(node) : null;
+        return content && Object.entries(content).some(([key, value]) => !Object.is(reference[key as keyof CanvasAssistantReference], value))
+          ? { ...reference, ...content }
+          : reference;
+      });
+      const unchangedReferences = references?.every((reference, index) => reference === message.references?.[index]) ?? !message.references;
+      if (!interrupted && message.processingStartedAt === undefined && unchangedReferences) return message;
+      const next = {
         ...setCanvasAgentProcessing(message, !interrupted && message.processingStartedAt !== undefined, Date.parse(session.updatedAt)),
         text: interrupted && !message.text
           ? session.engine === "codex"
@@ -105,32 +116,31 @@ export function syncCanvasAgentSessions(
           : message.text,
         status: interrupted ? "waiting" : message.status,
         activity: interrupted ? undefined : message.activity,
-        references: message.references?.map((reference) => {
-          const node = nodeByID.get(reference.id);
-          const content = node ? canvasAgentReferenceContent(node) : null;
-          return content ? { ...reference, ...content } : reference;
-        }),
+        references: unchangedReferences ? message.references : references,
       };
-    }),
-  }));
+      return Object.keys(next).every((key) => Object.is(next[key as keyof typeof next], message[key as keyof typeof message])) ? message : next;
+    });
+    if (resumeAssistantMessageId === session.resumeAssistantMessageId && messages.every((message, index) => message === session.messages[index])) return session;
+    return { ...session, resumeAssistantMessageId, messages };
+  });
 }
 
 export function clearCanvasAgentSessionReferences(
   sessions: readonly CanvasAssistantSession[],
   removedNodeIDs: ReadonlySet<string>,
 ) {
-  return sessions.map((session): CanvasAssistantSession => ({
-    ...session,
-    messages: session.messages.map((message) => ({
-      ...message,
-      references: message.references?.map((reference) => removedNodeIDs.has(reference.id) ? {
-        ...reference,
-        dataUrl: undefined,
-        url: undefined,
-        storageKey: undefined,
-      } : reference),
-    })),
-  }));
+  return sessions.map((session): CanvasAssistantSession => {
+    const messages = session.messages.map((message) => {
+      let changed = false;
+      const references = message.references?.map((reference) => {
+        if (reference.source === "attachment" || !removedNodeIDs.has(reference.id) || reference.dataUrl === undefined && reference.url === undefined && reference.storageKey === undefined) return reference;
+        changed = true;
+        return { ...reference, dataUrl: undefined, url: undefined, storageKey: undefined };
+      });
+      return changed ? { ...message, references } : message;
+    });
+    return messages.every((message, index) => message === session.messages[index]) ? session : { ...session, messages };
+  });
 }
 
 function canvasAgentReferenceContent(node: CanvasNode): Partial<CanvasAssistantReference> | null {

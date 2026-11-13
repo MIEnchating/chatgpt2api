@@ -23,6 +23,12 @@ const (
 	TaskStatusError     = "error"
 	TaskStatusCancelled = "cancelled"
 
+	VideoSubmissionNotStarted = "not_started"
+	VideoSubmissionSubmitting = "submitting"
+	VideoSubmissionConfirmed  = "confirmed"
+	VideoSubmissionUnknown    = "unknown"
+	VideoSubmissionNotSent    = "not_sent"
+
 	defaultImageTaskTimeout = 5 * time.Minute
 	// Keep one browser restart or an administrator account from starting an
 	// unbounded number of memory-heavy image outputs at once. Per-user limits
@@ -59,7 +65,8 @@ type VideoTaskProgressUpdate struct {
 	Status         string
 	UpstreamStatus string
 	UpstreamTaskID string
-	Recovery       *VideoContentRecovery
+	Recovery       *VideoTaskRecovery
+	ClearRecovery  bool
 	Progress       int
 	HasProgress    bool
 }
@@ -115,8 +122,7 @@ type ImageTaskService struct {
 	stopping             bool
 	closed               bool
 	taskSubscribers      map[chan struct{}]struct{}
-	recoveryMu           sync.Mutex
-	recoveryCalls        map[string]*videoRecoveryCall
+	videoRecovery        ImageTaskHandler
 }
 
 type ImageTaskLimitError struct {
@@ -648,6 +654,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		task["storage_references"] = references
 	}
 	if mode == "video" {
+		task["submission_status"] = VideoSubmissionNotStarted
 		if reference := videoTaskContractReference(payload["video_contract"]); reference != nil {
 			task["video_contract"] = reference
 		}
@@ -709,7 +716,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	go func() {
 		defer s.taskWorkers.Done()
 		defer releaseReferences()
-		defer s.recoverTaskPanic(key)
+		defer s.recoverTaskPanic(key, 0)
 		s.runTask(taskCtx, key, mode, identity, payload)
 	}()
 	return result, nil
@@ -717,17 +724,19 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 
 // recoverTaskPanic must be deferred directly. It converts a panicking task
 // handler into a persisted error state instead of crashing the process.
-func (s *ImageTaskService) recoverTaskPanic(key string) {
+func (s *ImageTaskService) recoverTaskPanic(key string, videoAttempt int) {
 	recovered := recover()
 	if recovered == nil {
 		return
 	}
 	slog.Error("image task worker panicked", "panic", recovered)
-	_ = s.updateActiveTask(key, map[string]any{"status": TaskStatusError, "error": "任务执行异常中断，请重试", "data": []any{}})
+	_ = s.updateActiveTask(key, map[string]any{"status": TaskStatusError, "error": "任务执行异常中断，请重试", "data": []any{}}, videoAttempt)
 }
 
 func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identity Identity, payload map[string]any) {
-	defer s.removeTaskCancel(key)
+	videoAttempt := util.ToInt(payload["video_recovery_attempt"], 0)
+	defer s.removeTaskCancel(key, videoAttempt)
+	updateTask := func(updates map[string]any) error { return s.updateActiveTask(key, updates, videoAttempt) }
 	runCtx, cancel := context.WithTimeout(ctx, s.taskTimeout(mode, payload))
 	defer cancel()
 
@@ -738,6 +747,9 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		handler = s.chat
 	} else if mode == "video" {
 		handler = s.video
+		if _, recovering := payload[VideoTaskRecoveryPayloadKey].(*VideoTaskRecovery); recovering {
+			handler = s.videoRecovery
+		}
 	} else if mode == "audio" {
 		handler = s.audio
 	}
@@ -785,7 +797,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 					message = "图片生成超时，请稍后重试或降低分辨率"
 				}
 			}
-			if updateErr := s.updateActiveTask(key, map[string]any{"status": status, "error": message, "data": []any{}}); updateErr != nil {
+			if updateErr := updateTask(map[string]any{"status": status, "error": message, "data": []any{}}); updateErr != nil {
 				return
 			}
 			return
@@ -794,7 +806,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			active, activationErr := s.ensureTaskRunning(key)
 			if activationErr != nil {
 				release()
-				if updateErr := s.updateActiveTask(key, map[string]any{
+				if updateErr := updateTask(map[string]any{
 					"status": TaskStatusError,
 					"error":  ImageTaskPersistenceError{Err: activationErr}.Error(),
 					"data":   []any{},
@@ -810,7 +822,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		}
 		if mode == "video" {
 			payload[VideoTaskProgressCallbackPayloadKey] = func(update VideoTaskProgressUpdate) {
-				s.updateVideoTaskProgress(key, update)
+				s.updateVideoTaskProgress(key, update, videoAttempt)
 			}
 		}
 		payload[TextOutputCallbackPayloadKey] = func(text string) {
@@ -822,13 +834,16 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		defer release()
 	}
 	if handler == nil {
-		if updateErr := s.updateActiveTask(key, map[string]any{"status": TaskStatusError, "error": "任务处理器未配置", "data": []any{}}); updateErr != nil {
+		if updateErr := updateTask(map[string]any{"status": TaskStatusError, "error": "任务处理器未配置", "data": []any{}}); updateErr != nil {
 			return
 		}
 		return
 	}
+	if mode == "video" {
+		_ = updateTask(map[string]any{"submission_status": VideoSubmissionSubmitting})
+	}
 	payload[MediaTaskProgressCallbackPayloadKey] = func(progress int) {
-		_ = s.updateActiveTask(key, map[string]any{"status": TaskStatusRunning, "progress": max(0, min(99, progress))})
+		_ = updateTask(map[string]any{"status": TaskStatusRunning, "progress": max(0, min(99, progress))})
 	}
 	result, err := handler(runCtx, identity, payload)
 	completionRelease, _ := payload[ImageOutputCompletionReleasePayloadKey].(func())
@@ -863,13 +878,20 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			}
 		}
 		updates := map[string]any{"status": status, "error": message, "data": data}
+		if mode == "video" {
+			submissionStatus := VideoSubmissionNotSent
+			if strings.Contains(message, "是否接单尚未确认") || strings.Contains(message, "HTTP 5") || strings.Contains(message, "任务 ID") {
+				submissionStatus = VideoSubmissionUnknown
+			}
+			updates["submission_status"] = submissionStatus
+		}
 		if outputType != "" {
 			updates["output_type"] = outputType
 		}
 		if mode == "generate" || mode == "edit" {
 			updates["output_statuses"] = finalImageOutputStatuses(imageTaskCount(payload), data, status)
 		}
-		if updateErr := s.updateActiveTask(key, updates); updateErr != nil {
+		if updateErr := updateTask(updates); updateErr != nil {
 			return
 		}
 		return
@@ -896,19 +918,22 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		if outputType != "" {
 			updates["output_type"] = outputType
 		}
-		if updateErr := s.updateActiveTask(key, updates); updateErr != nil {
+		if updateErr := updateTask(updates); updateErr != nil {
 			return
 		}
 		return
 	}
 	updates := map[string]any{"status": TaskStatusSuccess, "data": data, "error": ""}
+	if mode == "video" {
+		updates["submission_status"] = VideoSubmissionConfirmed
+	}
 	if mode == "generate" || mode == "edit" {
 		updates["output_statuses"] = finalImageOutputStatuses(imageTaskCount(payload), data, TaskStatusError)
 	}
 	if outputType != "" {
 		updates["output_type"] = outputType
 	}
-	if updateErr := s.updateActiveTask(key, updates); updateErr != nil {
+	if updateErr := updateTask(updates); updateErr != nil {
 		return
 	}
 }
@@ -1215,13 +1240,16 @@ func (s *ImageTaskService) userRPMLimitValue() int {
 	return limit
 }
 
-func (s *ImageTaskService) updateActiveTask(key string, updates map[string]any) error {
+func (s *ImageTaskService) updateActiveTask(key string, updates map[string]any, videoAttempt ...int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	refreshErr := s.refreshTasksLocked()
 	task := s.tasks[key]
 	if task == nil {
 		return refreshErr
+	}
+	if len(videoAttempt) > 0 && task["mode"] == "video" && util.ToInt(task["video_recovery_attempt"], 0) != videoAttempt[0] {
+		return nil
 	}
 	if !isActiveTaskStatus(util.Clean(task["status"])) {
 		return nil
@@ -1239,7 +1267,7 @@ func (s *ImageTaskService) updateActiveTask(key string, updates map[string]any) 
 	return nil
 }
 
-func (s *ImageTaskService) updateVideoTaskProgress(key string, update VideoTaskProgressUpdate) bool {
+func (s *ImageTaskService) updateVideoTaskProgress(key string, update VideoTaskProgressUpdate, videoAttempt ...int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.refreshTasksLocked()
@@ -1247,14 +1275,22 @@ func (s *ImageTaskService) updateVideoTaskProgress(key string, update VideoTaskP
 	if task == nil || util.Clean(task["mode"]) != "video" || !isActiveTaskStatus(util.Clean(task["status"])) {
 		return false
 	}
+	if len(videoAttempt) > 0 && util.ToInt(task["video_recovery_attempt"], 0) != videoAttempt[0] {
+		return false
+	}
 	changed := false
 	currentStatus := util.Clean(task["status"])
+	if update.ClearRecovery {
+		delete(task, "video_recovery")
+		changed = true
+	}
 	if update.Recovery != nil {
 		task["video_recovery"] = update.Recovery.document()
 		changed = true
 	}
 	if upstreamTaskID := strings.TrimSpace(update.UpstreamTaskID); upstreamTaskID != "" && util.Clean(task["upstream_task_id"]) != upstreamTaskID {
 		task["upstream_task_id"] = upstreamTaskID
+		task["submission_status"] = VideoSubmissionConfirmed
 		changed = true
 	}
 	if update.Status == TaskStatusRunning && currentStatus != TaskStatusRunning {
@@ -1341,9 +1377,12 @@ func (s *ImageTaskService) updateTextTaskPartialData(key, text string) bool {
 	return true
 }
 
-func (s *ImageTaskService) removeTaskCancel(key string) {
+func (s *ImageTaskService) removeTaskCancel(key string, videoAttempt int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if task := s.tasks[key]; task != nil && task["mode"] == "video" && util.ToInt(task["video_recovery_attempt"], 0) != videoAttempt {
+		return
+	}
 	delete(s.cancels, key)
 }
 
@@ -1413,7 +1452,8 @@ func (s *ImageTaskService) decodeTasksLocked(raw any) (map[string]map[string]any
 		mergeMediaTaskFields(normalized, task, mode)
 		mergePublicImageToolTaskFields(normalized, task)
 		if mode == "video" {
-			if recovery := videoContentRecovery(task); recovery != nil {
+			normalized["video_recovery_attempt"] = util.ToInt(task["video_recovery_attempt"], 0)
+			if recovery := videoTaskRecovery(task); recovery != nil {
 				normalized["video_recovery"] = recovery.document()
 			}
 			if upstreamTaskID := strings.TrimSpace(util.Clean(task["upstream_task_id"])); upstreamTaskID != "" {
@@ -1531,9 +1571,9 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 		}
 		// Only tasks already registered before this read can be missing from it.
 		s.mu.Lock()
-		observedTasks := make(map[string]struct{}, len(s.cancels))
+		observedTasks := make(map[string]int, len(s.cancels))
 		for key := range s.cancels {
-			observedTasks[key] = struct{}{}
+			observedTasks[key] = util.ToInt(s.tasks[key]["video_recovery_attempt"], 0)
 		}
 		s.mu.Unlock()
 		// The storage read happens outside the service lock.
@@ -1555,10 +1595,14 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 		s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 		cancels := make([]context.CancelFunc, 0)
 		for key, cancel := range s.cancels {
-			if _, observed := observedTasks[key]; !observed {
+			observedAttempt, observed := observedTasks[key]
+			if !observed || observedAttempt != util.ToInt(s.tasks[key]["video_recovery_attempt"], 0) {
 				continue
 			}
 			remoteTask := remoteTasks[key]
+			if remoteTask != nil && util.ToInt(remoteTask["video_recovery_attempt"], 0) < observedAttempt {
+				continue
+			}
 			if remoteTask != nil && isActiveTaskStatus(util.Clean(remoteTask["status"])) {
 				continue
 			}
@@ -1702,6 +1746,12 @@ func (s *ImageTaskService) mergeTaskMapsLocked(remote, local map[string]map[stri
 }
 
 func imageTaskSnapshotNewer(candidate, current map[string]any) bool {
+	if candidate["mode"] == "video" && current["mode"] == "video" {
+		candidateAttempt, currentAttempt := util.ToInt(candidate["video_recovery_attempt"], 0), util.ToInt(current["video_recovery_attempt"], 0)
+		if candidateAttempt != currentAttempt {
+			return candidateAttempt > currentAttempt
+		}
+	}
 	candidateStatus := util.Clean(candidate["status"])
 	currentStatus := util.Clean(current["status"])
 	if candidateStatus != currentStatus && (candidateStatus == TaskStatusCancelled || currentStatus == TaskStatusCancelled) {
@@ -1912,6 +1962,9 @@ func mergeMediaTaskFields(target, source map[string]any, mode string) {
 		if upstreamStatus := strings.TrimSpace(util.Clean(source["upstream_status"])); upstreamStatus != "" {
 			target["upstream_status"] = upstreamStatus
 		}
+		if submissionStatus := strings.TrimSpace(util.Clean(source["submission_status"])); submissionStatus != "" {
+			target["submission_status"] = submissionStatus
+		}
 		if progress := util.ToInt(source["progress"], -1); progress >= 0 && progress <= 100 {
 			target["progress"] = progress
 		}
@@ -1943,7 +1996,8 @@ func publicTask(task map[string]any, identity Identity) map[string]any {
 	mergePublicImageToolTaskFields(item, task)
 	mergeMediaTaskFields(item, task, mode)
 	if mode == "video" {
-		item["can_recover_video"] = util.Clean(task["status"]) == TaskStatusError && videoContentRecovery(task) != nil
+		item["can_recover_video"] = (util.Clean(task["status"]) == TaskStatusError || util.Clean(task["status"]) == TaskStatusCancelled) && videoTaskRecovery(task) != nil
+		item["submission_status"] = firstNonEmpty(util.Clean(task["submission_status"]), VideoSubmissionNotStarted)
 	}
 	if mode == "video" && identity.Role == AuthRoleAdmin {
 		if reference := videoTaskContractReference(task["video_contract"]); reference != nil {

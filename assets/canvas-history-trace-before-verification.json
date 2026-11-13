@@ -1,0 +1,36 @@
+{
+  "phase": "before",
+  "checks": [
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 0,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 8718,
+      "calls": 4000,
+      "characters": 34671560
+    },
+    {
+      "readyMs": 7787,
+      "calls": 2000,
+      "characters": 17335780
+    },
+    {
+      "readyMs": 8947,
+      "calls": 2000,
+      "characters": 17335780
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "afterLoadingEarlier": {
+    "calls": 4000,
+    "characters": 34671560
+  },
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

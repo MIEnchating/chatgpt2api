@@ -37,5 +37,9 @@
   "list_references": "正在查找参考素材",
   "finish_task": "核对任务交付",
   "update_script_node": "整理脚本与分镜",
-  "create_script_node": "创建脚本节点"
+  "create_script_node": "创建脚本节点",
+  "list_video_models": "正在查询视频模型",
+  "set_video_model": "正在切换视频模型",
+  "merge_script_videos": "正在合并分镜视频",
+  "confirm_script_node": "确认已核对脚本"
 }

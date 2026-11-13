@@ -25,6 +25,66 @@ func runExternalAgentTool(t *testing.T, svc *CanvasAgentService, identity Identi
 	return done
 }
 
+func TestCanvasAgentExternalVideoSwitchSurvivesStaleClientContext(t *testing.T) {
+	generated := 0
+	svc, identity, doc, req := agentFixture(t, nil, func(_ context.Context, _ Identity, node CanvasNode, metadata map[string]any, _ func(int) error) (map[string]any, error) {
+		generated++
+		if node.GenerationVideoModel != "minimax-h3-768p" || node.GenerationVideoAudio == nil || !*node.GenerationVideoAudio || metadata["relay_token_name"] != "h3-token" {
+			t.Errorf("new model, audio or model-specific token lost: %+v %v", node, metadata)
+		}
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/video.mp4"}}}, nil
+	})
+	svc.SetVideoModels(canvasAgentTestVideoModels)
+	req.Generation["videoModel"] = "seedance2.0-A"
+	req.VideoRelayTokens = map[string]string{"minimax-h3-768p": "h3-token", "seedance2.0-A": "other-token"}
+	doc = runExternalAgentTool(t, svc, identity, doc, req, "switch-video", "set_video_model", map[string]any{"model": "minimax-h3-768p"})
+	if generated != 0 || doc.AgentRun.ToolResult["ok"] != true {
+		t.Fatal("switch submitted media or failed", doc.AgentRun.ToolResult)
+	}
+	req.Generation["videoModel"] = "seedance2.0-A"
+	req.Generation["videoSupportsAudio"] = false
+	doc = runExternalAgentTool(t, svc, identity, doc, req, "read-video", "get_generation_config", map[string]any{})
+	generation := agentMap(doc.AgentRun.ToolResult["generation"])
+	if generation["videoModel"] != "minimax-h3-768p" || generation["videoSupportsAudio"] != true {
+		t.Fatal("stale client overwrote saved choice", generation)
+	}
+	doc = runExternalAgentTool(t, svc, identity, doc, req, "new-video", "generate_video", map[string]any{"prompt": "A speaking character", "sourceNodeIds": []string{}, "size": "16:9", "resolution": "768p", "seconds": 5, "generateAudio": true})
+	if generated != 1 || doc.AgentRun.ToolResult["ok"] != true || len(doc.Nodes) != 1 || doc.Nodes[0].GenerationStatus != "success" {
+		t.Fatalf("video did not use persisted selection: generated=%d result=%v", generated, doc.AgentRun.ToolResult)
+	}
+}
+
+func TestCanvasAgentNativeCanSwitchAndGenerateAudibleVideoInSameBatch(t *testing.T) {
+	turn, generated := 0, 0
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		turn++
+		if turn == 1 {
+			return agentTurn(agentCall("switch", "set_video_model", map[string]any{"model": "minimax-h3-768p"}), agentCall("generate", "generate_video", map[string]any{"prompt": "A speaking character", "sourceNodeIds": []string{}, "size": "16:9", "seconds": 5, "generateAudio": true})), nil
+		}
+		return agentTurn(), nil
+	}, func(_ context.Context, _ Identity, node CanvasNode, metadata map[string]any, _ func(int) error) (map[string]any, error) {
+		generated++
+		if metadata["media_base_url"] != "https://canvas.example.test" {
+			t.Errorf("native generation lost site: %v", metadata)
+		}
+		if node.GenerationVideoModel != "minimax-h3-768p" || metadata["relay_token_name"] != "h3-token" {
+			t.Errorf("native switch did not reach generation: %+v %v", node, metadata)
+		}
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/native.mp4"}}}, nil
+	})
+	req.MediaBaseURL = "https://canvas.example.test"
+	svc.SetVideoModels(canvasAgentTestVideoModels)
+	req.Generation["videoModel"] = "seedance2.0-A"
+	req.VideoRelayTokens = map[string]string{"minimax-h3-768p": "h3-token"}
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || generated != 1 || len(done.Nodes) != 1 || done.Nodes[0].Type != "video" {
+		t.Fatalf("native switch/generation failed or created extra audio: %+v, generated=%d", done.AgentRun, generated)
+	}
+}
+
 func TestCanvasAgentExternalBusinessFailureIsNotReportedAsSuccess(t *testing.T) {
 	svc, identity, doc, req := agentFixture(t, nil, nil)
 	doc.Nodes = []CanvasNode{{ID: "image", Type: "image", Title: "保留", GenerationStatus: "idle", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
@@ -41,7 +101,7 @@ func TestCanvasAgentExternalBusinessFailureIsNotReportedAsSuccess(t *testing.T) 
 
 func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 	generated := []string{}
-	svc, identity, doc, req := agentFixture(t, nil, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, nil, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		generated = append(generated, node.Type)
 		if node.Type == "video" && !slices.Contains(node.GenerationVideoReferenceImages, "https://example.test/image.png") {
 			t.Error("missing generated upstream image")
@@ -97,7 +157,7 @@ func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 
 func TestCanvasAgentExternalReviewRequiresCurrentPromptsAndExplicitAnswer(t *testing.T) {
 	var generated int
-	svc, identity, doc, req := agentFixture(t, nil, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	svc, identity, doc, req := agentFixture(t, nil, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		generated++
 		return map[string]any{"data": []map[string]any{{"url": "https://example.test/result.png"}}}, nil
 	})

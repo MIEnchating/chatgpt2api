@@ -50,6 +50,14 @@ function profileFor(model) {
   return profile;
 }
 
+function transportFor(model) {
+  return profileFor(model).transport || contract.transport;
+}
+
+function requestFor(model) {
+  return profileFor(model).request || contract.request;
+}
+
 // The host selects a declared upstream profile, or the client model's profile for vendor endpoint IDs.
 function capabilityModel(ctx) {
   return profiles.some(profile => profile.model === ctx.upstreamModel) ? ctx.upstreamModel : ctx.model;
@@ -157,7 +165,9 @@ function normalize(body, model, files = []) {
   if (!object(body)) throw new Error("请求必须是 JSON 对象");
   const profile = profileFor(model);
   const cap = profile.capability;
-  const fields = contract.request;
+  const fields = requestFor(model);
+  const transport = transportFor(model);
+  const materialTransports = transport.material_transports || [transport.local_material];
   const promptRule = cap.prompt || { required: true, min_length: 0, max_length: 0 };
   if (body.prompt !== undefined || promptRule.required) {
     if (typeof body.prompt !== "string" || promptRule.required && !body.prompt.trim()) throw new Error("请输入视频提示词");
@@ -206,9 +216,9 @@ function normalize(body, model, files = []) {
     if (amount < range.min || amount > range.max) throw new Error(mode.label + "的素材数量不符合契约: " + key);
     for (const url of multiple ? values[key] : amount ? [values[key]] : []) {
       if (files.some(file => file.ref === url)) continue;
-      if (contract.transport.local_material === "base64") {
+      if (transport.local_material === "base64" || materialTransports.includes("base64") && typeof url === "string" && url.startsWith("data:")) {
         let encoded = url;
-        if (contract.transport.base64_format !== "raw") {
+        if (transport.base64_format !== "raw") {
           const kind = key === "reference_video" ? "video" : key === "reference_audio" ? "audio" : "image";
           const match = typeof url === "string" && url.match(new RegExp("^data:" + kind + "/[a-zA-Z0-9.+-]+;base64,(.+)$"));
           if (!match) throw new Error("素材必须使用匹配类型的 Base64 Data URL");
@@ -307,19 +317,22 @@ function remove(target, path) {
   descend(target,0);
 }
 
-function fileField(role) {
-  const name = contract.transport.multipart_fields?.[role] || contract.transport.multipart_file_field;
+function fileField(role, transport) {
+  const name = transport.multipart_fields?.[role] || transport.multipart_file_field;
   if (!name) throw new Error("素材缺少文件字段: " + role);
   return name;
 }
 
 export function buildSubmitRequest(ctx) {
   const files = ctx.files || [];
-  if (files.length && contract.transport.local_material !== "multipart") throw new Error("此契约不接受文件上传");
-  const request = normalize(ctx.requestBody, capabilityModel(ctx), files);
+  const model = capabilityModel(ctx);
+  const transport = transportFor(model);
+  const fields = requestFor(model);
+  if (files.length && transport.local_material !== "multipart") throw new Error("此契约不接受文件上传");
+  const request = normalize(ctx.requestBody, model, files);
   request.body.model = ctx.upstreamModel;
   const headers = authHeaders(ctx);
-  const base = { url: endpoint(ctx, contract.transport.create_path), method: "POST" };
+  const base = { url: endpoint(ctx, transport.create_path), method: "POST" };
   if (!files.length) return { ...base, headers: { ...headers, "Content-Type": "application/json" }, body: request.body };
   const parts = [];
   const used = new Set();
@@ -327,7 +340,7 @@ export function buildSubmitRequest(ctx) {
   let hasURL = false;
   for (const role of Object.keys(materialFields)) {
     if (request.mode.materials[materialRanges[role]].max === 0) continue;
-    const path = contract.request[materialFields[role]];
+    const path = fields[materialFields[role]];
     const value = read(request.body, path);
     const values = Array.isArray(value) ? value : value ? [value] : [];
     const urls = [];
@@ -336,9 +349,9 @@ export function buildSubmitRequest(ctx) {
       if (!file) { urls.push(value); hasURL = true; continue; }
       if (used.has(file.ref)) continue;
       used.add(file.ref);
-      const name = fileField(role);
+      const name = fileField(role, transport);
       fieldCounts[name] = (fieldCounts[name] || 0) + 1;
-      if (fieldCounts[name] > 1 && !contract.transport.multipart_repeatable) throw new Error("契约不允许同字段重复上传文件");
+      if (fieldCounts[name] > 1 && !transport.multipart_repeatable) throw new Error("契约不允许同字段重复上传文件");
       parts.push({name, fileRef:file.ref, filename:file.filename});
     }
     if (values.length) {
@@ -347,7 +360,7 @@ export function buildSubmitRequest(ctx) {
     }
   }
   if (used.size !== files.length) throw new Error("存在未映射的上传文件");
-  if (hasURL && !contract.transport.multipart_mixed_urls) throw new Error("契约不允许文件与 URL 混传");
+  if (hasURL && !transport.multipart_mixed_urls) throw new Error("契约不允许文件与 URL 混传");
   for (const [name,value] of Object.entries(request.body)) {
     if (value !== undefined) parts.push({name,value:typeof value === "object" ? JSON.stringify(value) : String(value)});
   }
@@ -356,10 +369,12 @@ export function buildSubmitRequest(ctx) {
 
 // Decode host-parsed multipart values without reading or re-encoding file bytes.
 function decodeMultipart(ctx) {
-  if (contract.transport.local_material !== "multipart") throw new Error("此契约不接受 multipart");
+  const model = capabilityModel(ctx);
+  const transport = transportFor(model);
+  if (transport.local_material !== "multipart") throw new Error("此契约不接受 multipart");
   const body = {};
-  const profile = profileFor(capabilityModel(ctx));
-  const fields = contract.request;
+  const profile = profileFor(model);
+  const fields = requestFor(model);
   const scalarTypes = {model:"string",prompt:"string"};
   scalarTypes[fields.duration_field] = fields.duration_value_type;
   scalarTypes[fields.generate_audio_field] = "boolean";
@@ -384,7 +399,7 @@ function decodeMultipart(ctx) {
   for (const file of ctx.body.files || []) {
     let candidates = Object.keys(materialFields).filter(role => {
       const modes = profile.generation.modes.filter(mode => explicit === undefined || (mode.request_value || mode.id) === explicit);
-      return modes.some(mode => mode.materials[materialRanges[role]].max > 0) && fileField(role) === file.field;
+      return modes.some(mode => mode.materials[materialRanges[role]].max > 0) && fileField(role, transport) === file.field;
     });
     if (candidates.length > 1 && fields.reference_value_type === "scalar" && candidates.every(role => role.startsWith("reference_"))) {
       const category = String(file.mimeType || "").split("/")[0];
@@ -417,7 +432,7 @@ export function parseSubmitResponse(_ctx, response) {
 }
 
 export function buildQueryRequest(ctx) {
-  return { url: endpoint(ctx, contract.transport.query_path, ctx.taskId), method: "GET", headers: authHeaders(ctx) };
+  return { url: endpoint(ctx, transportFor(capabilityModel(ctx)).query_path, ctx.taskId), method: "GET", headers: authHeaders(ctx) };
 }
 
 export function parseTaskResult(ctx, body) {

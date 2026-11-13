@@ -1,29 +1,30 @@
 import type {
   CanvasAgentPlan,
   CanvasAgentProtocolMessage,
+  CanvasAgentToolCall,
   CanvasAgentTraceEntry,
 } from "./canvas-agent-types";
 import { canvasAgentToolKind } from "./canvas-agent-trace";
 
-export function canvasAgentTraceIndex(protocol: readonly CanvasAgentProtocolMessage[]) {
-  const calls = new Map(
-    protocol.flatMap((message) =>
-      message.role === "assistant"
-        ? (message.toolCalls || []).map((call) => [call.id, call] as const)
-        : [],
-    ),
-  );
-  const outputs = new Map(
-    protocol.flatMap((message) =>
-      message.role === "tool"
-        ? [[message.toolCallId, toolOutput(message.content)] as const]
-        : [],
-    ),
-  );
+export function canvasAgentTraceIndex(
+  protocol: readonly CanvasAgentProtocolMessage[],
+  entries: readonly CanvasAgentTraceEntry[],
+) {
+  const ids = new Set(entries.flatMap(entry => entry.type === "operation" ? [entry.id.replace(/^tool:/, "")] : []));
+  const calls = new Map<string, CanvasAgentToolCall>();
+  const outputs = new Map<string, unknown>();
   const positions = new Map<string, number>();
+  if (!ids.size) return { calls, outputs, positions };
   protocol.forEach((message, position) => {
-    if (message.role !== "tool") return;
-    positions.set(message.toolCallId, position);
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls || []) {
+        if (ids.has(call.id)) calls.set(call.id, call);
+      }
+    }
+    if (message.role === "tool" && ids.has(message.toolCallId)) {
+      outputs.set(message.toolCallId, toolOutput(message.content));
+      positions.set(message.toolCallId, position);
+    }
   });
   return { calls, outputs, positions };
 }
@@ -31,25 +32,27 @@ export function canvasAgentTraceIndex(protocol: readonly CanvasAgentProtocolMess
 export function canvasAgentDisplayTraces(
   entries: readonly CanvasAgentTraceEntry[],
   protocol: readonly CanvasAgentProtocolMessage[],
-  index = canvasAgentTraceIndex(protocol),
+  index = canvasAgentTraceIndex(protocol, entries),
 ) {
   const { calls, outputs, positions } = index;
   const acceptedFinishes = entries.flatMap(entry => {
     if (entry.type !== "operation") return [];
     const id = entry.id.replace(/^tool:/, ""), position = positions.get(id), output = outputs.get(id);
-    return position !== undefined && calls.get(id)?.name === "finish_task" && record(output) && output.ok === true ? [{ id, position }] : [];
+    return position !== undefined && calls.get(id)?.name === "finish_task" && record(output) && output.ok === true && output.status !== "error" ? [{ id, position }] : [];
   }).sort((a, b) => a.position - b.position);
-  return entries.map((entry) => {
+  return entries.map((entry, entryIndex) => {
     if (entry.type !== "operation") return entry;
     const call = calls.get(entry.id.replace(/^tool:/, ""));
     const output = call ? outputs.get(call.id) : undefined;
     const position = call ? positions.get(call.id) : undefined;
+    const laterGeneration = entry.status === "error" && entry.kind === "generate" && entry.nodeId ? entries.slice(entryIndex+1).find(item=>item.type==="operation" && item.kind==="generate" && item.nodeId===entry.nodeId && item.status==="success") : undefined;
     const resolution = call?.name === "finish_task" && entry.status === "error" && record(output) && output.code === "task_incomplete" && position !== undefined
-      ? acceptedFinishes.find(finish => finish.position > position) : undefined;
+      ? acceptedFinishes.find(finish => finish.position > position) : laterGeneration;
+
     return call
       ? {
           ...entry,
-          ...(resolution ? { status: "success" as const, resolvedBy: resolution.id } : {}),
+          ...(resolution ? { resolvedBy: resolution.id } : {}),
           kind: canvasAgentToolKind(call.name),
           tool: {
             name: call.name,

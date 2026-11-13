@@ -92,13 +92,18 @@ func (w *canvasAgentWorker) reusedToolResult(call map[string]any) map[string]any
 func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 	name := util.Clean(call["name"])
 	args := agentMap(call["arguments"])
+	w.refreshVideoGenerationConfig()
 	if name == "finish_task" {
 		w.reconcilePendingMedia()
+		if args["status"] == "error" {
+			w.finalBlocked = true
+			return map[string]any{"ok": true, "status": "error", "text": util.Clean(args["text"])}, nil
+		}
 		if w.state["mediaGenerationDeferred"] != true && (w.hasPendingPlan() || len(agentStrings(w.state["pendingTaskIds"])) > 0) {
 			return agentError("task_incomplete", "计划或媒体任务仍未完成，请核对真实状态后继续执行，需要用户回答时调用 ask_user_question"), nil
 		}
 		if w.finalBlocked || w.batchFailed {
-			return agentError("task_incomplete", "仍有未解决的操作错误，请核对已有结果后继续"), nil
+			return agentError("task_incomplete", "仍有未解决的操作错误；请核对已有结果，无法修复时用 finish_task（status=error）说明阻塞并结束本轮"), nil
 		}
 		w.accepted = true
 		return map[string]any{"ok": true, "text": util.Clean(args["text"])}, nil
@@ -125,7 +130,7 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
 	}
 	switch name {
-	case "create_primary_script_node", "create_script_node", "update_script_node":
+	case "create_primary_script_node", "create_script_node", "update_script_node", "confirm_script_node":
 		return w.scriptTool(name, args)
 	case "list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow":
 		return w.workflowTool(name, args)
@@ -140,6 +145,10 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		}
 		generation["autoGenerateMedia"] = w.autoMedia()
 		return map[string]any{"ok": true, "generation": generation}, nil
+	case "list_video_models", "set_video_model":
+		return w.videoModelTool(name, args), nil
+	case "merge_script_videos":
+		return w.mergeScriptVideos(util.Clean(args["scriptNodeId"]))
 	case "list_references":
 		refs := w.referenceIndex(util.Clean(args["keyword"]))
 		size := max(1, min(50, util.ToInt(args["pageSize"], 20)))
@@ -154,7 +163,11 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 	case "get_node":
 		n := w.node(id)
 		w.appendVisualReference(map[string]any{"id": n.ID, "type": n.Type, "title": n.Title, "url": n.URL})
-		return map[string]any{"ok": true, "node": agentNode(*w.node(id), true)}, nil
+		node := agentNode(*n, true)
+		if n.Type == "script" && n.ScriptProject != nil {
+			node["production"] = canvasScriptProduction(w.doc, *n)
+		}
+		return map[string]any{"ok": true, "node": node}, nil
 	case "get_generation_task", "get_media_task_status":
 		n := w.node(id)
 		return map[string]any{"ok": true, "nodeId": id, "status": n.GenerationStatus, "taskId": n.TaskID, "error": n.GenerationError}, nil
@@ -265,10 +278,15 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		if err := w.sourcesExist(sources); err != nil {
 			return nil, err
 		}
+		binding, err := w.scriptBinding("text", args, sources)
+		if err != nil {
+			return agentError("invalid_script_binding", err.Error()), nil
+		}
 		n := w.newNode("text", util.Clean(args["title"]), util.Clean(args["content"]))
 		n.GenerationStatus = "success"
 		n.FontSize = 14
 		w.addNode(n, sources)
+		w.bindScriptNode(binding, n)
 		ok["nodeId"] = n.ID
 		ok["status"] = n.GenerationStatus
 		return ok, nil
@@ -338,25 +356,73 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		if err := w.sourcesExist(ids); err != nil {
 			return nil, err
 		}
-		index := 0
+		nodeByID := make(map[string]*CanvasNode, len(w.doc.Nodes))
+		children := map[string][]*CanvasNode{}
 		for i := range w.doc.Nodes {
 			n := &w.doc.Nodes[i]
-			if len(ids) > 0 && !slices.Contains(ids, n.ID) || len(ids) == 0 && n.GroupID != "" {
+			nodeByID[n.ID] = n
+			if n.GroupID != "" {
+				children[n.GroupID] = append(children[n.GroupID], n)
+			}
+		}
+		if len(ids) == 0 {
+			for _, n := range w.doc.Nodes {
+				if n.GroupID == "" && n.BatchRootID == "" {
+					ids = append(ids, n.ID)
+				}
+			}
+		}
+		targets := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			targets[id] = true
+		}
+		x, y, rowHeight := 0.0, 0.0, 0.0
+		seen := map[string]bool{}
+		eligible := map[string]bool{}
+		for _, id := range ids {
+			if n := nodeByID[id]; n.GroupID == "" && n.Type != "group" {
+				eligible[id] = true
+			}
+		}
+		clusterX, clusterBottom := 0.0, 0.0
+		for _, id := range ids {
+			script := nodeByID[id]
+			if script.ScriptProject == nil || script.Type != "script" {
 				continue
 			}
-			x, y := float64(index%4)*640, float64(index/4)*720
+			positions, right, bottom := canvasScriptProductionLayout(script, nodeByID, eligible, clusterX, 0)
+			for nodeID, point := range positions {
+				nodeByID[nodeID].X, nodeByID[nodeID].Y = point[0], point[1]
+				seen[nodeID] = true
+				delete(eligible, nodeID)
+			}
+			clusterX = right + 160
+			clusterBottom = math.Max(clusterBottom, bottom+120)
+		}
+		y = clusterBottom
+		index := 0
+		for _, id := range ids {
+			n := nodeByID[id]
+			if seen[id] || n.GroupID != "" && targets[n.GroupID] {
+				continue
+			}
+			seen[id] = true
+			if index > 0 && index%4 == 0 {
+				x = 0
+				y += math.Max(720, rowHeight+72)
+				rowHeight = 0
+			}
 			dx, dy := x-n.X, y-n.Y
 			if n.Type == "group" {
-				for j := range w.doc.Nodes {
-					child := &w.doc.Nodes[j]
-					if child.GroupID == n.ID && !slices.Contains(ids, child.ID) {
-						child.X += dx
-						child.Y += dy
-					}
+				for _, child := range children[n.ID] {
+					child.X += dx
+					child.Y += dy
 				}
 			}
 			n.X = x
 			n.Y = y
+			x += math.Max(640, n.Width+72)
+			rowHeight = math.Max(rowHeight, n.Height)
 			index++
 		}
 		return ok, nil
@@ -421,6 +487,9 @@ func (w *canvasAgentWorker) deleteNode(id string) map[string]any {
 	}
 	removed := canvasAgentRemovalIDs(w.doc.Nodes, id)
 	w.doc.Nodes = slices.DeleteFunc(w.doc.Nodes, func(n CanvasNode) bool { return removed[n.ID] })
+	for i := range w.doc.Nodes {
+		w.doc.Nodes[i].ScriptProject = detachCanvasScriptNodes(w.doc.Nodes[i].ScriptProject, removed)
+	}
 	w.doc.Connections = slices.DeleteFunc(w.doc.Connections, func(c CanvasConnection) bool { return removed[c.FromNodeID] || removed[c.ToNodeID] })
 	return map[string]any{"ok": true, "deletedNodeId": id, "deletedCount": len(removed)}
 }
@@ -439,6 +508,10 @@ func (w *canvasAgentWorker) createMedia(name string, args map[string]any) (map[s
 	sources, err := w.resolveMediaReferences(agentStrings(args["sourceNodeIds"]), agentStrings(args["attachmentIds"]))
 	if err != nil {
 		return nil, err
+	}
+	binding, err := w.scriptBinding(kind, args, sources.NodeIDs)
+	if err != nil {
+		return agentError("invalid_script_binding", err.Error()), nil
 	}
 	n := w.newNode(kind, util.Clean(args["title"]), util.Clean(args["prompt"]))
 	n.ExcludeUpstreamText = true
@@ -460,6 +533,11 @@ func (w *canvasAgentWorker) createMedia(name string, args map[string]any) (map[s
 		n.GenerationVideoResolution = util.Clean(args["resolution"])
 		audio, _ := args["generateAudio"].(bool)
 		n.GenerationVideoAudio = &audio
+		videoCapabilities := agentMap(agentMap(w.req.Generation["capabilities"])["video"])
+		n.GenerationVideoParameters, err = normalizeCanvasAgentVideoParameters(videoCapabilities, agentMap(args["videoParameters"]))
+		if err != nil {
+			return agentError("invalid_media_parameters", err.Error()), nil
+		}
 		n.GenerationVideoReferenceImages = sources.Images
 		n.GenerationVideoReferenceURLs = sources.Videos
 		n.GenerationVideoReferenceAudio = sources.Audios
@@ -482,6 +560,7 @@ func (w *canvasAgentWorker) createMedia(name string, args map[string]any) (map[s
 		return agentError("invalid_media_parameters", err.Error()), nil
 	}
 	w.addNode(n, sources.NodeIDs)
+	w.bindScriptNode(binding, n)
 	if w.activeCall != nil {
 		w.record(w.activeCall, map[string]any{"ok": true, "nodeId": n.ID, "status": "idle", "submitted": false})
 	}
@@ -541,6 +620,13 @@ func (w *canvasAgentWorker) resolveMediaReferences(nodeIDs, attachmentIDs []stri
 }
 func (w *canvasAgentWorker) validateMedia(n CanvasNode) error {
 	caps := agentMap(agentMap(w.req.Generation["capabilities"])[n.Type])
+	if n.Type == "video" && w.service != nil && w.service.videoModels != nil {
+		entry, available := w.service.videoModel(n.GenerationVideoModel)
+		if !available {
+			return fmt.Errorf("视频模型不在服务端可用列表中，请先调用 list_video_models")
+		}
+		caps = entry.Capabilities
+	}
 	size, resolution := n.GenerationSize, n.GenerationResolution
 	if n.Type == "image" {
 		if limit := util.ToInt(caps["maxCount"], 15); n.GenerationCount < 1 || n.GenerationCount > limit {
@@ -557,6 +643,12 @@ func (w *canvasAgentWorker) validateMedia(n CanvasNode) error {
 		}
 	}
 	if n.Type == "video" {
+		if caps["contractConfigured"] == false {
+			return fmt.Errorf("当前视频模型未配置启用的契约，声音能力未知；请先调用 list_video_models 核对或配置模型契约")
+		}
+		if _, err := normalizeCanvasAgentVideoParameters(caps, n.GenerationVideoParameters); err != nil {
+			return err
+		}
 		size = n.GenerationVideoSize
 		resolution = n.GenerationVideoResolution
 		if !slices.Contains(agentStrings(caps["sizes"]), size) {
@@ -565,13 +657,40 @@ func (w *canvasAgentWorker) validateMedia(n CanvasNode) error {
 		if n.GenerationVideoSeconds < 1 || n.GenerationVideoAudio == nil {
 			return fmt.Errorf("请先确认视频时长和声音需求")
 		}
+		var duration struct {
+			Values       []int `json:"values"`
+			SecondsRange *struct {
+				Min  int  `json:"min"`
+				Max  *int `json:"max"`
+				Step int  `json:"step"`
+			} `json:"secondsRange"`
+		}
+		if err := json.Unmarshal([]byte(agentJSON(caps["duration"])), &duration); err != nil {
+			return fmt.Errorf("视频模型时长能力无效，请核对模型契约")
+		}
+		if r := duration.SecondsRange; r != nil {
+			if r.Min < 1 || r.Step < 1 || n.GenerationVideoSeconds < r.Min || r.Max != nil && n.GenerationVideoSeconds > *r.Max || (n.GenerationVideoSeconds-r.Min)%r.Step != 0 {
+				return fmt.Errorf("模型不支持此视频时长，请按 get_generation_config 中的范围与步长选择")
+			}
+		} else if len(duration.Values) > 0 && !slices.Contains(duration.Values, n.GenerationVideoSeconds) {
+			return fmt.Errorf("模型不支持此视频时长，可选秒数为 %v", duration.Values)
+		}
 		audio := util.Clean(caps["audioControl"])
 		if audio == "none" && *n.GenerationVideoAudio || audio == "always" && !*n.GenerationVideoAudio {
 			return fmt.Errorf("模型不支持此声音设置")
 		}
 	}
-	if resolution != "" && !slices.Contains(agentStrings(caps["resolutions"]), resolution) {
-		return fmt.Errorf("模型不支持此分辨率")
+	if resolution != "" {
+		options := agentStrings(caps["resolutions"])
+		matched := slices.IndexFunc(options, func(option string) bool {
+			return strings.EqualFold(strings.TrimSpace(option), strings.TrimSpace(resolution))
+		})
+		if matched < 0 {
+			if len(options) == 0 {
+				return fmt.Errorf("当前模型未声明可用分辨率")
+			}
+			return fmt.Errorf("模型不支持此分辨率，可选值为 %s", strings.Join(options, "、"))
+		}
 	}
 	return nil
 }
@@ -629,11 +748,34 @@ func (w *canvasAgentWorker) generateNode(id string) (map[string]any, error) {
 	if err != nil || job == nil {
 		return result, err
 	}
-	task, err := w.service.media(w.ctx, w.identity, job.node, job.metadata)
+	var progressErr error
+	task, err := w.service.media(w.ctx, w.identity, job.node, job.metadata, func(progress int) error {
+		if progressErr == nil {
+			progressErr = w.generationProgress(job, progress)
+		}
+		return progressErr
+	})
+	// An observer failure does not end the independently running paid task.
+	if progressErr != nil {
+		return nil, progressErr
+	}
 	return w.finishGeneration(job, task, err)
 }
 
+func (w *canvasAgentWorker) generationProgress(job *canvasAgentGeneration, progress int) error {
+	node := w.node(job.node.ID)
+	if node == nil || node.TaskID != job.node.TaskID || node.GenerationStatus != "loading" || progress <= int(node.GenerationProgress) || progress >= 100 {
+		return nil
+	}
+	node.GenerationProgress = float64(progress)
+	w.generationTrace(job.node, "running", fmt.Sprintf("任务生成中 · %d%%", progress))
+	return w.save()
+}
+
 func (w *canvasAgentWorker) prepareGeneration(id string) (*canvasAgentGeneration, map[string]any, error) {
+	// Apply derived script edges before capturing the submission snapshot.
+	// The save boundary performs the same reconciliation; it is not an external edit.
+	reconcileCanvasScriptDependencies(w.persisted, &w.doc)
 	n := w.node(id)
 	if n == nil {
 		return nil, w.canvasChangedResult("目标节点已被移除，未提交生成"), nil
@@ -667,6 +809,12 @@ func (w *canvasAgentWorker) prepareGeneration(id string) (*canvasAgentGeneration
 	}
 	if n.TaskID != "" && n.GenerationStatus == "error" && w.req.Resume && w.req.MediaChoice != "generate" && w.answerMediaChoice != "generate" {
 		return nil, agentError("media_retry_requires_confirmation", "原媒体任务失败，已保留错误和任务 ID；请先征得用户明确同意再重新付费提交"), nil
+	}
+	if n.TaskID == "" || n.GenerationStatus == "error" {
+		if result := w.prepareScriptGeneration(id); result != nil {
+			result["submitted"] = false
+			return nil, result, nil
+		}
 	}
 	previousTaskID, previousStatus := n.TaskID, n.GenerationStatus
 	if n.TaskID == "" || n.GenerationStatus == "error" {
@@ -715,7 +863,11 @@ func (w *canvasAgentWorker) prepareGeneration(id string) (*canvasAgentGeneration
 		result["taskId"] = previousTaskID
 		return nil, result, nil
 	}
-	return &canvasAgentGeneration{node: node, submitted: cloneCanvasAgentDocument(w.doc), metadata: map[string]any{"relay_token_name": w.req.RelayTokens[node.Type], "generation_source": "canvas", "frontend_conversation_id": w.doc.ID}}, nil, nil
+	tokenName := w.req.RelayTokens[node.Type]
+	if node.Type == "video" {
+		tokenName = w.req.VideoRelayTokens[node.GenerationVideoModel]
+	}
+	return &canvasAgentGeneration{node: node, submitted: cloneCanvasAgentDocument(w.doc), metadata: map[string]any{"relay_token_name": tokenName, "generation_source": "canvas", "frontend_conversation_id": w.doc.ID, "media_base_url": w.req.MediaBaseURL}}, nil, nil
 }
 
 func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task map[string]any, err error) (map[string]any, error) {
@@ -737,8 +889,9 @@ func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task ma
 			current.GenerationStatus = "idle"
 			current.GenerationProgress = 0
 		}
-		result := w.canvasChangedResult("生成期间目标节点或依赖素材发生变化，已保留你的修改，原任务不会自动重试，结果未写回画布")
+		result := w.canvasChangedResult("生成结果与当前目标节点或依赖素材的状态不一致，尚未写回画布；已保留当前内容和原任务记录，未重新提交生成，需核对实际输入和已有结果")
 		result["taskId"], result["submitted"], result["resultAvailable"] = taskID, true, err == nil
+		result["changedFields"] = canvasAgentGenerationChanges(submitted, w.doc, id)
 		return result, nil
 	}
 	n := w.node(id)
@@ -790,6 +943,15 @@ func (w *canvasAgentWorker) finishGeneration(job *canvasAgentGeneration, task ma
 			n.StorageKey = util.Clean(item["storageKey"])
 			n.NaturalWidth = util.ToInt(item["width"], 0)
 			n.NaturalHeight = util.ToInt(item["height"], 0)
+			n.MediaMetadata = nil
+			n.MediaProbeError = util.Clean(item["media_probe_error"])
+			if raw, ok := item["media_metadata"]; ok {
+				data, err := json.Marshal(raw)
+				var metadata CanvasMediaMetadata
+				if err == nil && json.Unmarshal(data, &metadata) == nil && metadata.Width > 0 && metadata.Height > 0 && metadata.DurationMS > 0 {
+					n.MediaMetadata = &metadata
+				}
+			}
 		} else {
 			child := *n
 			child.ID = node.Type + "-" + newCanvasProjectID()

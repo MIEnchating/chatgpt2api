@@ -1,0 +1,20 @@
+{
+  "method": "Isolated imported canvas copies with explicitly labelled synthetic review records; no human quality approval",
+  "checks": [
+    {
+      "name": "current_needs_fix_visible_in_movie_and_script_desktop_mobile",
+      "passed": true
+    },
+    {
+      "name": "outdated_movie_does_not_inherit_current_shot_approval",
+      "passed": true
+    },
+    {
+      "name": "original_records_unchanged",
+      "messages": 14,
+      "passed": true
+    }
+  ],
+  "submissions": 0,
+  "qualityApproved": false
+}

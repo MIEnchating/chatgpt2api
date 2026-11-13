@@ -17,41 +17,29 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ownerID := identityScope(identity)
+	projectsOnly := r.URL.Query().Get("view") == "projects"
 	switch r.Method {
 	case http.MethodGet:
-		workspace, err := a.canvas.Workspace(ownerID)
-		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to load canvas")
+		if projectsOnly {
+			projects, err := a.canvas.ProjectList(ownerID)
+			if err != nil {
+				writeCanvasMutationError(w, err, "failed to load canvas projects")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, projects)
 			return
 		}
-		if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
-			document, projectErr := a.canvas.Project(ownerID, projectID)
-			if projectErr != nil {
-				if errors.Is(projectErr, service.ErrInvalidCanvasDocument) {
-					util.WriteError(w, http.StatusBadRequest, projectErr.Error())
-					return
-				}
-				util.WriteError(w, http.StatusInternalServerError, "failed to load canvas project")
-				return
-			}
-			workspace.Document = document
-			workspace.ActiveProjectID = document.ID
+		workspace, err := a.canvasAgent.Workspace(identity, r.URL.Query().Get("project_id"), r.URL.Query()["session_id"], service.CanvasHistoryScope(r.URL.Query().Get("history")))
+		if err != nil {
+			writeCanvasMutationError(w, err, "failed to load canvas")
+			return
 		}
-		if workspace.Document.AgentRun != nil {
-			document, snapshotErr := a.canvasAgent.Snapshot(identity, workspace.Document.ID)
-			if snapshotErr != nil {
-				util.WriteError(w, http.StatusInternalServerError, "failed to load canvas agent state")
-				return
-			}
-			workspace.Document = document
-			for index := range workspace.Projects {
-				if workspace.Projects[index].ID == document.ID {
-					workspace.Projects[index].Revision = document.Revision
-					workspace.Projects[index].UpdatedAt = document.UpdatedAt
-				}
-			}
+		workspace.Document, err = canvasHistoryResponse(r, workspace.Document)
+		if err != nil {
+			writeCanvasMutationError(w, err, "failed to load canvas history")
+			return
 		}
-		util.WriteJSON(w, http.StatusOK, workspace)
+		writeCanvasHistoryJSON(w, r, len(workspace.Document.AgentSessions), workspace)
 	case http.MethodPost:
 		var input struct {
 			Action    string                  `json:"action"`
@@ -73,6 +61,8 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			workspace, err = a.canvas.Import(ownerID, *input.Document)
+		} else if action == "activate" {
+			workspace, err = a.canvasAgent.ActivateWorkspace(identity, input.ProjectID, service.CanvasHistoryScope(r.URL.Query().Get("history")))
 		} else if action == "rename" || action == "delete" {
 			if input.Revision == nil || *input.Revision < 0 {
 				util.WriteError(w, http.StatusBadRequest, "canvas revision is required")
@@ -86,7 +76,16 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			writeCanvasMutationError(w, err, "failed to update canvas project")
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, workspace)
+		if projectsOnly {
+			util.WriteJSON(w, http.StatusOK, service.CanvasProjectList{Projects: workspace.Projects, ActiveProjectID: workspace.ActiveProjectID})
+			return
+		}
+		workspace.Document, err = canvasHistoryResponse(r, workspace.Document)
+		if err != nil {
+			writeCanvasMutationError(w, err, "failed to load canvas history")
+			return
+		}
+		writeCanvasHistoryJSON(w, r, len(workspace.Document.AgentSessions), workspace)
 	case http.MethodPut:
 		var input service.CanvasDocument
 		if err := util.DecodeJSON(r.Body, &input); err != nil {
@@ -98,7 +97,12 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			writeCanvasMutationError(w, err, "failed to save canvas")
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"document": document})
+		document, err = canvasHistoryResponse(r, document)
+		if err != nil {
+			writeCanvasMutationError(w, err, "failed to load canvas history")
+			return
+		}
+		writeCanvasHistoryJSON(w, r, len(document.AgentSessions), map[string]any{"document": document})
 	case http.MethodDelete:
 		revision, parseErr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("revision")), 10, 64)
 		if parseErr != nil || revision < 0 {
@@ -108,6 +112,11 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		document, err := a.canvas.ClearAtRevision(ownerID, r.URL.Query().Get("project_id"), a.settleCanvasAgentRevision(identity, r.URL.Query().Get("project_id"), revision))
 		if err != nil {
 			writeCanvasMutationError(w, err, "failed to clear canvas")
+			return
+		}
+		document, err = canvasHistoryResponse(r, document)
+		if err != nil {
+			writeCanvasMutationError(w, err, "failed to load canvas history")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"document": document})

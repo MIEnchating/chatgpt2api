@@ -670,6 +670,8 @@ export type CreationTask = {
   /** Upstream video generation progress, clamped to 0-100. */
   progress?: number;
   can_recover_video?: boolean;
+  /** Whether an async video submission was confirmed by the upstream provider. */
+  submission_status?: "not_started" | "submitting" | "confirmed" | "unknown" | "not_sent" | string;
   mode: GenerationTaskMode;
   model?: ImageModel;
   size?: string;
@@ -1412,9 +1414,9 @@ export async function fetchCreationTasks(
   };
 }
 
-export async function recoverVideoContent(clientTaskId: string, requestOptions?: CreationTaskRequestOptions) {
-  return httpRequest<CreationTask>(`/api/creation-tasks/${encodeURIComponent(clientTaskId)}/video-content`, {
-    ...creationTaskRequestAuth(requestOptions), method: "POST", body: {}, timeout: 310_000,
+export async function recoverVideoTask(clientTaskId: string, requestOptions?: CreationTaskRequestOptions) {
+  return httpRequest<CreationTask>(`/api/creation-tasks/${encodeURIComponent(clientTaskId)}/video-recovery`, {
+    ...creationTaskRequestAuth(requestOptions), method: "POST", body: {}, timeout: 20_000,
   });
 }
 
@@ -1580,7 +1582,7 @@ export async function importVideoModelContract(input: {
   sourceType: "file" | "url";
   generatePlugin: boolean;
   file?: File | null;
-  url?: string;
+  urls?: string[];
   model?: string;
   tokenName?: string;
   signal?: AbortSignal;
@@ -1590,7 +1592,9 @@ export async function importVideoModelContract(input: {
   formData.append("source_type", input.sourceType);
   formData.append("generate_plugin", String(input.generatePlugin));
   if (input.file) formData.append("file", input.file);
-  if (input.url?.trim()) formData.append("url", input.url.trim());
+  for (const url of input.urls || []) {
+    if (url.trim()) formData.append("url", url.trim());
+  }
   if (input.model?.trim()) formData.append("model", input.model.trim());
   if (input.tokenName?.trim()) formData.append("token_name", input.tokenName.trim());
   let result: VideoModelContractImportResult | undefined;
@@ -1656,6 +1660,18 @@ export async function validateVideoModelContract(input: VideoModelContractMutati
   });
 }
 
+export async function fetchVideoMaterialUploadCredential(id: string, baseURL: string, signal?: AbortSignal) {
+  return httpRequest<{ configured: boolean }>(`/api/admin/video-model-contracts/${encodeURIComponent(id)}/upload-credential?base_url=${encodeURIComponent(baseURL)}`, { signal });
+}
+
+export async function saveVideoMaterialUploadCredential(id: string, baseURL: string, apiKey: string) {
+  return httpRequest<{ configured: boolean }>(`/api/admin/video-model-contracts/${encodeURIComponent(id)}/upload-credential`, { method: "PUT", body: { base_url: baseURL, api_key: apiKey } });
+}
+
+export async function deleteVideoMaterialUploadCredential(id: string, baseURL: string) {
+  return httpRequest<{ configured: boolean }>(`/api/admin/video-model-contracts/${encodeURIComponent(id)}/upload-credential`, { method: "DELETE", body: { base_url: baseURL } });
+}
+
 export async function createVideoModelContract(input: VideoModelContractMutation) {
   const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts", {
     method: "POST",
@@ -1698,6 +1714,8 @@ export async function rollbackVideoModelContract(id: string, revision: number) {
 }
 
 export type VideoModelContractPreviewResult = {
+  material_upload?: { method: "POST"; url: string; encoding: "multipart" | "base64"; field: string; url_field: string; base64_format: string; max_bytes: number };
+  notes?: string[];
   request: {
     method: "POST";
     create_path: string;

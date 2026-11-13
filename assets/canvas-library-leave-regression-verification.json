@@ -1,0 +1,30 @@
+{
+  "finalSourceHashes": {
+    "web/src/main.tsx": "e08e074d687e4264baab4813d49b3f7d6276483458f7fb8490f47001b0fc803b",
+    "web/src/app/canvas/page.tsx": "6ba59f766405515a71fee69baad4d1d2bc35a5f264f6425b98279f2458bb4a9b",
+    "web/tests/canvas-review-regressions.test.mjs": "150b765c3e8f1c196b01302c3970cdc0d4db088c2d0cc92dc579f7453dc7b79d"
+  },
+  "fullFrontendBeforeFinalPermissionCondition": {
+    "passed": 1775,
+    "failed": 0,
+    "files": 194,
+    "durationSeconds": 134.64
+  },
+  "finalFocused": {
+    "passed": 8,
+    "failed": 0
+  },
+  "finalBuild": {
+    "passed": true,
+    "viteSeconds": 5.96
+  },
+  "finalLint": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "finalEmbedded": {
+    "passed": true,
+    "seconds": 0.03
+  },
+  "temporaryProjectsRemaining": 0
+}

@@ -1,18 +1,18 @@
 # XZAPI StarFrame 视频接入
 
-单文件插件：`xzapi-video-1.0.0.js`；标识 `xzapi-video`，版本 `1.0.0`。插件嵌入三个模型契约和 23 个精确模型的能力限制，不依赖外部 JSON 文件或网络加载代码。
+单文件插件：`xzapi-video-1.1.0.js`；标识 `xzapi-video`，版本 `1.1.0`。插件嵌入一份上游契约和 23 个精确模型的独立能力限制，不依赖外部 JSON 文件或网络加载代码。
 
 模型列表与数量限制取自 2026-11-07 读取的 [价格页](https://api.xzapi.vip/pricing) 及其 [公开数据接口](https://api.xzapi.vip/api/pricing)，协议来自 [开发文档](https://docs.xzapi.vip/#task-status) 和 [错误码](https://docs.xzapi.vip/errors.html)。`source-models.json` 保存相关模型描述快照；价格页的列出状态不保证当前 Key 的权限、额度或供应商可用性。
 
 ## 安装
 
-1. New API 插件管理上传 `xzapi-video-1.0.0.js` 并激活。
+1. New API 插件管理上传 `xzapi-video-1.1.0.js` 并激活。
 2. 创建“任务插件”渠道，绑定 `xzapi-video`；Base URL 使用 `https://api.xzapi.vip`，不追加 `/v1`，渠道填写 XZAPI Key。
 3. 添加下面所需的精确模型名，并配置分组、令牌权限和售价。
-4. 创作台导入 `contract.json`：一次导入三个启用的契约，分别覆盖 CH01、CH13、CH14。三个契约共享同一个 New API 插件。
+4. 创作台导入 `contract.json`：导入一份启用的契约，统一覆盖 CH01、CH13、CH14。已有这三份契约的实例会在导入时合并，并保留原有契约 ID 和上传密钥；存在未发布草稿或密钥冲突时拒绝合并。
 5. 创作台的线路指向上述 New API 渠道，使用 New API 令牌。
 
-当前工作区服务已在 2026-11-07 导入并启用这三份契约，23 个模型均已通过持久化回读与注册校验，原有 wan-3 契约保留。当前服务不必重复执行第 4 步；其他实例仍需导入。
+当前工作区服务已在 2026-11-10 将三份 XZAPI 契约实际合并为 `XZAPI StarFrame 视频（New API）`，23 个型号的现有配置均已逐项比较并保留。契约总数从 6 份变为 4 份，其他三份契约及其密钥保持原样。合并前已备份，源码服务重启后健康检查返回 200；当前服务不必重复执行第 4 步。单份契约、模型能力和生成插件的型号数量上限已统一为 100。
 
 本契约描述“创作台 → New API”的请求。XZAPI 的单复数素材转换和幂等字段由交付插件完成，因此不能把契约直接用于 XZAPI 直连，也不能用界面里的通用生成器替换此专用插件。重新构建使用本目录 `build.mjs`。
 
@@ -93,10 +93,12 @@ go test ./internal/httpapi -run '^TestXZAPIVideoContractsImportAndMapReferenceIn
 New API 宿主可重放：
 
 ```bash
-new-api plugin lint xzapi-video-1.0.0.js
-new-api plugin test xzapi-video-1.0.0.js --fixture newapi-host-fixture.json
+new-api plugin lint xzapi-video-1.1.0.js
+new-api plugin test xzapi-video-1.1.0.js --fixture newapi-host-fixture.json
 ```
 
-本次 50 项 Node 测试通过；New API 本地插件运行时 lint 及 437/437 项回放通过。覆盖全部 23 个模型的每个整数时长、默认值、素材单复数、类型/合计上限、缺失幂等 ID、模型映射、状态和下载。契约干跑覆盖 23 模型 × 2 模式；Go 契约导入和请求映射测试通过；重复构建的插件 SHA-256 一致。宿主源码版本与结果见 `validation.json`。
+本次 50 项 Node 测试通过；New API 运行容器的插件运行时 lint 及 437/437 项回放通过。覆盖全部 23 个模型的每个整数时长、默认值、素材单复数、类型/合计上限、缺失幂等 ID、模型映射、状态和下载。契约干跑覆盖 23 模型 × 2 模式；Go 契约导入和请求映射测试通过；重复构建的插件 SHA-256 一致。实际容器镜像、检查命令与结果见 `validation.json`。
+
+后端 protocol 包测试与相关 videocontract、httpapi 聚焦测试通过。videocontract 整包测试另有 `TestDramayaWan3PluginArtifact` 失败，原因为 Dramaya 已有交付产物与当前生成器输出不一致；本次未修改该产物。前端源码未修改，未运行前端构建与 lint。
 
 未上传或激活生产 New API 插件，未发送真实生成请求。本地通过不代表供应商鉴权、计费或视频产出已实测。

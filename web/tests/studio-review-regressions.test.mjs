@@ -215,3 +215,68 @@ test("top media tabs change the composer in place and retain reference upload gu
     assert.equal(changes.length, scenario.blocked ? 0 : 1);
   }
 });
+
+function syncConversationComposerMode(context) {
+  let expression;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect"
+      && node.arguments[0]?.getText(source).includes("setComposerMode(selectedConversationComposerMode)")) {
+      expression = node.arguments[0].getText(source);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.ok(expression, "Missing conversation composer mode restoration");
+  const compiled = ts.transpile(`const sync = ${expression};`, { target: ts.ScriptTarget.ES2022 });
+  new Function(...Object.keys(context), `${compiled}\nsync();`)(...Object.values(context));
+}
+
+test("queued conversation saves cannot revert the latest media tab selection", () => {
+  let mode = "image";
+  const context = {
+    restoredComposerConversationRef: { current: null },
+    workbenchPreferencesReady: true,
+    selectedConversationId: "conversation-a",
+    selectedConversationNeedsDetail: false,
+    selectedConversationComposerMode: "image",
+    setComposerMode: value => { mode = value; },
+  };
+  syncConversationComposerMode(context);
+  mode = "video";
+  // Earlier clicks finish saving after the user has already chosen video.
+  for (const savedMode of ["image", "video", "image", "video"]) {
+    context.selectedConversationComposerMode = savedMode;
+    syncConversationComposerMode(context);
+    assert.equal(mode, "video");
+  }
+  context.selectedConversationId = "conversation-b";
+  context.selectedConversationComposerMode = "image";
+  syncConversationComposerMode(context);
+  assert.equal(mode, "image");
+  context.selectedConversationId = null;
+  syncConversationComposerMode(context);
+  mode = "video";
+  context.selectedConversationId = "conversation-b";
+  syncConversationComposerMode(context);
+  assert.equal(mode, "image");
+});
+
+test("conversation media mode restores after preferences and detail are ready", () => {
+  let mode = "image";
+  const context = {
+    restoredComposerConversationRef: { current: null },
+    workbenchPreferencesReady: false,
+    selectedConversationId: "conversation-a",
+    selectedConversationNeedsDetail: true,
+    selectedConversationComposerMode: "video",
+    setComposerMode: value => { mode = value; },
+  };
+  syncConversationComposerMode(context);
+  assert.equal(mode, "image");
+  context.workbenchPreferencesReady = true;
+  syncConversationComposerMode(context);
+  assert.equal(mode, "image");
+  context.selectedConversationNeedsDetail = false;
+  syncConversationComposerMode(context);
+  assert.equal(mode, "video");
+});

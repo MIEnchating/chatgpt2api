@@ -37,7 +37,11 @@ export function formatModelPricing(pricing?: RelayModelPricing, error?: string):
   if (pricing.currency !== "USD" || !pricing.rates?.length) return "未提供定价";
   const units = { second: "秒", request: "次", million_tokens: "百万 tokens", count: "个", credit: "计费单位" };
   if (pricing.rates.some((rate) => !Number.isFinite(rate.amount) || rate.amount < 0 || !units[rate.unit])) return "未提供定价";
-  const labels = pricing.rates.map((rate) => rate.label.replace(/ · count$/, ""));
+  const labels = pricing.rates.map((rate) => {
+    if (rate.unit === "second") return rate.label.replace(/ · seconds?$/i, "");
+    if (rate.unit === "count") return rate.label.replace(/ · count$/i, "");
+    return rate.label;
+  });
   const conditions: string[] = [];
   const simplified: string[] = [];
   let field = "";
@@ -55,8 +59,9 @@ export function formatModelPricing(pricing?: RelayModelPricing, error?: string):
   return pricing.rates.map((rate) => {
     const amount = rate.amount.toLocaleString("en-US", { maximumSignificantDigits: 8, useGrouping: false });
     const index = pricing.rates.indexOf(rate);
+    const displayLabel = rate.unit === "second" ? rate.label.replace(/ · seconds?$/i, "") : rate.label;
     let label = pricing.mode === "dynamic" && simplified.length === pricing.rates.length && conditions.length > 1
-      ? simplified[index] : pricing.rates.length === 1 && /^(base|standard)$/i.test(rate.label) ? "" : rate.label.replace(/^base · /i, "");
+      ? simplified[index] : pricing.rates.length === 1 && /^(base|standard)$/i.test(labels[index]) ? "" : displayLabel.replace(/^base · /i, "");
     if ((rate.unit === "second" && /^seconds?$/i.test(label)) || (rate.unit === "count" && /^count$/i.test(label))) label = "";
     label = label.replace(/\bresolution\s*=\s*([\w.-]+)/gi, "分辨率 $1");
     return `${label ? `${label} ` : ""}$${amount}/${units[rate.unit]}`;

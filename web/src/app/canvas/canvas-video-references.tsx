@@ -27,12 +27,14 @@ type Material = {
   nodeID?: string;
 };
 
-export function CanvasVideoReferences({ node, inputs, mode, supportsMultimodal, supportsLastFrame, materials, uploading, onChange, onUpload }: {
+export function CanvasVideoReferences({ node, inputs, mode, supportsFrames, supportsMultimodal, supportsLastFrame, supportsText, materials, uploading, onChange, onUpload }: {
   node: CanvasNode;
   inputs: readonly CanvasConfigInput[];
   mode: "first-frame" | "reference";
+  supportsFrames: boolean;
   supportsMultimodal: boolean;
   supportsLastFrame: boolean;
+  supportsText: boolean;
   materials: Material[];
   uploading: VideoReferenceSlot | "";
   onChange: (patch: Partial<CanvasNode>) => void;
@@ -49,9 +51,10 @@ export function CanvasVideoReferences({ node, inputs, mode, supportsMultimodal, 
         : slot === "video" ? { generation_video_reference_urls: values } : { generation_video_reference_audio_urls: values });
   }
   return <div data-canvas-reference-materials className="space-y-4">
-    {supportsMultimodal ? <Card className="grid grid-cols-2 gap-1 p-1" role="group" aria-label="参考模式">
+    {supportsFrames && supportsMultimodal ? <Card className="grid grid-cols-2 gap-1 p-1" role="group" aria-label="参考模式">
       {([['first-frame', supportsLastFrame ? '首尾帧' : '首帧'], ['reference', '多模态参考']] as const).map(([value, label]) => <Toggle  key={value} type="button" pressed={mode === value} onClick={() => onChange({ generation_video_reference_mode: value })} className="flex items-center justify-center">{value === "first-frame" ? <ImagePlus  /> : <Video  />}{label}</Toggle>)}
     </Card> : null}
+    {supportsText ? <p className="text-xs text-muted-foreground">不添加参考素材时使用文生视频。</p> : null}
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs font-medium">{frameMode ? "画面衔接" : "参考素材"}</span>
       <Button variant="ghost" type="button" aria-expanded={linksOpen} onClick={() => setLinksOpen(open => !open)} className="flex items-center"><Link2  />链接<ChevronDown className={cn("size-3 transition-transform", linksOpen && "rotate-180")} /></Button>

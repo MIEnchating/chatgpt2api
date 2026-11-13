@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-11-12T18:15:03.671570+00:00",
+  "sourceHashes": {
+    "web/src/app/canvas/page.tsx": "393b090a175472db826e88d62625fdef8792180616b24fb4e34486c5acc50693",
+    "web/tests/canvas-review-regressions.test.mjs": "e5f56b708442876456f0b9def510116323964c532d7f01308807241c45e8d5d1"
+  },
+  "sourceHashesUnchanged": true,
+  "focusedTests": 5,
+  "newRegressionsFailedBeforeFix": 3,
+  "fullFrontendTests": 1769,
+  "testFiles": 194,
+  "command": "npm run test -- --timeout 20000",
+  "fullTestExitCode": 0,
+  "fullTestSeconds": 117.73,
+  "initialFullRun": {
+    "reportedPass": 1769,
+    "reportedFail": 0,
+    "wrapperExitCode": 143,
+    "repeatedToVerifyExit": true
+  },
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "embeddedSeconds": 0.041,
+  "browserBefore": {
+    "phase": "before",
+    "errors": [],
+    "checks": [
+      "failure followed by reload discards the unsaved local title without a browser warning"
+    ],
+    "mediaSubmissions": 0,
+    "saveAttempts": 1,
+    "dialogs": [],
+    "unloadProtected": false,
+    "persistentError": 0,
+    "testProjectDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "browserAfter": {
+    "phase": "after",
+    "errors": [],
+    "checks": [
+      "persistent error, cancelled reload, narrow layout, disabled retry, successful save, clean reload and complete history"
+    ],
+    "mediaSubmissions": 0,
+    "saveAttempts": 2,
+    "dialogs": [
+      "beforeunload"
+    ],
+    "unloadProtected": true,
+    "persistentError": 1,
+    "testProjectDeleted": true,
+    "originalHistoryUnchanged": true
+  },
+  "productionProjectsUnchanged": true,
+  "mediaSubmissions": 0,
+  "limitations": [
+    "Normal browser refresh and close are protected; crashes, force closes and explicit discard are not recoverability guarantees.",
+    "This reproduces one lost-edit path and does not establish every prior missing-conversation cause.",
+    "Long-conversation initial loading, video content quality, standalone audio supplier verification and historical failures remain open."
+  ]
+}

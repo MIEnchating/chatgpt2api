@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-11-12",
+  "scope": "Isolated HTTP/task-service fault injection through Go test overlay; no real supplier requests or production data writes.",
+  "scenario": "Supplier accepts POST with task ID, then its first GET returns 503. A later GET would complete the original task, but the application never performs it.",
+  "observed": {
+    "submissions": 1,
+    "polls": 1,
+    "acceptedTaskCallbackObserved": true,
+    "localStatus": "error",
+    "canRecoverVideo": false,
+    "error": "temporary fixture outage"
+  },
+  "confirmedProductDefect": true,
+  "historicalFailureCauseEstablished": false,
+  "fixed": false,
+  "evidence": {
+    "command": "go test -overlay build/review/canvas-production/poll-audit/overlay.json ./internal/httpapi -run ^TestCanvasAuditAcceptedVideoTransientPollingFailure$ -count=1 -v",
+    "result": "passed diagnostic, 0.177s; passing means current defect was observed",
+    "log": "/tmp/canvas-backend-poll-audit-final.log"
+  },
+  "testHarnessCorrection": "First diagnostic incorrectly expected the public task response to expose the upstream task ID. Corrected it to observe the real acceptance callback. Initial diagnostic failure is retained in /tmp/canvas-backend-poll-audit.log.",
+  "productSourceChanged": false,
+  "productionServiceRestarted": false,
+  "realMediaSubmissions": 0
+}

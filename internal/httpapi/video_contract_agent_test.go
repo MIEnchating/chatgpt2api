@@ -250,7 +250,7 @@ func TestVideoContractAgentSchemaAndActualRequests(t *testing.T) {
 }
 
 func TestVideoContractSnapshotKeepsUnfinishedDocumentPreparation(t *testing.T) {
-	original := &videoContractAgentState{source: videoContractImportSource{Type: "url", URL: "https://docs.example.test/api"}}
+	original := &videoContractAgentState{source: videoContractImportSource{Type: "url", URLs: []string{"https://docs.example.test/api", "https://docs.example.test/query"}}}
 	for _, ready := range []bool{false, true} {
 		original.documentPrepared = ready
 		if ready {

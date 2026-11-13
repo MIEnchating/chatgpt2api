@@ -1,0 +1,50 @@
+{
+  "phase": "before",
+  "loads": [
+    {
+      "round": 0,
+      "readyMs": 6412,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 9005688,
+          "requestedProject": null,
+          "documentID": "canvas-7df68580cdd17905f0bf2274",
+          "partial": true
+        }
+      ],
+      "timing": [
+        {
+          "path": "/src/app/canvas/page.tsx",
+          "startMs": 983,
+          "endMs": 1026,
+          "decodedBytes": 1263749
+        },
+        {
+          "path": "/api/model-config",
+          "startMs": 2408,
+          "endMs": 2415,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 2411,
+          "endMs": 2613,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 2420,
+          "endMs": 3891,
+          "decodedBytes": 9005688
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 1
+}

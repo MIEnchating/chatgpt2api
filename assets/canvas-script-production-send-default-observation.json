@@ -1,0 +1,51 @@
+{
+  "startedAt": "2026-11-12T13:25:44.393Z",
+  "checks": [
+    {
+      "name": "real_tool_and_saved_history_include_ordered_current_state_and_measured_durations",
+      "passed": true
+    },
+    {
+      "name": "fresh_read_reports_outdated_video_and_does_not_guess_measured_total",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-ae1fd78d9abfbd1c25581c60",
+  "summary": {
+    "totalShots": 4,
+    "plannedDurationSeconds": 60,
+    "actualDurationMS": 60332,
+    "canMerge": true,
+    "quality": [
+      "unchecked",
+      "unchecked",
+      "unchecked",
+      "unchecked"
+    ]
+  },
+  "modelProjectID": "canvas-349cb2cf0b0b6441b8a8e96e",
+  "runID": "jOJdlNVdOxTM6BPM3rX5T",
+  "runStatus": "success",
+  "calls": [
+    {
+      "name": "get_node",
+      "arguments": {
+        "nodeId": "script-canvas-57f40ada890cc88876873a0b"
+      }
+    },
+    {
+      "name": "finish_task",
+      "arguments": {
+        "text": "已按《留一盏灯》脚本顺序核对：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**，脚本计划为60秒。四镜均无已有人工验收记录；含音轨不代表对白清晰度、说话人、口型或画面连续性已通过验收。本次仅作读取核对，未修改、合并、生成媒体或填写质量记录。"
+      }
+    }
+  ],
+  "reply": "已按《留一盏灯》脚本顺序核对：\n\n| 镜头 | 视频完成情况 | 原片实测时长 | 声音 | 内容质量验收 |\n|---|---|---|---|---|\n| 01｜问候 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 02｜开线 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 03｜工钱 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n| 04｜留灯 | 已完成 | 15.083秒 | 含音轨 | 尚未验收 |\n\n四段原片实际总时长为 **60.332秒**，脚本计划为60秒。四镜均无已有人工验收记录；含音轨不代表对白清晰度、说话人、口型或画面连续性已通过验收。本次仅作读取核对，未修改、合并、生成媒体或填写质量记录。",
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  [\n    {\n      created_at: '2026-11-12T11:39:20.762887417Z',\n      generation_image_options: {},\n      generation_status: 'success',\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-68907edd4828bc282ffcc9c0',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-468eb52d1feaee8c9b83227b',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-4b03e366153d957a8ed24198',\n      media_metadata: {\n        duration_ms: 15083,\n...\n      generation_video_size: '9:16',\n+     generation_video_watermark: false,\n      group_id: 'group-canvas-e9d4542ae12fea56804b181a',\n      height: 360,\n      id: 'video-canvas-c11c0fb5174848a465c348fe',\n      media_metadata: {\n        duration_ms: 15083,\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-script-production.mjs:71:9",
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-12T13:26:28.433Z"
+}

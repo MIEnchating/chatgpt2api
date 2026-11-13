@@ -1,0 +1,46 @@
+{
+  "verifiedAt": "2026-11-12T16:05:29.298556+00:00",
+  "change": "Reuse unchanged messages when synchronizing node references; preserve upload attachments during same-ID node synchronization and deletion.",
+  "reproduction": {
+    "tests": 3,
+    "before": "3 failed: unchanged sync read 2000 message bodies 6000 times; unrelated deletion rebuilt conversations; same-ID node rewrote independent upload.",
+    "after": "All passed; unchanged synchronization reads zero body text, unrelated deletion reuses messages, only affected node references change."
+  },
+  "validation": {
+    "focused": {
+      "files": 5,
+      "passed": 222
+    },
+    "final": {
+      "files": 67,
+      "passed": 897,
+      "failed": 0
+    },
+    "build": {
+      "passed": true,
+      "existingWarnings": "Chunk sizes and dependency module directives."
+    },
+    "lint": {
+      "passed": true,
+      "warnings": 0,
+      "errors": 0
+    },
+    "embeddedWeb": {
+      "passed": true,
+      "seconds": 0.026
+    },
+    "goBusinessPackages": "Not rerun; frontend-only product change.",
+    "browser": "assets/canvas-reference-sharing-verification.json",
+    "protectedProjects": "assets/canvas-reference-sharing-protected-verification.json"
+  },
+  "sourceSHA256": {
+    "web/src/app/canvas/agent/canvas-agent-sessions.ts": "5cff6cca6ab519b4a41ca86dca3d450b734ac8a133ae6c500a3d33f220be4265",
+    "web/tests/canvas-agent-v2.test.mjs": "9eb40026727ee4d2e588212738da3b3d00cc531dc66d01806d53a5b0f833ace9",
+    "web/tests/shared-component-boundaries.test.mjs": "852a708a7b8e43c33ae1b90bf2604254b0f5b02c182c2789ffb0c57f5f3012d9"
+  },
+  "limitations": [
+    "No media supplier generation in this iteration.",
+    "Object reuse and body access counts do not establish end-to-end latency.",
+    "Cannot restore previously lost data or prove every historical disappearance cause."
+  ]
+}

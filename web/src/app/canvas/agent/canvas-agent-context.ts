@@ -18,7 +18,7 @@ export type CanvasAgentGenerationConfig = {
   imageCount: number;
   videoSeconds: number;
   videoGenerateAudio: boolean;
-  videoSupportsAudio: boolean;
+  videoSupportsAudio: boolean | null;
   audioVoice: string;
   audioLanguage: string;
   audioFormat: string;

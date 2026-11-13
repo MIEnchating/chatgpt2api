@@ -1,0 +1,19 @@
+{
+  "method": "Real UI selection and intercepted two-shot regeneration on an isolated imported copy",
+  "supplierSubmissions": 0,
+  "qualityApproved": false,
+  "checks": [
+    {
+      "name": "explicit_selection_type_switch_and_desktop_mobile_layout",
+      "passed": true
+    },
+    {
+      "name": "only_selected_shots_replaced_original_results_retained_and_two_requests_intercepted",
+      "passed": true
+    },
+    {
+      "name": "original_canvas_and_fourteen_messages_unchanged",
+      "passed": true
+    }
+  ]
+}

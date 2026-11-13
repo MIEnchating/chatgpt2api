@@ -14,7 +14,7 @@ export function AgentExecutionRecovery<TResult>({ domain, busy, activeID, onResu
   if (busy && !activeID) return null;
   if (!run) {
     if (error) return <Alert variant="destructive"><AlertDescription>{error}<Button variant="outline" size="sm" onClick={refresh}>重新读取进度</Button></AlertDescription></Alert>;
-    return loading || busy ? <LoadingState label="读取已保存的 Agent 进度" className="min-h-0 py-3" /> : null;
+    return busy ? <LoadingState label="正在连接任务进度" className="min-h-0 py-3" /> : null;
   }
   const active = action !== "idle";
   const event = run.events.at(-1);

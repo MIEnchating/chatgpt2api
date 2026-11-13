@@ -12,13 +12,15 @@ import { Progress } from "@/components/ui/progress";
 
 export function Context({
   tokens,
+  error,
   limit,
   rows,
   compacting = false,
   reported = false,
   measured = false,
 }: {
-  tokens: number;
+  tokens?: number;
+  error?: string;
   limit?: number;
   rows: { label: string; value: string }[];
   compacting?: boolean;
@@ -26,8 +28,9 @@ export function Context({
   measured?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const status = error ? "用量估算失败" : tokens === undefined ? "正在估算" : undefined;
   const percent =
-    limit && limit > 0 ? Math.round((tokens / limit) * 1000) / 10 : undefined;
+    tokens !== undefined && limit && limit > 0 ? Math.round((tokens / limit) * 1000) / 10 : undefined;
   const progress =
     percent === undefined ? undefined : Math.max(0, Math.min(100, percent));
   const circumference = 2 * Math.PI * 9.5;
@@ -61,9 +64,9 @@ export function Context({
             aria-valuemax={progress === undefined ? undefined : 100}
             aria-valuenow={progress}
             aria-valuetext={
-              percent === undefined
+              status || (percent === undefined
                 ? "上限未知"
-                : `${percent}%${compacting ? "，正在压缩" : ""}`
+                : `${percent}%${compacting ? "，正在压缩" : ""}`)
             }
           >
             <circle
@@ -93,17 +96,17 @@ export function Context({
           </svg>
         </Button>
       </HoverCardTrigger>
-      <HoverCardContent
+      {open ? <HoverCardContent
         side="top"
         align="end"
         className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 p-4"
       >
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-medium">{compacting ? "正在压缩上下文" : "上下文"}</span>
-          <span className="shrink-0 text-muted-foreground">{percent === undefined ? "上限未知" : `${percent}%`}</span>
+          <span className="shrink-0 text-muted-foreground">{status || (percent === undefined ? "上限未知" : `${percent}%`)}</span>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="font-medium tabular-nums">{format(tokens)}</span>
+          <span className="font-medium tabular-nums">{tokens === undefined ? "尚无统计" : format(tokens)}</span>
           <span className="shrink-0 text-muted-foreground tabular-nums">{limit ? `${format(limit)} tokens` : "tokens"}</span>
         </div>
         <Progress value={progress} aria-label="上下文占用" className="h-2" />
@@ -114,11 +117,11 @@ export function Context({
           </div>)}
         </div>
         <p className="border-t pt-3 text-xs leading-5 text-muted-foreground">
-          {measured ? "最近一次上游返回的实际输入 token，包含系统指令和工具定义。配置上限与执行记录存储上限分别计算。" : reported
+          {error ? `${error}，请重新打开面板重试。` : tokens === undefined ? "正在估算当前对话和画布的上下文用量。" : measured ? "最近一次上游返回的实际输入 token，包含系统指令和工具定义。配置上限与执行记录存储上限分别计算。" : reported
             ? "最近一次模型输入的估算，包含系统指令和工具定义。"
             : "可见对话和画布内容的估算；运行后更新模型输入统计。"}
         </p>
-      </HoverCardContent>
+      </HoverCardContent> : null}
     </HoverCard>
   );
 }

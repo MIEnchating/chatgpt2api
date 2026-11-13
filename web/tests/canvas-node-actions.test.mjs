@@ -313,7 +313,7 @@ test("Agent run callbacks and project persistence reject stale lifecycle scopes"
   assert.match(agentPanelSource, /onEvent: \(event\) => updateSessionForRun\(sessionID, runEpoch/);
   assert.match(agentPanelSource, /onCheckpoint: \(checkpoint\) => updateSessionForRun\(sessionID, runEpoch/);
   assert.match(pageSource, /const renderedCanvasID = documentRef\.current\.id/);
-  assert.match(pageSource, /onSessionsChange=\{\(sessions, activeSessionID\) => \{\s*if \(documentRef\.current\.id !== renderedCanvasID\) return/);
+  assert.match(pageSource, /onSessionsChange=\{\(sessions, activeSessionID, deletedSessionIDs = \[\]\) => \{\s*if \(documentRef\.current\.id !== renderedCanvasID\) return/);
   assert.match(pageSource, /onExecuteAction=\{\(action, messageReferenceNodeIDs, execution\) => documentRef\.current\.id === renderedCanvasID/);
 });
 

@@ -83,7 +83,8 @@ test("every page-level pagination stays fixed to the bottom of its full-height p
 
 test("role panels use the full shared management content height", () => {
   assert.doesNotMatch(rbacSource, /max-h-\[calc\(100dvh-/);
-  assert.match(rbacSource, /h-\[max\(42rem,80dvh\)\] min-h-0 xl:h-auto/);
+  assert.match(rbacSource, /<ManagementPage data-rbac-layout[\s\S]*className="p-4 sm:p-6"/);
+  assert.match(rbacSource, /<ScrollAreaViewport[^>]*className="[^"]*flex-1[^"]*"[^>]*><div className="min-w-0 grid h-full/);
 });
 
 test("role authorization separates permission types and supports focused review", () => {

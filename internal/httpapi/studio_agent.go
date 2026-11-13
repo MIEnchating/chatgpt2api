@@ -560,7 +560,7 @@ func (a *App) executeStudioAgent(ctx context.Context, identity service.Identity,
 				if !owned {
 					return fail(errors.New("只能查询本轮任务"))
 				}
-				item, err := service.WaitCanvasAgentTask(ctx, a.tasks, identity, id, nil)
+				item, err := service.WaitCanvasAgentTask(ctx, a.tasks, identity, id, nil, nil)
 				if err != nil {
 					return fail(err)
 				}

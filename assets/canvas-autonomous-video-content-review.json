@@ -1,0 +1,44 @@
+{
+  "at": "2026-11-12T12:36:40Z",
+  "projectID": "canvas-04702de07993ea1fdf59d868",
+  "qualityApproved": false,
+  "method": "Eight sampled frames per actual generated clip, original prompts, media probes, independent speech transcription. No human voice or lip-sync approval.",
+  "shots": [
+    {
+      "id": "s1",
+      "visibleSubtitles": true,
+      "evidence": "assets/canvas-autonomous-video-1-frames.jpg",
+      "observation": "抽帧可见陈姨、这么晚还没收摊啊、等雨小一点、袋子怎么了等对白字幕。"
+    },
+    {
+      "id": "s2",
+      "visibleSubtitles": true,
+      "evidence": "assets/canvas-autonomous-video-2-frames.jpg",
+      "observation": "抽帧可见明天第一天上班、我想带点像样的东西、袋子挺好等字幕。"
+    },
+    {
+      "id": "s3",
+      "visibleSubtitles": false,
+      "evidence": "assets/canvas-autonomous-video-3-frames.jpg",
+      "observation": "抽查帧未见字幕，不证明整段无文字或其他缺陷。"
+    },
+    {
+      "id": "s4",
+      "visibleSubtitles": true,
+      "visibleGarbledEnglishCaptions": true,
+      "evidence": "assets/canvas-autonomous-video-4-frames.jpg",
+      "observation": "抽帧有中文对白字幕，下方额外出现错误/乱码式英文字幕。"
+    }
+  ],
+  "promptAudit": {
+    "allFourPromptsExplicitlyExcludeSubtitlesAndImageText": true,
+    "evidence": "assets/canvas-autonomous-video-prompt-inspection.json"
+  },
+  "audioAudit": {
+    "evidence": "assets/canvas-autonomous-drama-audio-assessment.json",
+    "allFourHaveAAC": true,
+    "sampleRate": 32000,
+    "observation": "独立转录包含全部四镜预期对白；第三镜转写逐字一致，其他有陈义/陈姨、限/线、带子/袋子、流/留等同音或近音差异，不能据此断言实际读错。音色一致性、口型及转场仍未验收。"
+  },
+  "noAdditionalGenerationSubmitted": true
+}

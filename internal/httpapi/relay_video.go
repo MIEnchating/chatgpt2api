@@ -9,12 +9,14 @@ import (
 	"io"
 	"math"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"chatgpt2api/internal/protocol"
@@ -66,6 +68,9 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	}
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
 	kind, _ := videoContractGenerationKind(payload, contract)
+	if err := a.uploadVideoContractMaterials(ctx, request, contract, kind, util.Clean(util.StringMap(payload["video_contract"])["id"])); err != nil {
+		return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: err.Error()}
+	}
 	if err := validateVideoReferencePayloadURLs(request, contract, kind); err != nil {
 		return nil, err
 	}
@@ -98,16 +103,32 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		a.logger.Debug("video upstream submit", "method", http.MethodPost, "path", createPath, "model", model, "request_fields", sortedMapKeys(request), "response_fields", sortedMapKeys(created), "error", errorText(err), "task_id", videoContractFirstString(created, contract.Polling.TaskIDFields))
 	}
 	if err != nil {
-		return created, err
+		var httpErr protocol.HTTPError
+		if errors.As(err, &httpErr) {
+			return created, fmt.Errorf("视频提交请求失败（HTTP %d）: %w", httpErr.Status, err)
+		}
+		return created, fmt.Errorf("视频提交请求未完成，是否接单尚未确认: %w", err)
 	}
-	relayVideoTaskProgress(payload, created, contract)
+	taskID := videoContractFirstString(created, contract.Polling.TaskIDFields)
+	var recovery *service.VideoTaskRecovery
+	if taskID != "" && videoRelayTaskStatusForContract(created, contract) != "failed" {
+		snapshot, marshalErr := json.Marshal(contract)
+		if marshalErr != nil {
+			return created, fmt.Errorf("保存视频查询契约失败: %w", marshalErr)
+		}
+		recovery = &service.VideoTaskRecovery{TaskID: taskID, BaseURL: baseURL, QueryPath: queryPath, Model: model, Contract: snapshot, AllowedHosts: contract.Artifact.AllowedHosts, TokenName: selectedRelayTokenNameFromPayload(payload), TokenGroup: selectedRelayTokenGroupFromPayload(payload)}
+	}
+	relayVideoTaskProgress(payload, created, contract, recovery)
 	if videoRelayTaskStatusForContract(created, contract) == "failed" {
 		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoContractErrorMessage(created, contract)}
 	}
-	taskID := videoContractFirstString(created, contract.Polling.TaskIDFields)
 	if taskID == "" {
 		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频上游没有返回任务 ID"}
 	}
+	return a.pollRelayVideoTask(ctx, payload, contract, baseURL, apiKey, queryPath, taskID, recovery)
+}
+
+func (a *App) pollRelayVideoTask(ctx context.Context, payload map[string]any, contract protocol.VideoModelContract, baseURL, apiKey, queryPath, taskID string, recovery *service.VideoTaskRecovery) (map[string]any, error) {
 	interval := time.Duration(contract.Polling.IntervalSeconds) * time.Second
 	timeout := time.Duration(contract.Polling.TimeoutSeconds) * time.Second
 	pollCtx, cancelPolling := context.WithTimeout(ctx, timeout)
@@ -127,50 +148,57 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		}
 		state, pollErr := a.relayJSONAt(pollCtx, baseURL, http.MethodGet, videoContractTaskPath(queryPath, taskID), apiKey, nil)
 		if pollErr != nil {
-			return state, pollingError(pollErr)
-		}
-		relayVideoTaskProgress(payload, state, contract)
-		status := videoRelayTaskStatusForContract(state, contract)
-		if status == "completed" {
-			// New API can settle a charged xAI task as completed while exposing
-			// an explicit error instead of a retrievable video artifact.
-			if detail := util.StringMap(state["error"]); util.Clean(detail["code"]) != "" && util.Clean(detail["message"]) != "" {
-				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: util.Clean(detail["message"])}
+			if pollCtx.Err() != nil || !videoPollingRetryableError(pollErr) {
+				return state, pollingError(pollErr)
 			}
-			videoURL, videoAuth, artifactErr := videoArtifactURLForContract(state, baseURL, taskID, contract)
-			if artifactErr != nil {
-				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: artifactErr.Error()}
-			}
-			if videoURL == "" {
-				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
-			}
-			if videoAuth == "relay" {
-				if callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate)); ok {
-					callback(service.VideoTaskProgressUpdate{Status: service.TaskStatusRunning, UpstreamTaskID: taskID, Progress: 100, HasProgress: true, Recovery: &service.VideoContentRecovery{
-						TaskID: taskID, URL: videoURL, BaseURL: baseURL, AllowedHosts: contract.Artifact.AllowedHosts,
-						TokenName: selectedRelayTokenNameFromPayload(payload), TokenGroup: selectedRelayTokenGroupFromPayload(payload),
-					}})
+		} else {
+			relayVideoTaskProgress(payload, state, contract, nil)
+			status := videoRelayTaskStatusForContract(state, contract)
+			if status == "completed" {
+				// New API can settle a charged xAI task as completed while exposing
+				// an explicit error instead of a retrievable video artifact.
+				if detail := util.StringMap(state["error"]); util.Clean(detail["code"]) != "" && util.Clean(detail["message"]) != "" {
+					if callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate)); ok {
+						callback(service.VideoTaskProgressUpdate{Status: service.TaskStatusRunning, ClearRecovery: true})
+					}
+					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: util.Clean(detail["message"])}
 				}
-				localURL, saveErr := a.downloadRelayVideo(
-					ctx,
-					videoURL,
-					apiKey,
-					util.Clean(payload["owner_id"]),
-					util.Clean(payload["client_task_id"]),
-					taskID,
-					baseURL,
-					contract.Artifact.AllowedHosts,
-				)
-				if saveErr != nil {
-					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已生成但保存失败: " + saveErr.Error()}
+				videoURL, videoAuth, artifactErr := videoArtifactURLForContract(state, baseURL, taskID, contract)
+				if artifactErr != nil {
+					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: artifactErr.Error()}
 				}
-				videoURL = localURL
+				if videoURL == "" {
+					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
+				}
+				if videoAuth == "relay" {
+					if recovery != nil {
+						recovery.URL = videoURL
+					}
+					if callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate)); ok {
+						callback(service.VideoTaskProgressUpdate{Status: service.TaskStatusRunning, UpstreamTaskID: taskID, Progress: 100, HasProgress: true, Recovery: recovery})
+					}
+					localURL, saveErr := a.downloadRelayVideo(
+						ctx,
+						videoURL,
+						apiKey,
+						util.Clean(payload["owner_id"]),
+						util.Clean(payload["client_task_id"]),
+						taskID,
+						baseURL,
+						contract.Artifact.AllowedHosts,
+					)
+					if saveErr != nil {
+						return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已生成但保存失败: " + saveErr.Error()}
+					}
+					videoURL = localURL
+				}
+				return map[string]any{"created": state["created_at"], "data": []map[string]any{{"url": videoURL, "type": "video", "mime_type": "video/mp4", "video_url": videoURL}}, "output_type": "video", "model": payload["model"]}, nil
 			}
-			return map[string]any{"created": state["created_at"], "data": []map[string]any{{"url": videoURL, "type": "video", "mime_type": "video/mp4", "video_url": videoURL}}, "output_type": "video", "model": payload["model"]}, nil
+			if status == "failed" {
+				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoContractErrorMessage(state, contract)}
+			}
 		}
-		if status == "failed" {
-			return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoContractErrorMessage(state, contract)}
-		}
+
 		timer := time.NewTimer(interval)
 		select {
 		case <-pollCtx.Done():
@@ -179,6 +207,26 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		case <-timer.C:
 		}
 	}
+}
+
+// Query retries must never cross back into the paid submission path.
+func videoPollingRetryableError(err error) bool {
+	var httpErr protocol.HTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.Status {
+		case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
+			http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true
+		default:
+			return false
+		}
+	}
+	var networkErr net.Error
+	if errors.As(err, &networkErr) && (networkErr.Timeout() || networkErr.Temporary()) {
+		return true
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func sortedMapKeys(value map[string]any) []string {
@@ -591,7 +639,7 @@ func inferredVideoContractGenerationKind(payload map[string]any) string {
 	videoReferences := util.AsStringSlice(payload["reference_video_urls"])
 	audioReferences := util.AsStringSlice(payload["reference_audio_urls"])
 	referenceMode := normalizeVideoReferenceMode(util.Clean(payload["reference_mode"]))
-	if referenceMode == "reference" || len(videoReferences)+len(audioReferences) > 0 {
+	if referenceMode == "reference" && len(imageReferences) > 0 || len(videoReferences)+len(audioReferences) > 0 {
 		return "reference"
 	}
 	if len(frameReferences)+len(imageReferences) > 0 {
@@ -702,7 +750,18 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 	redirectPolicy := client.CheckRedirect
 	clientCopy := *client
 	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if err := validateAuthenticatedVideoArtifactURL(req.URL.String(), baseURL, allowedHosts); err != nil {
+		var previous *http.Request
+		if len(via) > 0 {
+			previous = via[len(via)-1]
+		}
+		if previous != nil && (!sameHTTPOrigin(req.URL, previous.URL) || previous.Header.Get("Authorization") == "") {
+			// Hi.Run's content endpoint redirects to a signed storage URL. The
+			// signed URL is public and must never receive the upstream Bearer key.
+			req.Header.Del("Authorization")
+			if req.URL.Scheme != "https" || !isPublicReferenceURL(req.URL.String()) {
+				return fmt.Errorf("拒绝跨域跳转到非公网 HTTPS 视频地址")
+			}
+		} else if err := validateAuthenticatedVideoArtifactURL(req.URL.String(), baseURL, allowedHosts); err != nil {
 			return err
 		}
 		if redirectPolicy != nil {
@@ -726,6 +785,30 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
+		}
+		if a.logger != nil {
+			responseHost, responsePath := "", ""
+			if resp.Request != nil && resp.Request.URL != nil {
+				responseHost = resp.Request.URL.Hostname()
+				responsePath = resp.Request.URL.Path
+			}
+			locationHost := ""
+			if location := strings.TrimSpace(resp.Header.Get("Location")); location != "" {
+				if parsed, parseErr := url.Parse(location); parseErr == nil {
+					locationHost = parsed.Hostname()
+				}
+			}
+			a.logger.Warning("video content download response failed",
+				"task_id", upstreamTaskID,
+				"attempt", attempt+1,
+				"status", resp.StatusCode,
+				"host", responseHost,
+				"path", responsePath,
+				"location_host", locationHost,
+				"content_type", resp.Header.Get("Content-Type"),
+				"content_length", resp.ContentLength,
+				"request_id", firstNonEmpty(resp.Header.Get("X-Request-ID"), resp.Header.Get("CF-Ray")),
+			)
 		}
 		retry := attempt+1 < maxAttempts && videoContentRetryableStatus(resp.StatusCode)
 		if !retry {
@@ -907,7 +990,7 @@ func videoRelayTaskStatusForContract(state map[string]any, contract protocol.Vid
 	return "unknown"
 }
 
-func relayVideoTaskProgress(payload map[string]any, state map[string]any, contract protocol.VideoModelContract) {
+func relayVideoTaskProgress(payload map[string]any, state map[string]any, contract protocol.VideoModelContract, recovery *service.VideoTaskRecovery) {
 	callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate))
 	if !ok || callback == nil || state == nil {
 		return
@@ -920,6 +1003,8 @@ func relayVideoTaskProgress(payload map[string]any, state map[string]any, contra
 	progress, hasProgress := videoContractProgressForContract(state, contract)
 	callback(service.VideoTaskProgressUpdate{
 		Status:         taskStatus,
+		Recovery:       recovery,
+		ClearRecovery:  normalizedStatus == "failed",
 		UpstreamStatus: strings.ToLower(videoContractFirstString(state, contract.Polling.StatusFields)),
 		UpstreamTaskID: videoContractFirstString(state, contract.Polling.TaskIDFields),
 		Progress:       progress,

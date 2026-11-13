@@ -1,0 +1,34 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "movieID": "video-canvas-5d7e1221ff8c1e3f02e99d36",
+  "checks": [
+    {
+      "name": "playback",
+      "passed": true,
+      "duration": 60,
+      "time": 0.946391,
+      "width": 768,
+      "height": 1376
+    },
+    {
+      "name": "download",
+      "passed": true,
+      "bytes": 18130686
+    },
+    {
+      "name": "refresh_preserves_chat_and_movie",
+      "passed": true,
+      "messageCount": 12
+    },
+    {
+      "name": "mobile_agent_and_movie_layout",
+      "passed": true,
+      "width": 390
+    },
+    {
+      "name": "page_runtime",
+      "passed": true
+    }
+  ],
+  "qualityApproved": false
+}

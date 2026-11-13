@@ -1,0 +1,1566 @@
+{
+  "phase": "before",
+  "checks": [
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 6,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 8550,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 157.60000002384186,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 94.20000004768372,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 86.89999997615814,
+          "shape": "object"
+        },
+        {
+          "chars": 9208766,
+          "ms": 41.10000002384186,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 817.5,
+          "ms": 214
+        },
+        {
+          "start": 1035,
+          "ms": 79
+        },
+        {
+          "start": 1252,
+          "ms": 58
+        },
+        {
+          "start": 2868.5999999046326,
+          "ms": 119
+        },
+        {
+          "start": 3199.5999999046326,
+          "ms": 312
+        },
+        {
+          "start": 3524.5,
+          "ms": 89
+        },
+        {
+          "start": 3632.2999999523163,
+          "ms": 98
+        },
+        {
+          "start": 4737.899999976158,
+          "ms": 478
+        },
+        {
+          "start": 5217.299999952316,
+          "ms": 590
+        },
+        {
+          "start": 5819.299999952316,
+          "ms": 193
+        },
+        {
+          "start": 6722,
+          "ms": 91
+        },
+        {
+          "start": 6815.199999928474,
+          "ms": 136
+        },
+        {
+          "start": 7127.099999904633,
+          "ms": 72
+        },
+        {
+          "start": 7823.799999952316,
+          "ms": 613
+        },
+        {
+          "start": 8436.799999952316,
+          "ms": 71
+        }
+      ]
+    },
+    {
+      "readyMs": 6528,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 113.80000007152557,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 113.60000002384186,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 81.80000007152557,
+          "shape": "object"
+        },
+        {
+          "chars": 9208766,
+          "ms": 75.39999997615814,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 745.3999999761581,
+          "ms": 57
+        },
+        {
+          "start": 2212.0999999046326,
+          "ms": 257
+        },
+        {
+          "start": 2483.7999999523163,
+          "ms": 116
+        },
+        {
+          "start": 2608.399999976158,
+          "ms": 160
+        },
+        {
+          "start": 2770.1999999284744,
+          "ms": 110
+        },
+        {
+          "start": 3796.6999999284744,
+          "ms": 428
+        },
+        {
+          "start": 4226.399999976158,
+          "ms": 556
+        },
+        {
+          "start": 4790.899999976158,
+          "ms": 202
+        },
+        {
+          "start": 6095.899999976158,
+          "ms": 373
+        }
+      ]
+    },
+    {
+      "readyMs": 7102,
+      "copies": [
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 104.89999997615814,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 9208766,
+          "ms": 135.89999997615814,
+          "hasSessions": true
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.10000002384185791,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0.09999990463256836,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        },
+        {
+          "kind": "document",
+          "chars": 214,
+          "ms": 0,
+          "hasSessions": false
+        }
+      ],
+      "serializations": [
+        {
+          "chars": 9208766,
+          "ms": 45.60000002384186,
+          "shape": "object"
+        },
+        {
+          "chars": 9208766,
+          "ms": 79.89999997615814,
+          "shape": "object"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 850.5,
+          "ms": 51
+        },
+        {
+          "start": 905.3999999761581,
+          "ms": 54
+        },
+        {
+          "start": 2489.5,
+          "ms": 297
+        },
+        {
+          "start": 2798.899999976158,
+          "ms": 107
+        },
+        {
+          "start": 2907.3000000715256,
+          "ms": 63
+        },
+        {
+          "start": 2987.7000000476837,
+          "ms": 76
+        },
+        {
+          "start": 3967.7000000476837,
+          "ms": 435
+        },
+        {
+          "start": 4404.700000047684,
+          "ms": 580
+        },
+        {
+          "start": 5008.899999976158,
+          "ms": 150
+        },
+        {
+          "start": 6000.600000023842,
+          "ms": 58
+        },
+        {
+          "start": 6604.300000071526,
+          "ms": 363
+        },
+        {
+          "start": 7002.300000071526,
+          "ms": 53
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "canvasReadRequests": 6,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "editCopies": [
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 9208765,
+      "ms": 54.09999990463257,
+      "hasSessions": true
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.09999990463256836,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 9208764,
+      "ms": 91.29999995231628,
+      "hasSessions": true
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 9208765,
+      "ms": 97.79999995231628,
+      "hasSessions": true
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 214,
+      "ms": 0.10000002384185791,
+      "hasSessions": false
+    },
+    {
+      "kind": "document",
+      "chars": 9208765,
+      "ms": 55.200000047683716,
+      "hasSessions": true
+    }
+  ],
+  "editSerializations": [
+    {
+      "chars": 9207824,
+      "ms": 67.70000004768372,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 85.40000009536743,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207946,
+      "ms": 33.60000002384186,
+      "shape": "object"
+    },
+    {
+      "chars": 9207946,
+      "ms": 81.89999997615814,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 38.5,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 78.89999997615814,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 66.90000009536743,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 42.300000071525574,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9208765,
+      "ms": 28.299999952316284,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 71.20000004768372,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 89.19999992847443,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207946,
+      "ms": 30.700000047683716,
+      "shape": "object"
+    },
+    {
+      "chars": 9207946,
+      "ms": 77.19999992847443,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 75,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 65.70000004768372,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 53.10000002384186,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 60.5,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9208764,
+      "ms": 62.09999990463257,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 44.5,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 52.89999997615814,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207946,
+      "ms": 39.199999928474426,
+      "shape": "object"
+    },
+    {
+      "chars": 9207946,
+      "ms": 87.5,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 46.200000047683716,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 88.89999997615814,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 71.39999997615814,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 82.69999992847443,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9208765,
+      "ms": 30.899999976158142,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 47.40000009536743,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 48.89999997615814,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207946,
+      "ms": 34.10000002384186,
+      "shape": "object"
+    },
+    {
+      "chars": 9207946,
+      "ms": 101.20000004768372,
+      "shape": "object"
+    },
+    {
+      "chars": 9207824,
+      "ms": 74.70000004768372,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 88.20000004768372,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 72.5,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9207824,
+      "ms": 49.5,
+      "shape": "array-10"
+    },
+    {
+      "chars": 9208765,
+      "ms": 32.700000047683716,
+      "shape": "object"
+    }
+  ],
+  "editLongTasks": [
+    {
+      "start": 7197.5,
+      "ms": 885
+    },
+    {
+      "start": 8160.800000071526,
+      "ms": 714
+    },
+    {
+      "start": 8892.399999976158,
+      "ms": 286
+    },
+    {
+      "start": 13980.700000047684,
+      "ms": 569
+    },
+    {
+      "start": 14553.800000071526,
+      "ms": 652
+    },
+    {
+      "start": 15374.700000047684,
+      "ms": 314
+    },
+    {
+      "start": 15881.300000071526,
+      "ms": 692
+    },
+    {
+      "start": 16594.100000023842,
+      "ms": 283
+    },
+    {
+      "start": 17201,
+      "ms": 102
+    },
+    {
+      "start": 21284.100000023842,
+      "ms": 610
+    },
+    {
+      "start": 21896.899999976158,
+      "ms": 619
+    },
+    {
+      "start": 22553.399999976158,
+      "ms": 127
+    },
+    {
+      "start": 22682.800000071526,
+      "ms": 65
+    },
+    {
+      "start": 22792.800000071526,
+      "ms": 576
+    },
+    {
+      "start": 23503.600000023842,
+      "ms": 659
+    },
+    {
+      "start": 24204.5,
+      "ms": 276
+    },
+    {
+      "start": 24758,
+      "ms": 55
+    },
+    {
+      "start": 28777.100000023842,
+      "ms": 610
+    },
+    {
+      "start": 29390.800000071526,
+      "ms": 658
+    },
+    {
+      "start": 30052.200000047684,
+      "ms": 124
+    },
+    {
+      "start": 30278.399999976158,
+      "ms": 525
+    },
+    {
+      "start": 30924,
+      "ms": 651
+    },
+    {
+      "start": 31624.700000047684,
+      "ms": 246
+    },
+    {
+      "start": 32164.700000047684,
+      "ms": 90
+    },
+    {
+      "start": 36490.200000047684,
+      "ms": 58
+    },
+    {
+      "start": 36549.200000047684,
+      "ms": 600
+    },
+    {
+      "start": 37152.39999997616,
+      "ms": 618
+    },
+    {
+      "start": 37774.89999997616,
+      "ms": 175
+    }
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

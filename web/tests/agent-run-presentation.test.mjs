@@ -9,6 +9,7 @@ import { Tool, ToolDetails } from "../src/components/ai-elements/tool.tsx";
 import { RunStatus } from "../src/components/ai-elements/run-status.tsx";
 import { CanvasAgentQuestionCard } from "../src/app/canvas/canvas-agent-interaction.tsx";
 import { CanvasAgentExecution } from "../src/app/canvas/canvas-agent-execution.tsx";
+import { CanvasAgentExecutionTrace } from "../src/app/canvas/canvas-agent-execution-trace.tsx";
 import { ImageResults } from "../src/app/image/components/image-results.tsx";
 import { Conversation } from "../src/components/ai-elements/conversation.tsx";
 import { TooltipProvider } from "../src/components/ui/tooltip.tsx";
@@ -18,25 +19,38 @@ const render = (component, props, ...children) => renderToStaticMarkup(createEle
 test("video results preserve queued, saving, stopped and recoverable failure states", () => {
  const now = "2026-11-10T00:00:00Z";
  const scenarios = [
-  { status: "loading", taskStatus: "queued", runStatus: "waiting", title: "视频排队中", body: "等待任务开始" },
-  { status: "loading", taskStatus: "running", runStatus: "running", title: "正在生成视频", body: "正在把你的想法变成动态画面" },
-  { status: "loading", taskStatus: "running", taskProgress: 100, runStatus: "running", title: "正在保存视频", body: "正在等待视频结果" },
+  { status: "loading", taskStatus: "queued", runStatus: "waiting", title: "视频排队中" },
+  { status: "loading", taskStatus: "running", runStatus: "running", title: "正在生成视频" },
+  { status: "loading", taskStatus: "running", taskProgress: 0, runStatus: "running", title: "正在生成视频" },
+  { status: "loading", taskStatus: "running", taskProgress: 42, runStatus: "running", title: "正在生成视频" },
+  { status: "loading", taskStatus: "running", taskProgress: 100, runStatus: "running", title: "正在保存视频", body: "正在获取生成结果" },
   { status: "error", runStatus: "error", title: "视频生成失败", body: "重试视频生成", error: "isolated failure" },
-  { status: "error", canRecoverVideo: true, runStatus: "error", title: "视频已生成，保存失败", body: "重试保存视频", error: "isolated save failure" },
+  { status: "error", canRecoverVideo: true, runStatus: "error", title: "原视频任务待恢复", body: "恢复原任务", error: "isolated save failure" },
+  { status: "cancelled", canRecoverVideo: true, runStatus: "cancelled", title: "原视频任务待恢复", body: "恢复原任务" },
   { status: "cancelled", runStatus: "cancelled", title: "视频生成已终止", body: "此视频任务已停止" },
  ];
  for (const scenario of scenarios) {
   const turn = { id: "turn", createdAt: now, processingStartedAt: now, prompt: "隔离视频提示词", model: "isolated-video", mode: "video", size: "auto", count: 1, status: scenario.status === "loading" ? scenario.taskStatus === "queued" ? "queued" : "generating" : scenario.status, referenceImages: [], images: [{ id: "video", mediaType: "video", ...scenario }] };
   const html = render(TooltipProvider, {}, createElement(Conversation, {}, createElement(ImageResults, {
-   conversationId: "conversation", selectedConversation: { id: "conversation", turns: [turn] }, progressByTurnKey: {}, progressNow: Date.parse(now) + 12000, formatConversationTime: () => "刚刚",
+   conversationId: "conversation", selectedConversation: { id: "conversation", turns: [turn] }, progressByTurnKey: { "conversation:turn": { message: "正在生成视频" } }, progressNow: Date.parse(now) + 12000, formatConversationTime: () => "刚刚",
   })));
-  assert.match(html, new RegExp(`data-ai-element="run-status" data-status="${scenario.runStatus}"`));
+  if (scenario.status === "loading") {
+   assert.match(html, /aria-label="视频 1"/);
+   assert.doesNotMatch(html, /data-ai-element="run-status"/);
+  } else {
+   assert.match(html, new RegExp(`data-ai-element="run-status" data-status="${scenario.runStatus}"`));
+   assert.ok(html.includes("视频 1 · isolated-video"));
+   assert.match(html, /data-slot="card-footer"/);
+  }
   assert.ok(html.includes(scenario.title), scenario.title);
-  assert.ok(html.includes("视频 1 · isolated-video"));
-  assert.ok(html.includes(scenario.body), scenario.body);
-  assert.match(html, /data-slot="card-footer"/);
+  if (scenario.body) assert.ok(html.includes(scenario.body), scenario.body);
   if (scenario.status === "loading") assert.match(html, /终止生成/);
   else assert.doesNotMatch(html, />终止生成</);
+  assert.equal((html.match(/data-slot="spinner"/g) || []).length, scenario.runStatus === "running" ? 1 : 0, "Each video task has at most one loading spinner");
+  assert.equal(html.split(`>${scenario.title}<`).length - 1, 1, "The task status is shown once");
+  const hasProgress = scenario.taskProgress !== undefined && scenario.taskProgress < 100;
+  assert.equal(html.includes('data-slot="progress"'), hasProgress, "Only reported generation progress is shown");
+  if (hasProgress) assert.ok(html.includes(`aria-valuenow="${scenario.taskProgress}"`));
   if (scenario.taskProgress === 100) assert.doesNotMatch(html, /data-status="success"|data-slot="progress"/);
   if (scenario.error) assert.ok(html.includes(scenario.error));
  }
@@ -123,6 +137,18 @@ test("canvas execution shows plans, workflow contents and failed node context", 
  const failed = render(CanvasAgentExecution, { nodes: [], running: false, entry: { ...base, kind: "edit", label: "正在更新节点", status: "error", detail: "节点不存在", tool: { name: "update_node", input: { nodeId: "missing-node" } } } });
  assert.match(failed, /missing-node/); assert.match(failed, /节点不存在/);
 });
+test("a tool batch containing an execution plan does not nest a second progress plan", () => {
+ const html = render(CanvasAgentExecutionTrace, {
+  nodes: [], running: true, renderText: (text) => text,
+  entries: [
+   { id: "read", type: "operation", kind: "read", label: "已读取节点", status: "success", detail: "", tool: { name: "get_node", input: {}, output: { ok: true } } },
+   { id: "plan", type: "operation", kind: "plan", label: "正在更新执行计划", status: "success", detail: "", tool: { name: "update_plan", input: { steps: [{ id: "check", title: "核对任务", status: "in_progress" }] }, output: { ok: true } } },
+  ],
+ });
+ assert.match(html, /执行计划/);
+ assert.match(html, /核对任务/);
+ assert.doesNotMatch(html, /执行步骤/);
+});
 test("confirmation displays its reason without selecting or submitting an answer", () => {
  let answers = 0;
  const html = render(CanvasAgentQuestionCard, { active: true, busy: false, onAnswer: () => { answers++; return true; }, question: { id: "approval", kind: "confirmation", question: "删除选中节点？", reason: "删除后相关连线会清理", options: ["确认删除", "取消"], request: "删除节点" } });
@@ -155,8 +181,14 @@ test("failed canvas tasks expose retry even without response text", async () => 
  }
  const busy = renderConversation({ ...props, run: { assistantId: "agent", status: "error" }, busy: true });
  assert.match(busy, /<button[^>]*disabled=""[^>]*>.*重试<\/button>/);
+ const uncertain = renderConversation({ ...props, messages: [{ id: "user", role: "user", text: "继续" }, { id: "agent", role: "assistant", text: "执行状态待核实：工具任务已结束，但未返回执行结果。请先核对画布状态。", status: "error" }], resumable: true, onResume() {} });
+ assert.match(uncertain, /data-agent-status-unknown="true"/);
+ assert.match(uncertain, /执行状态待核实/);
+ assert.doesNotMatch(uncertain, /data-agent-retry-actions|继续未完成任务|aria-label="重试"/);
  for (const extra of [{ run: { assistantId: "agent", status: "running" } }, { run: { assistantId: "agent", status: "waiting" }, pendingQuestion: "确认删除？", resumable: true, onResume() {} }]) {
   const html = renderConversation({ ...props, ...extra });
   assert.doesNotMatch(html, /data-agent-retry-actions|aria-label="重试"/);
  }
+ const awaitingMediaChoice = renderConversation({ ...props, run: { assistantId: "agent", status: "waiting" }, resumable: false, onResume() {} });
+ assert.doesNotMatch(awaitingMediaChoice, /data-agent-retry-actions|继续未完成任务/);
 });

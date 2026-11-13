@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-11-12T11:53:34.826Z",
+  "checks": [
+    {
+      "name": "real_get_node_fingerprint_and_confirmation_preserve_every_content_field",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-90712bb5dca3d7c6f462b349",
+  "error": "locator.waitFor: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('complementary', { name: 'Agent 对话面板' }) to be visible\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-script-confirm-tool.mjs:34:78",
+  "finishedAt": "2026-11-12T11:54:23.370Z"
+}

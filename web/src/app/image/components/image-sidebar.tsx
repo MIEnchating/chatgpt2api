@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, History, X, SquarePen, Search, Trash2, Pin, PinOff, MoreHorizontal, Pencil, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { useAppMeta } from "@/lib/use-app-meta";
+import { resolveSiteIconSrc } from "@/lib/app-meta";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipButton } from "@/components/ui/tooltip";
@@ -72,7 +73,10 @@ export function ImageSidebar({
     <aside aria-label="创作会话" className="h-full min-h-0">
       <div className="flex h-full min-h-0 flex-col gap-3">
         <div className="flex min-h-12 items-center gap-1">
-          <span className="min-w-0 flex-1 truncate px-2 text-lg font-semibold">{appMeta.app_title}</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
+            <img src={resolveSiteIconSrc(appMeta.site_icon_url)} alt="" aria-hidden="true" className="size-8 shrink-0 object-contain" />
+            <span className="min-w-0 truncate text-lg font-semibold">{appMeta.app_title}</span>
+          </div>
           <TooltipButton tooltip="搜索会话" aria-label="搜索会话" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); setQuery(""); }}><Search className="size-5" /></TooltipButton>
         </div>
         {!hideActionButtons && (

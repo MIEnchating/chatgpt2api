@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import test, { after } from 'node:test';
 
-const source = readFileSync(new URL('./openai-fit-minimax-video-1.0.2.js', import.meta.url));
+const source = readFileSync(new URL('./openai-fit-minimax-video-1.2.0.js', import.meta.url));
 const plugin = await import(`data:text/javascript;base64,${source.toString('base64')}`);
 const document = JSON.parse(readFileSync(new URL('./contract.json', import.meta.url)));
 const models = JSON.parse(readFileSync(new URL('./source-models.json', import.meta.url))).models;
@@ -20,14 +20,15 @@ function checkReject(name, ctx, message) {
   cases.push({ name, hook: 'buildSubmitRequest', args: [ctx], expectedError: message });
 }
 
-test('one standalone plugin embeds only the five currently listed MiniMax contracts', () => {
+test('one standalone plugin embeds one MiniMax contract with five model profiles', () => {
   assert.equal(plugin.meta.key, 'openai-fit-minimax');
-  assert.equal(plugin.meta.version, '1.0.2');
+	assert.equal(plugin.meta.version, '1.2.0');
   assert.equal(plugin.meta.baseUrl, 'https://openai.fit');
   assert.equal(plugin.meta.auth, 'api_key');
   assert.deepEqual(plugin.meta.protocols, ['openai_video']);
   assert.deepEqual(plugin.meta.models, models.map(row => row.model_name));
-  assert.equal(document.contracts.length, 5);
+	assert.equal(document.contracts.length, 1);
+	assert.equal(document.contracts[0].contract.model_profiles.length, 5);
   assert.equal(plugin.meta.usageProfiles.length, 4);
   for (const model of ['minimax H3 768 Spica', 'minimax-h3-chovy', 'minimax-H3-super']) {
     const profile = plugin.meta.usageProfiles.find(item => item.models.includes(model));
@@ -40,8 +41,9 @@ test('one standalone plugin embeds only the five currently listed MiniMax contra
 });
 
 for (const { contract } of document.contracts) {
-  const model = contract.models[0];
-  const cap = contract.capability;
+ for (const profile of contract.model_profiles) {
+  const model = profile.model;
+  const cap = profile.capability;
   const self = model === 'minimax H3-self';
   const perCall = ['minimax H3 768 Spica', 'minimax-h3-chovy', 'minimax-H3-super'].includes(model);
   const base = { model, prompt: 'A cloud moving slowly' };
@@ -80,7 +82,11 @@ for (const { contract } of document.contracts) {
     } else checkReject(`${model} rejects audio`, context({ ...base, audio_urls: [audio(0)] }), '未声明');
     if (!self) checkReject(`${model} requires HTTPS`, context({ ...base, image_urls: ['http://media.example.com/a.jpg'] }), 'HTTPS');
     checkReject(`${model} rejects local path`, context({ ...base, image_urls: ['/tmp/image.jpg'] }), 'URL');
-    checkReject(`${model} rejects inline base64`, context({ ...base, image_urls: ['data:image/png;base64,YQ=='] }), 'URL');
+    if (self) {
+      checkSubmit(`${model} accepts inline Base64`, context({ ...base, image_urls: ['data:image/png;base64,YQ=='] }), output(cap.default_seconds, cap.default_size, cap.default_resolution, { ref_image_0: 'data:image/png;base64,YQ==' }));
+      checkReject(`${model} rejects malformed Base64`, context({ ...base, image_urls: ['data:image/png;base64,@@@'] }), 'Base64');
+      checkReject(`${model} rejects wrong Base64 media type`, context({ ...base, image_urls: ['data:video/mp4;base64,YQ=='] }), '类型');
+    } else checkReject(`${model} rejects inline base64`, context({ ...base, image_urls: ['data:image/png;base64,YQ=='] }), 'URL');
     const ctx = { ...context(body), usagePurpose: 'facts' };
     const expected = perCall
       ? { count: 1, resolution: cap.default_resolution }
@@ -89,6 +95,7 @@ for (const { contract } of document.contracts) {
     cases.push({ name: `${model} billing facts`, hook: 'extractUsage', args: [ctx], expected });
     assert.deepEqual(plugin.extractUsage({ ...ctx, usagePurpose: 'billing_ratios' }), {});
   });
+ }
 }
 
 test('Spica requires an image with audio; Chovy audio placeholders must exist', () => {
@@ -139,7 +146,7 @@ test('submission, polling, errors, artifacts and authenticated GET/HEAD download
   const submitted = { taskId: 'task_provider', taskData: submit.body };
   assert.deepEqual(plugin.parseSubmitResponse({}, submit), submitted);
   cases.push({ name: 'parse submission', hook: 'parseSubmitResponse', args: [{}, submit], expected: submitted });
-  const ctx = { ...context({}), taskId: 'task_provider' };
+  const ctx = { ...context({ model: 'minimax H3-self' }), taskId: 'task_provider' };
   const query = { url: 'https://channel.example.com/v1/videos/task_provider', method: 'GET', headers: { Authorization: 'Bearer fixture-key' } };
   assert.deepEqual(plugin.buildQueryRequest(ctx), query);
   cases.push({ name: 'query channel URL', hook: 'buildQueryRequest', args: [ctx], expected: query });

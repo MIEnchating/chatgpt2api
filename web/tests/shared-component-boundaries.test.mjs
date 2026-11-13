@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
+import { canvasDocumentValuesEqual } from "../src/app/canvas/canvas-document-equality.ts";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { createElement } from "react";
+import { createElement, lazy } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createHash } from "node:crypto";
 import { ScrollArea } from "../src/components/ui/scroll-area.tsx";
 import { LabeledField } from "../src/components/labeled-field.tsx";
 import { IMAGE_ASPECT_RATIO_PRESET_OPTIONS } from "../src/lib/image-options.ts";
 import * as imageOptions from "../src/lib/image-options.ts";
+import { resolveSiteIconSrc } from "../src/lib/app-meta.ts";
 
 function hooks() {
   const slots = [];
@@ -79,6 +81,230 @@ function event(target, currentTarget = target, key = "ArrowDown") {
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("Agent recovery checks saved tasks silently and keeps live progress and retry actions available", () => {
+  let snapshot = { run: null, loading: true, action: "idle", error: "" };
+  let retries = 0, opened = 0;
+  const { AgentExecutionRecovery } = loadSource("../src/components/agent/agent-execution-recovery.tsx", {
+    "./use-agent-execution": { useAgentExecution: () => ({ ...snapshot, refresh: () => retries++, continueRun: () => opened++ }) },
+  });
+  const props = { domain: "video_contract", busy: false, onResult() {} };
+  assert.equal(AgentExecutionRecovery(props), null);
+  snapshot = { ...snapshot, loading: false };
+  assert.equal(AgentExecutionRecovery(props), null);
+  snapshot = { ...snapshot, error: "网络中断" };
+  descendants(AgentExecutionRecovery(props)).find(node => node.type === "Button").props.onClick();
+  assert.equal(retries, 1);
+  snapshot = { ...snapshot, error: "", loading: true };
+  assert.equal(AgentExecutionRecovery({ ...props, busy: true }), null);
+  assert.ok(descendants(AgentExecutionRecovery({ ...props, busy: true, activeID: "submitted" })).some(node => node.type === "LoadingState"));
+  snapshot = { ...snapshot, loading: false, run: { id: "saved", status: "success", events: [] } };
+  const recovered = AgentExecutionRecovery(props);
+  assert.equal(recovered.props["data-agent-execution-recovery"], true);
+  descendants(recovered).find(node => node.type === "Button" && node.props.onClick).props.onClick();
+  assert.equal(opened, 1);
+});
+
+test("node editor Escape keeps IME candidate cancellation inside the input", () => {
+  const state = hooks();
+  const { CanvasNodeEditor } = loadSource("../src/app/canvas/canvas-node-editor.tsx", { react: state.react });
+  let closed = 0;
+  const root = state.render(CanvasNodeEditor, { title: "文本", open: true, children: null, onClose: () => { closed++; } });
+  const editor = descendants(root).find(node => node.type === "PromptInput");
+  const currentTarget = { contains: () => true };
+  for (const nativeEvent of [{ isComposing: true }, { keyCode: 229 }]) {
+    editor.props.onKeyDown({ key: "Escape", target: {}, currentTarget, nativeEvent,
+      preventDefault() { assert.fail("IME cancellation must keep its default behavior"); }, stopPropagation() {} });
+  }
+  assert.equal(closed, 0);
+  editor.props.onKeyDown({ key: "Escape", target: {}, currentTarget, nativeEvent: {}, preventDefault() {}, stopPropagation() {} });
+  assert.equal(closed, 1);
+  descendants(root).find(node => node.type === "TooltipButton").props.onClick();
+  const expanded = state.render(CanvasNodeEditor, { title: "文本", open: true, children: null, onClose() {} });
+  const dialog = descendants(expanded).find(node => node.type === "DialogContent");
+  for (const signal of [{ isComposing: true }, { keyCode: 229 }, {}]) {
+    let prevented = false;
+    dialog.props.onEscapeKeyDown({ ...signal, preventDefault() { prevented = true; } });
+    assert.equal(prevented, Boolean(signal.isComposing || signal.keyCode === 229));
+  }
+});
+
+test("floating Agent panel drag ignores other pointers until its initiating pointer finishes", () => {
+  class Surface extends EventTarget {
+    captured = new Set();
+    style = {};
+    offsetLeft = 100;
+    offsetTop = 100;
+    parentElement = null;
+    offsetParent = null;
+    closest() { return null; }
+    contains() { return true; }
+    getBoundingClientRect() { return { left: 100, top: 100, right: 400, bottom: 400, width: 300, height: 300 }; }
+    setPointerCapture(id) { this.captured.add(id); }
+    hasPointerCapture(id) { return this.captured.has(id); }
+    releasePointerCapture(id) { this.captured.delete(id); }
+  }
+  for (const other of ["pointerdown", "pointerup", "pointercancel", "lostpointercapture"]) {
+    const state = hooks(), surface = new Surface(), body = { style: {} };
+    const window = Object.assign(new EventTarget(), { innerWidth: 1000, innerHeight: 800 });
+    const { useCanvasAgentPanelDrag } = loadSource("../src/app/canvas/use-canvas-agent-panel-drag.ts", { react: state.react }, {
+      Element: Surface, HTMLElement: Surface, getComputedStyle: () => ({ position: "fixed" }),
+      window, document: { body }, AbortController,
+      requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+    });
+    const panelRef = { current: surface };
+    const Component = () => useCanvasAgentPanelDrag(panelRef, true);
+    const pointer = id => ({ button: 0, isPrimary: id === 1, pointerId: id, clientX: 120, clientY: 120, target: surface, currentTarget: surface, preventDefault() {}, stopPropagation() {} });
+    const drag = state.render(Component);
+    drag.startDrag(pointer(1));
+    assert.equal(state.render(Component).dragging, true);
+    if (other === "pointerdown") drag.startDrag(pointer(2));
+    else surface.dispatchEvent(Object.assign(new Event(other), { pointerId: 2 }));
+    assert.equal(state.render(Component).dragging, true, other);
+    assert.equal(surface.hasPointerCapture(1), true, other);
+    surface.dispatchEvent(Object.assign(new Event("pointerup"), { pointerId: 1, clientX: 120, clientY: 120 }));
+    assert.equal(state.render(Component).dragging, false);
+    assert.equal(surface.hasPointerCapture(1), false);
+    assert.notEqual(body.style.cursor, "grabbing");
+  }
+});
+
+test("floating Agent panel commits release coordinates but keeps the last move on cancellation", () => {
+  class Surface extends EventTarget {
+    captured = new Set();
+    style = {};
+    offsetLeft = 100;
+    offsetTop = 100;
+    parentElement = null;
+    offsetParent = null;
+    closest() { return null; }
+    contains() { return true; }
+    getBoundingClientRect() { return { left: 100, top: 100, right: 400, bottom: 400, width: 300, height: 300 }; }
+    setPointerCapture(id) { this.captured.add(id); }
+    hasPointerCapture(id) { return this.captured.has(id); }
+    releasePointerCapture(id) { this.captured.delete(id); }
+  }
+  for (const ending of ["pointerup", "pointercancel", "lostpointercapture", "blur"]) {
+    const state = hooks(), surface = new Surface(), body = { style: { cursor: "crosshair", userSelect: "text" } };
+    const window = Object.assign(new EventTarget(), { innerWidth: 1000, innerHeight: 800 });
+    const frames = new Map();
+    let frameID = 0;
+    const { useCanvasAgentPanelDrag } = loadSource("../src/app/canvas/use-canvas-agent-panel-drag.ts", { react: state.react }, {
+      Element: Surface, HTMLElement: Surface, getComputedStyle: () => ({ position: "fixed" }),
+      window, document: { body }, AbortController,
+      requestAnimationFrame: callback => { frames.set(++frameID, callback); return frameID; },
+      cancelAnimationFrame: id => frames.delete(id),
+    });
+    const Component = () => useCanvasAgentPanelDrag({ current: surface }, true);
+    const begin = () => state.render(Component).startDrag({
+      button: 0, isPrimary: true, pointerId: 1, clientX: 120, clientY: 120,
+      target: surface, currentTarget: surface, preventDefault() {}, stopPropagation() {},
+    });
+    const dispatch = (name, clientX, clientY) => (name === "blur" ? window : surface).dispatchEvent(
+      Object.assign(new Event(name), { pointerId: 1, clientX, clientY }),
+    );
+    begin();
+    dispatch("pointermove", 150, 160);
+    assert.equal(frames.size, 1);
+    dispatch(ending, 220, 240);
+    const expected = ending === "pointerup" ? "100px 120px" : "30px 40px";
+    assert.equal(state.render(Component).translate, expected, ending);
+    assert.equal(surface.style.translate, expected, ending);
+    assert.equal(frames.size, 0);
+    assert.equal(state.render(Component).dragging, false);
+    assert.equal(surface.hasPointerCapture(1), false);
+    assert.equal(body.style.cursor, "crosshair");
+    assert.equal(body.style.userSelect, "text");
+    dispatch("pointermove", 500, 500);
+    assert.equal(state.render(Component).translate, expected, "finished drags remove their listeners");
+    begin();
+    dispatch("pointerup", 2000, -2000);
+    assert.equal(state.render(Component).translate, "600px -100px", "release coordinates obey the panel bounds even without a move");
+  }
+});
+
+test("idle Codex approval skips dialog content and reopens with fresh answers", async () => {
+  const state = hooks();
+  const { useCanvasCodexApproval } = loadSource("../src/app/canvas/agent/use-canvas-codex-approval.tsx", { react: state.react });
+  let current = state.render(useCanvasCodexApproval);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(current.dialog, null);
+    current = state.render(useCanvasCodexApproval);
+  }
+  const controller = new AbortController();
+  const request = { title: "选择风格", questions: [{ id: "style", question: "风格", options: [] }] };
+  const cancelled = current.ask(request, controller.signal);
+  current = state.render(useCanvasCodexApproval);
+  descendants(current.dialog).find(node => node.type === "CanvasAgentAnswerInput").props.onChange("旧答案");
+  controller.abort();
+  assert.equal((await cancelled).accepted, false);
+  current = state.render(useCanvasCodexApproval);
+  assert.equal(current.dialog, null);
+  const reopened = current.ask(request, new AbortController().signal);
+  current = state.render(useCanvasCodexApproval);
+  const nodes = descendants(current.dialog);
+  assert.equal(nodes.find(node => node.type === "CanvasAgentAnswerInput").props.value, "");
+  assert.equal(nodes.find(node => node.type === "Button" && node.props.children === "确认").props.disabled, true);
+  nodes.find(node => node.type === "CanvasAgentAnswerInput").props.onSelect("新答案");
+  const answer = await reopened;
+  assert.equal(answer.accepted, true);
+  assert.deepEqual({ ...answer.answers }, { style: "新答案" });
+  assert.equal(state.render(useCanvasCodexApproval).dialog, null);
+});
+
+test("Codex operation approval uses Confirmation and settles only an explicit decision", async () => {
+  for (const decision of ["确认", "拒绝", "关闭", "取消"]) {
+    const state = hooks();
+    const { useCanvasCodexApproval } = loadSource("../src/app/canvas/agent/use-canvas-codex-approval.tsx", { react: state.react });
+    let current = state.render(useCanvasCodexApproval);
+    const controller = new AbortController();
+    const request = { title: "修改当前项目文件", description: "请核对文件变更后确认", details: "isolated file diff" };
+    let settled = false;
+    const result = current.ask(request, controller.signal).then(answer => { settled = true; return answer; });
+    current = state.render(useCanvasCodexApproval);
+    await flush();
+    assert.equal(settled, false);
+    const nodes = descendants(current.dialog);
+    const confirmation = nodes.find(node => node.type === "Confirmation");
+    assert.ok(confirmation, "Operation approval must use the shared Confirmation");
+    assert.equal(confirmation.props.confirmation, true);
+    assert.equal(confirmation.props.title, request.title);
+    assert.ok(nodes.some(node => node.props?.children === request.description));
+    assert.ok(nodes.some(node => node.type === "CodeBlockContent" && node.props.children === request.details));
+    if (decision === "关闭") current.dialog.props.onOpenChange(false);
+    else if (decision === "取消") controller.abort();
+    else descendants(confirmation.props.actions).find(node => node.type === "Button" && node.props.children === decision).props.onClick();
+    const answer = await result;
+    assert.equal(answer.accepted, decision === "确认");
+    if (answer.accepted) assert.deepEqual(Object.keys(answer.answers), []);
+    current = state.render(useCanvasCodexApproval);
+    assert.equal(current.dialog, null);
+  }
+});
+
+test("Codex questions retain separate drafts and require every answer before confirmation", async () => {
+  const state = hooks();
+  const { useCanvasCodexApproval } = loadSource("../src/app/canvas/agent/use-canvas-codex-approval.tsx", { react: state.react });
+  let current = state.render(useCanvasCodexApproval);
+  const result = current.ask({ title: "补充创作要求", questions: [
+    { id: "style", question: "选择风格", options: [{ label: "极简" }] },
+    { id: "size", question: "选择尺寸", options: [{ label: "方形" }] },
+  ] }, new AbortController().signal);
+  current = state.render(useCanvasCodexApproval);
+  let nodes = descendants(current.dialog);
+  assert.equal(nodes.some(node => node.type === "Confirmation"), false);
+  assert.equal(nodes.find(node => node.type === "Button" && node.props.children === "确认").props.disabled, true);
+  nodes.filter(node => node.type === "CanvasAgentAnswerInput")[0].props.onChange("自定义风格");
+  current = state.render(useCanvasCodexApproval);
+  nodes = descendants(current.dialog);
+  const inputs = nodes.filter(node => node.type === "CanvasAgentAnswerInput");
+  assert.equal(inputs[0].props.value, "自定义风格");
+  assert.equal(inputs[1].props.value, "");
+  inputs[1].props.onSelect("方形");
+  const answer = await result;
+  assert.equal(answer.accepted, true);
+  assert.deepEqual({ ...answer.answers }, { style: "自定义风格", size: "方形" });
+});
 
 test("reference media attachments separate preview, removal and uploading states", () => {
   for (const kind of ["image", "video", "audio"]) {
@@ -304,11 +530,60 @@ function modelPickerFixture(props = {}) {
   return { state, changes, openings, render: (next = {}) => state.render(ModelPicker, { ...defaults, ...props, ...next }) };
 }
 
+test("model categories keep draft order and additions isolated until the shared save", async () => {
+  const { createSettingsStore } = await import("../src/app/settings/store.ts");
+  const { normalizeModelNames } = await import("../src/lib/api.ts");
+  const { groupModelsByFamily } = await import("../src/lib/model-groups.ts");
+  const store = createSettingsStore();
+  const kinds = ["text", "image", "video", "audio"];
+  store.getState().activateSession("model-categories");
+  store.setState({ config: Object.fromEntries(kinds.flatMap(kind => [
+    [`${kind}_models`, [`${kind}-a`, `${kind}-b`]],
+    [`default_${kind}_model`, `${kind}-a`],
+  ])) });
+  const state = hooks();
+  const { ModelConfigCard } = loadSource("../src/app/settings/components/model-config-card.tsx", {
+    react: state.react,
+    "../store": { useSettingsStore: select => select(store.getState()) },
+    "@/lib/api": { normalizeModelNames },
+    "@/lib/model-groups": { groupModelsByFamily },
+    "@/lib/use-relay-token-preferences": { useRelayTokenPreferences: () => ({ tokenNames: Object.fromEntries(kinds.map(kind => [kind, []])) }) },
+  });
+  const render = () => descendants(state.render(ModelConfigCard, { session: { key: "model-categories" } }));
+  const lists = () => render().filter(node => node.type.name === "GlobalModelList");
+  const list = kind => lists().find(node => node.props.kind === kind).props;
+  for (const kind of kinds) {
+    const otherDrafts = lists().filter(node => node.props.kind !== kind).map(node => [node.props.kind, [...node.props.models]]);
+    list(kind).onChange([`${kind}-b`, `${kind}-a`]);
+    assert.deepEqual(list(kind).models, [`${kind}-b`, `${kind}-a`]);
+    assert.equal(store.getState().config[`default_${kind}_model`], `${kind}-b`);
+    list(kind).onAdd();
+    const dialog = render().find(node => node.type.name === "AddModelDialog").props;
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.initialKind, kind);
+    dialog.onAdd(kind, [`${kind}-c`]);
+    assert.deepEqual(list(kind).models, [`${kind}-b`, `${kind}-a`, `${kind}-c`]);
+    const tab = render().find(node => node.type === "TabsTrigger" && node.props.value === kind);
+    assert.equal(descendants(tab).find(node => node.type === "Badge").props.children, 3);
+    for (const [otherKind, models] of otherDrafts) assert.deepEqual(list(otherKind).models, models);
+  }
+  list("audio").onClear();
+  assert.deepEqual(list("audio").models, []);
+  assert.equal(store.getState().config.default_audio_model, "");
+  for (const kind of ["text", "image", "video"]) assert.deepEqual(list(kind).models, [`${kind}-b`, `${kind}-a`, `${kind}-c`]);
+  assert.equal(list("image").onConfigure instanceof Function, true);
+  assert.equal(list("video").onConfigure, undefined);
+});
+
 test("shared AI model selection normalizes options without replacing unavailable values", () => {
   const fixture = modelPickerFixture();
-  const tree = fixture.render();
-  const nodes = descendants(tree);
+  let tree = fixture.render();
+  const closedNodes = descendants(tree);
   assert.equal(tree.type, "ModelSelector");
+  assert.deepEqual(closedNodes.filter(node => node.type === "ModelSelectorItem"), []);
+  assert.equal(closedNodes.find(node => node.type === "ModelSelectorName").props.children, "image-a");
+  tree.props.onOpenChange(true);
+  const nodes = descendants(fixture.render());
   assert.deepEqual(nodes.filter(node => node.type === "ModelSelectorItem").map(node => node.props.value), ["image-a", "image-b"]);
   assert.equal(nodes.find(node => node.type === "ModelSelectorItem").props["data-checked"], true);
   assert.equal(nodes.find(node => node.type === "Button").props.disabled, false);
@@ -328,6 +603,7 @@ test("AI model selection closes after selection and preserves disabled and dismi
   tree = fixture.render();
   assert.equal(tree.props.open, true);
   let items = descendants(tree).filter(node => node.type === "ModelSelectorItem");
+  assert.equal(items.length, 2);
   items[0].props.onSelect();
   assert.deepEqual(fixture.changes, []);
   assert.equal(fixture.render().props.open, true);
@@ -338,9 +614,12 @@ test("AI model selection closes after selection and preserves disabled and dismi
   tree = fixture.render({ disabled: true });
   tree.props.onOpenChange(true);
   items = descendants(tree).filter(node => node.type === "ModelSelectorItem");
-  items[1].props.onSelect();
+  assert.deepEqual(items, []);
   assert.deepEqual(fixture.changes, ["image-b"]);
   assert.equal(fixture.render({ disabled: true }).props.open, false);
+  tree = fixture.render();
+  assert.ok(!descendants(tree).some(node => node.props?.children === "报价 image-b"));
+  tree.props.onOpenChange(true);
   assert.ok(descendants(fixture.render()).some(node => node.props?.children === "报价 image-b"));
 });
 
@@ -592,6 +871,47 @@ test("pending references neither duplicate committed tokens nor revive unavailab
   layouts.find(item => item.dependencies[0] === references).effect();
   assert.deepEqual(nodes.map(node => node.dataset.refNodeId), ["image", "audio"]);
   assert.equal(nodes[1].dataset.pendingReference, "true");
+});
+
+test("unchanged pending references keep their editor nodes across unrelated renders", () => {
+  const state = hooks();
+  const layouts = [];
+  const reference = { id: "image", nodeID: "image", kind: "image", label: "图片1", title: "参考图", active: true };
+  const chip = { dataset: { refNodeId: "image", refLabel: "图片1", tooltip: "参考图", pendingReference: "true" }, remove() { throw new Error("unchanged chip was removed"); } };
+  const editor = { querySelectorAll: () => [chip] };
+  const { CanvasAgentPromptChipInput } = loadSource("../src/app/canvas/canvas-agent-prompt-chip-input.tsx", {
+    react: { ...state.react, useLayoutEffect: (effect, dependencies) => layouts.push({ effect, dependencies }) },
+    "./use-contenteditable-reference-targets": { useContentEditableReferenceTargets: () => [] },
+  });
+  const pending = [reference];
+  const tree = state.render(CanvasAgentPromptChipInput, { value: "", references: [reference], pendingReferences: pending, onChange() {} });
+  descendants(tree).find(node => node.props?.contentEditable).props.ref.current = editor;
+  layouts.find(item => item.dependencies[0] === pending).effect();
+  assert.equal(editor.querySelectorAll()[0], chip);
+});
+
+test("changed pending references replace stale labels and remove deselected chips", () => {
+  const state = hooks();
+  const layouts = [];
+  const chips = [];
+  const makeChip = dataset => ({ dataset, remove() { chips.splice(chips.indexOf(this), 1); } });
+  chips.push(makeChip({ refNodeId: "image", refLabel: "旧标签", tooltip: "旧标题", pendingReference: "true" }));
+  chips.push(makeChip({ refNodeId: "removed", refLabel: "文本", pendingReference: "true" }));
+  const editor = { querySelectorAll: () => chips, scrollHeight: 10 };
+  const reference = { id: "image", nodeID: "image", kind: "image", label: "新标签", title: "新标题", active: true };
+  const pending = [reference];
+  const { CanvasAgentPromptChipInput } = loadSource("../src/app/canvas/canvas-agent-prompt-chip-input.tsx", {
+    react: { ...state.react, useLayoutEffect: (effect, dependencies) => layouts.push({ effect, dependencies }) },
+    "./use-contenteditable-reference-targets": { useContentEditableReferenceTargets: () => [] },
+    "@/app/canvas/canvas-contenteditable": { appendContentEditableInline: (_, ...nodes) => chips.push(...nodes.filter(node => node.dataset)) },
+  }, {
+    Node: { TEXT_NODE: 3 },
+    document: { createElement: () => makeChip({}), createTextNode: textContent => ({ textContent }) },
+  });
+  const tree = state.render(CanvasAgentPromptChipInput, { value: "", references: [reference], pendingReferences: pending, onChange() {} });
+  descendants(tree).find(node => node.props?.contentEditable).props.ref.current = editor;
+  layouts.find(item => item.dependencies[0] === pending).effect();
+  assert.deepEqual(chips.map(chip => ({ ...chip.dataset })), [{ refNodeId: "image", refLabel: "新标签", tooltip: "新标题", pendingReference: "true" }]);
 });
 
 test("reference portals follow editor token changes and release their observer on unmount", () => {
@@ -1034,6 +1354,53 @@ test("canvas project deletion uses shared confirmation while name edits retain v
   assert.equal(submit.props.disabled, false);
   submit.props.onClick();
   assert.deepEqual(changes, [undefined, "新标题"]);
+});
+
+test("closed canvas project and engine dialogs skip forms while reopening and focus handoff still work", () => {
+  const projectState = hooks(), confirmed = [];
+  const { CanvasProjectDialog } = loadSource("../src/app/canvas/canvas-project-dialog.tsx", { react: projectState.react });
+  const projectProps = { open: false, mode: "rename", title: "原画布", onOpenChange() {}, onConfirm: value => confirmed.push(value) };
+  assert.equal(projectState.render(CanvasProjectDialog, projectProps), null);
+  const renderProject = props => descendants(projectState.render(CanvasProjectDialog, props));
+  renderProject({ ...projectProps, open: true });
+  projectState.effects.forEach(effect => effect());
+  let tree = renderProject({ ...projectProps, open: true });
+  tree.find(node => node.type === "Input").props.onChange({ target: { value: "未提交草稿" } });
+  assert.equal(projectState.render(CanvasProjectDialog, projectProps), null);
+  renderProject({ ...projectProps, open: true, title: "外部新标题" });
+  projectState.effects.forEach(effect => effect());
+  tree = renderProject({ ...projectProps, open: true, title: "外部新标题" });
+  assert.equal(tree.find(node => node.type === "Input").props.value, "外部新标题");
+  tree.find(node => node.type === "Button" && node.props.children === "保存").props.onClick();
+  assert.deepEqual(confirmed, ["外部新标题"]);
+  assert.equal(projectState.render(CanvasProjectDialog, { ...projectProps, mode: "delete" }), null);
+
+  const engineState = hooks(), modes = [];
+  let configured = 0, focusPrevented = 0;
+  const { CanvasAgentEnginePicker } = loadSource("../src/app/canvas/canvas-agent-engine-picker.tsx", { react: engineState.react });
+  const engineProps = { mode: "native", disabled: false, connected: false, connecting: false, error: false, onModeChange: value => modes.push(value), onConfigure: () => configured++ };
+  const renderEngine = props => descendants(engineState.render(CanvasAgentEnginePicker, props));
+  tree = renderEngine(engineProps);
+  assert.equal(tree.some(node => node.type === "ScrollArea"), false);
+  tree.find(node => node.type === "Popover").props.onOpenChange(true);
+  tree = renderEngine(engineProps);
+  tree.filter(node => node.type === "Toggle")[1].props.onClick();
+  assert.deepEqual(modes, ["codex"]);
+  tree = renderEngine({ ...engineProps, mode: "codex", disabled: true, connecting: true });
+  assert.ok(tree.filter(node => node.type === "Toggle").every(node => node.props.disabled));
+  assert.ok(tree.some(node => node.type === "Spinner"));
+  tree = renderEngine({ ...engineProps, mode: "codex", connected: true });
+  tree.find(node => node.type === "Button" && node.props.variant === "secondary").props.onClick();
+  assert.equal(configured, 0);
+  tree = renderEngine({ ...engineProps, mode: "codex", connected: true });
+  assert.equal(tree.some(node => node.type === "ScrollArea"), false);
+  const afterClose = tree.find(node => node.type === "PopoverContent").props.onCloseAutoFocus;
+  afterClose({ preventDefault() { focusPrevented++; } });
+  afterClose({ preventDefault() { focusPrevented++; } });
+  assert.equal(configured, 1);assert.equal(focusPrevented, 1);
+  tree.find(node => node.type === "Popover").props.onOpenChange(true);
+  tree = renderEngine({ ...engineProps, mode: "codex", error: true });
+  assert.ok(tree.some(node => node.type === "Badge" && node.props.variant === "destructive"));
 });
 
 test("image preset groups retain every size, selection, automatic mode, and disabled state", () => {
@@ -1502,6 +1869,7 @@ test("conversation search restores the full list when it closes", () => {
   const { ImageSidebar } = loadSource("../src/app/image/components/image-sidebar.tsx", {
     react: state.react,
     "@/lib/use-app-meta": { useAppMeta: () => ({ app_title: "Test" }) },
+    "@/lib/app-meta": { resolveSiteIconSrc },
     "@/app/image/use-history-download": { useHistoryDownload: () => ({ selecting: false, busy: false, selected: new Set() }) },
     "@/store/image-conversations": { getImageConversationStats: () => ({ running: 0, queued: 0 }), isImageConversationHistorySummaryOnly: () => false },
   });
@@ -1850,6 +2218,70 @@ test("only management entries can be pinned while creation and resource links st
 });
 
 
+test("Agent run settings skip closed forms and preserve protocol changes across busy runs", () => {
+  const state = hooks();
+  const { CanvasAgentRunSettings } = loadSource("../src/app/canvas/canvas-agent-run-settings.tsx", { react: state.react });
+  let config = { autoGenerateMedia: false, textApiMode: "responses", textStreaming: true, textReasoningEnabled: true };
+  let writes = 0;
+  const render = (busy = false, mode = "native") => descendants(state.render(CanvasAgentRunSettings, {
+    config, mode, busy, onChange: patch => { writes++; config = { ...config, ...patch }; },
+  }));
+  let nodes = render();
+  assert.equal(nodes.some(node => node.type === "DialogContent"), false);
+  nodes.find(node => node.props?.["aria-label"] === "运行设置").props.onClick();
+  nodes = render();
+  assert.ok(nodes.some(node => node.type === "DialogContent"));
+  nodes.find(node => node.type === "RadioGroup").props.onValueChange("chat");
+  assert.equal(config.textApiMode, "chat");
+  assert.equal(config.textReasoningEnabled, false);
+  nodes = render();
+  const reasoning = nodes.find(node => node.type?.name === "RunSetting" && node.props.label === "深入思考");
+  assert.equal(reasoning.props.disabled, true);
+  assert.equal(reasoning.props.checked, false);
+  nodes.find(node => node.type?.name === "RunSetting" && node.props.label === "自动生成媒体").props.onCheckedChange(true);
+  nodes.find(node => node.type === "Button" && node.props.children === "完成").props.onClick();
+  assert.equal(render().some(node => node.type === "DialogContent"), false);
+  render().find(node => node.props?.["aria-label"] === "运行设置").props.onClick();
+  nodes = render();
+  assert.equal(nodes.find(node => node.type === "RadioGroup").props.value, "chat");
+  assert.equal(nodes.find(node => node.type?.name === "RunSetting" && node.props.label === "自动生成媒体").props.checked, true);
+  nodes = render(true);
+  assert.equal(nodes.some(node => node.type === "DialogContent"), false);
+  assert.equal(nodes.find(node => node.props?.["aria-label"] === "运行设置").props.disabled, true);
+  state.effects.forEach(effect => effect());
+  assert.equal(render().some(node => node.type === "DialogContent"), false, "A completed run must not reopen the settings");
+  render().find(node => node.props?.["aria-label"] === "运行设置").props.onClick();
+  nodes = render(false, "codex");
+  assert.ok(nodes.some(node => node.type?.name === "RunSetting" && node.props.label === "自动生成媒体"));
+  assert.equal(nodes.some(node => node.type === "RadioGroup"), false);
+  assert.equal(writes, 2, "Opening and closing the dialog must not rewrite saved settings");
+});
+
+test("closed prompt dialogs skip their content and preserve filters when reopened", () => {
+  const state = hooks();
+  const sources = [{ id: "alpha-source", label: "摄影", enabled: true }];
+  const { ImagePromptMarket } = loadSource("../src/app/image/components/image-prompt-market.tsx", {
+    react: state.react,
+    "@/app/image/banana-prompts": { DEFAULT_PROMPT_MARKET_SOURCES: sources, sortPromptMarketPrompts: items => items },
+    "@/app/image/prompt-favorite-request-lifecycle": { PromptFavoriteRequestLifecycle: class {} },
+  });
+  const render = (open, presentation = "dialog") => descendants(state.render(ImagePromptMarket, { open, presentation, onOpenChange() {}, onApplyPrompt() {} }));
+  let nodes = render(false);
+  assert.equal(nodes.filter(node => node.type === "DialogContent").length, 0);
+  assert.equal(nodes.filter(node => node.type === "Combobox").length, 0);
+  nodes = render(true);
+  nodes.find(node => node.type === "Combobox").props.onValueChange(sources[0]);
+  const search = nodes.find(node => node.type === "SearchInput" && node.props.value === "");
+  assert.ok(search);
+  search.props.onValueChange("雨夜");
+  nodes = render(false);
+  assert.equal(nodes.filter(node => node.type === "DialogContent").length, 0);
+  nodes = render(true);
+  assert.equal(nodes.find(node => node.type === "Combobox").props.value.id, "alpha-source");
+  assert.ok(nodes.some(node => node.type === "SearchInput" && node.props.value === "雨夜"));
+  assert.ok(render(false, "page").some(node => node.props?.["aria-label"] === "提示词库"));
+});
+
 test("prompt category selection uses shared list navigation and searches both names and IDs", () => {
   const state = hooks();
   const sources = [{ id: "alpha-source", label: "摄影", enabled: true }, { id: "beta-source", label: "插画", enabled: true }];
@@ -1963,7 +2395,8 @@ test("script asset cards open the shared image picker and lock while generating"
     loadingImage = !disabled;
     const controls = render(disabled).filter(node => node.type === "Button");
     assert.equal(controls.length, 2);
-    assert.ok(controls.every(node => node.props.disabled));
+    assert.equal(controls[0].props.disabled, true);
+    assert.notEqual(controls[1].props.disabled, true);
   }
 });
 
@@ -1973,6 +2406,7 @@ test("conversation rows keep pin and menu actions independent from opening a con
   const { ImageSidebar } = loadSource("../src/app/image/components/image-sidebar.tsx", {
     react: state.react,
     "@/lib/use-app-meta": { useAppMeta: () => ({ app_title: "Test" }) },
+    "@/lib/app-meta": { resolveSiteIconSrc },
     "@/app/image/use-history-download": { useHistoryDownload: () => ({ selecting: false, busy: false, selected: new Set() }) },
     "@/store/image-conversations": { getImageConversationStats: (item) => ({ running: item.id === "b" ? 1 : 0, queued: 0 }) },
   });
@@ -2062,6 +2496,7 @@ test("conversation batch selection uses the filtered list and never opens a sele
   const { ImageSidebar } = loadSource("../src/app/image/components/image-sidebar.tsx", {
     react: state.react,
     "@/lib/use-app-meta": { useAppMeta: () => ({ app_title: "Test" }) },
+    "@/lib/app-meta": { resolveSiteIconSrc },
     "@/app/image/use-history-download": { useHistoryDownload: () => batch },
     "@/store/image-conversations": { getImageConversationStats: () => ({ running: 0, queued: 0 }) },
   });
@@ -2585,11 +3020,99 @@ test("copy feedback applies only to the copied value, including delayed writes",
   }
 });
 
+test("canvas conversation memoization refreshes attachments, checkpoints and action handlers", () => {
+  const comparisons = [];
+  loadSource("../src/app/canvas/canvas-agent-conversation.tsx", {
+    "./canvas-document-equality": { canvasDocumentValuesEqual },
+    react: { lazy, memo: (component, compare) => { if (compare) comparisons.push(compare); return component; } },
+  });
+  const compare = comparisons[0];
+  assert.equal(typeof compare, "function");
+  const request = { id: "request", role: "user", text: "参考素材", references: [{ id: "asset", type: "image", url: "/image", title: "参考图" }] };
+  const props = { task: { id: "request", request, replies: [] }, runStatus: "running" };
+  assert.equal(compare(props, props), true);
+  const withRequest = patch => ({ ...props, task: { ...props.task, request: { ...request, ...patch } } });
+  assert.equal(compare(props, withRequest({ references: [{ ...request.references[0], source: "attachment" }] })), false);
+  assert.equal(compare(props, withRequest({ agentStateBefore: { phase: "intake" } })), false);
+  for (const name of ["onEdit", "onRetry", "onSaveEdit", "onCancelEdit", "onResume", "onChooseMedia", "handleFocusNode", "components", "renderText"]) {
+    assert.equal(compare(props, { ...props, [name]: () => {} }), false, name);
+  }
+  assert.equal(compare(props, { ...props, runStatus: "success" }), false);
+});
+
+test("canvas node updates skip plain history but refresh node chips, workflows and movie summaries", () => {
+  let compare;
+  loadSource("../src/app/canvas/canvas-agent-conversation.tsx", {
+    "./canvas-document-equality": { canvasDocumentValuesEqual },
+    react: { lazy, memo: (component, comparator) => { if (comparator) compare = comparator; return component; } },
+    "./agent/canvas-agent-presentation": { canvasAgentOperationContext: entry => ({ nodeId: entry.nodeId || entry.tool?.input?.nodeId || entry.tool?.output?.node?.id }) },
+  });
+  const reply = { id: "reply", role: "assistant", text: "已读取", status: "success" };
+  const initial = { task: { id: "task", replies: [reply] }, nodes: [{ id: "node", title: "旧名称" }], displayTraces: new Map(), timings: new Map(), components: {}, renderText() {} };
+  const next = { ...initial, nodes: [{ id: "node", title: "新名称" }], components: {}, renderText() {} };
+  assert.equal(compare(initial, next), true);
+  for (const text of ["查看 `node`", "参考 ```node``` 节点"]) {
+    const task = { ...initial.task, replies: [{ ...reply, text }] };
+    assert.equal(compare({ ...initial, task }, { ...next, task }), false);
+  }
+  for (const entry of [
+    { type: "text", text: "生成了 `node`" },
+    { type: "operation", nodeId: "node" },
+    { type: "operation", tool: { input: { nodeId: "node" } } },
+    { type: "operation", tool: { output: { node: { id: "node" } } } },
+    { type: "operation", tool: { name: "run_canvas_workflow" } },
+    { type: "operation", tool: { name: "merge_script_videos" } },
+  ]) {
+    const displayTraces = new Map([[reply.id, [entry]]]);
+    assert.equal(compare({ ...initial, displayTraces }, { ...next, displayTraces }), false);
+  }
+});
+
+test("Agent run snapshot updates skip historical tasks and refresh only the affected task status", () => {
+  const state = hooks();
+  let compare, serializedResults = 0;
+  const tasks = Array.from({ length: 100 }, (_, index) => ({ id: `task-${index}`, request: { id: `user-${index}`, role: "user", text: "请求" }, replies: [{ id: `reply-${index}`, role: "assistant", text: "回复", status: "success" }] }));
+  const { CanvasAgentConversationContent } = loadSource("../src/app/canvas/canvas-agent-conversation.tsx", {
+    "./canvas-document-equality": { canvasDocumentValuesEqual },
+    react: { lazy, ...state.react, memo: (component, comparator) => { if (comparator) compare = comparator; return component; } },
+    "@/lib/use-stable-callback": { useStableCallback: callback => callback },
+    "./agent/canvas-agent-task-groups": { canvasAgentTaskGroups: () => tasks },
+    "./agent/canvas-agent-timing": { canvasAgentTaskTimings: () => new Map() },
+    "./agent/canvas-agent-presentation": {
+      canvasAgentTraceIndex: () => ({}), canvasAgentDisplayTraces: () => [],
+      canvasAgentResponsePresentation: () => ({ reasoning: [], sources: [] }), canvasAgentLatestTracePlan: () => undefined,
+    },
+    "./agent/canvas-agent-message-links": { canvasAgentProtocolUserMessageIndex: () => -1 },
+  }, {}, "\nexport { CanvasAgentConversationContent };\n");
+  const props = { messages: tasks.flatMap(task => [task.request, ...task.replies]), nodes: [], busy: true, editDisabled: true, onRetry() {}, onEdit() {} };
+  const run = { id: "run", assistantId: "reply-99", status: "running", updatedAt: "initial", toolResult: { toJSON() { serializedResults++; return { nodes: [] }; } } };
+  const render = run => descendants(state.render(CanvasAgentConversationContent, { ...props, run })).filter(node => node.type?.name === "CanvasAgentTaskItem").map(node => node.props);
+  const initial = render(run);
+  assert.equal(initial.length, 20);
+  assert.equal(initial[0].task.id, "task-80");
+  const tick = render({ ...run, updatedAt: "next snapshot" });
+  const ended = render({ ...run, status: "error", updatedAt: "finished" });
+  const withRun = (previous, current) => ({ ...previous, run: current.run, runStatus: current.runStatus });
+  assert.equal(initial.filter((previous, index) => !compare(previous, withRun(previous, tick[index]))).length, 0, "snapshot timestamps do not affect task rendering");
+  assert.deepEqual(initial.flatMap((previous, index) => compare(previous, withRun(previous, ended[index])) ? [] : [index]), [19], "only the matching task must refresh when its status changes");
+  assert.equal(serializedResults, 0, "rendering must not serialize the full tool result");
+  for (const count of [40, 60, 80, 100]) {
+    const earlier = descendants(state.render(CanvasAgentConversationContent, { ...props, run })).find(node => node.props?.["aria-label"] === "加载更早对话");
+    assert.ok(earlier, "earlier history remains available");
+    earlier.props.onClick();
+    const loaded = render(run);
+    assert.equal(loaded.length, count);
+    assert.equal(loaded.at(-1).task.id, "task-99", "loading earlier history preserves the newest task");
+  }
+  assert.equal(descendants(state.render(CanvasAgentConversationContent, { ...props, run })).some(node => node.props?.["aria-label"] === "加载更早对话"), false);
+  assert.equal(tasks.length, 100, "pagination must not truncate saved history");
+});
+
 test("canvas message copies preserve edit, retry and message visibility rules", () => {
   const edited = [], retried = [];
   const { CanvasAgentTaskItem } = loadSource("../src/app/canvas/canvas-agent-conversation.tsx", {
-    react: { memo: component => component },
-    "./agent/canvas-agent-run-state": { canvasAgentMessageRunStatus: message => message.status },
+    react: { lazy, memo: component => component },
+    "./agent/canvas-agent-run-state": { canvasAgentMessageRunStatus: message => message.status, canvasAgentResultStatusUnknown: message => message?.text.startsWith("执行状态待核实：") === true },
   }, {}, "\nexport { CanvasAgentTaskItem };\n");
   const request = { id: "request", role: "user", text: "原始消息" };
   const props = {
@@ -2620,6 +3143,10 @@ test("canvas message copies preserve edit, retry and message visibility rules", 
   assert.equal(nodes.some(node => node.props?.["aria-label"] === "编辑消息"), false);
   const hidden = render({ task: { ...props.task, request: undefined, replies: [reply] }, latestAssistantID: reply.id, pendingQuestion: reply.text });
   assert.equal(hidden.some(node => node.type === "CodeBlockCopyButton"), false);
+  for (const editDisabled of [false, true]) {
+    const checkpoint = render({ task: { ...props.task, request: { ...request, agentStateBefore: { phase: "intake" } }, replies: [reply] }, editDisabled }).find(node => node.type === "Checkpoint");
+    assert.equal(checkpoint.props.disabled, editDisabled, "Checkpoints must follow the same edit restrictions as message actions");
+  }
 });
 
 test("workflow prompt copies follow image selection and draft edits", () => {
@@ -2832,4 +3359,228 @@ test("contract material previews use disabled upload controls and preserve rule 
   assert.deepEqual(uploads.map(node => node.props.label), ["上传首帧", "上传参考图", "上传参考音频"]);
   contract.capability = { first_frame_image_limit: 0, references: { image: 0, video: 0, audio: 0, total: 0 } };
   assert.equal(ContractReferenceMaterialPreview({ contract, ruleValues: {} }), null);
+});
+
+test("prompt source health distinguishes pending, healthy, failed and unchecked results", () => {
+  for (const [status, variant, label] of [["idle", "secondary", "尚未检查"], ["pulling", "secondary", "检查中"], ["success", "default", "正常"], ["error", "destructive", "失败"]]) {
+    const state = hooks();
+    const source = { id: "source", label: "Example", url: "https://example.test/prompts.json", enabled: true };
+    const { PromptSourcesCard } = loadSource("../src/app/settings/components/prompt-sources-card.tsx", {
+      react: state.react,
+      "../store": { useSettingsStore: select => select({ config: { prompt_sources: [source] } }) },
+      "@/app/image/banana-prompts": { normalizePromptMarketSources: sources => sources },
+      "./use-prompt-source-pulls": { usePromptSourcePulls: () => ({ states: { source: { status } }, isPullingAll: false }) },
+    });
+    const badge = descendants(state.render(PromptSourcesCard)).find(node => node.type === "Badge" && node.props.children === label);
+    assert.ok(badge, `Missing ${status} feedback`);
+    assert.equal(badge.props.variant, variant);
+  }
+});
+
+test("user actions forward the original account and lock every action while pending", () => {
+  const { ManagedUserActions } = loadSource("../src/app/users/page.tsx", {}, {}, "\nexport { ManagedUserActions };");
+  const user = { id: "account", enabled: true };
+  const calls = [];
+  const props = { user, isPending: false, onRole: value => calls.push(["role", value]), onToggle: value => calls.push(["toggle", value]), onDelete: value => calls.push(["delete", value]) };
+  const buttons = descendants(ManagedUserActions(props)).filter(node => node.type === "Button");
+  buttons.forEach(button => button.props.onClick());
+  assert.deepEqual(calls.map(([action]) => action), ["role", "toggle", "delete"]);
+  assert.ok(calls.every(([, value]) => value === user));
+  assert.ok(descendants(ManagedUserActions({ ...props, isPending: true })).filter(node => node.type === "Button").every(node => node.props.disabled));
+});
+
+test("canvas closed overlays skip content work and retain reopen and action behavior", () => {
+  const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const overlays = [];
+  function visit(node) {
+    if (ts.isJsxElement(node) && ["Dialog", "DropdownMenu", "Popover"].includes(node.openingElement.tagName.getText(source))) overlays.push(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  let projectReads = 0, nodeReads = 0;
+  const calls = [];
+  const state = {
+    nodeInfo: null, shortcutsOpen: false, pendingPanoramaImport: null, stopTargetNodeID: "", clearConfirmationOpen: false,
+    canvasMenuOpen: false, projectMenuOpen: false, title: "画布", background: "dots", showImageInfo: false,
+    documentRef: { current: { id: "current" } }, historyRef: { current: [1] }, redoRef: { current: [] },
+    get projects() { projectReads++; return [{ id: "current", title: "画布", node_count: 1 }]; },
+    nodes: [{ id: "script", type: "script" }], nodesRef: { get current() { nodeReads++; return state.nodes; } },
+    setNodeInfoID: () => { state.nodeInfo = null; }, setShortcutsOpen: value => { state.shortcutsOpen = value; },
+    setPendingPanoramaImport: value => { state.pendingPanoramaImport = value; }, setStopTargetNodeID: value => { state.stopTargetNodeID = value; },
+    setClearConfirmationOpen: value => { state.clearConfirmationOpen = value; }, setCanvasMenuOpen: value => { state.canvasMenuOpen = value; },
+    setProjectMenuOpen: value => { state.projectMenuOpen = value; }, setProjectDialog() {},
+    finishPanoramaImport: value => calls.push(["import", value]), confirmStopGeneration: () => calls.push(["stop"]),
+    resetCanvas: () => calls.push(["clear"]), navigate() {}, runProject: value => calls.push(["activate", value]),
+    canvasConfigInputs: () => [], connections: [], requestCanvasImageUpload() {}, exportImage() {}, exportProjectArchive() {}, undo() {}, redo() {},
+    importRef: { current: null }, pushHistory() {}, backgroundRef: { current: "dots" }, showImageInfoRef: { current: false }, setBackground() {}, setShowImageInfo() {},
+  };
+  function render(expression) {
+    const overlay = overlays.find(node => node.openingElement.attributes.properties.some(attr => ts.isJsxAttribute(attr) && attr.name.text === "open" && attr.initializer?.getText(source) === `{${expression}}`));
+    assert.ok(overlay, expression);
+    const text = overlay.getText(source);
+    const tags = Object.fromEntries([...text.matchAll(/<([A-Z]\w*)\b/g)].map(match => [match[1], match[1]]));
+    const code = ts.transpileModule(`const render = () => (${text});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, jsxFactory: "jsx" } }).outputText;
+    const jsx = (type, props, ...children) => ({ type, props: { ...props, children } });
+    return new Function("state", "jsx", ...Object.keys(tags), `with(state) { ${code}; return render(); }`)(state, jsx, ...Object.values(tags));
+  }
+  const cases = [
+    ["Boolean(nodeInfo)", "nodeInfo", state.nodes[0], "DialogContent"], ["shortcutsOpen", "shortcutsOpen", true, "DialogContent"],
+    ["Boolean(pendingPanoramaImport)", "pendingPanoramaImport", {}, "DialogContent"], ["Boolean(stopTargetNodeID)", "stopTargetNodeID", "script", "DialogContent"],
+    ["clearConfirmationOpen", "clearConfirmationOpen", true, "DialogContent"], ["canvasMenuOpen", "canvasMenuOpen", true, "DropdownMenuContent"],
+    ["projectMenuOpen", "projectMenuOpen", true, "PopoverContent"],
+  ];
+  for (const [expression, key, value, type] of cases) {
+    assert.equal(descendants(render(expression)).some(node => node.type === type), false, `${key} closed body`);
+    state[key] = value;
+    assert.ok(descendants(render(expression)).some(node => node.type === type));
+    render(expression).props.onOpenChange(false);
+    assert.equal(descendants(render(expression)).some(node => node.type === type), false);
+    state[key] = value;
+    assert.ok(descendants(render(expression)).some(node => node.type === type), `${key} reopens`);
+    render(expression).props.onOpenChange(false);
+  }
+  projectReads = nodeReads = 0;
+  cases.forEach(([expression]) => render(expression));
+  assert.equal(projectReads, 0); assert.equal(nodeReads, 0);
+  state.stopTargetNodeID = "script";
+  let nodes = descendants(render("Boolean(stopTargetNodeID)"));
+  assert.ok(nodes.some(node => node.type === "DialogDescription" && node.props.children.join("").includes("脚本及其素材")));
+  nodes.find(node => node.type === "Button" && node.props.children[0] === "停止").props.onClick();
+  nodes.find(node => node.type === "Button" && node.props.children[0] === "继续生成").props.onClick();
+  assert.equal(state.stopTargetNodeID, "");
+  state.clearConfirmationOpen = true;
+  descendants(render("clearConfirmationOpen")).find(node => node.type === "Button" && node.props.children[0] === "清空").props.onClick();
+  state.pendingPanoramaImport = {};
+  nodes = descendants(render("Boolean(pendingPanoramaImport)"));
+  nodes.find(node => node.type === "Button" && node.props.children[0] === "作为普通图片导入").props.onClick();
+  nodes.find(node => node.type === "Button" && node.props.children[0] === "作为全景图导入").props.onClick();
+  state.projectMenuOpen = true;
+  descendants(render("projectMenuOpen")).find(node => node.type === "ToggleGroup" && node.props["aria-label"] === "选择画布项目").props.onValueChange("another");
+  assert.deepEqual(calls, [["stop"], ["clear"], ["import", "image"], ["import", "panorama"], ["activate", { action: "activate", project_id: "another" }]]);
+});
+
+test("closed Agent media and context menus do not build hidden forms and reopen with current data", () => {
+  const mediaState = hooks();
+  const { CanvasAgentMediaModelPicker } = loadSource("../src/app/canvas/canvas-agent-media-model-picker.tsx", { react: mediaState.react });
+  const changes=[];
+  const models={image:{value:'image-one',options:['image-one'],onChange:value=>changes.push(['image',value])},video:{value:'video-one',options:['video-one'],onChange:value=>changes.push(['video',value])}};
+  const renderMedia=()=>descendants(mediaState.render(CanvasAgentMediaModelPicker,{models,disabled:false}));
+  assert.equal(renderMedia().some(node=>node.type==='PopoverContent'),false);
+  renderMedia().find(node=>node.type==='Popover').props.onOpenChange(true);
+  let nodes=renderMedia();
+  assert.ok(nodes.some(node=>node.type==='PopoverContent'));
+  nodes.find(node=>node.type==='ModelPicker'&&node.props.label==='图片模型').props.onValueChange('image-two');
+  nodes.find(node=>node.type==='Popover').props.onOpenChange(false);
+  models.image.value='image-two';
+  assert.equal(renderMedia().some(node=>node.type==='ModelPicker'),false);
+  renderMedia().find(node=>node.type==='Popover').props.onOpenChange(true);
+  assert.equal(renderMedia().find(node=>node.type==='ModelPicker'&&node.props.label==='图片模型').props.value,'image-two');
+  assert.deepEqual(changes,[['image','image-two']]);
+
+  const contextState=hooks();
+  const { Context }=loadSource('../src/components/ai-elements/context.tsx',{react:contextState.react});
+  let rowReads=0;
+  const rows=[{get label(){rowReads++;return '当前模型';},value:'text-one'}];
+  const props={tokens:125,limit:1000,rows};
+  const renderContext=()=>descendants(contextState.render(Context,props));
+  nodes=renderContext();assert.equal(nodes.some(node=>node.type==='HoverCardContent'),false);assert.equal(rowReads,0);
+  nodes.find(node=>node.props?.['aria-label']==='查看上下文').props.onClick();
+  nodes=renderContext();assert.ok(nodes.some(node=>node.type==='HoverCardContent'));assert.ok(rowReads>0);
+  nodes.find(node=>node.type==='HoverCard').props.onOpenChange(false);
+  rowReads=0;props.tokens=250;rows[0].value='text-two';
+  assert.equal(renderContext().some(node=>node.type==='HoverCardContent'),false);assert.equal(rowReads,0);
+  renderContext().find(node=>node.type==='HoverCard').props.onOpenChange(true);
+  nodes=renderContext();assert.ok(nodes.some(node=>node.props?.children==='text-two'));
+  assert.ok(nodes.some(node=>node.props?.['aria-valuenow']===25));
+});
+
+test("canvas hidden side panel skips node changes but refreshes on reopen and account change", () => {
+  let compare;
+  const {CanvasSidePanel}=loadSource('../src/app/canvas/canvas-side-panel.tsx',{
+    react:{...hooks().react,memo:(component,comparator)=>{if(comparator)compare=comparator;return component;}},
+    '@/lib/use-stable-callback':{useStableCallback:handler=>handler},
+  });
+  const props={sessionKey:'account',open:false,nodes:[],selectedNodeIDs:new Set(),width:300,tab:'canvas',libraryImages:[],libraryLoading:false,onOpenChange(){},onWidthChange(){},onTabChange(){},onFocusNode(){},onInsertLibraryImage(){},onOpenAssets(){},onInsertPrompt(){}};
+  CanvasSidePanel(props);
+  assert.equal(typeof compare,'function');
+  const next={...props,nodes:[{id:'new'}],selectedNodeIDs:new Set(['new']),libraryImages:[{id:'new-image'}]};
+  assert.equal(compare(props,next),true);
+  assert.equal(compare(props,{...next,sessionKey:'another-account'}),false);
+  assert.equal(compare(props,{...next,open:true}),false);
+  const open={...next,open:true};assert.equal(compare(open,open),true);
+  for(const [key,value] of Object.entries({nodes:[],selectedNodeIDs:new Set(),width:340,tab:'assets',libraryImages:[],libraryLoading:true}))assert.equal(compare(open,{...open,[key]:value}),false,key);
+  assert.equal(compare(open,{...open,open:false}),false);
+});
+
+test("Skill menus skip closed lists and retain selected skills and manager draft state", async () => {
+  const state=hooks();let selectedIds=[];
+  const items=[{id:'photo',name:'摄影',description:'镜头规则',enabled:true,scope:'system'}];
+  const imports={react:state.react,'@/lib/session':{getCachedAuthSession:()=>({key:'isolated',role:'admin'})},'@/services/api/agent-skills':{fetchAgentSkills:async()=>({items})}};
+  const {SkillPicker}=loadSource('../src/app/canvas/canvas-agent-skill-picker.tsx',imports,{AbortController},'\nexport { SkillPicker };\n');
+  const render=()=>descendants(state.render(SkillPicker,{selectedIds,onChange:ids=>{selectedIds=ids;}}));
+  let nodes=render();assert.equal(nodes.some(node=>node.type==='PopoverContent'),false);
+  const cleanup=state.effects.map(effect=>effect());await flush();
+  render().find(node=>node.type==='Popover').props.onOpenChange(true);
+  nodes=render();nodes.find(node=>node.type==='Toggle').props.onClick();assert.deepEqual(selectedIds,['photo']);
+  nodes.find(node=>node.type==='Popover').props.onOpenChange(false);
+  assert.equal(render().some(node=>node.type==='Toggle'),false);
+  render().find(node=>node.type==='Popover').props.onOpenChange(true);
+  nodes=render();assert.equal(nodes.find(node=>node.type==='Toggle').props.pressed,true);
+  nodes.find(node=>node.type==='Button'&&node.props.children?.includes('管理')).props.onClick();
+  nodes=render();assert.equal(nodes.some(node=>node.type==='PopoverContent'),false);
+  assert.equal(nodes.find(node=>node.type?.name==='SkillManager').props.open,true);
+  cleanup.forEach(stop=>stop?.());
+
+  const managerState=hooks();
+  const {SkillManager}=loadSource('../src/app/canvas/canvas-agent-skill-picker.tsx',{react:managerState.react,'@/lib/session':imports['@/lib/session']},{TextEncoder},'\nexport { SkillManager };\n');
+  const props={open:false,onClose(){}};
+  const renderManager=()=>descendants(managerState.render(SkillManager,props));
+  assert.equal(renderManager().some(node=>node.type==='DialogContent'),false);
+  props.open=true;
+  renderManager().find(node=>node.type==='Button'&&node.props.children?.includes('新建')).props.onClick();
+  renderManager().find(node=>node.type==='Input'&&node.props.maxLength===80).props.onChange({target:{value:'未保存规则'}});
+  props.open=false;assert.equal(renderManager().some(node=>node.type==='Input'),false);
+  props.open=true;assert.equal(renderManager().find(node=>node.type==='Input'&&node.props.maxLength===80).props.value,'未保存规则');
+});
+
+test("prompt frame measures content and resize changes without resetting listeners on unrelated renders", () => {
+  const slots = [], pending = [], frames = new Map(), listeners = new Map();
+  let cursor = 0, measureCount = 0, height = 80, textHeight = 120, observed = 0, disconnected = 0, frameID = 0, resize;
+  const viewport = { scrollTop: 37 };
+  const textarea = {
+    get scrollHeight() { return textHeight; },
+    style: { set height(value) { this.measuredHeight = value; viewport.scrollTop = 0; } },
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) { assert.equal(listeners.get(type), handler); listeners.delete(type); },
+  };
+  const frame = {
+    get clientHeight() { measureCount++; return height; },
+    querySelector(selector) { return selector === 'textarea' ? textarea : viewport; },
+  };
+  const same = (left, right) => Boolean(left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index])));
+  const react = {
+    useRef(initial) { return slots[cursor++] ??= { current: initial }; },
+    useCallback(callback, deps) { const index=cursor++;if(!same(slots[index]?.deps,deps)) slots[index]={deps,callback};return slots[index].callback; },
+    useLayoutEffect(effect, deps) { const index=cursor++;if(!same(slots[index]?.deps,deps)){const previous=slots[index];slots[index]={deps};pending.push(()=>{previous?.cleanup?.();slots[index].cleanup=effect();});} },
+  };
+  const { PromptTextareaFrame } = loadSource('../src/components/generation/prompt-textarea-frame.tsx', { react }, {
+    ResizeObserver: class { constructor(handler) { resize=handler; } observe(target) { assert.equal(target,frame);observed++; } disconnect() { disconnected++; } },
+    requestAnimationFrame: handler => { frames.set(++frameID,handler);return frameID; },
+    cancelAnimationFrame: id => frames.delete(id),
+  });
+  const render = value => { cursor=0;const tree=PromptTextareaFrame({value,children:{type:'editor',props:{value}}});tree.props.ref.current=frame;while(pending.length) pending.shift()(); };
+  const flushFrames = () => { for(const [id,handler] of frames){frames.delete(id);handler();} };
+  render('short');
+  assert.equal(textarea.style.measuredHeight,'120px');assert.equal(viewport.scrollTop,37);assert.equal(observed,1);
+  const initialMeasures=measureCount;
+  for(let index=0;index<4;index++) render('short');
+  assert.equal(measureCount,initialMeasures,'Unchanged content must not force layout after a parent render');
+  assert.equal(observed,1);assert.equal(disconnected,0);
+  textHeight=640;viewport.scrollTop=240;render('long controlled replacement');
+  assert.equal(textarea.style.measuredHeight,'640px');assert.equal(viewport.scrollTop,240);
+  textHeight=90;listeners.get('input')();listeners.get('input')();assert.equal(frames.size,1);flushFrames();
+  assert.equal(textarea.style.measuredHeight,'90px');assert.equal(viewport.scrollTop,240);
+  height=200;resize();flushFrames();assert.equal(textarea.style.measuredHeight,'200px');
+  listeners.get('input')();for(const slot of slots)slot?.cleanup?.();
+  assert.equal(listeners.size,0);assert.equal(frames.size,0);assert.equal(disconnected,1);
 });

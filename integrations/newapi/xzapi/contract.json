@@ -3,7 +3,7 @@
   "contracts": [
     {
       "contract": {
-        "name": "XZAPI CH01 视频（New API）",
+        "name": "XZAPI StarFrame 视频（New API）",
         "models": [
           "ch0101-sd-2.0-480p",
           "ch0101-sd-2.0-720p",
@@ -15,7 +15,19 @@
           "ch0112-sd-2.0-480p-fast",
           "ch0112-sd-2.0-720p-fast",
           "ch0113-sd-2.0-480p-mini",
-          "ch0113-sd-2.0-720p-mini"
+          "ch0113-sd-2.0-720p-mini",
+          "1311-seedance-2-5-480p",
+          "1311-seedance-2-5-720p",
+          "ch1306-sd-2.0-480p",
+          "ch1306-sd-2.0-720p",
+          "ch1307-sd-2.5-720p",
+          "ch1308-sd-2.0-720p",
+          "ch1309-sd-2.0-480p",
+          "ch1309-sd-2.0-720p",
+          "1402-seedance-2-0-480p",
+          "1402-seedance-2-0-720p",
+          "1403-seedance-2-5-480p",
+          "1403-seedance-2-5-720p"
         ],
         "priority": 0,
         "driver": "custom-video",
@@ -1412,199 +1424,7 @@
               ]
             },
             "rules": []
-          }
-        ]
-      },
-      "enabled": true
-    },
-    {
-      "contract": {
-        "name": "XZAPI CH13 视频（New API）",
-        "models": [
-          "1311-seedance-2-5-480p",
-          "1311-seedance-2-5-720p",
-          "ch1306-sd-2.0-480p",
-          "ch1306-sd-2.0-720p",
-          "ch1307-sd-2.5-720p",
-          "ch1308-sd-2.0-720p",
-          "ch1309-sd-2.0-480p",
-          "ch1309-sd-2.0-720p"
-        ],
-        "priority": 0,
-        "driver": "custom-video",
-        "transport": {
-          "local_material": "url",
-          "multipart_file_field": "",
-          "multipart_repeatable": false,
-          "multipart_mixed_urls": false,
-          "create_path": "/v1/videos",
-          "query_path": "/v1/videos/{task_id}"
-        },
-        "artifact": {
-          "mode": "task_content",
-          "content_path": "/v1/videos/{task_id}/content",
-          "auth": "relay",
-          "allowed_hosts": []
-        },
-        "capability": {
-          "sizes": [
-            "16:9",
-            "9:16",
-            "4:3",
-            "3:4",
-            "1:1",
-            "21:9"
-          ],
-          "seconds": [],
-          "resolutions": [
-            "480p"
-          ],
-          "default_size": "16:9",
-          "default_seconds": 5,
-          "default_resolution": "480p",
-          "references": {
-            "image": 30,
-            "video": 0,
-            "audio": 10,
-            "total": 40
           },
-          "first_frame_image_limit": 0,
-          "reference_mode": true,
-          "audio_control": "none",
-          "watermark": false,
-          "prompt": {
-            "required": true,
-            "min_length": 0,
-            "max_length": 0
-          },
-          "seconds_range": {
-            "min": 4,
-            "max": 30,
-            "step": 1
-          }
-        },
-        "generation": {
-          "selection": "infer",
-          "default_mode": "text-to-video",
-          "modes": [
-            {
-              "id": "text-to-video",
-              "label": "文生视频",
-              "kind": "text",
-              "request_value": "",
-              "materials": {
-                "first_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "last_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "image": {
-                  "min": 0,
-                  "max": 0
-                },
-                "video": {
-                  "min": 0,
-                  "max": 0
-                },
-                "audio": {
-                  "min": 0,
-                  "max": 0
-                },
-                "total": {
-                  "min": 0,
-                  "max": 0
-                }
-              }
-            },
-            {
-              "id": "reference-to-video",
-              "label": "参考素材生视频",
-              "kind": "reference",
-              "request_value": "",
-              "materials": {
-                "first_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "last_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "image": {
-                  "min": 0,
-                  "max": 30
-                },
-                "video": {
-                  "min": 0,
-                  "max": 0
-                },
-                "audio": {
-                  "min": 0,
-                  "max": 10
-                },
-                "total": {
-                  "min": 1,
-                  "max": 40
-                }
-              }
-            }
-          ]
-        },
-        "rules": [],
-        "request": {
-          "duration_field": "duration",
-          "duration_value_type": "number",
-          "aspect_ratio_field": "aspect_ratio",
-          "resolution_field": "resolution",
-          "generate_audio_field": "",
-          "watermark_field": "",
-          "generation_mode_field": "",
-          "first_frame_field": "",
-          "last_frame_field": "",
-          "reference_images_field": "references.images",
-          "reference_videos_field": "references.videos",
-          "reference_audios_field": "references.audios",
-          "reference_value_type": "array"
-        },
-        "polling": {
-          "interval_seconds": 5,
-          "timeout_seconds": 1800,
-          "task_id_fields": [
-            "id"
-          ],
-          "status_fields": [
-            "status"
-          ],
-          "progress_fields": [
-            "progress"
-          ],
-          "error_fields": [
-            "metadata.fail_reason",
-            "error.message"
-          ],
-          "queued_statuses": [
-            "queued"
-          ],
-          "processing_statuses": [
-            "in_progress"
-          ],
-          "success_statuses": [
-            "completed"
-          ],
-          "failure_statuses": [
-            "failed"
-          ],
-          "result_fields": []
-        },
-        "provider": {
-          "base_url": "https://api.xzapi.vip",
-          "auth_mode": "bearer",
-          "auth_header": ""
-        },
-        "model_profiles": [
           {
             "model": "1311-seedance-2-5-480p",
             "capability": {
@@ -2492,195 +2312,7 @@
               ]
             },
             "rules": []
-          }
-        ]
-      },
-      "enabled": true
-    },
-    {
-      "contract": {
-        "name": "XZAPI CH14 视频（New API）",
-        "models": [
-          "1402-seedance-2-0-480p",
-          "1402-seedance-2-0-720p",
-          "1403-seedance-2-5-480p",
-          "1403-seedance-2-5-720p"
-        ],
-        "priority": 0,
-        "driver": "custom-video",
-        "transport": {
-          "local_material": "url",
-          "multipart_file_field": "",
-          "multipart_repeatable": false,
-          "multipart_mixed_urls": false,
-          "create_path": "/v1/videos",
-          "query_path": "/v1/videos/{task_id}"
-        },
-        "artifact": {
-          "mode": "task_content",
-          "content_path": "/v1/videos/{task_id}/content",
-          "auth": "relay",
-          "allowed_hosts": []
-        },
-        "capability": {
-          "sizes": [
-            "16:9",
-            "9:16",
-            "4:3",
-            "3:4",
-            "1:1",
-            "21:9"
-          ],
-          "seconds": [],
-          "resolutions": [
-            "480p"
-          ],
-          "default_size": "16:9",
-          "default_seconds": 5,
-          "default_resolution": "480p",
-          "references": {
-            "image": 9,
-            "video": 3,
-            "audio": 3,
-            "total": 15
           },
-          "first_frame_image_limit": 0,
-          "reference_mode": true,
-          "audio_control": "none",
-          "watermark": false,
-          "prompt": {
-            "required": true,
-            "min_length": 0,
-            "max_length": 0
-          },
-          "seconds_range": {
-            "min": 4,
-            "max": 15,
-            "step": 1
-          }
-        },
-        "generation": {
-          "selection": "infer",
-          "default_mode": "text-to-video",
-          "modes": [
-            {
-              "id": "text-to-video",
-              "label": "文生视频",
-              "kind": "text",
-              "request_value": "",
-              "materials": {
-                "first_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "last_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "image": {
-                  "min": 0,
-                  "max": 0
-                },
-                "video": {
-                  "min": 0,
-                  "max": 0
-                },
-                "audio": {
-                  "min": 0,
-                  "max": 0
-                },
-                "total": {
-                  "min": 0,
-                  "max": 0
-                }
-              }
-            },
-            {
-              "id": "reference-to-video",
-              "label": "参考素材生视频",
-              "kind": "reference",
-              "request_value": "",
-              "materials": {
-                "first_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "last_frame": {
-                  "min": 0,
-                  "max": 0
-                },
-                "image": {
-                  "min": 0,
-                  "max": 9
-                },
-                "video": {
-                  "min": 0,
-                  "max": 3
-                },
-                "audio": {
-                  "min": 0,
-                  "max": 3
-                },
-                "total": {
-                  "min": 1,
-                  "max": 15
-                }
-              }
-            }
-          ]
-        },
-        "rules": [],
-        "request": {
-          "duration_field": "duration",
-          "duration_value_type": "number",
-          "aspect_ratio_field": "aspect_ratio",
-          "resolution_field": "resolution",
-          "generate_audio_field": "",
-          "watermark_field": "",
-          "generation_mode_field": "",
-          "first_frame_field": "",
-          "last_frame_field": "",
-          "reference_images_field": "references.images",
-          "reference_videos_field": "references.videos",
-          "reference_audios_field": "references.audios",
-          "reference_value_type": "array"
-        },
-        "polling": {
-          "interval_seconds": 5,
-          "timeout_seconds": 1800,
-          "task_id_fields": [
-            "id"
-          ],
-          "status_fields": [
-            "status"
-          ],
-          "progress_fields": [
-            "progress"
-          ],
-          "error_fields": [
-            "metadata.fail_reason",
-            "error.message"
-          ],
-          "queued_statuses": [
-            "queued"
-          ],
-          "processing_statuses": [
-            "in_progress"
-          ],
-          "success_statuses": [
-            "completed"
-          ],
-          "failure_statuses": [
-            "failed"
-          ],
-          "result_fields": []
-        },
-        "provider": {
-          "base_url": "https://api.xzapi.vip",
-          "auth_mode": "bearer",
-          "auth_header": ""
-        },
-        "model_profiles": [
           {
             "model": "1402-seedance-2-0-480p",
             "capability": {

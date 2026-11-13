@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-11-12",
+  "scope": "Retry transient supplier GET failures for an already accepted video task; submission is never retried.",
+  "before": "New focused behavior regressions failed for all eight initial transient-query scenarios; the real task-service diagnostic also recorded local error after one 503.",
+  "supportedQueryFailures": [
+    "HTTP 408",
+    "HTTP 429",
+    "HTTP 500",
+    "HTTP 502",
+    "HTTP 503",
+    "HTTP 504",
+    "Temporary network/DNS errors",
+    "Timeout",
+    "EOF/truncated response",
+    "Connection reset/refused"
+  ],
+  "behavior": "Use the original task ID and configured polling interval, bounded by the existing contract timeout and cancellation. Preserve progress while observation fails. Permanent HTTP errors and provider terminal failures are returned without submission retries.",
+  "tests": {
+    "command": "go test ./internal/httpapi -count=1",
+    "result": "passed",
+    "seconds": 99.049,
+    "log": "/tmp/canvas-video-polling-httpapi-final.log",
+    "realTaskServiceRegression": true,
+    "focusedCoverage": [
+      "Same accepted task completes after one transient error",
+      "One POST only",
+      "Permanent query and submission failures do not retry",
+      "Contract timeout and cancellation stop polling",
+      "Existing provider failure behavior"
+    ]
+  },
+  "testCorrections": [
+    "Timeout fixture initially used an invalid interval longer than timeout; changed to a valid contract.",
+    "A deadline and polling timer can become ready in the same scheduler tick; assert bounded calls and cancellation instead of an unjustified exact query count."
+  ],
+  "runtime": "Existing source systemd backend restarted after the owned active task count reached zero. Authenticated read, unauthorized 401 and unchanged 16 messages/nodes/connections verified.",
+  "frontendSourceChanged": false,
+  "buildLintRerun": false,
+  "limits": [
+    "Original-task recovery after prolonged interruption or permanent query failures remains unfinished.",
+    "Does not establish the cause of historical failures.",
+    "No paid media request was issued to test retry handling."
+  ],
+  "sourceSHA256": {
+    "internal/httpapi/relay_video.go": "6149124973f07c727dad65476ecbf5c14401d79098f252278798d3a690ebcdfe",
+    "internal/httpapi/relay_test.go": "91c22688a58a4f333f2b08ad6e35aaae4874d4d9b142ea9754c3ab5e34df87f2",
+    "internal/httpapi/newapi_video_contract_test.go": "fe23c1b2e7b355b40059eb42ba561df07e4a1ac75303ffd496a551d5a1beb9be"
+  }
+}

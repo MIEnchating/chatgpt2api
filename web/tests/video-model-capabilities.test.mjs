@@ -33,6 +33,15 @@ import {
 
 installVideoModelContracts(structuredClone(contractDocument.contracts));
 
+test("provider upload allows local references before HTTPS URL replacement", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.provider = { base_url: "https://openai.fit", auth_mode: "bearer", auth_header: "" };
+  contract.transport.local_material = "url";
+  assert.equal(videoModelRequiresHTTPSReferences(contract), true);
+  contract.transport.material_upload = { base_url: "https://openai.fit", path: "/v1/uploads", encoding: "multipart", field: "file", url_field: "url", base64_format: "", max_bytes: 104857600 };
+  assert.equal(videoModelRequiresHTTPSReferences(contract), false);
+});
+
 test("preserves upstream model IDs instead of rewriting provider aliases", () => {
   assert.equal(canonicalVideoModel("  kling/text-to-video  "), "kling/text-to-video");
 });

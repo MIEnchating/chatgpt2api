@@ -1,0 +1,14 @@
+{
+  "phase": "before",
+  "errors": [],
+  "checks": [
+    "failure followed by reload discards the unsaved local title without a browser warning"
+  ],
+  "mediaSubmissions": 0,
+  "saveAttempts": 1,
+  "dialogs": [],
+  "unloadProtected": false,
+  "persistentError": 0,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

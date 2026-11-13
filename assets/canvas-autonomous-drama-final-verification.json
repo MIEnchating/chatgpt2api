@@ -1,0 +1,58 @@
+{
+  "projectID": "canvas-04702de07993ea1fdf59d868",
+  "checks": [
+    {
+      "name": "actual_movie_playback",
+      "passed": true,
+      "duration": 60,
+      "time": 1.079725,
+      "width": 768,
+      "height": 1376
+    },
+    {
+      "name": "authenticated_movie_download",
+      "passed": true,
+      "bytes": 11934339
+    },
+    {
+      "name": "refresh_preserves_full_history_and_completed_tasks",
+      "passed": true,
+      "messageCount": 4
+    },
+    {
+      "name": "mobile_agent_and_movie_layout",
+      "passed": true,
+      "width": 390
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "screenshots": [
+    "assets/canvas-autonomous-drama-final-1440.png",
+    "assets/canvas-autonomous-drama-final-390.png"
+  ],
+  "qualityApproved": false,
+  "movieID": "video-canvas-0ecc39e211fec9577d8fc58b",
+  "messageCount": 4,
+  "probe": {
+    "durationSeconds": 60,
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "width": 768,
+        "height": 1376
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "sampleRate": "48000"
+      }
+    ]
+  },
+  "downloadedFile": "/root/workspace/chatgpt2api/build/review/canvas-production/autonomous-media/final-60s.mp4",
+  "mediaSubmissions": 0
+}

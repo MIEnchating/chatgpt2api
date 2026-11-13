@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestXZAPIVideoContractsImportAndMapReferenceInputs(t *testing.T) {
 	defer app.Close()
 	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
 	created, updated, err := app.videoContracts.Import(document.Contracts)
-	if err != nil || created != 3 || updated != 0 {
+	if err != nil || created != 1 || updated != 0 {
 		t.Fatalf("import: created=%d updated=%d error=%v", created, updated, err)
 	}
 	models := 0
@@ -231,7 +232,7 @@ func TestNewAPIVideoCompletedErrorPreservesProviderReason(t *testing.T) {
 	}
 }
 
-func TestVideoContentRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *testing.T) {
+func TestVideoTaskRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin}
@@ -244,7 +245,7 @@ func TestVideoContentRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *tes
 		submissions++
 		payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate))(service.VideoTaskProgressUpdate{
 			Status: service.TaskStatusRunning, UpstreamStatus: "completed", UpstreamTaskID: "video-existing",
-			Recovery: &service.VideoContentRecovery{TaskID: "video-existing", URL: "https://relay.example/v1/videos/video-existing/content", BaseURL: "https://relay.example", TokenName: cfg.TokenName},
+			Recovery: &service.VideoTaskRecovery{TaskID: "video-existing", URL: "https://relay.example/v1/videos/video-existing/content", BaseURL: "https://relay.example", TokenName: cfg.TokenName},
 		})
 		return nil, fmt.Errorf("视频已生成但保存失败: HTTP 502")
 	})
@@ -277,7 +278,7 @@ func TestVideoContentRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *tes
 	}
 	token := adminSessionToken(t, app)
 	for _, authenticated := range []bool{false, true, true} {
-		req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/recover-content/video-content", strings.NewReader("{}"))
+		req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/recover-content/video-recovery", strings.NewReader("{}"))
 		req.Header.Set("Content-Type", "application/json")
 		if authenticated {
 			setRequestAuthCookie(req, token)
@@ -290,18 +291,301 @@ func TestVideoContentRecoveryRouteUsesOriginalConnectionAndNeverGenerates(t *tes
 			}
 			continue
 		}
-		if rec.Code != http.StatusOK {
+		if rec.Code != http.StatusOK && rec.Code != http.StatusAccepted {
 			t.Fatalf("recover status=%d body=%s", rec.Code, rec.Body.String())
 		}
 		var task map[string]any
 		if err := json.Unmarshal(rec.Body.Bytes(), &task); err != nil {
 			t.Fatal(err)
 		}
-		if task["status"] != service.TaskStatusSuccess || strings.Contains(rec.Body.String(), "fixture-key") || strings.Contains(rec.Body.String(), "video_recovery") {
+		if task["status"] == service.TaskStatusError || strings.Contains(rec.Body.String(), "fixture-key") || strings.Contains(rec.Body.String(), "video_recovery") {
 			t.Fatalf("unsafe recovery response: %s", rec.Body.String())
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			current, readErr := app.tasks.ListTasksWithError(identity, []string{"recover-content"})
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			items := util.AsMapSlice(current["items"])
+			if len(items) == 1 && items[0]["status"] == service.TaskStatusSuccess {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("recovery did not complete")
+			}
+			time.Sleep(time.Millisecond)
 		}
 	}
 	if submissions != 1 || downloads != 1 {
 		t.Fatalf("submissions=%d downloads=%d", submissions, downloads)
+	}
+}
+
+func TestVideoTaskRecoveryFallsBackToNewAPIArtifactEndpoint(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin}
+	cfg, err := app.customRelayConfigs.Create("admin", "video", "recovery-artifact", "https://relay.example", "fixture-key", "openai", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := json.Marshal(protocol.VideoModelContract{
+		Driver:   protocol.VideoContractDriverOpenAI,
+		Artifact: protocol.VideoModelContractArtifact{Mode: "task_content"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryAttempts, artifactAttempts := 0, 0
+	app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+		return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+			if r.Header.Get("Authorization") != "Bearer fixture-key" {
+				t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+			}
+			switch r.URL.Path {
+			case "/v1/videos/video-existing/content":
+				primaryAttempts++
+				return &http.Response{StatusCode: http.StatusBadGateway, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("gateway failure"))}, nil
+			case "/v1/tasks/video-existing/artifacts/video/content":
+				artifactAttempts++
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"video/mp4"}}, Body: io.NopCloser(strings.NewReader("existing-video")), ContentLength: 14}, nil
+			default:
+				t.Fatalf("unexpected recovery path %s", r.URL.Path)
+				return nil, nil
+			}
+		})}
+	}
+	result, err := app.runRecoveredVideoTask(context.Background(), identity, map[string]any{
+		service.VideoTaskRecoveryPayloadKey: &service.VideoTaskRecovery{
+			TaskID: "video-existing", URL: "https://relay.example/v1/videos/video-existing/content", BaseURL: "https://relay.example", Contract: contract,
+			TokenName: cfg.TokenName,
+		},
+		"client_task_id": "recover-content", "model": "video-model",
+	})
+	if err != nil {
+		t.Fatalf("runRecoveredVideoTask() error = %v", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if primaryAttempts != 3 || artifactAttempts != 1 || len(data) != 1 || !strings.HasPrefix(util.Clean(data[0]["url"]), "/videos/") {
+		t.Fatalf("primary_attempts=%d artifact_attempts=%d result=%#v", primaryAttempts, artifactAttempts, result)
+	}
+}
+
+func TestRejectedVideoSubmissionReportsStageWithoutRecovery(t *testing.T) {
+	var posts, polls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+		} else {
+			polls.Add(1)
+		}
+		util.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "服务暂时不可用，请稍后重试"}})
+	}))
+	defer upstream.Close()
+	app := newTestApp(t)
+	defer app.Close()
+	app.tasks.SetVideoHandler(func(ctx context.Context, _ service.Identity, payload map[string]any) (map[string]any, error) {
+		payload["api_key"], payload["relay_base_url"] = "fixture-only", upstream.URL
+		return app.relayVideoTask(ctx, payload)
+	})
+	identity := service.Identity{ID: "video-submit-regression", Role: service.AuthRoleAdmin}
+	_, err := app.tasks.SubmitVideo(context.Background(), identity, "rejected-submit-regression", "A paper boat", "minimax-h3-768p", "16:9", 8, "720p", false, false, "text", nil, nil, nil, map[string]any{protocol.VideoContractSnapshotPayloadKey: protocol.DefaultVideoContracts()[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		result, err := app.tasks.ListTasksWithError(identity, []string{"rejected-submit-regression"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		items := util.AsMapSlice(result["items"])
+		if len(items) != 1 {
+			t.Fatalf("original local task missing: %#v", result)
+		}
+		task := items[0]
+		if task["status"] == service.TaskStatusError {
+			if task["error"] != "视频提交请求失败（HTTP 503）: 服务暂时不可用，请稍后重试" || util.ToBool(task["can_recover_video"]) || posts.Load() != 1 || polls.Load() != 0 {
+				t.Fatalf("posts=%d polls=%d task=%#v", posts.Load(), polls.Load(), task)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("video submission did not settle")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAcceptedVideoTaskSurvivesTransientSupplierQueryFailure(t *testing.T) {
+	var posts, polls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+			util.WriteJSON(w, http.StatusOK, map[string]any{"id": "accepted-video", "status": "in_progress", "progress": 30})
+			return
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/videos/accepted-video" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if polls.Add(1) == 1 {
+			util.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "temporary fixture outage"}})
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"id": "accepted-video", "status": "completed", "video_url": "https://cdn.example.com/result.mp4"})
+	}))
+	defer upstream.Close()
+	app := newTestApp(t)
+	defer app.Close()
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none"}
+	contract.Polling.IntervalSeconds, contract.Polling.TimeoutSeconds = 1, 5
+	app.tasks.SetVideoHandler(func(ctx context.Context, _ service.Identity, payload map[string]any) (map[string]any, error) {
+		payload["api_key"], payload["relay_base_url"] = "fixture-only", upstream.URL
+		return app.relayVideoTask(ctx, payload)
+	})
+	identity := service.Identity{ID: "video-query-regression", Role: service.AuthRoleAdmin}
+	_, err := app.tasks.SubmitVideo(context.Background(), identity, "accepted-query-regression", "A paper boat", "minimax-h3-768p", "16:9", 8, "720p", false, false, "text", nil, nil, nil, map[string]any{protocol.VideoContractSnapshotPayloadKey: contract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		result, err := app.tasks.ListTasksWithError(identity, []string{"accepted-query-regression"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		items := util.AsMapSlice(result["items"])
+		if len(items) != 1 {
+			t.Fatalf("original local task missing: %#v", result)
+		}
+		task := items[0]
+		if task["status"] == service.TaskStatusError || task["status"] == service.TaskStatusCancelled {
+			t.Fatalf("query outage became terminal: %#v", task)
+		}
+		if task["status"] == service.TaskStatusSuccess {
+			data := util.AsMapSlice(task["data"])
+			if posts.Load() != 1 || polls.Load() != 2 || len(data) != 1 || data[0]["url"] != "https://cdn.example.com/result.mp4" {
+				t.Fatalf("posts=%d polls=%d task=%#v", posts.Load(), polls.Load(), task)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("original video task did not complete")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestVideoTaskRecoveryQueriesPersistedContractAfterAuthenticationFailure(t *testing.T) {
+	for _, terminal := range []string{"completed", "failed"} {
+		t.Run(terminal, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin}
+			cfg, err := app.customRelayConfigs.Create("admin", "video", "query-recovery", "https://relay.example", "fixture-key", "openai", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			contract := protocol.DefaultVideoContracts()[0]
+			contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none"}
+			contract.Polling.StatusFields = []string{"original_phase"}
+			contract.Polling.IntervalSeconds, contract.Polling.TimeoutSeconds = 1, 5
+			var posts, gets atomic.Int32
+			var authorized atomic.Bool
+			app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+				return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+					status, body := http.StatusOK, ""
+					if r.Header.Get("Authorization") != "Bearer fixture-key" {
+						t.Error("wrong original credential")
+					}
+					switch r.Method {
+					case http.MethodPost:
+						posts.Add(1)
+						body = `{"id":"original-upstream","original_phase":"in_progress"}`
+					case http.MethodGet:
+						gets.Add(1)
+						if r.URL.Path != "/v1/videos/original-upstream" {
+							t.Errorf("query path changed: %s", r.URL.Path)
+						}
+						if !authorized.Load() {
+							status = http.StatusUnauthorized
+							body = `{"error":{"message":"expired fixture credential"}}`
+						} else {
+							body = fmt.Sprintf(`{"id":"original-upstream","original_phase":%q,"status":"ignored_new_contract_field","video_url":"https://cdn.example/result.mp4","error":{"message":"provider rejected fixture"}}`, terminal)
+							if terminal == "completed" {
+								body = `{"id":"original-upstream","original_phase":"completed","status":"failed","video_url":"https://cdn.example/result.mp4"}`
+							}
+						}
+					default:
+						t.Errorf("unexpected request %s", r.Method)
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+				})}
+			}
+			app.tasks.SetVideoHandler(func(ctx context.Context, _ service.Identity, payload map[string]any) (map[string]any, error) {
+				payload["api_key"], payload["relay_base_url"], payload["token_name"], payload[relayCustomEndpointPayloadKey] = "fixture-key", "https://relay.example", cfg.TokenName, true
+				return app.relayVideoTask(ctx, payload)
+			})
+			_, err = app.tasks.SubmitVideo(context.Background(), identity, "original-local", "animate", contract.Models[0], "16:9", 8, "720p", false, false, "text", nil, nil, nil, map[string]any{protocol.VideoContractSnapshotPayloadKey: contract})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wait := func(want string) map[string]any {
+				t.Helper()
+				deadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(deadline) {
+					result, readErr := app.tasks.ListTasksWithError(identity, []string{"original-local"})
+					if readErr != nil {
+						t.Fatal(readErr)
+					}
+					items := util.AsMapSlice(result["items"])
+					if len(items) == 1 && items[0]["status"] == want {
+						return items[0]
+					}
+					time.Sleep(time.Millisecond)
+				}
+				t.Fatalf("task did not reach %s", want)
+				return nil
+			}
+			task := wait(service.TaskStatusError)
+			if !util.ToBool(task["can_recover_video"]) {
+				t.Fatal("query authentication failure lost original task")
+			}
+			// Reopen the task store and change the current handler. Recovery must use
+			// persisted coordinates and its original response-field contract.
+			if err := app.tasks.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// The app's durable backend remains open when only the task service closes.
+			backend, err := app.config.StorageBackend()
+			if err != nil {
+				t.Fatal(err)
+			}
+			app.tasks = service.NewStoredImageTaskService(backend, nil, nil, nil, func() int { return 30 })
+			app.tasks.SetVideoHandler(func(context.Context, service.Identity, map[string]any) (map[string]any, error) {
+				t.Error("regenerated a paid video")
+				return nil, fmt.Errorf("must not generate")
+			})
+			app.tasks.SetVideoRecoveryHandler(app.runRecoveredVideoTask)
+			authorized.Store(true)
+			if _, err := app.tasks.RecoverVideoTask(identity, "original-local"); err != nil {
+				t.Fatal(err)
+			}
+			want := service.TaskStatusSuccess
+			if terminal == "failed" {
+				want = service.TaskStatusError
+			}
+			task = wait(want)
+			if util.ToBool(task["can_recover_video"]) {
+				t.Fatalf("terminal %s must not offer recovery: %#v", terminal, task)
+			}
+			if posts.Load() != 1 || gets.Load() != 2 {
+				t.Fatalf("posts=%d gets=%d", posts.Load(), gets.Load())
+			}
+		})
 	}
 }

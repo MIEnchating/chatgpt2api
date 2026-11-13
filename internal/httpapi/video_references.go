@@ -114,20 +114,11 @@ func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, 
 	}
 	referencePath := parsed.Path
 	if parsed.IsAbs() {
-		if a.config == nil || strings.TrimSpace(a.config.BaseURL()) == "" {
+		// The capability authenticates the local file independently of its site host.
+		if parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.User != nil || !a.validReferenceSignature(parsed) {
 			return videoMultipartFile{}, false, nil
 		}
-		base, parseErr := url.Parse(a.config.BaseURL())
-		if parseErr != nil || !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
-			return videoMultipartFile{}, false, nil
-		}
-		basePath := strings.TrimRight(base.Path, "/")
-		if basePath != "" && basePath != "/" {
-			if !strings.HasPrefix(referencePath, basePath+"/") {
-				return videoMultipartFile{}, false, nil
-			}
-			referencePath = strings.TrimPrefix(referencePath, basePath)
-		}
+		referencePath = referenceCapabilityPath(referencePath)
 	} else if !strings.HasPrefix(parsed.Path, "/") {
 		return videoMultipartFile{}, false, nil
 	}
@@ -327,7 +318,7 @@ func (a *App) storeReferenceUpload(ctx context.Context, upload referenceUpload, 
 	}); err != nil {
 		return nil, fmt.Errorf("failed to store %s reference: %w", kind, err)
 	}
-	referenceURL := a.signedReferenceURL(strings.TrimRight(a.resolveImageBaseURL(), "/")+pathPrefix+name, time.Now().Add(referenceURLTTL))
+	referenceURL := a.signedReferenceURL(strings.TrimRight(a.resolveImageBaseURL(ctx), "/")+pathPrefix+name, time.Now().Add(referenceURLTTL))
 	return map[string]any{"url": referenceURL, "name": upload.filename, "content_type": contentType, "size": len(upload.data)}, nil
 }
 
@@ -413,11 +404,15 @@ func (a *App) validReferenceCapability(parsed *url.URL, now time.Time) bool {
 	if err != nil || !now.Before(time.Unix(expiresUnix, 0)) {
 		return false
 	}
+	return a.validReferenceSignature(parsed)
+}
+
+func (a *App) validReferenceSignature(parsed *url.URL) bool {
 	want, err := hex.DecodeString(parsed.Query().Get("signature"))
 	if err != nil {
 		return false
 	}
-	expected, _ := hex.DecodeString(a.referenceSignature(parsed.Path, expires))
+	expected, _ := hex.DecodeString(a.referenceSignature(parsed.Path, parsed.Query().Get("expires")))
 	return hmac.Equal(want, expected)
 }
 

@@ -108,6 +108,25 @@ describe("video model contract mutation lifecycle", () => {
     expect(cardSource).toContain("const payload = await validate(false, ticket)");
   });
 
+  test("opening another contract resets the editor section and request editor state", () => {
+    for (const handler of ["openCreate", "openGeneratedContract", "openView", "openEdit", "openCopy"]) {
+      const start = cardSource.indexOf(`const ${handler} =`);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(cardSource.slice(start, start + 240)).toContain('setEditorSection("basic")');
+    }
+    expect(cardSource).toContain("<ContractRequestEditor key={`");
+    expect(cardSource).toContain("${draft.profileModel}");
+  });
+
+  test("the editor groups advanced contract details into fewer task-oriented sections", () => {
+    expect(cardSource).toContain('{ id: "basic", label: "基本信息"');
+    expect(cardSource).toContain('{ id: "capability", label: "模型能力"');
+    expect(cardSource).toContain('{ id: "request", label: "上游接口"');
+    expect(cardSource).not.toContain('{ id: "rules", label: "条件规则"');
+    expect(cardSource).not.toContain('{ id: "response", label: "结果解析"');
+    expect(cardSource).toContain('defaultOpen={activeProfile.rules.length > 0}');
+  });
+
   test("the parameter preview reads the draft contract without mutating the runtime registry", () => {
     expect(cardSource).toContain("contract={contract}");
     expect(cardSource).not.toContain("CONTRACT_PREVIEW_MODEL");

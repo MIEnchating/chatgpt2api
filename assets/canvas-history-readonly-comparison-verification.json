@@ -1,0 +1,38 @@
+{
+  "fixtureBytes": 9269960,
+  "before": [
+    {
+      "readyMs": 6493,
+      "editorCalls": 48,
+      "closedOperations": 0
+    },
+    {
+      "readyMs": 6628,
+      "editorCalls": 48,
+      "closedOperations": 0
+    },
+    {
+      "readyMs": 6510,
+      "editorCalls": 48,
+      "closedOperations": 0
+    }
+  ],
+  "after": [
+    {
+      "readyMs": 7202,
+      "editorCalls": 4,
+      "closedOperations": 0
+    },
+    {
+      "readyMs": 6368,
+      "editorCalls": 8,
+      "closedOperations": 0
+    },
+    {
+      "readyMs": 5976,
+      "editorCalls": 8,
+      "closedOperations": 0
+    }
+  ],
+  "conclusion": "History no longer initializes the prompt editor. Remaining calls belong to the composer. Timings are instrumented development samples and do not establish an end-to-end performance improvement."
+}

@@ -1,0 +1,38 @@
+{
+  "phase": "after",
+  "checks": [
+    {
+      "name": "selected_node_long_title_is_clickable_and_rename_persists",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "bounds": {
+    "title": {
+      "x": 80,
+      "y": 84,
+      "width": 257.546875,
+      "height": 28,
+      "top": 84,
+      "right": 337.546875,
+      "bottom": 112,
+      "left": 80
+    },
+    "toolbar": {
+      "x": 128.5,
+      "y": 124,
+      "width": 203,
+      "height": 44,
+      "top": 124,
+      "right": 331.5,
+      "bottom": 168,
+      "left": 128.5
+    },
+    "overlap": false,
+    "topAtTitle": "用于复现顶部工具条遮挡的长节点标题，双击修改节点名称"
+  },
+  "renameOpened": true,
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true
+}

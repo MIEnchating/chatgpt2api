@@ -12,7 +12,22 @@ test("drag alignment snaps group bounds without changing the relative positions"
 });
 
 test("alignment threshold is measured in screen pixels across zoom levels", () => {
-  const context = { x: [0, 50, 100], y: [0, 50, 100], targets: [{ x: [200, 250, 300], y: [400, 450, 500] }] };
+  const context = { x: [0, 50, 100], y: [0, 50, 100], targets: { x: [200, 250, 300], y: [400, 450, 500] } };
   assert.equal(calculateCanvasAlignment(context, { x: 190, y: 100 }, 6 / 0.5).offset.x, 200);
   assert.equal(calculateCanvasAlignment(context, { x: 190, y: 100 }, 6 / 2).offset.x, 190);
+});
+
+test("drag alignment resolves nearest edges from sorted canvas targets", () => {
+  const nodes = [
+    { id: "moving", type: "image", x: 0, y: 0, width: 20, height: 20 },
+    { id: "far", type: "image", x: 900, y: 900, width: 100, height: 100 },
+    { id: "near", type: "image", x: 120, y: 80, width: 40, height: 40 },
+  ];
+  const context = createCanvasAlignmentContext(nodes, new Set(["moving"]));
+  assert.deepEqual(context?.targets.x, [120, 140, 160, 900, 950, 1000]);
+  assert.deepEqual(context?.targets.y, [80, 100, 120, 900, 950, 1000]);
+  assert.deepEqual(calculateCanvasAlignment(context, { x: 117, y: 77 }, 4), {
+    offset: { x: 120, y: 80 },
+    guides: { vertical: 120, horizontal: 80 },
+  });
 });

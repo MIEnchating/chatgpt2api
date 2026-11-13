@@ -1,0 +1,428 @@
+{
+  "source": "build/review/canvas-production/autonomous-media/final-60s.mp4",
+  "sourceSHA256": "15b924972aecb196d68572030e11acbb29549c6b71d90621ca7d3f9ce4fa675f",
+  "revised": "build/review/canvas-production/autonomous-media/lamp-60s-subtitle-repair.mp4",
+  "revisedSHA256": "b6895713d5f206dfc3844c4ddc45d36637dbcf362de555c756ef3a092a3eb86d",
+  "revisedBytes": 194232076,
+  "streams": [
+    {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 768,
+      "height": 1376,
+      "pix_fmt": "yuv420p",
+      "avg_frame_rate": "30/1",
+      "time_base": "1/16000",
+      "start_time": "0.000000",
+      "duration": "60.000000",
+      "nb_frames": "1800"
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "avg_frame_rate": "0/0",
+      "time_base": "1/48000",
+      "start_time": "0.000000",
+      "duration": "60.000000",
+      "nb_frames": "2814"
+    }
+  ],
+  "comparedVideoFrames": 1800,
+  "videoFrameTimestampsIdentical": true,
+  "changedVideoFrames": 537,
+  "changesOutsideSpecifiedRegions": false,
+  "comparedAudioPackets": 2814,
+  "audioPacketPayloadAndTimingIdentical": true,
+  "captionSpans": [
+    {
+      "shot": 1,
+      "sample": 150,
+      "first": 132,
+      "last": 152,
+      "references": [
+        129,
+        155
+      ],
+      "roiXYWH": [
+        126,
+        1058,
+        520,
+        168
+      ],
+      "sourceBrightPixels": 32859,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 193379,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 1,
+      "sample": 210,
+      "first": 177,
+      "last": 245,
+      "references": [
+        174,
+        248
+      ],
+      "roiXYWH": [
+        126,
+        1058,
+        520,
+        168
+      ],
+      "sourceBrightPixels": 393885,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 2313009,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 1,
+      "sample": 345,
+      "first": 317,
+      "last": 357,
+      "references": [
+        314,
+        360
+      ],
+      "roiXYWH": [
+        126,
+        1058,
+        520,
+        168
+      ],
+      "sourceBrightPixels": 115114,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 752448,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 1,
+      "sample": 390,
+      "first": 377,
+      "last": 414,
+      "references": [
+        374,
+        417
+      ],
+      "roiXYWH": [
+        126,
+        1058,
+        520,
+        168
+      ],
+      "sourceBrightPixels": 107526,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 733138,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 2,
+      "sample": 630,
+      "first": 627,
+      "last": 654,
+      "references": [
+        624,
+        657
+      ],
+      "roiXYWH": [
+        78,
+        966,
+        612,
+        190
+      ],
+      "sourceBrightPixels": 56899,
+      "restoredBrightPixels": 41,
+      "changedYUVSamples": 385760,
+      "retainedBrightPixelFraction": 0.000720575054043129
+    },
+    {
+      "shot": 2,
+      "sample": 705,
+      "first": 679,
+      "last": 729,
+      "references": [
+        676,
+        786
+      ],
+      "roiXYWH": [
+        78,
+        966,
+        612,
+        190
+      ],
+      "sourceBrightPixels": 254953,
+      "restoredBrightPixels": 36,
+      "changedYUVSamples": 1552992,
+      "retainedBrightPixelFraction": 0.00014120249614634855
+    },
+    {
+      "shot": 2,
+      "sample": 750,
+      "first": 730,
+      "last": 783,
+      "references": [
+        676,
+        786
+      ],
+      "roiXYWH": [
+        78,
+        966,
+        612,
+        190
+      ],
+      "sourceBrightPixels": 419837,
+      "restoredBrightPixels": 44,
+      "changedYUVSamples": 2205852,
+      "retainedBrightPixelFraction": 0.00010480257814342233
+    },
+    {
+      "shot": 2,
+      "sample": 840,
+      "first": 813,
+      "last": 849,
+      "references": [
+        810,
+        898
+      ],
+      "roiXYWH": [
+        78,
+        966,
+        612,
+        190
+      ],
+      "sourceBrightPixels": 120184,
+      "restoredBrightPixels": 10,
+      "changedYUVSamples": 689177,
+      "retainedBrightPixelFraction": 8.320575118152166e-05
+    },
+    {
+      "shot": 2,
+      "sample": 870,
+      "first": 850,
+      "last": 895,
+      "references": [
+        810,
+        898
+      ],
+      "roiXYWH": [
+        78,
+        966,
+        612,
+        190
+      ],
+      "sourceBrightPixels": 178384,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 1044135,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 4,
+      "sample": 1440,
+      "first": 1418,
+      "last": 1452,
+      "references": [
+        1415,
+        1455
+      ],
+      "roiXYWH": [
+        50,
+        946,
+        668,
+        238
+      ],
+      "sourceBrightPixels": 118810,
+      "restoredBrightPixels": 4,
+      "changedYUVSamples": 1124325,
+      "retainedBrightPixelFraction": 3.36671997306624e-05
+    },
+    {
+      "shot": 4,
+      "sample": 1490,
+      "first": 1471,
+      "last": 1514,
+      "references": [
+        1468,
+        1517
+      ],
+      "roiXYWH": [
+        50,
+        946,
+        668,
+        238
+      ],
+      "sourceBrightPixels": 232946,
+      "restoredBrightPixels": 2,
+      "changedYUVSamples": 2258787,
+      "retainedBrightPixelFraction": 8.58568080155916e-06
+    },
+    {
+      "shot": 4,
+      "sample": 1605,
+      "first": 1591,
+      "last": 1616,
+      "references": [
+        1588,
+        1619
+      ],
+      "roiXYWH": [
+        50,
+        946,
+        668,
+        238
+      ],
+      "sourceBrightPixels": 39928,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 366107,
+      "retainedBrightPixelFraction": 0.0
+    },
+    {
+      "shot": 4,
+      "sample": 1665,
+      "first": 1642,
+      "last": 1688,
+      "references": [
+        1639,
+        1691
+      ],
+      "roiXYWH": [
+        50,
+        946,
+        668,
+        238
+      ],
+      "sourceBrightPixels": 262446,
+      "restoredBrightPixels": 0,
+      "changedYUVSamples": 2450248,
+      "retainedBrightPixelFraction": 0.0
+    }
+  ],
+  "comparison": "assets/canvas-lamp-subtitle-repair-comparison.jpg",
+  "brightPixelMetric": "Proportion of source subtitle-region bright neutral samples still bright at the same positions; evaluated across all labeled frames.",
+  "compactPlaybackCopy": {
+    "path": "build/review/canvas-production/autonomous-media/lamp-60s-repaired.mp4",
+    "sha256": "65ef8f8366a7d368421388ebf74edf936c5e66381f32fe31af961c78e8887648",
+    "bytes": 20992324,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "profile": "High",
+        "codec_type": "video",
+        "width": 768,
+        "height": 1376,
+        "pix_fmt": "yuv420p",
+        "avg_frame_rate": "30/1",
+        "time_base": "1/16000",
+        "start_time": "0.000000",
+        "duration": "60.000000",
+        "nb_frames": "1800"
+      },
+      {
+        "codec_name": "aac",
+        "profile": "LC",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "avg_frame_rate": "0/0",
+        "time_base": "1/48000",
+        "start_time": "0.000000",
+        "duration": "60.000000",
+        "nb_frames": "2814"
+      }
+    ],
+    "videoPTSIdentical": true,
+    "audioPacketPayloadAndTimingIdentical": true,
+    "ssimComparedToLosslessMaster": 0.993428
+  },
+  "chromePlaybackAtNormalSpeed": {
+    "duration": 60,
+    "width": 768,
+    "height": 1376,
+    "ended": true,
+    "milestones": [
+      {
+        "second": 15,
+        "currentTime": 15.061
+      },
+      {
+        "second": 30,
+        "currentTime": 30.201
+      },
+      {
+        "second": 45,
+        "currentTime": 45.055
+      },
+      {
+        "second": 55,
+        "currentTime": 55.086
+      },
+      {
+        "second": 59,
+        "currentTime": 59.069
+      }
+    ],
+    "audioDecodedBytes": 976379,
+    "videoDecodedBytes": 19953155,
+    "droppedFrames": 3
+  },
+  "originalProjects": {
+    "checkedAt": "2026-11-12T21:50:22.605Z",
+    "stage": "before",
+    "projectCount": 6,
+    "runningAgents": 0,
+    "projects": [
+      {
+        "id": "canvas-092fd45e58e8eb1db469bd56",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      },
+      {
+        "id": "canvas-04702de07993ea1fdf59d868",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      }
+    ],
+    "activeMedia": 0
+  },
+  "audioSignal": {
+    "method": "EBU R128 integrated loudness and true peak per 15-second shot; AAC decoded as float for sample-peak checks",
+    "sampleRateHz": 48000,
+    "shots": [
+      {
+        "shot": 1,
+        "startSeconds": 0,
+        "loudnessLUFS": -9.4,
+        "truePeakDBFS": -0.2,
+        "floatSamplePeak": 0.9757099747657776,
+        "samplesBeyondFullScale": 0
+      },
+      {
+        "shot": 2,
+        "startSeconds": 15,
+        "loudnessLUFS": -10.1,
+        "truePeakDBFS": 0.0,
+        "floatSamplePeak": 0.9988523721694946,
+        "samplesBeyondFullScale": 0
+      },
+      {
+        "shot": 3,
+        "startSeconds": 30,
+        "loudnessLUFS": -9.4,
+        "truePeakDBFS": -0.4,
+        "floatSamplePeak": 0.9573684334754944,
+        "samplesBeyondFullScale": 0
+      },
+      {
+        "shot": 4,
+        "startSeconds": 45,
+        "loudnessLUFS": -8.7,
+        "truePeakDBFS": -0.4,
+        "floatSamplePeak": 0.9537727236747742,
+        "samplesBeyondFullScale": 0
+      }
+    ]
+  },
+  "automaticDialogueAssessment": "assets/canvas-lamp-merged-audio-assessment.json"
+}

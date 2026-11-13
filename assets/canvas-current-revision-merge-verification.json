@@ -1,0 +1,28 @@
+{
+  "startedAt": "2026-11-11T22:15:46.975Z",
+  "checks": [
+    {
+      "name": "merge_requested_via_real_agent_ui",
+      "passed": true
+    },
+    {
+      "name": "latest_shots_old_movie_and_prior_chat_preserved_without_media_submission",
+      "passed": true
+    }
+  ],
+  "qualityApproved": false,
+  "previousMovie": "video-canvas-dfd9c776224fa424953b229a",
+  "movieID": "video-canvas-5d7e1221ff8c1e3f02e99d36",
+  "newMediaTasks": [],
+  "assistantReply": "已按脚本当前最新绑定的四段镜头顺序调用内置合并，生成新的60秒有声成片，旧成片与所有原素材均保留；本轮未重新生成任何图片或视频素材。最新合并使用第1镜原片、第2镜最新绑定版本、第3镜原片、第4镜最新绑定版本。新成片实测：60000毫秒（60秒），768×1376像素，has_audio=true，状态success。可通过画布最新成片卡播放与下载。此次仅完成合并及媒体属性核对，未新增人工画面或对白质量通过记录。",
+  "replyCharacters": 207,
+  "traceTools": [],
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/video-canvas-5d7e1221ff8c1e3f02e99d36.mp4",
+  "metadata": {
+    "width": 768,
+    "height": 1376,
+    "duration_ms": 60000,
+    "has_audio": true
+  },
+  "finishedAt": "2026-11-11T22:17:17.687Z"
+}

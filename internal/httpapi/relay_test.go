@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -267,29 +269,60 @@ func TestRelayHTTPClientUsesConfiguredImageTaskTimeout(t *testing.T) {
 	}
 }
 
-func TestDownloadRelayVideoRejectsAuthenticatedCrossOriginRedirect(t *testing.T) {
-	var destinationCalls atomic.Int32
-	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		destinationCalls.Add(1)
-		if authorization := r.Header.Get("Authorization"); authorization != "" {
-			t.Errorf("redirect destination received Authorization %q", authorization)
-		}
-		_, _ = w.Write([]byte("video"))
-	}))
-	defer destination.Close()
-
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, destination.URL+"/video.mp4", http.StatusFound)
-	}))
-	defer upstream.Close()
-
+func TestDownloadRelayVideoAllowsSignedCrossOriginRedirectWithoutBearer(t *testing.T) {
 	app := &App{videoDir: t.TempDir()}
-	_, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "client-task-1", "upstream-task-1", upstream.URL, nil)
-	if err == nil {
-		t.Fatal("cross-origin redirect was accepted for an authenticated video artifact")
+	app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+		return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+			switch r.URL.String() {
+			case "https://relay.example/content":
+				if got := r.Header.Get("Authorization"); got != "Bearer sk-secret" {
+					t.Errorf("content Authorization = %q", got)
+				}
+				return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"https://cdn.example/video.mp4"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+			case "https://cdn.example/video.mp4":
+				if got := r.Header.Get("Authorization"); got != "" {
+					t.Errorf("signed URL received Authorization %q", got)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"video/mp4"}}, Body: io.NopCloser(strings.NewReader("video"))}, nil
+			default:
+				t.Fatalf("unexpected request URL %s", r.URL)
+				return nil, nil
+			}
+		})}
+	}
+	localURL, err := app.downloadRelayVideo(withCustomRelayContext(context.Background()), "https://relay.example/content", "sk-secret", "owner-1", "client-task-1", "upstream-task-1", "https://relay.example", nil)
+	if err != nil {
+		t.Fatalf("downloadRelayVideo() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(app.videoDir, strings.TrimPrefix(localURL, "/videos/")))
+	if err != nil || string(data) != "video" {
+		t.Fatalf("saved video = %q, error = %v", data, err)
+	}
+}
+
+func TestDownloadRelayVideoRejectsUnsafeCrossOriginRedirect(t *testing.T) {
+	var destinationCalls atomic.Int32
+	app := &App{videoDir: t.TempDir()}
+	app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+		return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+			switch r.URL.String() {
+			case "https://relay.example/content":
+				return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"http://cdn.example/video.mp4"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+			case "http://cdn.example/video.mp4":
+				destinationCalls.Add(1)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("video"))}, nil
+			default:
+				t.Fatalf("unexpected request URL %s", r.URL)
+				return nil, nil
+			}
+		})}
+	}
+	_, err := app.downloadRelayVideo(withCustomRelayContext(context.Background()), "https://relay.example/content", "sk-secret", "owner-1", "client-task-1", "upstream-task-1", "https://relay.example", nil)
+	if err == nil || !strings.Contains(err.Error(), "拒绝跨域跳转到非公网 HTTPS 视频地址") {
+		t.Fatalf("downloadRelayVideo() error = %v", err)
 	}
 	if destinationCalls.Load() != 0 {
-		t.Fatalf("cross-origin redirect destination received %d requests", destinationCalls.Load())
+		t.Fatalf("unsafe redirect destination received %d requests", destinationCalls.Load())
 	}
 }
 
@@ -780,6 +813,190 @@ func TestRelayVideoPollingTimeoutCancelsInFlightRequest(t *testing.T) {
 	case <-pollCanceled:
 	case <-time.After(time.Second):
 		t.Fatal("in-flight polling request was not canceled")
+	}
+}
+
+func TestRelayVideoPollingRetriesTransientFailuresWithoutResubmitting(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		err    error
+	}{
+		{name: "request timeout", status: http.StatusRequestTimeout},
+		{name: "rate limit", status: http.StatusTooManyRequests},
+		{name: "internal server error", status: http.StatusInternalServerError},
+		{name: "bad gateway", status: http.StatusBadGateway},
+		{name: "unavailable", status: http.StatusServiceUnavailable},
+		{name: "gateway timeout", status: http.StatusGatewayTimeout},
+		{name: "network timeout", err: &net.DNSError{Err: "fixture timeout", IsTimeout: true}},
+		{name: "connection reset", err: syscall.ECONNRESET},
+		{name: "truncated response", err: io.ErrUnexpectedEOF},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			contract := protocol.DefaultVideoContracts()[0]
+			contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none"}
+			contract.Polling.IntervalSeconds = 1
+			contract.Polling.TimeoutSeconds = 5
+			posts, polls := 0, 0
+			app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+				return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+					body := `{"id":"accepted-video","status":"queued","progress":30}`
+					status := http.StatusOK
+					if r.Method == http.MethodPost {
+						posts++
+					} else if r.Method == http.MethodGet && r.URL.Path == "/v1/videos/accepted-video" {
+						polls++
+						if polls == 1 {
+							if test.err != nil {
+								return nil, test.err
+							}
+							status, body = test.status, `{"error":{"message":"temporary fixture outage"}}`
+						} else {
+							body = `{"id":"accepted-video","status":"completed","video_url":"https://cdn.example.com/result.mp4","progress":100}`
+						}
+					} else {
+						t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+				})}
+			}
+			var progress []service.VideoTaskProgressUpdate
+			result, err := app.relayVideoTask(withCustomRelayContext(context.Background()), map[string]any{
+				"model": "minimax-h3-768p", "prompt": "city", "api_key": "fixture-only", "relay_base_url": "https://relay.example",
+				protocol.VideoContractSnapshotPayloadKey: contract,
+				service.VideoTaskProgressCallbackPayloadKey: func(update service.VideoTaskProgressUpdate) {
+					progress = append(progress, update)
+				},
+			})
+			if err != nil {
+				t.Fatalf("accepted video was abandoned: %v", err)
+			}
+			data := util.AsMapSlice(result["data"])
+			if posts != 1 || polls != 2 || len(data) != 1 || data[0]["url"] != "https://cdn.example.com/result.mp4" {
+				t.Fatalf("posts=%d polls=%d result=%#v", posts, polls, result)
+			}
+			if len(progress) != 2 || progress[0].Progress != 30 || progress[1].UpstreamTaskID != "accepted-video" {
+				t.Fatalf("original task/progress lost: %#v", progress)
+			}
+		})
+	}
+}
+
+func TestRelayVideoPollingDoesNotRetrySubmissionOrPermanentFailures(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		method string
+		status int
+	}{
+		{name: "submission unavailable", method: http.MethodPost, status: http.StatusServiceUnavailable},
+		{name: "unauthorized query", method: http.MethodGet, status: http.StatusUnauthorized},
+		{name: "forbidden query", method: http.MethodGet, status: http.StatusForbidden},
+		{name: "missing task", method: http.MethodGet, status: http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			posts, polls := 0, 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					posts++
+				} else {
+					polls++
+				}
+				if r.Method == test.method {
+					util.WriteJSON(w, test.status, map[string]any{"error": map[string]any{"message": "fixture failure"}})
+					return
+				}
+				util.WriteJSON(w, http.StatusOK, map[string]any{"id": "accepted-video", "status": "queued"})
+			}))
+			defer upstream.Close()
+			_, err := app.relayVideoTask(context.Background(), map[string]any{
+				"model": "minimax-h3-768p", "prompt": "city", "api_key": "fixture-only", "relay_base_url": upstream.URL,
+				protocol.VideoContractSnapshotPayloadKey: protocol.DefaultVideoContracts()[0],
+			})
+			var httpErr protocol.HTTPError
+			if !errors.As(err, &httpErr) || httpErr.Status != test.status || posts != 1 || polls > 1 {
+				t.Fatalf("posts=%d polls=%d error=%v", posts, polls, err)
+			}
+			if test.method == http.MethodPost {
+				want := fmt.Sprintf("视频提交请求失败（HTTP %d）: fixture failure", test.status)
+				if err.Error() != want || polls != 0 {
+					t.Fatalf("submission diagnostics lost: polls=%d error=%v, want %q", polls, err, want)
+				}
+			} else if err.Error() != "fixture failure" {
+				t.Fatalf("query failure mislabeled as submission: %v", err)
+			}
+		})
+	}
+}
+
+func TestRelayVideoSubmissionNetworkFailurePreservesUncertainAcceptance(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	requests := 0
+	app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+		return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+			requests++
+			if r.Method != http.MethodPost {
+				t.Errorf("unexpected query after submission disconnect: %s", r.Method)
+			}
+			return nil, syscall.ECONNRESET
+		})}
+	}
+	_, err := app.relayVideoTask(withCustomRelayContext(context.Background()), map[string]any{
+		"model": "minimax-h3-768p", "prompt": "city", "api_key": "fixture-only", "relay_base_url": "https://supplier.example.com",
+		protocol.VideoContractSnapshotPayloadKey: protocol.DefaultVideoContracts()[0],
+	})
+	if err == nil || !strings.HasPrefix(err.Error(), "视频提交请求未完成，是否接单尚未确认: ") || !errors.Is(err, syscall.ECONNRESET) || requests != 1 {
+		t.Fatalf("submission outcome or cause lost: requests=%d error=%v", requests, err)
+	}
+}
+
+func TestRelayVideoPollingTransientFailuresRespectTimeoutAndCancellation(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canceled=%t", canceled), func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			ctx, cancel := context.WithCancel(withCustomRelayContext(context.Background()))
+			defer cancel()
+			posts, polls := 0, 0
+			app.newSafeRelayHTTPClient = func(time.Duration) *http.Client {
+				return &http.Client{Transport: imageModeTestTransport(func(r *http.Request) (*http.Response, error) {
+					status, body := http.StatusOK, `{"id":"accepted-video","status":"queued"}`
+					if r.Method == http.MethodPost {
+						posts++
+					} else {
+						polls++
+						status, body = http.StatusServiceUnavailable, `{"error":{"message":"temporary fixture outage"}}`
+						if canceled {
+							cancel()
+						}
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+				})}
+			}
+			contract := protocol.DefaultVideoContracts()[0]
+			contract.Polling.IntervalSeconds, contract.Polling.TimeoutSeconds = 1, 1
+			started := time.Now()
+			_, err := app.relayVideoTask(ctx, map[string]any{
+				"model": "minimax-h3-768p", "prompt": "city", "api_key": "fixture-only", "relay_base_url": "https://relay.example",
+				protocol.VideoContractSnapshotPayloadKey: contract,
+			})
+			var httpErr protocol.HTTPError
+			if canceled {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation lost: %v", err)
+				}
+			} else if !errors.As(err, &httpErr) || httpErr.Status != http.StatusGatewayTimeout {
+				t.Fatalf("contract timeout lost: %v", err)
+			}
+			// The interval and deadline may become ready in the same scheduler tick.
+			if posts != 1 || polls < 1 || polls > 2 || canceled && polls != 1 || time.Since(started) >= 2*time.Second {
+				t.Fatalf("posts=%d polls=%d elapsed=%s", posts, polls, time.Since(started))
+			}
+		})
 	}
 }
 

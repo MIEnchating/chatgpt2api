@@ -16,6 +16,7 @@ export function CanvasNodeEditor({ title, open, children, onClose }: {
   if (expanded && open) return <Dialog open onOpenChange={setExpanded}>
     <DialogContent data-canvas-node-editor data-canvas-no-pan data-canvas-no-zoom data-expanded="true" aria-describedby={undefined} showCloseButton={false}
       className={cn("sm:max-w-none", cn("h-[min(760px,calc(100dvh-2rem))] [&_.canvas-prompt-scroll-frame]:h-[min(52dvh,480px)] [&_.canvas-prompt-editor-resize]:h-[min(52dvh,480px)]", "group/editor w-[min(880px,calc(100%-2rem))]"))}
+      onEscapeKeyDown={(event) => { if (event.isComposing || event.keyCode === 229) event.preventDefault(); }}
       onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
       <DialogHeader className="flex-row items-center justify-between">
         <DialogTitle className="min-w-0 truncate">{title} · 输入与参数</DialogTitle>
@@ -27,6 +28,7 @@ export function CanvasNodeEditor({ title, open, children, onClose }: {
 
   return <Card className={cn("gap-0 overflow-visible p-0", !open && "hidden")}>
     <PromptInput data-canvas-node-editor data-expanded="false" aria-label={`${title}，节点编辑`} className="group/editor relative flex h-[var(--canvas-node-editor-height)] w-full min-h-0 flex-col items-stretch" onKeyDown={(event) => {
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
       event.preventDefault();
       event.stopPropagation();

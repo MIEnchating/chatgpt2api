@@ -1,10 +1,9 @@
 import { memo, useMemo, type ReactNode } from "react";
-import { ChainOfThought } from "@/components/ai-elements/chain-of-thought";
 import { Reasoning } from "@/components/ai-elements/reasoning";
 import { AgentActivityLine } from "@/components/agent/agent-activity-line";
 import type { CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentTraceEntry } from "./agent/canvas-agent-types";
-import { canvasAgentOperationGroups, canvasAgentSummarizeNodeOperations, type CanvasAgentOperation } from "./agent/canvas-agent-operation-groups";
+import { canvasAgentOperationGroups, type CanvasAgentOperation } from "./agent/canvas-agent-operation-groups";
 import { CanvasAgentExecution } from "./canvas-agent-execution";
 import { CanvasAgentQuestionRecord } from "./canvas-agent-interaction";
 
@@ -29,12 +28,9 @@ function CanvasAgentOperationBatch({ entries, nodes, running, onFocusNode }: {
   running: boolean;
   onFocusNode?: (id: string) => void;
 }) {
-  const summarized = canvasAgentSummarizeNodeOperations(entries);
+  const summarized = entries;
   if (summarized.length === 1) return <CanvasAgentExecution entry={summarized[0]} nodes={nodes} running={running} onFocusNode={onFocusNode} />;
-  const current = running ? summarized.find((entry) => entry.status === "running") : undefined;
-  const failed = summarized.some((entry) => entry.status === "error");
-  const completed = summarized.filter((entry) => entry.status === "success" || entry.status === "changed").length;
-  return <div data-agent-operation-group className="min-w-0"><ChainOfThought title="执行步骤" active={Boolean(current)} failed={failed} completed={completed} total={summarized.length}>
+  return <div data-agent-operation-group className="min-w-0 space-y-2">
     {summarized.map((entry) => <CanvasAgentExecution key={entry.id} entry={entry} nodes={nodes} running={running} onFocusNode={onFocusNode} />)}
-  </ChainOfThought></div>;
+  </div>;
 }

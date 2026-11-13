@@ -1,0 +1,21 @@
+{
+  "scope": "Actual full-resolution review of two new 2.6 boards before video submission. This is an operator observation, not a forged in-product human approval.",
+  "first": {
+    "nodeID": "image-a0bed0e5-e710-4b1a-8050-f08937894f2c",
+    "mouthsVisible": true,
+    "usableForVideo": false,
+    "reason": "Rainy exterior was invented beyond the open home doorway; rejected before video generation."
+  },
+  "corrected": {
+    "nodeID": "image-8997b70a-ba97-4395-8054-f2c5ce52c283",
+    "mouthsVisible": true,
+    "homeInteriorBeyondDoor": true,
+    "oneOrangeHelmet": true,
+    "bagRightHand": true,
+    "leftStoolAndRightAirplaneShelf": true,
+    "observedWritingOrCaptions": false,
+    "readyForVideoTrial": true
+  },
+  "qualityApproved": false,
+  "limits": "Still-image inspection does not prove video action, mouth synchronization, speaker identity or continuity across every frame."
+}

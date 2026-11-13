@@ -16,6 +16,8 @@ import (
 
 var ErrCanvasAgentBusy = errors.New("Agent 正在后台执行，请停止后再修改画布")
 
+var errCanvasAgentSessionNotFound = errors.New("canvas agent session not found")
+
 // CanvasAgentRun is persisted with the document; it contains no credentials.
 type CanvasAgentRun struct {
 	ToolResult  map[string]any `json:"toolResult,omitempty"`
@@ -30,25 +32,27 @@ type CanvasAgentRun struct {
 }
 
 type CanvasAgentRequest struct {
-	ID              string            `json:"id"`
-	SessionID       string            `json:"sessionId"`
-	AssistantID     string            `json:"assistantId"`
-	UserMessageID   string            `json:"userMessageId"`
-	UserText        string            `json:"userText"`
-	Model           string            `json:"model"`
-	RelayTokenName  string            `json:"relayTokenName"`
-	APIMode         string            `json:"apiMode"`
-	Stream          bool              `json:"stream"`
-	Reasoning       bool              `json:"reasoningEnabled"`
-	SystemPrompt    string            `json:"configuredSystemPrompt"`
-	Generation      map[string]any    `json:"generation"`
-	RelayTokens     map[string]string `json:"relayTokens"`
-	References      []map[string]any  `json:"references"`
-	SelectedNodeIDs []string          `json:"selectedNodeIds"`
-	SkillIDs        []string          `json:"skillIds"`
-	Resume          bool              `json:"resume"`
-	Edit            bool              `json:"editPreviousRequest"`
-	MediaChoice     string            `json:"mediaGenerationChoice"`
+	MediaBaseURL     string            `json:"-"`
+	ID               string            `json:"id"`
+	SessionID        string            `json:"sessionId"`
+	AssistantID      string            `json:"assistantId"`
+	UserMessageID    string            `json:"userMessageId"`
+	UserText         string            `json:"userText"`
+	Model            string            `json:"model"`
+	RelayTokenName   string            `json:"relayTokenName"`
+	APIMode          string            `json:"apiMode"`
+	Stream           bool              `json:"stream"`
+	Reasoning        bool              `json:"reasoningEnabled"`
+	SystemPrompt     string            `json:"configuredSystemPrompt"`
+	Generation       map[string]any    `json:"generation"`
+	RelayTokens      map[string]string `json:"relayTokens"`
+	VideoRelayTokens map[string]string `json:"videoRelayTokens"`
+	References       []map[string]any  `json:"references"`
+	SelectedNodeIDs  []string          `json:"selectedNodeIds"`
+	SkillIDs         []string          `json:"skillIds"`
+	Resume           bool              `json:"resume"`
+	Edit             bool              `json:"editPreviousRequest"`
+	MediaChoice      string            `json:"mediaGenerationChoice"`
 }
 
 type AgentModelRequest struct {
@@ -59,21 +63,23 @@ type AgentModelRequest struct {
 	Metadata map[string]any
 }
 type AgentModel func(context.Context, Identity, AgentModelRequest) (map[string]any, error)
-type CanvasAgentMedia func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error)
+type CanvasAgentMedia func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error)
 
 type CanvasAgentService struct {
-	mu        sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	canvas    *CanvasDocumentService
-	execution *AgentExecutionService
-	workflows *WorkflowService
-	skills    *AgentSkillService
-	model     AgentModel
-	media     CanvasAgentMedia
-	active    map[string]context.CancelFunc
-	closed    bool
+	mu          sync.Mutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	canvas      *CanvasDocumentService
+	execution   *AgentExecutionService
+	workflows   *WorkflowService
+	skills      *AgentSkillService
+	model       AgentModel
+	media       CanvasAgentMedia
+	videoModels func() []CanvasAgentVideoModel
+	videoMerger func(context.Context, Identity, []CanvasNode, CanvasVideoMergeOptions) (CanvasMergedVideo, error)
+	active      map[string]context.CancelFunc
+	closed      bool
 }
 
 func NewCanvasAgentService(ctx context.Context, execution *AgentExecutionService, canvas *CanvasDocumentService, skills *AgentSkillService, model AgentModel, media CanvasAgentMedia) *CanvasAgentService {
@@ -96,48 +102,135 @@ func canvasAgentOwner(i Identity) string {
 func agentKey(owner, project string) string { return owner + "\x00" + project }
 
 func (s *CanvasAgentService) Snapshot(identity Identity, project string) (CanvasDocument, error) {
+	workspace, err := s.Workspace(identity, project, nil, CanvasHistoryFull)
+	return workspace.Document, err
+}
+
+// Workspace loads and reconciles one canvas under the execution lock, so a new
+// run cannot start between the document read and its snapshot reconciliation.
+func (s *CanvasAgentService) Workspace(identity Identity, project string, keepIDs []string, scope CanvasHistoryScope) (CanvasWorkspaceResult, error) {
+	return s.workspace(identity, project, keepIDs, scope, false)
+}
+
+// ActivateWorkspace opens the selected project under the execution lock and
+// reconciles its run using the same rules as an ordinary workspace read.
+func (s *CanvasAgentService) ActivateWorkspace(identity Identity, project string, scope CanvasHistoryScope) (CanvasWorkspaceResult, error) {
+	return s.workspace(identity, project, nil, scope, true)
+}
+
+func (s *CanvasAgentService) workspace(identity Identity, project string, keepIDs []string, scope CanvasHistoryScope, activate bool) (CanvasWorkspaceResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	doc, err := s.canvas.Project(canvasAgentOwner(identity), project)
-	if err != nil {
-		return doc, err
+	owner := canvasAgentOwner(identity)
+	workspace, err := s.canvas.readProjectWorkspace(owner, project, keepIDs, scope, activate, func(id string) bool {
+		return s.active[agentKey(owner, id)] != nil
+	})
+	if err != nil || workspace.Document.AgentRun == nil || workspace.historyDeferred {
+		return workspace, err
 	}
-	// Reclaim duplicate response payloads before the browser appends another
-	// request to a nearly full public session. Never touch an active worker.
-	if doc.AgentRun != nil && s.active[agentKey(canvasAgentOwner(identity), project)] == nil && len(doc.AgentSessions) > canvasDocumentMaxAgentDataBytes/2 {
-		sessions, session, readErr := agentSession(doc, doc.AgentRun.SessionID)
-		if readErr != nil {
-			return doc, readErr
+	document, err := s.snapshotLocked(identity, workspace.Document)
+	if err != nil {
+		return CanvasWorkspaceResult{}, err
+	}
+	if !document.AgentHistoryPartial && (scope == CanvasHistoryActive || scope == CanvasHistoryEditor) {
+		document, err = CanvasAgentHistoryView(document, keepIDs)
+		if err != nil {
+			return CanvasWorkspaceResult{}, err
 		}
-		private := &canvasAgentWorker{service: s, identity: identity, doc: doc, req: CanvasAgentRequest{SessionID: doc.AgentRun.SessionID}}
+	}
+	workspace.Document = document
+	for index := range workspace.Projects {
+		if workspace.Projects[index].ID == document.ID {
+			workspace.Projects[index].Revision = document.Revision
+			workspace.Projects[index].UpdatedAt = document.UpdatedAt
+		}
+	}
+	return workspace, nil
+}
+
+func (s *CanvasAgentService) snapshotLocked(identity Identity, doc CanvasDocument) (CanvasDocument, error) {
+	if doc.AgentRun == nil {
+		return doc, nil
+	}
+	owner, project := canvasAgentOwner(identity), doc.ID
+	runSessionID := doc.AgentRun.SessionID
+	workerActive := s.active[agentKey(owner, project)] != nil
+	interrupted := doc.AgentRun.Status == "running" && !workerActive
+
+	var err error
+	var sessions []map[string]any
+	var session map[string]any
+	// A partial workspace always includes and verifies the execution's body
+	// when its session is in the directory and history was not deferred.
+	indexed := doc.AgentHistoryPartial && slices.ContainsFunc(doc.AgentSessionSummaries, func(summary CanvasAgentSessionSummary) bool {
+		return summary.ID == runSessionID
+	})
+	if !indexed {
+		sessions, session, err = agentSession(doc, runSessionID)
+		if err != nil && (workerActive || !errors.Is(err, errCanvasAgentSessionNotFound)) {
+			return doc, err
+		}
+	}
+	if workerActive {
+		// Publish completion only after the worker has released its execution slot.
+		doc.AgentRun.Status = "running"
+		return doc, nil
+	}
+	orphaned := errors.Is(err, errCanvasAgentSessionNotFound)
+	compacted := false
+	// Reclaim duplicate response payloads before the browser appends another
+	// request. Only expand a partial read if a repair will actually write.
+	if !orphaned && !(doc.AgentHistoryPartial && interrupted) && len(doc.AgentSessions) > canvasDocumentMaxAgentDataBytes/2 {
+		private := &canvasAgentWorker{service: s, identity: identity, doc: doc, req: CanvasAgentRequest{SessionID: runSessionID}}
 		if found, loadErr := private.loadSDKSession(); loadErr != nil {
 			return doc, loadErr
 		} else if found && (private.sdk.State != "" || len(private.sdk.Items) > 0) {
-			omitCanvasAgentResponseCopies(session)
-			compactCanvasAgentToolJournal(session)
-			compacted, _ := json.Marshal(sessions)
-			if string(compacted) != string(doc.AgentSessions) {
-				base := doc
-				doc.AgentSessions = compacted
-				if doc, err = s.canvas.saveAgentChanges(canvasAgentOwner(identity), base, doc); err != nil {
+			if session == nil {
+				sessions, session, err = agentSession(doc, runSessionID)
+				if err != nil {
 					return doc, err
 				}
 			}
+			responsesChanged := omitCanvasAgentResponseCopies(session)
+			journalChanged := compactCanvasAgentToolJournal(session)
+			compacted = responsesChanged || journalChanged
 		}
 	}
-	if doc.AgentRun != nil && doc.AgentRun.Status == "running" && s.active[agentKey(canvasAgentOwner(identity), project)] == nil {
-		doc.AgentRun.Status = "interrupted"
-		doc.AgentRun.Error = "服务已重启，执行已暂停；请检查已有结果后继续。"
-		if err = agentSetMessage(&doc, doc.AgentRun.SessionID, doc.AgentRun.AssistantID, "waiting", doc.AgentRun.Error); err != nil {
+	if doc.AgentHistoryPartial && (orphaned || interrupted || compacted) {
+		// A repair must preserve every transcript, including unloaded sessions.
+		complete, loadErr := s.canvas.Project(owner, project)
+		if loadErr != nil {
+			return doc, loadErr
+		}
+		return s.snapshotLocked(identity, complete)
+	}
+	if orphaned {
+		doc.AgentRun = nil
+		if doc.ActiveAgentSessionID == runSessionID {
+			doc.ActiveAgentSessionID = ""
+		}
+		return s.canvas.saveAgent(owner, doc)
+	}
+	if compacted {
+		base := doc
+		doc.AgentSessions, err = json.Marshal(sessions)
+		if err != nil {
+			return base, err
+		}
+		doc, err = s.canvas.saveAgentChanges(owner, base, doc)
+		if err != nil {
 			return doc, err
 		}
-		doc, err = s.canvas.saveAgent(canvasAgentOwner(identity), doc)
 	}
-	// Publish completion only after the worker has released its execution slot.
-	if doc.AgentRun != nil && s.active[agentKey(canvasAgentOwner(identity), project)] != nil {
-		doc.AgentRun.Status = "running"
+	if interrupted {
+		doc.AgentRun.Status = "interrupted"
+		doc.AgentRun.Error = "服务已重启，执行已暂停；请检查已有结果后继续。"
+		if err = agentSetMessage(&doc, runSessionID, doc.AgentRun.AssistantID, "waiting", doc.AgentRun.Error); err != nil {
+			return doc, err
+		}
+		return s.canvas.saveAgent(owner, doc)
 	}
-	return doc, err
+	return doc, nil
 }
 
 func (s *CanvasAgentService) Start(identity Identity, project string, req CanvasAgentRequest) (CanvasDocument, error) {
@@ -343,7 +436,7 @@ func agentSession(doc CanvasDocument, id string) ([]map[string]any, map[string]a
 			return sessions, session, nil
 		}
 	}
-	return nil, nil, invalidCanvasDocument("找不到 Agent 会话")
+	return nil, nil, fmt.Errorf("%w: 找不到 Agent 会话: %w", ErrInvalidCanvasDocument, errCanvasAgentSessionNotFound)
 }
 
 func validateCanvasAgentSessionForRun(session map[string]any) error {
@@ -431,13 +524,14 @@ func (s *CanvasDocumentService) saveAgent(owner string, doc CanvasDocument) (Can
 
 // WaitCanvasAgentTask waits independently of the requesting browser connection.
 // It is driven by task change notifications instead of polling.
-func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity Identity, id string, onText func(string) error) (map[string]any, error) {
+func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity Identity, id string, onText func(string) error, onProgress func(int) error) (map[string]any, error) {
 	subscription, err := tasks.SubscribeTasks(identity)
 	if err != nil {
 		return nil, err
 	}
 	defer subscription.Close()
 	lastText := ""
+	lastProgress := -1
 	for {
 		result, err := tasks.ListTasksWithError(identity, []string{id})
 		if err != nil {
@@ -449,6 +543,13 @@ func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity 
 		items := util.AsMapSlice(result["items"])
 		if len(items) > 0 {
 			item := items[0]
+			progress := util.ToInt(item["progress"], -1)
+			if onProgress != nil && progress >= 0 && progress < 100 && progress != lastProgress && (item["status"] == TaskStatusQueued || item["status"] == TaskStatusRunning) {
+				if err := onProgress(progress); err != nil {
+					return nil, err
+				}
+				lastProgress = progress
+			}
 			if onText != nil {
 				data := util.AsMapSlice(item["data"])
 				if len(data) > 0 {

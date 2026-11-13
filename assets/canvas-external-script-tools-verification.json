@@ -1,0 +1,21 @@
+{
+  "at": "2026-11-12T12:07:36.894Z",
+  "checks": [
+    {
+      "name": "actual_external_action_handler_uses_real_backend_for_read_and_confirmation",
+      "passed": true
+    },
+    {
+      "name": "independent_tool_records_persist_after_refresh_without_media_or_quality_changes",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "toolCalls": [
+    "get_node",
+    "confirm_script_node"
+  ],
+  "mediaSubmissions": 0,
+  "originalHistoryUnchanged": true,
+  "fixtureRemoved": true
+}

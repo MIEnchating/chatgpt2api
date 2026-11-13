@@ -1,0 +1,257 @@
+{
+  "phase": "after",
+  "checks": [
+    {
+      "name": "six_geometry_receipts_validate_merged_history_without_redundant_cached_arrangement_scan",
+      "passed": true
+    },
+    {
+      "name": "metadata_acknowledgements_reuse_isolated_baseline_fields_without_large_serialization",
+      "passed": true
+    },
+    {
+      "name": "undo_redo_earlier_messages_tool_details_and_mobile_reload_retain_2000_messages_4000_protocol_entries",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "generationSubmissions": 0,
+  "saves": [
+    {
+      "status": 200,
+      "revision": 1,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 2,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 3,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 4,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 5,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "revision": 6,
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "engine": "codex",
+      "requestBodies": 0,
+      "receiptBodies": 0
+    },
+    {
+      "status": 200,
+      "engine": "native",
+      "requestBodies": 0,
+      "receiptBodies": 0
+    }
+  ],
+  "fixtureBytes": 9301962,
+  "testProjectID": "canvas-b0afe13da7479ba8e8426532",
+  "readyMS": 9276,
+  "snapshots": [
+    {
+      "incomingBodies": 0,
+      "revision": 1,
+      "baselineRevision": 0,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 5.199999928474426
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 2,
+      "baselineRevision": 1,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 5
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 3,
+      "baselineRevision": 2,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 3.200000047683716
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 4,
+      "baselineRevision": 3,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 3.600000023841858
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 5,
+      "baselineRevision": 4,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 3.100000023841858
+    },
+    {
+      "incomingBodies": 0,
+      "revision": 6,
+      "baselineRevision": 5,
+      "reads": [
+        {
+          "baseline": false,
+          "bodyCount": 0,
+          "messages": 0
+        },
+        {
+          "baseline": false,
+          "bodyCount": 1,
+          "messages": 2000
+        }
+      ],
+      "ms": 2.4000000953674316
+    }
+  ],
+  "cachedMessagesScanned": 0,
+  "baselineCopies": [
+    {
+      "baseline": false,
+      "hasSessions": true,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 154.19999992847443
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0.30000007152557373
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0.09999990463256836
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0.10000002384185791
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0
+    },
+    {
+      "baseline": true,
+      "hasSessions": false,
+      "reusedMessages": 0,
+      "reusedProtocol": 0,
+      "ms": 0
+    },
+    {
+      "baseline": true,
+      "hasSessions": true,
+      "reusedMessages": 1,
+      "reusedProtocol": 1,
+      "ms": 10.5
+    },
+    {
+      "baseline": true,
+      "hasSessions": true,
+      "reusedMessages": 1,
+      "reusedProtocol": 1,
+      "ms": 10.399999976158142
+    }
+  ],
+  "largeSerializations": [
+    {
+      "chars": 9240784,
+      "ms": 89.89999997615814,
+      "baseline": false
+    }
+  ],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

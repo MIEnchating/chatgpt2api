@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -256,6 +257,8 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 	deps := map[string][]string{}
 	sources := map[string][]string{}
 	externalRefs := map[string]canvasAgentMediaReferences{}
+	bindings := []canvasAgentScriptBinding{}
+	boundTargets := map[string]bool{}
 	origin := w.newNode("text", "", "")
 	for i, step := range steps {
 		key := util.Clean(step["key"])
@@ -270,6 +273,18 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 		if err != nil {
 			return nil, err
 		}
+		binding, err := w.scriptBinding(kind, step, references.NodeIDs)
+		if err != nil {
+			return nil, err
+		}
+		if binding.ScriptNodeID != "" {
+			target := agentJSON([]string{binding.ScriptNodeID, binding.AssetID, binding.ShotID, kind})
+			if boundTargets[target] {
+				return nil, fmt.Errorf("工作流重复关联同一脚本素材或镜头")
+			}
+			boundTargets[target] = true
+		}
+		bindings = append(bindings, binding)
 		sources[key] = references.NodeIDs
 		externalRefs[key] = references
 		switch kind {
@@ -294,6 +309,11 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 			n.GenerationVideoReferenceImages = references.Images
 			n.GenerationVideoReferenceURLs = references.Videos
 			n.GenerationVideoReferenceAudio = references.Audios
+			videoCapabilities := agentMap(agentMap(w.req.Generation["capabilities"])["video"])
+			n.GenerationVideoParameters, err = normalizeCanvasAgentVideoParameters(videoCapabilities, agentMap(step["videoParameters"]))
+			if err != nil {
+				return nil, err
+			}
 			if audio, ok := step["generateAudio"].(bool); ok {
 				n.GenerationVideoAudio = &audio
 			}
@@ -359,6 +379,14 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 	before := w.doc
 	w.doc.Nodes = append(slices.Clone(w.doc.Nodes), nodes...)
 	w.doc.Connections = append(slices.Clone(w.doc.Connections), connections...)
+	for i, binding := range bindings {
+		w.bindScriptNode(binding, nodes[i])
+		nodes[i] = *w.node(nodes[i].ID)
+	}
+	if _, err := agentWorkflowOrder(ids, w.doc.Nodes, w.doc.Connections); err != nil {
+		w.doc = before
+		return nil, err
+	}
 	result := map[string]any{"ok": true, "nodeIds": ids, "nodes": nodes, "submitted": false, "message": "工作流已搭建，尚未提交媒体生成"}
 	previousReview := w.state["pendingWorkflowReview"]
 	if len(workflowReviewNodeIDs) > 0 {
@@ -450,7 +478,7 @@ func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (map[string]any, err
 	}
 	for _, id := range order {
 		n := w.node(id)
-		if !slices.Contains([]string{"text", "image", "video", "audio"}, n.Type) {
+		if !slices.Contains([]string{"text", "script", "image", "video", "audio"}, n.Type) {
 			return nil, fmt.Errorf("工作流包含不支持执行的节点 %s", n.Title)
 		}
 		if !canvasAgentWorkflowNodeReady(*n) {
@@ -470,6 +498,8 @@ func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (map[string]any, err
 		return nil, err
 	}
 	if failure != nil {
+		// Results may contain failure itself; do not attach the list to that map.
+		failure = maps.Clone(failure)
 		failure["results"] = results
 		return failure, nil
 	}

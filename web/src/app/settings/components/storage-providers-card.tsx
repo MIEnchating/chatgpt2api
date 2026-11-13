@@ -4,7 +4,6 @@ import { LabeledField as StorageField } from "@/components/labeled-field";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PasswordInput } from "@/components/password-input";
-import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Cloud, Gauge, HardDrive, Plus, Save, Server, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -160,8 +159,7 @@ export function StorageProvidersCard() {
       action={<Button type="button" onClick={() => void saveConfig()} disabled={isSaving}>{isSaving ? <Spinner /> : <Save />}保存</Button>}
     >
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "local" | "providers")} className="block">
-        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden pb-4" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 min-w-full w-max">
-          <TabsList aria-label="素材存储设置" className="h-auto">
+        <TabsList aria-label="素材存储设置" className="h-auto">
             {([
               { id: "local", label: "基础设置", icon: HardDrive },
               { id: "providers", label: `外部存储${setting.providers.length ? ` (${setting.providers.length})` : ""}`, icon: Cloud },
@@ -169,8 +167,7 @@ export function StorageProvidersCard() {
               const Icon = tab.icon;
               return <TabsTrigger value={tab.id}  key={tab.id}><Icon className="size-4" />{tab.label}</TabsTrigger>;
             })}
-          </TabsList>
-        </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        </TabsList>
 
         {activeTab === "local" ? <TabsContent value="local" className="grid gap-8">
           <SettingsSection title="服务器本机" description="素材保存在服务器目录，可跨设备访问。" action={<Button type="button" variant="outline" size="sm" onClick={() => void measure(-1)} disabled={measuringIndex !== null}>{measuringIndex === -1 ? <Spinner /> : <Gauge />}统计容量</Button>}>

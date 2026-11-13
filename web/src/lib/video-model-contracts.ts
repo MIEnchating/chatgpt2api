@@ -66,6 +66,15 @@ export type VideoModelContract = {
     | "apimart-video"
     | "custom-video";
   transport: {
+    material_upload?: {
+      base_url: string;
+      path: string;
+      encoding: "multipart" | "base64";
+      field: string;
+      url_field: string;
+      base64_format: "" | "data_url" | "raw";
+      max_bytes: number;
+    } | null;
     local_material: "multipart" | "base64" | "url";
     material_transports?: ("multipart" | "base64" | "url")[];
     base64_format?: "" | "data_url" | "raw";
@@ -139,23 +148,24 @@ export function videoMaterialTransports(transport: VideoModelContract["transport
   return (["multipart", "base64", "url"] as const).filter((method) => supported.includes(method));
 }
 
-export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "generation" | "rules"> & { model: string };
+export type VideoModelContractProfile = Pick<VideoModelContract, "capability" | "generation" | "rules"> & Partial<Pick<VideoModelContract, "transport" | "request">> & { model: string };
 
 export function videoModelProfile(contract: VideoModelContract, model: string): VideoModelContractProfile {
-  const { capability, generation, rules } = contract;
-  return structuredClone({ model, capability, generation, rules });
+  const { capability, generation, rules, transport, request } = contract;
+  return structuredClone({ model, capability, generation, rules, transport, request });
 }
 
 export function resolveVideoModelContract(contract: VideoModelContract, model: string): VideoModelContract {
-  const resolved = cloneVideoModelContract(contract);
-  const profile = resolved.model_profiles?.find((item) => item.model.toLowerCase() === model.trim().toLowerCase());
+  const { model_profiles: profiles, ...resolved } = contract;
+  const profile = profiles?.find((item) => item.model.toLowerCase() === model.trim().toLowerCase());
   if (profile) {
     resolved.capability = profile.capability;
     resolved.generation = profile.generation;
     resolved.rules = profile.rules;
+    if (profile.transport) resolved.transport = profile.transport;
+    if (profile.request) resolved.request = profile.request;
   }
-  delete resolved.model_profiles;
-  return resolved;
+  return cloneVideoModelContract(resolved);
 }
 
 export function cloneVideoModelContract(contract: VideoModelContract): VideoModelContract {

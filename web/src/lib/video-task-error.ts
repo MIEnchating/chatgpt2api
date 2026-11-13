@@ -1,5 +1,5 @@
-export function isVideoSaveFailure(image: { canRecoverVideo?: boolean; error?: string }) {
-  return image.canRecoverVideo === true || Boolean(image.error?.startsWith("视频已生成但保存失败:"));
+export function canRecoverVideoTask(image: { canRecoverVideo?: boolean; error?: string }) {
+  return image.canRecoverVideo === true;
 }
 
 export function videoTaskErrorMessage(error?: string) {

@@ -3116,7 +3116,7 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
         <div className="min-w-0">
           <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-medium text-muted-foreground"><span>图片提示词</span><span className="font-normal tabular-nums">{draft.prompt.length} 字</span></div>
           <PromptInput className="h-auto min-w-0">
-            <PromptTextareaFrame className="h-32 min-h-32">
+            <PromptTextareaFrame value={draft.prompt} className="h-32 min-h-32">
               <InputGroupTextarea className="min-h-full resize-none overflow-hidden" value={draft.prompt} disabled={running} onChange={(event) => onChange({ prompt: event.target.value, status: draft.status === "success" ? "draft" : draft.status })} />
             </PromptTextareaFrame>
           </PromptInput>

@@ -17,7 +17,8 @@ export function CanvasAgentTaskProcess({
     <div data-agent-task-process className="min-w-0">
       <Task
         status={status}
-        timing={<CanvasAgentElapsed {...timing} durationOnly />}
+        timingLabel="执行耗时"
+        timing={timing.elapsedMs !== undefined || timing.processingStartedAt !== undefined ? <CanvasAgentElapsed {...timing} durationOnly /> : undefined}
       >
         {children}
       </Task>

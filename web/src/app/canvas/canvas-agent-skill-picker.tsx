@@ -63,7 +63,7 @@ function SkillPicker({ selectedIds, onChange, disabled, compact }: { selectedIds
   return <>
     <Popover open={open} onOpenChange={setOpen}>
       <TooltipHint content={"Skill"}><span className="inline-flex min-w-0 max-w-full"><PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label="创作技能" className={cn("relative", compact ? "shrink-0" : "min-w-0 shrink")}><BookOpen className="size-[18px] shrink-0" />{compact ? (selectedIds.length ? <Badge className="absolute -right-0.5 -top-0.5">{selectedIds.length}</Badge> : null) : <><span className="truncate">Skill{selectedIds.length ? ` · ${selectedIds.length}` : ""}</span><ChevronDown className="shrink-0" /></>}</Button></PopoverTrigger></span></TooltipHint>
-      <PopoverContent className="w-[min(320px,calc(100vw-2rem))] overflow-hidden" side="top" align="start">
+      {open ? <PopoverContent className="w-[min(320px,calc(100vw-2rem))] overflow-hidden" side="top" align="start">
         <div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium">创作 Skill</span><Button type="button" variant="ghost" size="sm" onClick={() => { setOpen(false); setManage(true); }}><Settings2  />管理</Button></div>
         <p className="mb-2 text-xs text-muted-foreground">最多选 5 个，优先采用所选创作规则。</p>
         {loading ? <LoadingState className="h-auto min-h-24 px-2 py-4" label="正在加载 Skill" /> : error ? <Alert variant="destructive"><AlertDescription>{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>重试</Button></AlertDescription></Alert> : null}
@@ -71,7 +71,7 @@ function SkillPicker({ selectedIds, onChange, disabled, compact }: { selectedIds
         {!loading && !error && !items.length ? <EmptyState compact title="暂无可用 Skill" description="点击管理可新建或导入创作规则。" className="min-h-32 p-3" /> : null}
         {selectedIds.some((id) => !items.some((item) => item.id === id)) && !loading && !error ? <Alert variant="destructive" className="mt-2"><AlertDescription>部分所选 Skill 已被移除或停用，请重新选择。</AlertDescription></Alert> : null}
         {selectedIds.length ? <Button type="button" variant="ghost" size="sm" className="mt-2 w-full" onClick={() => onChange([])}>清空选择</Button> : null}
-      </PopoverContent>
+      </PopoverContent> : null}
     </Popover>
     <SkillManager open={manage} onClose={() => { setManage(false); setRefresh((value) => value + 1); }} />
   </>;
@@ -171,7 +171,7 @@ function SkillManager({ open, onClose }: { open: boolean; onClose: () => void })
   }
 
   return <Dialog open={open} onOpenChange={(value) => { if (!value && !busy) { invalidateRead(); setEditorOpen(false); setDeleteID(""); onClose(); } }}>
-    <DialogContent className="w-[min(94vw,768px)] sm:max-w-none">
+    {open ? <DialogContent className="w-[min(94vw,768px)] sm:max-w-none">
       <DialogHeader><DialogTitle>Skill 管理</DialogTitle><DialogDescription>维护可复用的创作规则。个人 Skill 随账号保存，系统 Skill 由管理员维护。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
       <div className="flex flex-wrap items-center gap-2">
         <Toggle type="button"  pressed={!system} disabled={busy} onClick={() => { invalidateRead(); setSystem(false); setEditorOpen(false); setDeleteID(""); }}>个人</Toggle>
@@ -211,6 +211,6 @@ function SkillManager({ open, onClose }: { open: boolean; onClose: () => void })
         if (skill) void mutate((signal) => deleteAgentSkill(skill, signal));
       }}
     />
-    </DialogContent>
+    </DialogContent> : null}
   </Dialog>;
 }

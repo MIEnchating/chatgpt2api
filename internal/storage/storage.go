@@ -45,6 +45,13 @@ type ContextJSONDocumentBackend interface {
 	SaveJSONDocumentContext(ctx context.Context, name string, value any) error
 }
 
+// JSONDocumentPruningBackend commits a document and prunes unreferenced child
+// documents in the same transaction. All writers publishing children must CAS
+// the parent and rebuild their children after a parent conflict.
+type JSONDocumentPruningBackend interface {
+	SaveJSONDocumentAndPrune(ctx context.Context, name string, value any, prefix string, retainedNames []string) error
+}
+
 type AuthStateBackend interface {
 	SaveAuthState(keys []map[string]any, documents map[string]any) error
 }
@@ -704,6 +711,30 @@ func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
 
 // SaveJSONDocumentContext atomically compares and writes one document with ctx.
 func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name string, value any) error {
+	return b.saveJSONDocument(ctx, name, value, "", nil)
+}
+
+func (b *DatabaseBackend) SaveJSONDocumentAndPrune(ctx context.Context, name string, value any, prefix string, retainedNames []string) error {
+	rel, err := cleanDocumentName(name)
+	if err != nil {
+		return err
+	}
+	cleaned, err := cleanDocumentPrefix(prefix)
+	if err != nil || cleaned == "" {
+		return fmt.Errorf("document pruning requires a canonical nonempty prefix")
+	}
+	if strings.HasPrefix(rel, cleaned) {
+		return fmt.Errorf("parent document cannot be inside its pruned namespace")
+	}
+	for _, retained := range retainedNames {
+		if canonical, err := cleanDocumentName(retained); err != nil || canonical != retained || !strings.HasPrefix(retained, cleaned) {
+			return fmt.Errorf("retained document must belong to the pruned namespace")
+		}
+	}
+	return b.saveJSONDocument(ctx, rel, value, cleaned, retainedNames)
+}
+
+func (b *DatabaseBackend) saveJSONDocument(ctx context.Context, name string, value any, prunePrefix string, retainedNames []string) error {
 	rel, err := cleanDocumentName(name)
 	if err != nil {
 		return err
@@ -728,6 +759,13 @@ func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name stri
 	if err := b.applyJSONDocument(ctx, tx, rel, known, text, updatedAt); err != nil {
 		return err
 	}
+	var removed []string
+	if prunePrefix != "" {
+		removed, err = b.pruneJSONDocuments(ctx, tx, prunePrefix, retainedNames)
+		if err != nil {
+			return err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -738,7 +776,51 @@ func (b *DatabaseBackend) SaveJSONDocumentContext(ctx context.Context, name stri
 		return err
 	}
 	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: text, UpdatedAt: updatedAt, Exists: true}
+	for _, name := range removed {
+		delete(b.documentSnapshots, name)
+	}
 	return nil
+}
+
+func (b *DatabaseBackend) pruneJSONDocuments(ctx context.Context, tx *sql.Tx, prefix string, retainedNames []string) ([]string, error) {
+	retained := make(map[string]struct{}, len(retainedNames))
+	for _, name := range retainedNames {
+		retained[name] = struct{}{}
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT name FROM json_documents WHERE name >= "+b.placeholder(1)+" AND name < "+b.placeholder(2), prefix, documentPrefixUpperBound(prefix))
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if _, keep := retained[name]; !keep && strings.HasPrefix(name, prefix) {
+			removed = append(removed, name)
+		}
+	}
+	err = rows.Err()
+	closeErr := rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	for start := 0; start < len(removed); start += 200 {
+		batch := removed[start:min(start+200, len(removed))]
+		placeholders, args := make([]string, len(batch)), make([]any, len(batch))
+		for index, name := range batch {
+			placeholders[index], args[index] = b.placeholder(index+1), name
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM json_documents WHERE name IN ("+strings.Join(placeholders, ",")+")", args...); err != nil {
+			return nil, err
+		}
+	}
+	return removed, nil
 }
 
 func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
@@ -1174,12 +1256,8 @@ func cleanDocumentPrefix(prefix string) (string, error) {
 }
 
 func decodeJSONString(text string) (any, error) {
-	return decodeJSONBytes([]byte(text))
-}
-
-func decodeJSONBytes(data []byte) (any, error) {
 	var out any
-	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber()
 	if err := dec.Decode(&out); err != nil {
 		return nil, err

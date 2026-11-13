@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Card } from "@/components/ui/card";
 import { Item } from "@/components/ui/item";
 import { SearchInput } from "@/components/ui/search-input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SortableList, SortableItem, SortableHandle } from "@/components/sortable-list";
@@ -121,59 +122,59 @@ type GlobalModelListProps = {
   prices?: ModelPriceQuotes;
 };
 
-function GlobalModelRow({ model, index, kind, models, onChange, onConfigure, definitions, capabilities, onCapabilityChange, prices }: Omit<GlobalModelListProps, "icon" | "onAdd" | "onClear"> & { model: string; index: number }) {
+function GlobalModelRow({ model, index, kind, models, onChange, onConfigure, definitions, capabilities, onCapabilityChange, prices }: Omit<GlobalModelListProps, "onAdd" | "onClear"> & { model: string; index: number }) {
   return (
     <SortableItem value={model} label={model}
-      className="relative flex min-h-12 min-w-0 flex-col gap-2 px-2 py-2 sm:flex-row sm:items-center sm:px-3"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-3 py-3 @min-[40rem]:grid-cols-[minmax(0,1fr)_6rem_7rem] @min-[40rem]:px-4"
     >
-      <div className="flex min-w-0 items-center gap-1.5 sm:flex-1 sm:gap-2">
+      <div className="col-span-2 flex min-w-0 items-center gap-2 @min-[40rem]:col-span-1">
         <SortableHandle aria-label={`拖动 ${model} 排序`} />
-        <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
-        <div className="min-w-0 flex-1">
-          <TooltipHint content={model}><code className="block truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
+        <span className="w-5 shrink-0 text-center font-mono text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+        <div className="grid min-w-0 flex-1 gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <code className="break-all text-sm leading-5">{model}</code>
+            {index === 0 ? <Badge variant="secondary" className="shrink-0">全局默认</Badge> : null}
+          </div>
           <ModelPrice quotes={prices?.[model]} />
         </div>
-        {onCapabilityChange ? <Select value={capabilities?.[model] || kind} onValueChange={(value) => onCapabilityChange(model, value as ModelCapability)}><SelectTrigger className="w-24" aria-label={`${model} 的模型能力`}><SelectValue /></SelectTrigger><SelectContent>{(["text", "image", "video", "audio"] as ModelCapability[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select> : null}
       </div>
-      <div className="flex items-center justify-end gap-2 sm:shrink-0">
-        {index === 0 ? <Badge className="mr-auto shrink-0">全局默认</Badge> : null}
-        <div className="flex shrink-0 items-center">
-          {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
-            <Button type="button" variant="ghost" size="icon"  aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2  /></Button>
-          </TooltipHint> : null}
-          <TooltipHint content={"上移"}><Button
-            type="button"
-            variant="ghost"
-            size="icon"
-
-            onClick={() => onChange(moveModel(models, index, -1))}
-            disabled={index === 0}
-            aria-label={`上移 ${model}`}
-          >
-            <ArrowUp  />
-          </Button></TooltipHint>
-          <TooltipHint content={"下移"}><Button
-            type="button"
-            variant="ghost"
-            size="icon"
-
-            onClick={() => onChange(moveModel(models, index, 1))}
-            disabled={index === models.length - 1}
-            aria-label={`下移 ${model}`}
-          >
-            <ArrowDown  />
-          </Button></TooltipHint>
-          <TooltipHint content={"删除"}><Button
-            type="button"
-            variant="ghost"
-            size="icon"
-
-            onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
-            aria-label={`删除 ${model}`}
-          >
-            <Trash2  />
-          </Button></TooltipHint>
-        </div>
+      {onCapabilityChange ? <Select value={capabilities?.[model] || kind} onValueChange={(value) => onCapabilityChange(model, value as ModelCapability)}>
+        <SelectTrigger className="w-24" aria-label={`${model} 的模型能力`}><SelectValue /></SelectTrigger>
+        <SelectContent>{modelKinds.map((value) => <SelectItem key={value} value={value}>{modelKindMetadata[value].label}</SelectItem>)}</SelectContent>
+      </Select> : <div />}
+      <div className="flex w-28 items-center justify-end">
+        {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2 /></Button>
+        </TooltipHint> : null}
+        <TooltipHint content="上移"><Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onChange(moveModel(models, index, -1))}
+          disabled={index === 0}
+          aria-label={`上移 ${model}`}
+        >
+          <ArrowUp />
+        </Button></TooltipHint>
+        <TooltipHint content="下移"><Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onChange(moveModel(models, index, 1))}
+          disabled={index === models.length - 1}
+          aria-label={`下移 ${model}`}
+        >
+          <ArrowDown />
+        </Button></TooltipHint>
+        <TooltipHint content="删除"><Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
+          aria-label={`删除 ${model}`}
+        >
+          <Trash2 />
+        </Button></TooltipHint>
       </div>
     </SortableItem>
   );
@@ -194,7 +195,7 @@ function GlobalModelList({
   const title = modelKindMetadata[kind].title;
 
   return (
-    <SettingsSection title={title} description={`全站可用，共 ${models.length} 个；拖动手柄调整顺序`} contentClassName="gap-0 p-0 sm:p-0" action={
+    <SettingsSection title={title} description="首项为全局默认，拖动可调整顺序。" className="@container" contentClassName="gap-0 p-0 sm:p-0" action={
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button type="button" variant="ghost" size="sm"  onClick={onClear} disabled={models.length === 0}>
             <Trash2  />
@@ -206,6 +207,11 @@ function GlobalModelList({
           </Button>
         </div>
       }>
+        {models.length > 0 ? <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_6rem_7rem] items-center gap-4 border-b px-4 py-2.5 text-xs text-muted-foreground @min-[40rem]:grid">
+          <span className="pl-16">模型 / 价格</span>
+          <span>模型能力</span>
+          <span className="text-right">排序与管理</span>
+        </div> : null}
         <SortableList values={models} onReorder={onChange} aria-label={`${title}排序`} className="divide-y divide-border/70">
           {(order) => order.map((model, index) => <GlobalModelRow key={model} model={model} index={index} kind={kind} models={order} onChange={onChange} onConfigure={onConfigure} definitions={definitions} capabilities={capabilities} onCapabilityChange={onCapabilityChange} prices={prices} />)}
         </SortableList>
@@ -725,7 +731,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
 
   if (isLoadingConfig || !config) {
     return (
-      <SettingsPanel className="max-w-4xl" title="模型服务" description="配置全站统一使用的文本、图片、视频与音频模型。">
+      <SettingsPanel className="max-w-5xl" title="模型服务" description="配置全站统一使用的文本、图片、视频与音频模型。">
         <LoadingState className="h-auto" label="正在加载模型设置" />
       </SettingsPanel>
     );
@@ -752,64 +758,56 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
 
   return (
     <>
-      <SettingsPanel className="max-w-4xl"
+      <SettingsPanel
+        className="max-w-5xl gap-6"
         title="模型服务"
-        description="文本、图片、视频与音频模型在全站统一生效。获取模型时同步更新分组价格（USD），额外账户优惠以实际结算为准。"
+        description="管理全站统一使用的模型，按类型配置能力与默认顺序。"
+        contentScrollable={false}
         action={
-          <div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void refreshPrices()} disabled={isRefreshingPrices}>{isRefreshingPrices ? <Spinner /> : <RefreshCw />}更新价格</Button><Button type="button" size="sm" variant="outline" onClick={() => setGroupsOpen(true)}><Settings2 />模型分组</Button><Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
-            {isSavingConfig ? <Spinner /> : <Save  />}
-            保存模型配置
-          </Button></div>
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={() => void refreshPrices()} disabled={isRefreshingPrices}>
+              {isRefreshingPrices ? <Spinner /> : <RefreshCw />}更新价格
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setGroupsOpen(true)}><Settings2 />模型分组</Button>
+            <Button type="button" size="sm" aria-label="保存模型配置" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+              {isSavingConfig ? <Spinner /> : <Save />}保存
+            </Button>
+          </>
         }
       >
-        <div className="grid min-w-0 gap-8">
-            <GlobalModelList
-              kind="text"
-              prices={pricesByKind.text}
-              models={textModels}
-              onChange={(models) => updateModels("text", models)}
-              onAdd={() => openAddDialog("text")}
-              onClear={() => updateModels("text", [])}
-              capabilities={capabilities}
-              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
-            />
-            <GlobalModelList
-              kind="image"
-              prices={pricesByKind.image}
-              models={imageModels}
-              onChange={(models) => updateModels("image", models)}
-              onAdd={() => openAddDialog("image")}
-              onClear={() => updateModels("image", [])}
-              onConfigure={setDefinitionModel}
-              definitions={config.image_model_definitions}
-              capabilities={capabilities}
-              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
-            />
-            <GlobalModelList
-              kind="video"
-              prices={pricesByKind.video}
-              models={videoModels}
-              onChange={(models) => updateModels("video", models)}
-              onAdd={() => openAddDialog("video")}
-              onClear={() => updateModels("video", [])}
-              capabilities={capabilities}
-              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
-            />
-            <GlobalModelList
-              kind="audio"
-              prices={pricesByKind.audio}
-              models={audioModels}
-              onChange={(models) => updateModels("audio", models)}
-              onAdd={() => openAddDialog("audio")}
-              onClear={() => updateModels("audio", [])}
-              capabilities={capabilities}
-              onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
-            />
-        </div>
+        <Tabs defaultValue="text" className="min-h-0 flex-1 gap-5">
+          <TabsList aria-label="模型类型" className="grid w-full shrink-0 grid-cols-4 sm:w-fit">
+            {modelKinds.map((kind) => {
+              const { label, icon: Icon } = modelKindMetadata[kind];
+              return <TabsTrigger key={kind} value={kind} className="gap-1.5 px-2 sm:px-3 lg:px-4">
+                <Icon className="hidden lg:block" />
+                {label}
+                <Badge variant="secondary" className="min-w-5 justify-center tabular-nums">{modelsByKind[kind].length}</Badge>
+              </TabsTrigger>;
+            })}
+          </TabsList>
+          {modelKinds.map((kind) => <TabsContent key={kind} value={kind} className="flex min-h-0 flex-col data-[state=inactive]:hidden">
+            <ScrollArea className="-mr-3 -ml-1 min-h-0 flex-1" contentClassName="py-1 pl-1" onWheel={(event) => event.stopPropagation()}>
+              <GlobalModelList
+                kind={kind}
+                prices={pricesByKind[kind]}
+                models={modelsByKind[kind]}
+                onChange={(models) => updateModels(kind, models)}
+                onAdd={() => openAddDialog(kind)}
+                onClear={() => updateModels(kind, [])}
+                onConfigure={kind === "image" ? setDefinitionModel : undefined}
+                definitions={kind === "image" ? config.image_model_definitions : undefined}
+                capabilities={capabilities}
+                onCapabilityChange={(model, capability) => setModelCapabilities({ ...capabilities, [model]: capability })}
+              />
+            </ScrollArea>
+          </TabsContent>)}
+        </Tabs>
+        <p className="pt-4 text-xs leading-5 text-muted-foreground">价格单位为 USD，获取模型时同步更新；账户优惠以实际结算为准。</p>
       </SettingsPanel>
       <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
         <DialogContent className="w-[min(92vw,720px)] sm:max-w-none">
-          <DialogHeader><DialogTitle>模型分组</DialogTitle><DialogDescription>修改分组名称可整组重命名，同名分组会合并。模型所属分组留空时自动分组；拖动分组调整全站显示顺序。完成后点击“保存模型配置”生效。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>模型分组</DialogTitle><DialogDescription>修改分组名称可整组重命名，同名分组会合并。模型所属分组留空时自动分组；拖动分组调整全站显示顺序。完成后点击“保存”生效。</DialogDescription></DialogHeader>
           <ScrollArea className="min-h-0 max-h-[65dvh]" contentClassName="space-y-4 py-2">
             <SortableList values={groups.map((group) => group.name)} onReorder={(order) => setModelGroups({ ...modelGroups, order })} aria-label="模型分组排序" className="space-y-4">
               {(order) => order.map((name) => {

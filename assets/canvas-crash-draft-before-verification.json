@@ -1,0 +1,9 @@
+{
+  "stage": "before",
+  "checks": [
+    "HTTP 500 followed by renderer crash loses the unsaved title on reopen"
+  ],
+  "mediaSubmissions": 0,
+  "fixtureProjectsDeleted": true,
+  "originalHistoryUnchanged": true
+}

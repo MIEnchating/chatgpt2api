@@ -1,0 +1,537 @@
+{
+  "at": "2026-11-12T12:23:55.687Z",
+  "runID": "pqdYdRbGzPT_BFeqoIArh",
+  "status": "running",
+  "newTaskCount": 5,
+  "newTasks": [
+    {
+      "id": "canvas-agent-media-canvas-361f20d34374e138edb800b1",
+      "status": "queued",
+      "keys": [
+        "can_recover_video",
+        "count",
+        "created_at",
+        "generate_audio",
+        "id",
+        "mode",
+        "model",
+        "progress",
+        "resolution",
+        "revision",
+        "seconds",
+        "size",
+        "status",
+        "updated_at",
+        "upstream_status",
+        "video_contract",
+        "visibility",
+        "watermark"
+      ]
+    },
+    {
+      "id": "canvas-agent-media-canvas-388ee8bf55b3d40967a0318a",
+      "status": "queued",
+      "keys": [
+        "can_recover_video",
+        "count",
+        "created_at",
+        "generate_audio",
+        "id",
+        "mode",
+        "model",
+        "progress",
+        "resolution",
+        "revision",
+        "seconds",
+        "size",
+        "status",
+        "updated_at",
+        "upstream_status",
+        "video_contract",
+        "visibility",
+        "watermark"
+      ]
+    },
+    {
+      "id": "canvas-agent-media-canvas-5ebee353288f5b0774d9d6bd",
+      "status": "queued",
+      "keys": [
+        "can_recover_video",
+        "count",
+        "created_at",
+        "generate_audio",
+        "id",
+        "mode",
+        "model",
+        "progress",
+        "resolution",
+        "revision",
+        "seconds",
+        "size",
+        "status",
+        "updated_at",
+        "upstream_status",
+        "video_contract",
+        "visibility",
+        "watermark"
+      ]
+    },
+    {
+      "id": "canvas-agent-media-canvas-9b835615cf82170d759d55c9",
+      "status": "queued",
+      "keys": [
+        "can_recover_video",
+        "count",
+        "created_at",
+        "generate_audio",
+        "id",
+        "mode",
+        "model",
+        "progress",
+        "resolution",
+        "revision",
+        "seconds",
+        "size",
+        "status",
+        "updated_at",
+        "upstream_status",
+        "video_contract",
+        "visibility",
+        "watermark"
+      ]
+    },
+    {
+      "id": "canvas-agent-media-canvas-5380303c38de877df05899f9",
+      "status": "success",
+      "keys": [
+        "count",
+        "created_at",
+        "data",
+        "id",
+        "mode",
+        "model",
+        "output_statuses",
+        "revision",
+        "size",
+        "status",
+        "updated_at",
+        "visibility"
+      ]
+    }
+  ],
+  "videos": [
+    {
+      "id": "video-canvas-68907edd4828bc282ffcc9c0",
+      "title": "视频01｜问候",
+      "taskID": "canvas-agent-media-canvas-388ee8bf55b3d40967a0318a",
+      "taskStatus": "running",
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "generateAudio": true,
+      "watermark": false,
+      "nodeSettings": {
+        "generation_image_options": {},
+        "generation_status": "loading",
+        "generation_video_model": "minimax-H3-super",
+        "generation_video_size": "9:16",
+        "generation_video_seconds": 15,
+        "generation_video_resolution": "768p",
+        "generation_video_audio": true
+      }
+    },
+    {
+      "id": "video-canvas-468eb52d1feaee8c9b83227b",
+      "title": "视频02｜开线",
+      "taskID": "canvas-agent-media-canvas-361f20d34374e138edb800b1",
+      "taskStatus": "running",
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "generateAudio": true,
+      "watermark": false,
+      "nodeSettings": {
+        "generation_image_options": {},
+        "generation_status": "loading",
+        "generation_video_model": "minimax-H3-super",
+        "generation_video_size": "9:16",
+        "generation_video_seconds": 15,
+        "generation_video_resolution": "768p",
+        "generation_video_audio": true
+      }
+    },
+    {
+      "id": "video-canvas-4b03e366153d957a8ed24198",
+      "title": "视频03｜工钱",
+      "taskID": "canvas-agent-media-canvas-5ebee353288f5b0774d9d6bd",
+      "taskStatus": "running",
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "generateAudio": true,
+      "watermark": false,
+      "nodeSettings": {
+        "generation_image_options": {},
+        "generation_status": "loading",
+        "generation_video_model": "minimax-H3-super",
+        "generation_video_size": "9:16",
+        "generation_video_seconds": 15,
+        "generation_video_resolution": "768p",
+        "generation_video_audio": true
+      }
+    },
+    {
+      "id": "video-canvas-c11c0fb5174848a465c348fe",
+      "title": "视频04｜留灯",
+      "taskID": "canvas-agent-media-canvas-9b835615cf82170d759d55c9",
+      "taskStatus": "running",
+      "model": "minimax-H3-super",
+      "seconds": 15,
+      "size": "9:16",
+      "resolution": "768P",
+      "generateAudio": true,
+      "watermark": false,
+      "nodeSettings": {
+        "generation_image_options": {},
+        "generation_status": "loading",
+        "generation_progress": 30,
+        "generation_video_model": "minimax-H3-super",
+        "generation_video_size": "9:16",
+        "generation_video_seconds": 15,
+        "generation_video_resolution": "768p",
+        "generation_video_audio": true
+      }
+    }
+  ],
+  "settingsVerified": true,
+  "fourthImageVisualInspection": {
+    "file": "build/review/canvas-production/autonomous-media/image-8-retry.png",
+    "singleFrame": true,
+    "visibleSubtitles": false,
+    "visibleGridOrNumber": false,
+    "observed": "单幅竖屏，林舟持单个米白布袋，陈姨在暖灯和木台旁；未看到字幕、编号或宫格。仅静态检查，非完整连续性验收。",
+    "qualityApproved": false
+  },
+  "shotBindings": [
+    {
+      "shotID": "s1",
+      "nodeID": "video-canvas-68907edd4828bc282ffcc9c0",
+      "imageNodeID": "image-canvas-59b485ecee283ef967d66d2c",
+      "referenceNodeIDs": [
+        "image-canvas-59b485ecee283ef967d66d2c",
+        "image-canvas-13a7db63312f8ae75a0701e1",
+        "image-canvas-56f062386931635998ca4a0c",
+        "image-canvas-05bb0c5758202c678682901a",
+        "image-canvas-6f9e733d089e110c725610ea"
+      ],
+      "referenceCount": 5,
+      "firstReferenceIsBoundBoard": true,
+      "videoPromptSaved": true,
+      "videoPromptMatchesNode": true,
+      "confirmed": true,
+      "manualQualityReview": null
+    },
+    {
+      "shotID": "s2",
+      "nodeID": "video-canvas-468eb52d1feaee8c9b83227b",
+      "imageNodeID": "image-canvas-b0baf144bb3c9f89d41b5ead",
+      "referenceNodeIDs": [
+        "image-canvas-b0baf144bb3c9f89d41b5ead",
+        "image-canvas-13a7db63312f8ae75a0701e1",
+        "image-canvas-56f062386931635998ca4a0c",
+        "image-canvas-05bb0c5758202c678682901a",
+        "image-canvas-6f9e733d089e110c725610ea"
+      ],
+      "referenceCount": 5,
+      "firstReferenceIsBoundBoard": true,
+      "videoPromptSaved": true,
+      "videoPromptMatchesNode": true,
+      "confirmed": true,
+      "manualQualityReview": null
+    },
+    {
+      "shotID": "s3",
+      "nodeID": "video-canvas-4b03e366153d957a8ed24198",
+      "imageNodeID": "image-canvas-da8c0f20bf4d0a52a5237a8d",
+      "referenceNodeIDs": [
+        "image-canvas-da8c0f20bf4d0a52a5237a8d",
+        "image-canvas-13a7db63312f8ae75a0701e1",
+        "image-canvas-56f062386931635998ca4a0c",
+        "image-canvas-05bb0c5758202c678682901a",
+        "image-canvas-6f9e733d089e110c725610ea"
+      ],
+      "referenceCount": 5,
+      "firstReferenceIsBoundBoard": true,
+      "videoPromptSaved": true,
+      "videoPromptMatchesNode": true,
+      "confirmed": true,
+      "manualQualityReview": null
+    },
+    {
+      "shotID": "s4",
+      "nodeID": "video-canvas-c11c0fb5174848a465c348fe",
+      "imageNodeID": "image-canvas-3680cce2614d4ede6869c5e1",
+      "referenceNodeIDs": [
+        "image-canvas-3680cce2614d4ede6869c5e1",
+        "image-canvas-13a7db63312f8ae75a0701e1",
+        "image-canvas-56f062386931635998ca4a0c",
+        "image-canvas-05bb0c5758202c678682901a",
+        "image-canvas-6f9e733d089e110c725610ea"
+      ],
+      "referenceCount": 5,
+      "firstReferenceIsBoundBoard": true,
+      "videoPromptSaved": true,
+      "videoPromptMatchesNode": true,
+      "confirmed": true,
+      "manualQualityReview": null
+    }
+  ],
+  "connectionAudit": {
+    "at": "2026-11-12T12:35:40.360Z",
+    "connections": [
+      {
+        "id": "canvas-0d6e7a6e6e655ac555b17a1e",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "script-canvas-57f40ada890cc88876873a0b"
+      },
+      {
+        "id": "canvas-806aec2b472bbbb4c8e2ea13",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "script-canvas-57f40ada890cc88876873a0b"
+      },
+      {
+        "id": "canvas-3b8a505e269b2eaed01c7dad",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "script-canvas-57f40ada890cc88876873a0b"
+      },
+      {
+        "id": "canvas-bb4a87987d177f5191611780",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "script-canvas-57f40ada890cc88876873a0b"
+      },
+      {
+        "id": "canvas-2059d6a7194af60fde37a23f",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+      },
+      {
+        "id": "canvas-c906788ae5d699f9fb117e78",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+      },
+      {
+        "id": "canvas-d15908f1b801ef4615e3df67",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+      },
+      {
+        "id": "canvas-fa5f6c5cd4badeabaf363d8b",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+      },
+      {
+        "id": "canvas-a61e856abcde46a2af4500a6",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+      },
+      {
+        "id": "canvas-0a5134438bded4df958c0cdd",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+      },
+      {
+        "id": "canvas-3da9e5316f70cfacd978264e",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+      },
+      {
+        "id": "canvas-4fffef24820c277f9aefb325",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+      },
+      {
+        "id": "canvas-27fa267e3198c9574f78e0b5",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+      },
+      {
+        "id": "canvas-bf1bdc44b58bc1c45d6359ad",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+      },
+      {
+        "id": "canvas-b3e75ee2213538602fa25baa",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+      },
+      {
+        "id": "canvas-a4075bc122b60844c5e69855",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+      },
+      {
+        "id": "canvas-2189bb6199d0ddf47631a17b",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+      },
+      {
+        "id": "canvas-4da21978fd0b748944a121cf",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+      },
+      {
+        "id": "canvas-a8e1a519aac5f4d05068e451",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+      },
+      {
+        "id": "canvas-0d93f56bdff89b6f698086b7",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+      },
+      {
+        "id": "canvas-0092ec3a1b11080c6fc66150",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+      },
+      {
+        "id": "canvas-3f07636624584cc4d4074d07",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+      },
+      {
+        "id": "canvas-4bb6325485f7ab7bf44f1878",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+      },
+      {
+        "id": "canvas-46fb4c21a376cd5a2d839971",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+      },
+      {
+        "id": "canvas-ed396f10159a65bf56967739",
+        "from_node_id": "image-canvas-59b485ecee283ef967d66d2c",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-ae5ab71b2c38b08b77fa42f5",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-ca3f69fcad430b01dbd3cf15",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-17d9638f40df369c49159439",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-1715bb99ed7d43caf31dceaa",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-9a2816a0d56b615032d72860",
+        "from_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-6282a4faee933f7c949b3084",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-f36e2f3c1a60626daa48a5bf",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-c97a145a33bd5a09cd6877e2",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-2bdea3e197b8492e1a2672cb",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-5a9030d0731f7b4b1b039f3c",
+        "from_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-b43415fb7a594b38c87615d8",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-3c84d8668d412465e3e12457",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-e25132439ee6edb65606f987",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-877f7edf17732e6968e9e987",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-08e7d6bda7463b34b97ec8f8",
+        "from_node_id": "image-canvas-3680cce2614d4ede6869c5e1",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      },
+      {
+        "id": "canvas-07adb55e1c6dbe490e629564",
+        "from_node_id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      },
+      {
+        "id": "canvas-cac0c53b379293949a309315",
+        "from_node_id": "image-canvas-56f062386931635998ca4a0c",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      },
+      {
+        "id": "canvas-e2858a8d1cb676f21d453593",
+        "from_node_id": "image-canvas-05bb0c5758202c678682901a",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      },
+      {
+        "id": "canvas-89f5840d1ec1ba87cbf9a05c",
+        "from_node_id": "image-canvas-6f9e733d089e110c725610ea",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      },
+      {
+        "id": "canvas-62efa73ff9878903daf06526",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "video-canvas-68907edd4828bc282ffcc9c0"
+      },
+      {
+        "id": "canvas-831d831003bbaf3a2ac43493",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "video-canvas-468eb52d1feaee8c9b83227b"
+      },
+      {
+        "id": "canvas-73bd649a42e5d0a91f3b1199",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "video-canvas-4b03e366153d957a8ed24198"
+      },
+      {
+        "id": "canvas-ca82ba62523b37c27e19a2d1",
+        "from_node_id": "script-canvas-57f40ada890cc88876873a0b",
+        "to_node_id": "video-canvas-c11c0fb5174848a465c348fe"
+      }
+    ]
+  }
+}

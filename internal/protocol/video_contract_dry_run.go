@@ -35,6 +35,9 @@ func DryRunVideoModelContracts(contracts []VideoModelContract) ([]VideoContractD
 	results := make([]VideoContractDryRunResult, 0, len(normalized))
 	for _, contract := range normalized {
 		result := VideoContractDryRunResult{Contract: contract.Name, Passed: true, Checks: []string{"契约结构、模型与字段映射", "各模型、各生成模式的代表性参数与素材约束", "轮询路径与状态配置"}}
+		if contract.Transport.MaterialUpload != nil {
+			result.Checks = append(result.Checks, "供应商预上传配置（仅结构校验，不读取密钥或执行网络上传）")
+		}
 		cases, err := BuildVideoContractDryRunCases(contract)
 		if err != nil {
 			return nil, err

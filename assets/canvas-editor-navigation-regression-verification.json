@@ -1,0 +1,32 @@
+{
+  "sourceHashes": {
+    "web/src/app/canvas/page.tsx": "1726bb42684cfae3e0ebc9a24fe666ba5cfc3c871cb71fe45d31630586b87945",
+    "web/src/app/route-config.tsx": "7224d3f2bb46a1ee94dbd03f5fa6f89944aa80cfd6838296b8ffaaa050f594d5",
+    "web/tests/route-preload.test.mjs": "9c4a97a152c208074628b6aed92a2ed124e103b6c4bbba3cbfb26d16a67a0805",
+    "web/tests/canvas-review-regressions.test.mjs": "1a6fe5d9346c71c0c16b74c9a843b18393aa8af574e7969b89c431427f8c901d"
+  },
+  "removedFiles": [
+    "web/src/app/canvas/route.tsx"
+  ],
+  "checks": {
+    "fullFrontend": {
+      "passed": 1774,
+      "failed": 0,
+      "files": 194,
+      "durationSeconds": 131.29
+    },
+    "build": {
+      "passed": true,
+      "viteSeconds": 7.45
+    },
+    "lint": {
+      "warnings": 0,
+      "errors": 0
+    },
+    "embedded": {
+      "passed": true,
+      "seconds": 0.033
+    }
+  },
+  "audioModelsEnabled": 0
+}

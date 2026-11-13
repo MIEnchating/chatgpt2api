@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
@@ -113,8 +114,8 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 	if len(options.Models) == 0 {
 		options.Models = append([]string(nil), contract.Models...)
 	}
-	if len(options.Models) > 20 {
-		return result, fmt.Errorf("一个插件最多声明 20 个完整模型 ID")
+	if len(options.Models) > protocol.MaxVideoContractModels {
+		return result, fmt.Errorf("一个插件最多声明 %d 个完整模型 ID", protocol.MaxVideoContractModels)
 	}
 	profiles := make([]protocol.VideoModelContractProfile, 0, len(options.Models))
 	seen := map[string]bool{}
@@ -140,7 +141,16 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 				}
 			}
 		}
-		profiles = append(profiles, protocol.VideoModelContractProfile{Model: model, Capability: resolved.Capability, Generation: resolved.Generation, Rules: resolved.Rules})
+		profile := protocol.VideoModelContractProfile{Model: model, Capability: resolved.Capability, Generation: resolved.Generation, Rules: resolved.Rules}
+		if !reflect.DeepEqual(resolved.Transport, contract.Transport) {
+			transport := resolved.Transport
+			profile.Transport = &transport
+		}
+		if !reflect.DeepEqual(resolved.Request, contract.Request) {
+			request := resolved.Request
+			profile.Request = &request
+		}
+		profiles = append(profiles, profile)
 	}
 	if len(options.ResultFields) == 0 {
 		options.ResultFields = append([]string{}, contract.Polling.ResultFields...)
@@ -192,10 +202,19 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 	}
 	contract.Models = append([]string(nil), options.Models...)
 	contract.ModelProfiles = profiles
+	// Provider uploads belong to this application's execution pipeline. The host
+	// plugin accepts the resulting URLs and must not receive server configuration.
+	runtimeContract := contract
+	runtimeContract.Transport.MaterialUpload = nil
+	for index := range runtimeContract.ModelProfiles {
+		if runtimeContract.ModelProfiles[index].Transport != nil {
+			runtimeContract.ModelProfiles[index].Transport.MaterialUpload = nil
+		}
+	}
 	encoded, err := json.MarshalIndent(struct {
 		Contract protocol.VideoModelContract `json:"contract"`
 		Options  NewAPIVideoPluginOptions    `json:"options"`
-	}{contract, options}, "", "  ")
+	}{runtimeContract, options}, "", "  ")
 	if err != nil {
 		return result, err
 	}
@@ -216,6 +235,9 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 		"生成过程不请求上游，也不验证供应商权限或计费。上传前核对 Base URL、请求路径和鉴权方式。",
 		"插件按当前契约字段接收 JSON 或已声明的 multipart；openai_video 只声明视频路由，不自动把 seconds/size 等字段转换为其他别名。",
 		"只提供用量字段，不内置售价；实际价格、轮询调度和任务超时由 New API 管理。相同标识和版本的源码变更需使用新版本号。",
+	}
+	if contract.Transport.MaterialUpload != nil {
+		result.Warnings = append(result.Warnings, "素材预上传由本项目使用独立供应商密钥执行，生成的 New API 插件接收上传后的 URL；其它客户端须自行预上传。")
 	}
 	if options.BaseURL == "" {
 		result.Warnings = append(result.Warnings, "插件未设置默认上游地址，请在 New API 渠道中填写 Base URL，并核对 SSRF 保护允许的下载端口；本地干跑使用测试地址，不代表生产渠道或下载网络已验证。")

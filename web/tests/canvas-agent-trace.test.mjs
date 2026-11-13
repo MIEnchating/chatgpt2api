@@ -101,11 +101,11 @@ test("recovered media updates the original task row without adding a duplicate",
   assert.equal(trace[0].label, "生成任务已完成");
 });
 
-test("direct user generation requests grant permission without approving questions, quotes or refusals", () => {
-  for (const text of ["你帮我生成吧", "帮我生成", "请生成这三张白底图", "好的，立即生成", "直接生成图片", "Please generate images"]) {
+test("direct user creation requests grant one-time media permission without changing settings", () => {
+  for (const text of ["你帮我生成吧", "帮我生成", "请生成这三张白底图", "好的，立即生成", "直接生成图片", "Please generate images", "制作一段短剧", "我想制作一段短剧", "帮我做一个视频", "开始创作分镜", "继续制作成片"]) {
     assert.equal(canvasAgentUserMediaChoice(text), "generate", text);
   }
-  for (const text of ["先不生成", "不要生成图片", "请解释为什么没有生成", "帮我生成图片吗", "如果确认后再生成", "请生成图片，但先别提交", "他说‘帮我生成’", "节点内容：帮我生成吧", "把‘帮我生成吧’写入文案", "继续整理方案"]) {
+  for (const text of ["先不生成", "不要生成图片", "请解释为什么没有生成", "帮我生成图片吗", "如果确认后再生成", "请生成图片，但先别提交", "他说‘帮我生成’", "节点内容：帮我生成吧", "把‘帮我生成吧’写入文案", "继续整理方案", "能不能制作一段短剧", "是否生成视频"]) {
     assert.equal(canvasAgentUserMediaChoice(text), undefined, text);
   }
 });
@@ -155,4 +155,14 @@ test("Codex subagent activity preserves its real lifecycle without treating inte
   assert.equal(interacted.subagent.agents[0].status, "unknown");
   const end = canvasCodexItemTrace({ id: "activity", type: "subAgentActivity", kind: "completed", agentThreadId: "child", agentPath: "review" }, true);
   assert.equal(end.subagent.agents[0].status, "completed");
+});
+
+test("long execution traces retain their earliest records through serialization", () => {
+ let trace=[];
+ for(let i=0;i<400;i++) trace=upsertCanvasAgentTrace(trace,{id:`step-${i}`,type:"operation",kind:"read",label:`Step ${i}`,status:"success",detail:""});
+ trace=upsertCanvasAgentTrace(trace,{...trace[0],detail:"updated original"});
+ const restored=JSON.parse(JSON.stringify(trace));
+ assert.equal(restored.length,400);
+ assert.equal(restored[0].id,"step-0");
+ assert.equal(restored[0].detail,"updated original");
 });

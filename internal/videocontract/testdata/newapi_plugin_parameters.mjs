@@ -25,6 +25,11 @@ const reference = input.contract.transport.local_material === 'base64'
   ? input.contract.transport.base64_format === 'raw' ? 'YQ==' : 'data:image/png;base64,YQ=='
   : 'https://dry-run.invalid/ref.mp4';
 assert.equal(submit({prompt_expansion_mode:'balanced',input_reference:reference}).input_reference,reference);
+if (input.contract.transport.material_transports?.includes('base64')) {
+  const encoded = 'data:image/png;base64,YQ==';
+  assert.equal(submit({prompt_expansion_mode:'balanced',input_reference:encoded}).input_reference,encoded);
+  assert.throws(()=>submit({prompt_expansion_mode:'balanced',input_reference:'data:image/png;base64,@@@'}),/Base64/);
+}
 if (input.contract.transport.local_material === 'base64') {
   for (const bad of ['https://dry-run.invalid/ref.png', 'data:image/png;base64,@@@', '']) {
     if (bad) assert.throws(()=>submit({prompt_expansion_mode:'balanced',input_reference:bad}));

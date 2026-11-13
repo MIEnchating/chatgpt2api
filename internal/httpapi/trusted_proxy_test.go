@@ -40,3 +40,25 @@ func TestClientIPAndHTTPSShareTrustDecision(t *testing.T) {
 		t.Fatalf("untrusted peer: clientIP = %q https = %v", got, isHTTPSRequest(untrusted))
 	}
 }
+
+func TestRequestMediaBaseURLHonorsProxyTrustAndValidatesHost(t *testing.T) {
+	t.Setenv(trustedProxiesEnv, "127.0.0.1")
+	for _, tc := range []struct{ name, peer, host, forwarded, want string }{
+		{"direct", "203.0.113.1:2000", "canvas.example.test:8002", "", "http://canvas.example.test:8002"},
+		{"trusted proxy", "127.0.0.1:2000", "backend:8090", "canvas.example.test", "https://canvas.example.test"},
+		{"untrusted proxy", "203.0.113.1:2000", "canvas.example.test", "evil.example.test", "http://canvas.example.test"},
+		{"invalid host", "127.0.0.1:2000", "backend:8090", "canvas.example.test/path", ""},
+		{"credentials", "127.0.0.1:2000", "backend:8090", "user@canvas.example.test", ""},
+		{"multiple hosts", "127.0.0.1:2000", "backend:8090", "canvas.example.test,evil.example.test", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "http://backend/", nil)
+			r.RemoteAddr, r.Host = tc.peer, tc.host
+			r.Header.Set("X-Forwarded-Host", tc.forwarded)
+			r.Header.Set("X-Forwarded-Proto", "https")
+			if got := requestMediaBaseURL(r); got != tc.want {
+				t.Fatalf("base = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

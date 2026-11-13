@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -255,13 +256,46 @@ func (s *FileLifecycleService) references(ctx context.Context) (map[string]bool,
 		}
 		return nil
 	}
+	var canvasWorkspaces []struct {
+		prefix    string
+		workspace canvasWorkspace
+	}
 	if err := s.inventory.VisitJSONDocuments(ctx, func(name string, value any) error {
-		if name == fileLifecycleDocument {
+		if name == fileLifecycleDocument || strings.HasPrefix(name, "canvas_agent_history/") {
+			return nil
+		}
+		if strings.HasPrefix(name, canvasWorkspaceDir+"/") {
+			ownerHash := strings.TrimSuffix(strings.TrimPrefix(name, canvasWorkspaceDir+"/"), ".json")
+			if decoded, err := hex.DecodeString(ownerHash); err != nil || len(decoded) != 32 {
+				return errors.New("invalid canvas workspace reference document name")
+			}
+			data, err := json.Marshal(value)
+			if err != nil {
+				return err
+			}
+			var workspace canvasWorkspace
+			if err := json.Unmarshal(data, &workspace); err != nil {
+				return err
+			}
+			canvasWorkspaces = append(canvasWorkspaces, struct {
+				prefix    string
+				workspace canvasWorkspace
+			}{"canvas_agent_history/" + ownerHash + "/", workspace})
 			return nil
 		}
 		return visit(value)
 	}); err != nil {
 		return nil, err
+	}
+	// Finish the inventory cursor before loading chunks: SQLite uses one
+	// connection, and nested queries would wait on that same open cursor.
+	for _, entry := range canvasWorkspaces {
+		if err := loadCanvasAgentHistories(s.store, entry.prefix, &entry.workspace); err != nil {
+			return nil, err
+		}
+		if err := visit(entry.workspace); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.inventory.VisitImageConversationDocuments(ctx, visit); err != nil {
 		return nil, err

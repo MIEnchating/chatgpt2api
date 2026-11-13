@@ -30,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { PromptInput } from "@/components/ai-elements/prompt-input";
 import { InputGroupTextarea } from "@/components/ui/input-group";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   createCustomRelayConfig,
@@ -680,100 +681,121 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       data-profile-preferences-card
       title="创作偏好"
       description="设置个人默认模型与生成参数，创作时仍可临时调整。"
-      contentClassName="grid gap-8 py-1 pl-1"
+      contentScrollable={false}
       action={<Button type="button" onClick={() => void save()} disabled={isLoading || isSaving}>
         {isSaving ? <Spinner /> : null}
         保存设置
       </Button>}
     >
-      <SettingsSection title="默认模型" description="从管理员开放的模型中选择个人默认值，创作时仍可临时切换。">
-        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-          {([
-            ["text", "文本模型", "default_text_model", TextCursorInput],
-            ["image", "图片模型", "default_image_model", ImageIcon],
-            ["video", "视频模型", "default_video_model", Clapperboard],
-            ["audio", "音频模型", "default_audio_model", AudioLines],
-          ] as const).map(([kind, label, field, Icon]) => {
-            const options = pulledModels[kind] ?? modelConfig[kind].models;
-            const defaultModel = pulledModels[kind] === null ? modelConfig[kind].defaultModel : "";
-            const current = resolveConfiguredModel(options, preferences[field], defaultModel);
-            return <LabeledField key={kind} className="grid min-w-0 gap-2 text-sm font-medium" label={<span className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" />{label}</span>}>{(fieldId) => <><span className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                <ModelPicker id={fieldId} label={label} value={current} options={options} disabled={isLoading} placeholder={pulledModels[kind] !== null ? "该 Key 暂无可用模型" : "暂无可用模型"} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })} />
-                <TooltipHint content={`按当前 Key 拉取${label}`}><Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
+      <Tabs defaultValue="models" className="min-h-0 min-w-0 flex-1 gap-4">
+        <TabsList aria-label="创作偏好分类" className="w-full shrink-0">
+          <TabsTrigger value="models">模型</TabsTrigger>
+          <TabsTrigger value="canvas">画布</TabsTrigger>
+          <TabsTrigger value="api">接口</TabsTrigger>
+          <TabsTrigger value="instructions">指令</TabsTrigger>
+        </TabsList>
+        <TabsContent value="models" forceMount className="min-h-0 min-w-0 data-[state=inactive]:hidden">
+          <ScrollArea className="-mr-3 -ml-1 h-full min-h-0" contentClassName="min-w-0 py-1 pl-1">
+            <SettingsSection title="默认模型" description="从管理员开放的模型中选择个人默认值，创作时仍可临时切换。">
+              <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                {([
+                  ["text", "文本模型", "default_text_model", TextCursorInput],
+                  ["image", "图片模型", "default_image_model", ImageIcon],
+                  ["video", "视频模型", "default_video_model", Clapperboard],
+                  ["audio", "音频模型", "default_audio_model", AudioLines],
+                ] as const).map(([kind, label, field, Icon]) => {
+                  const options = pulledModels[kind] ?? modelConfig[kind].models;
+                  const defaultModel = pulledModels[kind] === null ? modelConfig[kind].defaultModel : "";
+                  const current = resolveConfiguredModel(options, preferences[field], defaultModel);
+                  return <LabeledField key={kind} className="grid min-w-0 gap-2 text-sm font-medium" label={<span className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" />{label}</span>}>{(fieldId) => <><span className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                      <ModelPicker id={fieldId} label={label} value={current} options={options} disabled={isLoading} placeholder={pulledModels[kind] !== null ? "该 Key 暂无可用模型" : "暂无可用模型"} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })} />
+                      <TooltipHint content={`按当前 Key 拉取${label}`}><Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
 
-                  disabled={isLoading || loadingModelKind !== null || relayTokenNames[kind].length === 0}
-                  onClick={() => void pullModels(kind)}
-                  aria-label={`按当前 Key 拉取${label}`}
-                >
-                  {loadingModelKind === kind ? <Spinner /> : <RefreshCw  />}
-                </Button></TooltipHint>
-              </span></>}</LabeledField>;
-          })}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="画布默认参数" description="设置节点再生成方式，以及新建节点的默认参数。已有节点保留自身参数。">
-        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>已有内容的节点再次生成时</span>}>{(fieldId) => <><Select value={preferences.node_regenerate_behavior} disabled={isLoading || isSaving} onValueChange={(node_regenerate_behavior: ImageGenerationPreferences["node_regenerate_behavior"]) => setPreferences((current) => ({ ...current, node_regenerate_behavior }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new-node">新建衍生节点，保留原结果</SelectItem><SelectItem value="overwrite">覆盖当前节点</SelectItem></SelectContent></Select></>}</LabeledField>
-          <Label className="flex items-center justify-between gap-3 text-sm font-medium"><span>视频同步生成声音<span className="mt-1 block text-xs font-normal text-muted-foreground">与工作台声音选项同步，作为新建视频节点和 Agent 的默认值；实际以模型能力为准。</span></span><Switch checked={preferences.workbench.video_generate_audio} disabled={isLoading || isSaving} onCheckedChange={(video_generate_audio) => setPreferences((current) => ({ ...current, workbench: { ...current.workbench, video_generate_audio } }))} /></Label>
-          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认生图张数</span>}>{(fieldId) => <><NumberInput id={fieldId} min={1} max={15} step={1} value={preferences.canvas_default_image_count} controlsLayout="split" suffix="张" disabled={isLoading || isSaving} onValueChange={(value) => setPreferences((current) => ({ ...current, canvas_default_image_count: Math.max(1, Math.min(15, Math.floor(Number(value) || 1))) }))} /></>}</LabeledField>
-          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频声音</span>}>{(fieldId) => <><Select value={selectedAudioVoice} disabled={isLoading || audioChoices.voices.length === 0} onValueChange={(default_audio_voice) => setPreferences((current) => ({ ...current, default_audio_voice }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.voices.map((voice) => <SelectItem key={voice} value={voice}>{voice}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
-          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频格式</span>}>{(fieldId) => <><Select value={selectedAudioFormat} disabled={isLoading || audioChoices.formats.length <= 1} onValueChange={(default_audio_format: ImageGenerationPreferences["default_audio_format"]) => setPreferences((current) => ({ ...current, default_audio_format }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.formats.map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
-          <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频语速</span>}>{(fieldId) => <><NumberInput id={fieldId} min={audioChoices.minimumSpeed} max={audioChoices.maximumSpeed} step={0.05} value={selectedAudioSpeed} controlsLayout="split" suffix="x" disabled={isLoading || isSaving || audioChoices.minimumSpeed === audioChoices.maximumSpeed} onValueChange={(value) => setPreferences((current) => ({ ...current, default_audio_speed: Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(Number(value || 1).toFixed(2)))) }))} /></>}</LabeledField>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="接口行为" description="控制图片请求的传输和兼容方式。">
-        <div className="grid gap-x-6 md:grid-cols-2 md:divide-x md:divide-border/70">
-          <div className="divide-y divide-border/70 md:pr-6">
-            <LabeledField className="grid min-h-20 content-center gap-2 py-3 text-sm font-medium" label={<span>默认图片接口模式</span>}>{(fieldId) => <><Select value={preferences.api_mode} disabled={isLoading} onValueChange={(api_mode: ImageGenerationPreferences["api_mode"]) => setPreferences((current) => ({ ...current, api_mode }))}>
-                <SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="images">images</SelectItem><SelectItem value="responses">responses</SelectItem><SelectItem value="chat">chat</SelectItem></SelectContent>
-              </Select></>}</LabeledField>
-            <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 py-3">
-              <div><p className="text-sm font-medium text-foreground">中间图数量</p><p className="mt-0.5 text-xs text-muted-foreground">流式传输开启时可返回 0-3 张过程图</p></div>
-              <Select value={String(preferences.partial_images)} onValueChange={(value) => setPreferences((current) => ({ ...current, partial_images: Number(value) }))} disabled={isLoading || !preferences.stream}>
-                <SelectTrigger className="w-28" aria-label="中间图数量"><SelectValue /></SelectTrigger>
-                <SelectContent>{[0, 1, 2, 3].map((value) => <SelectItem key={value} value={String(value)}>{value} 张</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="divide-y divide-border/70 md:pl-6">
-            <PreferenceRow title="流式传输" description="请求中发送 stream，并接收生成过程中的中间图片。" checked={preferences.stream} disabled={isLoading} onCheckedChange={(stream) => setPreferences((current) => ({ ...current, stream }))} />
-            <PreferenceRow title="返回 Base64 图片数据" description="请求中发送 response_format=b64_json，适用于需要直接读取图片数据的接口。" checked={preferences.response_format_b64_json} disabled={isLoading} onCheckedChange={(response_format_b64_json) => setPreferences((current) => ({ ...current, response_format_b64_json }))} />
-            <PreferenceRow title="Codex CLI 兼容模式" description="省略 quality，并给提示词添加防改写前缀，减少 Codex CLI 图片接口不兼容。" checked={preferences.codex_cli_compatibility} disabled={isLoading} onCheckedChange={(codex_cli_compatibility) => setPreferences((current) => ({ ...current, codex_cli_compatibility }))} />
-          </div>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="音频与系统指令">
-        <div className="grid gap-5">
-        <LabeledField label="默认音频指令">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
-            value={preferences.audio_instructions}
-            disabled={isLoading || isSaving}
-            onChange={(event) => setPreferences((current) => ({ ...current, audio_instructions: event.target.value }))}
-            placeholder="例如：自然、温暖、适合旁白。"
-            className="min-h-28 resize-y"
-          /></PromptInput>}</LabeledField>
-        <LabeledField label="默认图片系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
-            value={preferences.system_prompt}
-            disabled={isLoading || isSaving}
-            onChange={(event) => setPreferences((current) => ({ ...current, system_prompt: event.target.value }))}
-            placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。"
-            className="min-h-28 resize-y"
-          /></PromptInput>}</LabeledField>
-        <LabeledField label="默认视频系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
-            value={preferences.video_system_prompt}
-            disabled={isLoading || isSaving}
-            onChange={(event) => setPreferences((current) => ({ ...current, video_system_prompt: event.target.value }))}
-            placeholder="例如：你是一位擅长镜头运动、节奏和连续性的电影导演。"
-            className="min-h-28 resize-y"
-          /></PromptInput>}</LabeledField>
-        </div>
-      </SettingsSection>
+                        disabled={isLoading || loadingModelKind !== null || relayTokenNames[kind].length === 0}
+                        onClick={() => void pullModels(kind)}
+                        aria-label={`按当前 Key 拉取${label}`}
+                      >
+                        {loadingModelKind === kind ? <Spinner /> : <RefreshCw  />}
+                      </Button></TooltipHint>
+                    </span></>}</LabeledField>;
+                })}
+              </div>
+            </SettingsSection>
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="canvas" forceMount className="min-h-0 min-w-0 data-[state=inactive]:hidden">
+          <ScrollArea className="-mr-3 -ml-1 h-full min-h-0" contentClassName="min-w-0 py-1 pl-1">
+            <SettingsSection title="画布默认参数" description="设置节点再生成方式，以及新建节点的默认参数。已有节点保留自身参数。">
+              <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>已有内容的节点再次生成时</span>}>{(fieldId) => <><Select value={preferences.node_regenerate_behavior} disabled={isLoading || isSaving} onValueChange={(node_regenerate_behavior: ImageGenerationPreferences["node_regenerate_behavior"]) => setPreferences((current) => ({ ...current, node_regenerate_behavior }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new-node">新建衍生节点，保留原结果</SelectItem><SelectItem value="overwrite">覆盖当前节点</SelectItem></SelectContent></Select></>}</LabeledField>
+                <Label className="flex items-center justify-between gap-3 text-sm font-medium"><span>视频同步生成声音<span className="mt-1 block text-xs font-normal text-muted-foreground">与工作台声音选项同步，作为新建视频节点和 Agent 的默认值；实际以模型能力为准。</span></span><Switch checked={preferences.workbench.video_generate_audio} disabled={isLoading || isSaving} onCheckedChange={(video_generate_audio) => setPreferences((current) => ({ ...current, workbench: { ...current.workbench, video_generate_audio } }))} /></Label>
+                <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认生图张数</span>}>{(fieldId) => <><NumberInput id={fieldId} min={1} max={15} step={1} value={preferences.canvas_default_image_count} controlsLayout="split" suffix="张" disabled={isLoading || isSaving} onValueChange={(value) => setPreferences((current) => ({ ...current, canvas_default_image_count: Math.max(1, Math.min(15, Math.floor(Number(value) || 1))) }))} /></>}</LabeledField>
+                <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频声音</span>}>{(fieldId) => <><Select value={selectedAudioVoice} disabled={isLoading || audioChoices.voices.length === 0} onValueChange={(default_audio_voice) => setPreferences((current) => ({ ...current, default_audio_voice }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.voices.map((voice) => <SelectItem key={voice} value={voice}>{voice}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
+                <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频格式</span>}>{(fieldId) => <><Select value={selectedAudioFormat} disabled={isLoading || audioChoices.formats.length <= 1} onValueChange={(default_audio_format: ImageGenerationPreferences["default_audio_format"]) => setPreferences((current) => ({ ...current, default_audio_format }))}><SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger><SelectContent>{audioChoices.formats.map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></>}</LabeledField>
+                <LabeledField className="grid min-w-0 gap-2 text-sm font-medium" label={<span>默认音频语速</span>}>{(fieldId) => <><NumberInput id={fieldId} min={audioChoices.minimumSpeed} max={audioChoices.maximumSpeed} step={0.05} value={selectedAudioSpeed} controlsLayout="split" suffix="x" disabled={isLoading || isSaving || audioChoices.minimumSpeed === audioChoices.maximumSpeed} onValueChange={(value) => setPreferences((current) => ({ ...current, default_audio_speed: Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(Number(value || 1).toFixed(2)))) }))} /></>}</LabeledField>
+              </div>
+            </SettingsSection>
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="api" forceMount className="min-h-0 min-w-0 data-[state=inactive]:hidden">
+          <ScrollArea className="-mr-3 -ml-1 h-full min-h-0" contentClassName="min-w-0 py-1 pl-1">
+            <SettingsSection title="接口行为" description="控制图片请求的传输和兼容方式。">
+              <div className="grid gap-x-6 md:grid-cols-2 md:divide-x md:divide-border/70">
+                <div className="divide-y divide-border/70 md:pr-6">
+                  <LabeledField className="grid min-h-20 content-center gap-2 py-3 text-sm font-medium" label={<span>默认图片接口模式</span>}>{(fieldId) => <><Select value={preferences.api_mode} disabled={isLoading} onValueChange={(api_mode: ImageGenerationPreferences["api_mode"]) => setPreferences((current) => ({ ...current, api_mode }))}>
+                      <SelectTrigger id={fieldId} ><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="images">images</SelectItem><SelectItem value="responses">responses</SelectItem><SelectItem value="chat">chat</SelectItem></SelectContent>
+                    </Select></>}</LabeledField>
+                  <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 py-3">
+                    <div><p className="text-sm font-medium text-foreground">中间图数量</p><p className="mt-0.5 text-xs text-muted-foreground">流式传输开启时可返回 0-3 张过程图</p></div>
+                    <Select value={String(preferences.partial_images)} onValueChange={(value) => setPreferences((current) => ({ ...current, partial_images: Number(value) }))} disabled={isLoading || !preferences.stream}>
+                      <SelectTrigger className="w-28" aria-label="中间图数量"><SelectValue /></SelectTrigger>
+                      <SelectContent>{[0, 1, 2, 3].map((value) => <SelectItem key={value} value={String(value)}>{value} 张</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="divide-y divide-border/70 md:pl-6">
+                  <PreferenceRow title="流式传输" description="请求中发送 stream，并接收生成过程中的中间图片。" checked={preferences.stream} disabled={isLoading} onCheckedChange={(stream) => setPreferences((current) => ({ ...current, stream }))} />
+                  <PreferenceRow title="返回 Base64 图片数据" description="请求中发送 response_format=b64_json，适用于需要直接读取图片数据的接口。" checked={preferences.response_format_b64_json} disabled={isLoading} onCheckedChange={(response_format_b64_json) => setPreferences((current) => ({ ...current, response_format_b64_json }))} />
+                  <PreferenceRow title="Codex CLI 兼容模式" description="省略 quality，并给提示词添加防改写前缀，减少 Codex CLI 图片接口不兼容。" checked={preferences.codex_cli_compatibility} disabled={isLoading} onCheckedChange={(codex_cli_compatibility) => setPreferences((current) => ({ ...current, codex_cli_compatibility }))} />
+                </div>
+              </div>
+            </SettingsSection>
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="instructions" forceMount className="min-h-0 min-w-0 data-[state=inactive]:hidden">
+          <ScrollArea className="-mr-3 -ml-1 h-full min-h-0" contentClassName="min-w-0 py-1 pl-1">
+            <SettingsSection title="音频与系统指令">
+              <div className="grid gap-5">
+              <LabeledField label="默认音频指令">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                  value={preferences.audio_instructions}
+                  disabled={isLoading || isSaving}
+                  onChange={(event) => setPreferences((current) => ({ ...current, audio_instructions: event.target.value }))}
+                  placeholder="例如：自然、温暖、适合旁白。"
+                  className="min-h-28 resize-y"
+                /></PromptInput>}</LabeledField>
+              <LabeledField label="默认图片系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                  value={preferences.system_prompt}
+                  disabled={isLoading || isSaving}
+                  onChange={(event) => setPreferences((current) => ({ ...current, system_prompt: event.target.value }))}
+                  placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。"
+                  className="min-h-28 resize-y"
+                /></PromptInput>}</LabeledField>
+              <LabeledField label="默认视频系统提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
+                  value={preferences.video_system_prompt}
+                  disabled={isLoading || isSaving}
+                  onChange={(event) => setPreferences((current) => ({ ...current, video_system_prompt: event.target.value }))}
+                  placeholder="例如：你是一位擅长镜头运动、节奏和连续性的电影导演。"
+                  className="min-h-28 resize-y"
+                /></PromptInput>}</LabeledField>
+              </div>
+            </SettingsSection>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
     </SettingsPanel>
   );

@@ -1,0 +1,18 @@
+{
+  "checks": [
+    {
+      "name": "invalid_background_snapshots_show_sync_error_and_preserve_recent_history",
+      "passed": true
+    },
+    {
+      "name": "same_task_success_reconnects_and_clears_error_without_writes_or_resubmission",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserMutations": 0,
+  "generationSubmissions": 0,
+  "rejectedPolls": 3,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

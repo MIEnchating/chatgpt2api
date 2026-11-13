@@ -1,0 +1,23 @@
+{
+  "durationSeconds": 60.0,
+  "bytes": 14768956,
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 768,
+      "height": 1376,
+      "sample_rate": null,
+      "duration": "60.000000"
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "48000",
+      "duration": "60.000000"
+    }
+  ],
+  "qualityApproved": false
+}

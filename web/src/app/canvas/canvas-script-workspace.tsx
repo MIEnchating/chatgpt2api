@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
 import { Toggle } from "@/components/ui/toggle";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, Check, Clapperboard, GripVertical, MoreHorizontal, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -29,7 +29,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScriptAssetCard, ScriptAssetImageDialog, ScriptAssetEditDialog, ScriptAssetBatchDialog } from "./canvas-script-assets";
+import { ScriptShotMediaDialog } from "./canvas-script-media";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { CanvasInsertAssetPayload } from "./agent/canvas-agent-types";
 import type { ScriptAssetGeneration } from "./canvas-script";
@@ -47,8 +49,11 @@ import {
   SCRIPT_COLORS,
   SCRIPT_FRAMINGS,
   scriptProgress,
-  scriptCanGenerateMedia,
+  scriptMediaPlan,
+  scriptMediaSelection,
+  scriptMediaIssues,
   updateScriptShot,
+  removeScriptAsset,
 } from "./canvas-script";
 
 type Props = {
@@ -69,15 +74,27 @@ type Props = {
   onGenerateAssets: (request: ScriptAssetGeneration) => void;
   onInsertAsset: (assetID: string, payload: CanvasInsertAssetPayload) => void;
   onNavigateAsset: (nodeID: string) => void;
+  onFocusProduction: () => void;
   onSaveAsset: (nodeID: string) => void;
   onUploadAsset: (assetID: string, file: File) => void;
-  onGenerateMedia: (type: "image" | "video") => void;
+  onGenerateMedia: (type: "image" | "video", shotIDs?: string[], regenerate?: boolean) => void;
+  onRetryMedia: (nodeID: string) => void;
   onStop: () => void;
 };
 
 export function CanvasScriptWorkspace(props: Props) {
   const { node, nodes, project, running, onChange } = props;
   const [promptShotID, setPromptShotID] = useState("");
+  const [mediaShotID, setMediaShotID] = useState("");
+  const [mediaRequest, setMediaRequest] = useState<{ type: "image" | "video"; shotIDs?: string[]; regenerate?: boolean } | null>(null);
+  const [mediaUpdateType, setMediaUpdateType] = useState<"image" | "video" | "">("");
+  const mediaProject = mediaRequest ? scriptMediaSelection(project, mediaRequest.type, mediaRequest.shotIDs, mediaRequest.regenerate) : project;
+  const mediaIssues = mediaRequest ? scriptMediaIssues(mediaProject, mediaRequest.type, nodes, project.shots) : [];
+  let mediaPlan: ReturnType<typeof scriptMediaPlan> | undefined;
+  if (mediaRequest) {
+    try { mediaPlan = scriptMediaPlan(mediaProject, mediaRequest.type, nodes); }
+    catch (error) { mediaIssues.push(error instanceof Error ? error.message : "镜头关联不正确"); }
+  }
   const [smart, setSmart] = useState(false);
   const [assetDialog, setAssetDialog] = useState<{ id: string; tab: "ai" | "canvas" } | null>(null);
   const [editingAssetID, setEditingAssetID] = useState("");
@@ -91,19 +108,13 @@ export function CanvasScriptWorkspace(props: Props) {
   const imageSettings = { imageModels: props.imageModels, imageModel: props.imageModel, imageDefaults: props.imageDefaults };
   const nodeByID = useMemo(() => new Map(nodes.map((item) => [item.id, item])), [nodes]);
   const progress = scriptProgress(project, nodes, nodeByID);
+  const movie = nodeByID.get(project.merged_video_node_id || "");
   const promptShot = project.shots.find((shot) => shot.id === promptShotID);
+  const mediaShot = project.shots.find((shot) => shot.id === mediaShotID);
   const changeShot = (id: string, patch: Partial<CanvasScriptShot>) =>
     onChange(updateScriptShot(project, id, patch));
   const changeAsset = (id: string, patch: Partial<CanvasScriptAsset>) =>
-    onChange({
-      ...project,
-      assets: project.assets.map((asset) => (asset.id === id ? { ...asset, ...patch } : asset)),
-      shots: project.shots.map((shot) =>
-        shot.asset_ids.includes(id) || shot.dialogue.some((line) => line.asset_id === id)
-          ? { ...shot, image_prompt: "", video_prompt: "" }
-          : shot,
-      ),
-    });
+    onChange({ ...project, assets: project.assets.map((asset) => asset.id === id ? { ...asset, ...patch } : asset) });
   const addAsset = (kind: CanvasScriptAsset["kind"]) => {
     const id = nanoid();
     onChange({ ...project, assets: [...project.assets, { id, kind, name: "", description: "", image_node_id: "" }] });
@@ -113,7 +124,7 @@ export function CanvasScriptWorkspace(props: Props) {
     project.shots.length > 0 && project.shots.every((shot) => shot.description.trim());
   const summaries = [
     `${project.shots.length} 个镜头${progress.steps[0] ? "已确认" : "待核对"}`,
-    project.assets.length ? `${progress.readyAssets}/${project.assets.length} 已准备` : "暂无资产",
+    project.assets.length ? `${progress.readyAssets}/${project.assets.length} 已准备` : "暂无素材",
     `${progress.readyShots}/${project.shots.length} 已合成`,
   ];
   return (
@@ -131,18 +142,19 @@ export function CanvasScriptWorkspace(props: Props) {
       >
         <DialogTitle className="sr-only">{node.title || "脚本"}编辑器</DialogTitle>
         <DialogDescription id="script-workspace-description" className="sr-only">
-          确认镜头、准备资产并合成提示词。修改会自动保存到画布。
+          确认镜头、准备素材并合成提示词。修改会自动保存到画布。
         </DialogDescription>
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8">
           <nav
             aria-label="脚本制作步骤"
             className="flex min-w-0 flex-1 items-center justify-center gap-1 sm:gap-6"
           >
-            {["确认镜头", "准备资产", "合成提示词"].map((label, index) => (
+            {["确认镜头", "准备素材", "合成提示词"].map((label, index) => (
               <div key={label} className="flex min-w-0 items-center gap-2 sm:gap-6">
                 <Button variant="ghost"
                   type="button"
                   aria-current={project.step === index ? "step" : undefined}
+                  disabled={running}
                   onClick={() => onChange({ ...project, step: index })}
                   className={cn("flex flex-col items-center text-left sm:flex-row h-auto min-h-8 whitespace-normal py-2", progress.steps[index] || project.step === index ? "text-foreground" : "text-muted-foreground")}
                 >
@@ -165,6 +177,8 @@ export function CanvasScriptWorkspace(props: Props) {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={props.onFocusProduction}>定位当前制作</Button>
+            {movie ? <Button variant="outline" size="sm" onClick={() => props.onNavigateAsset(movie.id)}>查看成片{project.merged_video_outdated ? " · 待更新" : ""}</Button> : null}
             <span className="text-xs text-muted-foreground">{progress.complete}/3 完成</span>
             {running ? (
               <Button variant="outline" size="sm" onClick={props.onStop}>
@@ -206,22 +220,7 @@ export function CanvasScriptWorkspace(props: Props) {
                             onClear={() => changeAsset(asset.id, { image_node_id: "" })}
                             onNavigate={() => props.onNavigateAsset(asset.image_node_id)}
                             onSave={() => props.onSaveAsset(asset.image_node_id)}
-                            onRemove={() =>
-                              onChange({
-                                ...project,
-                                assets: project.assets.filter((item) => item.id !== asset.id),
-                                confirmed: false,
-                                shots: project.shots.map((shot) => ({
-                                  ...shot,
-                                  image_prompt: "",
-                                  video_prompt: "",
-                                  asset_ids: shot.asset_ids.filter((id) => id !== asset.id),
-                                  dialogue: shot.dialogue.map((line) =>
-                                    line.asset_id === asset.id ? { ...line, asset_id: "" } : line,
-                                  ),
-                                })),
-                              })
-                            }
+                            onRemove={() => onChange(removeScriptAsset(project, asset.id))}
                           />
                         ))}
                       <Button variant="outline"
@@ -241,7 +240,7 @@ export function CanvasScriptWorkspace(props: Props) {
               </ScrollArea>
               <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border py-4">
                 <span className="text-xs text-muted-foreground">
-                  {project.assets.length - progress.readyAssets} 个资产待准备，可上传图片或 AI 生成
+                  {project.assets.length - progress.readyAssets} 个素材待准备，可上传图片或 AI 生成
                 </span>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -250,9 +249,9 @@ export function CanvasScriptWorkspace(props: Props) {
                     onClick={() => setBatchAssetsOpen(true)}
                   >
                     <Sparkles  />
-                    一键生成所有资产
+                    一键生成所有素材
                   </Button>
-                  <Button onClick={() => onChange({ ...project, step: 2 })}>
+                  <Button disabled={running} onClick={() => onChange({ ...project, step: 2 })}>
                     下一步：合成提示词
                     <ArrowRight  />
                   </Button>
@@ -262,13 +261,13 @@ export function CanvasScriptWorkspace(props: Props) {
           ) : (
             <Card className="flex min-h-0 flex-1 flex-col overflow-hidden gap-0 p-0">
               <ScrollArea className="min-h-0 min-w-0 flex-1">
-                <Table className="min-w-[1280px] table-fixed">
+                <Table aria-label="脚本镜头表格" className="min-w-[1280px] table-fixed">
                   <colgroup>
                     {[64, 80, 300, 100, 160, 240, 140, 140, 160, 64].map((width, i) => (
                       <col key={i} style={{ width: `${(width / 1448) * 100}%` }} />
                     ))}
                   </colgroup>
-                  <TableHeader className="sticky top-0 z-10">
+                  <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       {[
                         "镜号",
@@ -282,9 +281,7 @@ export function CanvasScriptWorkspace(props: Props) {
                         "最终提示词",
                         "操作",
                       ].map((label) => (
-                        <TableHead
-                          key={label}
-                        >
+                        <TableHead key={label} className="text-xs text-muted-foreground">
                           {label}
                         </TableHead>
                       ))}
@@ -298,8 +295,8 @@ export function CanvasScriptWorkspace(props: Props) {
                       {(order) => order.map((id, index) => {
                         const shot = project.shots.find((shot) => shot.id === id)!;
                         return (
-                        <TableRow key={shot.id} asChild>
-                          <SortableItem as="tr" value={shot.id} label={`镜头 ${index + 1}`} style={shot.color ? { backgroundColor: `${shot.color}18` } : undefined}>
+                        <TableRow key={shot.id} asChild className="hover:bg-muted/25 [&>td]:align-middle [&>td]:p-3">
+                          <SortableItem as="tr" value={shot.id} label={`镜头 ${index + 1}`} instant style={shot.color ? { backgroundColor: `${shot.color}18` } : undefined}>
                             <TableCell className="min-w-0">
                               <SortableHandle aria-label={`拖动镜头 ${index + 1} 排序`} size="default">
                                 <GripVertical className="text-muted-foreground" />
@@ -316,7 +313,7 @@ export function CanvasScriptWorkspace(props: Props) {
                               >
                                 <SelectTrigger
                                   aria-label={`镜头 ${index + 1} 时长`}
-
+                                  className="w-full min-w-[72px]"
                                 >
                                   <SelectValue />
                                 </SelectTrigger>
@@ -354,7 +351,7 @@ export function CanvasScriptWorkspace(props: Props) {
                               >
                                 <SelectTrigger
                                   aria-label={`镜头 ${index + 1} 景别`}
-
+                                  className="w-full min-w-[92px]"
                                 >
                                   <SelectValue />
                                 </SelectTrigger>
@@ -530,18 +527,21 @@ export function CanvasScriptWorkspace(props: Props) {
                               </ScriptCell>
                             </TableCell>
                             <TableCell className="min-w-0">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="max-w-full whitespace-normal h-auto min-h-7"
-                                onClick={() => setPromptShotID(shot.id)}
-                              >
-                                {shot.image_prompt.trim() && shot.video_prompt.trim()
-                                  ? "查看提示词"
-                                  : "待生成提示词"}
-                              </Button>
+                              <div className="flex min-w-0 flex-col items-start gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-auto min-h-7 max-w-full justify-start whitespace-normal px-1 text-left"
+                                  onClick={() => setPromptShotID(shot.id)}
+                                >
+                                  {shot.image_prompt_outdated || shot.video_prompt_outdated ? "核对旧提示词" : shot.image_prompt.trim() && shot.video_prompt.trim()
+                                    ? "查看提示词"
+                                    : "待生成提示词"}
+                                </Button>
+                                <Button variant="outline" size="sm" className="max-w-full" aria-label={`镜头 ${index + 1} 素材与成品`} onClick={() => setMediaShotID(shot.id)}>素材与成品</Button>
+                              </div>
                             </TableCell>
-                            <TableCell className="min-w-0">
+                            <TableCell className="min-w-0 text-right">
                               <Popover>
                                 <PopoverTrigger asChild>
                                   <Button
@@ -650,12 +650,12 @@ export function CanvasScriptWorkspace(props: Props) {
                   添加镜头
                 </Button>
                 <div className="flex flex-wrap items-center gap-2">
-                  {project.step === 0 ? (
+                  {project.step === 0 || !project.confirmed ? (
                     <Button
                       disabled={running || !canConfirm}
-                      onClick={() => onChange({ ...project, confirmed: true, step: 1 })}
+                      onClick={() => onChange({ ...project, confirmed: true, step: project.step === 0 ? 1 : project.step })}
                     >
-                      确认镜头，下一步：准备资产
+                      {project.step === 0 ? "确认镜头，下一步：准备素材" : "确认修改后的镜头"}
                       <ArrowRight  />
                     </Button>
                   ) : (
@@ -670,19 +670,22 @@ export function CanvasScriptWorkspace(props: Props) {
                       </Button>
                       <Button
                         variant="outline"
-                        disabled={running || !scriptCanGenerateMedia(project, "image", nodes, nodeByID)}
-                        onClick={() => props.onGenerateMedia("image")}
+                        disabled={running || !project.shots.length}
+                        onClick={() => setMediaRequest({ type: "image" })}
                       >
                         批量生成分镜
                       </Button>
                       <Button
-                        disabled={running || !scriptCanGenerateMedia(project, "video", nodes, nodeByID)}
-                        onClick={() => props.onGenerateMedia("video")}
+                        disabled={running || !project.shots.length}
+                        onClick={() => setMediaRequest({ type: "video" })}
                       >
                         批量生成视频
                       </Button>
+                      <Button variant="outline" disabled={running || !project.shots.length} onClick={() => { setSelectedShots([]); setMediaUpdateType("video"); }}>
+                        更新镜头成品
+                      </Button>
                       <p className="basis-full text-xs text-muted-foreground">
-                        已关联素材复用原节点配置和任务进度，无需重复合成提示词。需要重新生成时，请在对应素材节点操作。
+                        批量生成会复用已有成品和任务。需要更新时，选择对应镜头，保留旧成品并生成新版本。
                       </p>
                     </>
                   )}
@@ -691,6 +694,32 @@ export function CanvasScriptWorkspace(props: Props) {
             </Card>
           )}
         </div>
+        {mediaShot ? <ScriptShotMediaDialog shot={mediaShot} nodes={nodes} running={running} confirmed={project.confirmed} onClose={() => setMediaShotID("")} onBind={(type, id) => changeShot(mediaShot.id, { [type === "image" ? "image_node_id" : "video_node_id"]: id })} onNavigate={props.onNavigateAsset} onGenerate={(type, regenerate) => { setMediaShotID(""); setMediaRequest({type,shotIDs:[mediaShot.id],regenerate}); }} onRetry={props.onRetryMedia} /> : null}
+        <Dialog open={Boolean(mediaUpdateType)} onOpenChange={open => { if (!open) setMediaUpdateType(""); }}>
+          <DialogContent className="flex max-h-[85dvh] flex-col">
+            <DialogTitle>更新镜头成品</DialogTitle>
+            <DialogDescription>只更新所选镜头，已有成品沿用各自的模型与生成参数。原节点和结果继续保留，提交前还会检查素材与任务数量。</DialogDescription>
+            <RadioGroup aria-label="更新成品类型" value={mediaUpdateType} disabled={running} onValueChange={value => setMediaUpdateType(value as "image" | "video")} className="flex gap-4">
+              <Label className="flex items-center gap-2"><RadioGroupItem value="image" />分镜图片</Label>
+              <Label className="flex items-center gap-2"><RadioGroupItem value="video" />镜头视频</Label>
+            </RadioGroup>
+            <ScrollArea className="min-h-0 flex-1" contentClassName="grid gap-3">
+              {project.shots.map((shot, index) => <Label key={shot.id} className="flex items-start gap-3">
+                <Checkbox aria-label={`更新第 ${index + 1} 镜`} checked={selectedShotIDs.includes(shot.id)} disabled={running || !shot.description.trim()} onCheckedChange={checked => setSelectedShots(ids => checked ? [...ids, shot.id] : ids.filter(id => id !== shot.id))} />
+                <span className="grid min-w-0 gap-1"><span>第 {index + 1} 镜 · {shot.seconds} 秒</span><span className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">{shot.description.trim() || "未填写镜头"}</span></span>
+              </Label>)}
+            </ScrollArea>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Label className="flex items-center gap-2"><Checkbox aria-label="全选更新镜头" checked={selectedShotIDs.length && selectedShotIDs.length === eligibleShots.length ? true : selectedShotIDs.length ? "indeterminate" : false} disabled={running || !eligibleShots.length} onCheckedChange={checked => setSelectedShots(checked ? eligibleShots.map(shot => shot.id) : [])} />全选 · 已选 {selectedShotIDs.length}/{eligibleShots.length}</Label>
+              <Button disabled={running || !mediaUpdateType || !selectedShotIDs.length} onClick={() => { if (!mediaUpdateType) return; setMediaRequest({type: mediaUpdateType, shotIDs: selectedShotIDs, regenerate: true}); setMediaUpdateType(""); }}>检查所选镜头</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <ConfirmDialog open={Boolean(mediaRequest)} onOpenChange={(open) => { if (!open) setMediaRequest(null); }} title={mediaRequest?.regenerate ? "重新生成镜头成品" : "批量生成检查"} confirmLabel="开始执行" confirmDisabled={running || mediaIssues.length > 0 || !mediaPlan || !(mediaPlan.missing.length + mediaPlan.ready.length + mediaPlan.tracked.length)} onConfirm={() => { if (!mediaRequest) return; props.onGenerateMedia(mediaRequest.type, mediaRequest.shotIDs, mediaRequest.regenerate); setMediaRequest(null); }} description={mediaRequest?.regenerate ? "本次将创建新的成品节点，原成品继续保留。" : "检查本次需要生成的镜头，已有任务继续按原进度同步。"}>
+          {mediaPlan ? <p className="text-sm">新建 {mediaPlan.missing.length} · 待提交 {mediaPlan.ready.length} · 已完成 {mediaPlan.complete.length} · 已有任务 {mediaPlan.tracked.length} · 待更新 {mediaPlan.outdated.length}</p> : null}
+          {mediaPlan?.outdated.length ? <p className="text-sm text-muted-foreground">已有成品会保留，本次批量生成会跳过待更新的镜头。</p> : null}
+          {mediaIssues.length ? <FieldError>{mediaIssues.join("；")}</FieldError> : null}
+        </ConfirmDialog>
         {selectedAsset && assetDialog ? <ScriptAssetImageDialog key={`${selectedAsset.id}:${assetDialog.tab}`} {...imageSettings} asset={selectedAsset} nodes={nodes} initialTab={assetDialog.tab} scope={props.scope} disabled={running} onClose={() => setAssetDialog(null)} onChoose={(image_node_id) => changeAsset(selectedAsset.id, { image_node_id })} onUpload={(file) => props.onUploadAsset(selectedAsset.id, file)} onInsert={(payload) => props.onInsertAsset(selectedAsset.id, payload)} onGenerate={props.onGenerateAssets} /> : null}
         {editingAsset ? <ScriptAssetEditDialog asset={editingAsset} disabled={running} onClose={() => setEditingAssetID("")} onChange={(patch) => changeAsset(editingAsset.id, patch)} /> : null}
         {batchAssetsOpen ? <ScriptAssetBatchDialog {...imageSettings} project={project} nodes={nodes} disabled={running} onClose={() => setBatchAssetsOpen(false)} onGenerate={props.onGenerateAssets} /> : null}
@@ -730,6 +759,7 @@ export function CanvasScriptWorkspace(props: Props) {
             <DialogDescription>修改自动保存；再次合成会覆盖当前提示词。</DialogDescription>
             {promptShot ? (
               <>
+                {promptShot.image_prompt_outdated || promptShot.video_prompt_outdated ? <FieldError>脚本已修改。已保留原提示词，请重新合成或核对后确认。</FieldError> : null}
                 <ScrollArea className="min-h-0 min-w-0 flex-1" contentClassName="space-y-5">
                   <LabeledField className="grid gap-2 text-sm" label="分镜提示词">{(fieldId) => <PromptInput><InputGroupTextarea id={fieldId}
                       aria-label="分镜提示词"
@@ -765,6 +795,7 @@ export function CanvasScriptWorkspace(props: Props) {
                       <Label className="flex items-center gap-1.5 text-xs"><RadioGroupItem value="smart" />智能合成</Label>
                       <Label className="flex items-center gap-1.5 text-xs"><RadioGroupItem value="automatic" />自动拼接</Label>
                     </RadioGroup>
+                    {promptShot.image_prompt_outdated || promptShot.video_prompt_outdated ? <Button variant="outline" disabled={running || !promptShot.image_prompt.trim() || !promptShot.video_prompt.trim()} onClick={() => changeShot(promptShot.id, { image_prompt_outdated: false, video_prompt_outdated: false })}>已核对，保留当前提示词</Button> : null}
                     <Button
                       disabled={running || !promptShot.description.trim()}
                       onClick={() => props.onSynthesize([promptShot.id], smart)}
@@ -795,16 +826,19 @@ function ScriptCell({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost"
           type="button"
           disabled={disabled}
           aria-label={label}
-          className="h-auto p-0 block min-h-20 w-full whitespace-pre-wrap break-words px-3 py-3 text-left align-top"
+          className="block h-auto min-h-20 w-full whitespace-pre-wrap break-words p-0 text-left align-top hover:bg-transparent dark:hover:bg-transparent"
         >
-          <span className={cn("line-clamp-3", !value && "text-muted-foreground/50")}>
+          <span className={cn("line-clamp-3 leading-6", !value && "text-muted-foreground/50")}>
             {value || "点击填写"}
           </span>
         </Button>
@@ -865,7 +899,7 @@ function ScriptDescriptionEditor({
         placeholder="描述主体、动作与场景"
         onChange={(description) => onChange({ description })}
       />
-      <p className="text-xs text-muted-foreground">输入 @ 选择资产，点击已选资产可取消引用</p>
+      <p className="text-xs text-muted-foreground">输入 @ 选择素材，点击已选素材可取消引用</p>
       <div className="flex flex-wrap gap-1">
         {candidates.map((asset) => {
           const selected = shot.asset_ids.includes(asset.id);
@@ -880,7 +914,7 @@ function ScriptDescriptionEditor({
                 const description = mention
                   ? shot.description.slice(0, mention.index) + `@${asset.name} `
                   : adding
-                    ? `${shot.description}${shot.description ? " " : ""}@${asset.name || "未命名资产"}`
+                    ? `${shot.description}${shot.description ? " " : ""}@${asset.name || "未命名素材"}`
                     : shot.description;
                 onChange({
                   asset_ids: adding
@@ -891,13 +925,13 @@ function ScriptDescriptionEditor({
               }}
             >
               {selected ? <Check  /> : <Plus  />}
-              {asset.name || "未命名资产"}
+              {asset.name || "未命名素材"}
             </Toggle>
           );
         })}
       </div>
       {mention && !candidates.length ? (
-        <EmptyState compact title="暂无匹配资产" description="可在「准备资产」中新增" className="min-h-0 p-2" />
+        <EmptyState compact title="暂无匹配素材" description="可在「准备素材」中新增" className="min-h-0 p-2" />
       ) : null}
     </>
   );

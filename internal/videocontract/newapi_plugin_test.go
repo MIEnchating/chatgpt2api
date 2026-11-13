@@ -31,6 +31,22 @@ func pluginOptionsFixture() NewAPIVideoPluginOptions {
 	return NewAPIVideoPluginOptions{Key: "example-video", Version: "1.0.0", BaseURL: "https://video.example.com", AuthMode: "bearer", DownloadMode: "signed_url", ResultFields: []string{"video_url", "data[0].url"}}
 }
 
+func TestGeneratedPluginLeavesProviderUploadToApplication(t *testing.T) {
+	contract := pluginContractFixture(t)
+	contract.Transport.LocalMaterial = "url"
+	contract.Transport.MaterialUpload = &protocol.VideoMaterialUpload{BaseURL: "https://openai.fit", Path: "/v1/uploads", Encoding: "multipart", Field: "file", URLField: "url", MaxBytes: 100 << 20}
+	result, err := GenerateNewAPIVideoPlugin(contract, pluginOptionsFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Source, `"material_upload"`) {
+		t.Fatal("plugin contains application upload configuration")
+	}
+	if result.Contract.Transport.MaterialUpload == nil || !strings.Contains(strings.Join(result.Warnings, " "), "其它客户端须自行预上传") {
+		t.Fatal("application contract or upload warning lost")
+	}
+}
+
 func TestDramayaWan3PluginArtifact(t *testing.T) {
 	dir := "../../integrations/newapi/dramaya-wan-3"
 	data, err := os.ReadFile(filepath.Join(dir, "contract.json"))

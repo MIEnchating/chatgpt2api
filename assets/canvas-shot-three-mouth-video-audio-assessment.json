@@ -1,0 +1,97 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, complete 15-second waveform without VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "shot-03-mouth-revision",
+      "expected_dialogue": "我点的不是外卖，是你。妈。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-17.0",
+      "max_volume_db": "-0.0",
+      "segments": [
+        {
+          "start": 2.3400000000000003,
+          "end": 5.32,
+          "text": "我店地不是外买,是你",
+          "words": [
+            {
+              "start": 2.3400000000000003,
+              "end": 2.98,
+              "text": "我",
+              "probability": 0.8144
+            },
+            {
+              "start": 2.98,
+              "end": 3.16,
+              "text": "店",
+              "probability": 0.7821
+            },
+            {
+              "start": 3.16,
+              "end": 3.38,
+              "text": "地",
+              "probability": 0.7839
+            },
+            {
+              "start": 3.38,
+              "end": 3.74,
+              "text": "不是",
+              "probability": 0.9501
+            },
+            {
+              "start": 3.74,
+              "end": 4.04,
+              "text": "外",
+              "probability": 0.9946
+            },
+            {
+              "start": 4.04,
+              "end": 4.3,
+              "text": "买,",
+              "probability": 0.7413
+            },
+            {
+              "start": 4.7,
+              "end": 5.04,
+              "text": "是",
+              "probability": 0.9787
+            },
+            {
+              "start": 5.04,
+              "end": 5.32,
+              "text": "你",
+              "probability": 0.893
+            }
+          ]
+        },
+        {
+          "start": 8.120000000000001,
+          "end": 8.76,
+          "text": "妈",
+          "words": [
+            {
+              "start": 8.120000000000001,
+              "end": 8.76,
+              "text": "妈",
+              "probability": 0.3494
+            }
+          ]
+        }
+      ],
+      "transcript": "我店地不是外买,是你妈",
+      "character_error_rate": 0.3,
+      "dialogue_lines": [
+        {
+          "expected": "我点的不是外卖，是你。",
+          "status": "not_fully_transcribed"
+        },
+        {
+          "expected": "妈。",
+          "status": "transcribed_in_order"
+        }
+      ],
+      "status": "requires_review"
+    }
+  ]
+}

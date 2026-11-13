@@ -1,0 +1,49 @@
+{
+  "phase": "before",
+  "reads": [
+    {
+      "history": "full",
+      "sample": 0,
+      "durationMS": 1477,
+      "bytes": 204391
+    },
+    {
+      "history": "full",
+      "sample": 1,
+      "durationMS": 812,
+      "bytes": 204391
+    },
+    {
+      "history": "full",
+      "sample": 2,
+      "durationMS": 712,
+      "bytes": 204391
+    },
+    {
+      "history": "active",
+      "sample": 0,
+      "durationMS": 28,
+      "bytes": 70242
+    },
+    {
+      "history": "active",
+      "sample": 1,
+      "durationMS": 30,
+      "bytes": 70242
+    },
+    {
+      "history": "active",
+      "sample": 2,
+      "durationMS": 25,
+      "bytes": 70242
+    }
+  ],
+  "temporaryProjectsDeleted": true,
+  "originalHistoryUnchanged": true,
+  "generationSubmissions": 0,
+  "targetID": "canvas-5e3ff77c2e07805f6981fdf2",
+  "checks": {
+    "explicitProjectFullAndActiveHistory": true,
+    "readDoesNotActivateProject": true
+  }
+}

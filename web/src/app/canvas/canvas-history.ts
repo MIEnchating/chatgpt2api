@@ -1,6 +1,20 @@
 import type { CanvasDocument } from "@/services/api/canvas";
 
-export function canvasHistoryKey(document: CanvasDocument) {
+export type CanvasHistorySnapshot = Pick<CanvasDocument, "id" | "title" | "background" | "show_image_info" | "nodes" | "connections">;
+
+export function createCanvasHistorySnapshot(document: CanvasHistorySnapshot): CanvasHistorySnapshot {
+  const snapshot = {
+    id: document.id,
+    title: document.title,
+    background: document.background,
+    show_image_info: document.show_image_info,
+    nodes: document.nodes,
+    connections: document.connections,
+  };
+  return JSON.parse(JSON.stringify(snapshot)) as CanvasHistorySnapshot;
+}
+
+export function canvasHistoryKey(document: CanvasHistorySnapshot) {
   return JSON.stringify({
     title: document.title,
     background: document.background,
@@ -10,26 +24,24 @@ export function canvasHistoryKey(document: CanvasDocument) {
   });
 }
 
-export function restoreCanvasHistoryDocument(current: CanvasDocument, snapshot: CanvasDocument): CanvasDocument {
-  const restored = { ...snapshot };
-  delete restored.retained_storage_object_ids;
-  delete restored.retained_storage_object_urls;
-  delete restored.retained_storage_objects_until;
-  return {
-    ...restored,
+export function restoreCanvasHistoryDocument(current: CanvasDocument, snapshot: CanvasHistorySnapshot): CanvasDocument {
+  // Canvas undo restores only fields covered by canvasHistoryKey.
+  const restored = {
+    ...current,
     id: current.id || snapshot.id,
-    revision: current.revision,
-    updated_at: current.updated_at,
-    viewport: current.viewport,
-    ...(current.retained_storage_object_ids ? { retained_storage_object_ids: current.retained_storage_object_ids } : {}),
-    ...(current.retained_storage_object_urls ? { retained_storage_object_urls: current.retained_storage_object_urls } : {}),
-    ...(current.retained_storage_objects_until ? { retained_storage_objects_until: current.retained_storage_objects_until } : {}),
+    title: snapshot.title,
+    background: snapshot.background,
+    show_image_info: snapshot.show_image_info,
+    nodes: snapshot.nodes,
+    connections: snapshot.connections,
   };
+  if (restored.show_image_info === undefined) delete restored.show_image_info;
+  return restored;
 }
 
 export function appendCanvasHistorySnapshot(
-  history: readonly CanvasDocument[],
-  snapshot: CanvasDocument,
+  history: readonly CanvasHistorySnapshot[],
+  snapshot: CanvasHistorySnapshot,
   maximum = 50,
 ) {
   const limit = Math.max(2, maximum);
@@ -39,15 +51,15 @@ export function appendCanvasHistorySnapshot(
 }
 
 export function commitCanvasGenerationHistory(
-  baseHistory: readonly CanvasDocument[],
-  snapshot: CanvasDocument,
+  baseHistory: readonly CanvasHistorySnapshot[],
+  snapshot: CanvasHistorySnapshot,
   maximum = 50,
 ) {
   return appendCanvasHistorySnapshot(baseHistory, snapshot, maximum);
 }
 
 // History snapshots retain file references only while their browser lease lives.
-export function canvasHistoryStorageObjectIDs(...histories: readonly (readonly CanvasDocument[])[]) {
+export function canvasHistoryStorageObjectIDs(...histories: readonly (readonly CanvasHistorySnapshot[])[]) {
   const ids = new Set<string>();
   const visit = (value: unknown): void => {
     if (typeof value === "string") {
@@ -72,7 +84,7 @@ export function canvasHistoryStorageObjectIDs(...histories: readonly (readonly C
   return [...ids].sort();
 }
 
-export function canvasHistoryStorageObjectURLs(...histories: readonly (readonly CanvasDocument[])[]) {
+export function canvasHistoryStorageObjectURLs(...histories: readonly (readonly CanvasHistorySnapshot[])[]) {
   const urls = new Set<string>();
   const visit = (value: unknown): void => {
     if (typeof value === "string") {

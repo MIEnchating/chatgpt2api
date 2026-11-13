@@ -1,0 +1,19 @@
+{
+  "stage": "board",
+  "startedAt": "2026-11-11T21:44:27.159Z",
+  "observeOnly": true,
+  "qualityApproved": false,
+  "checks": [
+    {
+      "name": "original_results_and_chat_preserved",
+      "passed": true
+    }
+  ],
+  "submissions": 0,
+  "nodeID": "image-0c7c2e99-15c8-408d-ae9d-8104fd94637c",
+  "taskID": "canvas-edit-2f62c24d-af14-41eb-862f-e2a680f81674",
+  "status": "success",
+  "progress": 100,
+  "localMedia": "/root/workspace/chatgpt2api/build/review/canvas-production/full-media/image-0c7c2e99-15c8-408d-ae9d-8104fd94637c.png",
+  "finishedAt": "2026-11-11T21:44:36.581Z"
+}

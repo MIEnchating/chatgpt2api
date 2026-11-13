@@ -1,0 +1,60 @@
+{
+  "checks": [
+    {
+      "name": "current_bindings_and_missing_shots_and_collapsed_batch_focus",
+      "passed": true,
+      "bounds": {
+        "x": 576.75,
+        "y": 245,
+        "width": 286.5,
+        "height": 510
+      }
+    },
+    {
+      "name": "current_video_readable_in_phone_or_short_viewport",
+      "passed": true,
+      "width": 390,
+      "height": 844,
+      "bounds": {
+        "x": 70.2000732421875,
+        "y": 198.000244140625,
+        "width": 249.5999755859375,
+        "height": 448
+      }
+    },
+    {
+      "name": "current_video_readable_in_phone_or_short_viewport",
+      "passed": true,
+      "width": 320,
+      "height": 740,
+      "bounds": {
+        "x": 57.5999755859375,
+        "y": 186.205322265625,
+        "width": 204.800048828125,
+        "height": 367.589599609375
+      }
+    },
+    {
+      "name": "current_video_readable_in_phone_or_short_viewport",
+      "passed": true,
+      "width": 844,
+      "height": 390,
+      "bounds": {
+        "x": 352.46856689453125,
+        "y": 70.2000732421875,
+        "width": 139.0628662109375,
+        "height": 249.5999755859375
+      }
+    },
+    {
+      "name": "asset_movie_and_refresh_preserve_all_media_history_and_chat",
+      "passed": true,
+      "messages": 16
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "temporaryProjectDeleted": true,
+  "originalUnchanged": true,
+  "finishedAt": "2026-11-12T05:29:03.160Z"
+}

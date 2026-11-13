@@ -1,0 +1,74 @@
+{
+  "method": "faster-whisper small multilingual CPU int8, zh, complete 15-second waveform without VAD, without expected-text prompting",
+  "scope": "Automatic speech transcription and signal checks; no human speaker or lip-sync approval",
+  "clips": [
+    {
+      "shot_id": "shot-02-fresh-native",
+      "expected_dialogue": "三年了，她还留着。",
+      "duration_seconds": 15.083333,
+      "audio_streams": 1,
+      "mean_volume_db": "-20.2",
+      "max_volume_db": "-0.5",
+      "segments": [
+        {
+          "start": 3.0,
+          "end": 5.64,
+          "text": "三年了,他還留著",
+          "words": [
+            {
+              "start": 3.0,
+              "end": 3.5,
+              "text": "三",
+              "probability": 0.7705
+            },
+            {
+              "start": 3.5,
+              "end": 3.74,
+              "text": "年",
+              "probability": 0.9985
+            },
+            {
+              "start": 3.74,
+              "end": 4.08,
+              "text": "了,",
+              "probability": 0.979
+            },
+            {
+              "start": 4.74,
+              "end": 4.96,
+              "text": "他",
+              "probability": 0.5694
+            },
+            {
+              "start": 4.96,
+              "end": 5.2,
+              "text": "還",
+              "probability": 0.5688
+            },
+            {
+              "start": 5.2,
+              "end": 5.38,
+              "text": "留",
+              "probability": 0.9946
+            },
+            {
+              "start": 5.38,
+              "end": 5.64,
+              "text": "著",
+              "probability": 0.9654
+            }
+          ]
+        }
+      ],
+      "transcript": "三年了,他還留著",
+      "character_error_rate": 0.2857142857142857,
+      "dialogue_lines": [
+        {
+          "expected": "三年了，她还留着。",
+          "status": "not_fully_transcribed"
+        }
+      ],
+      "status": "requires_review"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "scope": "Actual application-to-supplier task audit; excludes credentials and media URLs. Does not observe supplier internal processing.",
+  "taskID": "canvas-video-1839caa1-289b-4b32-afde-164b8d2daf86",
+  "status": 200,
+  "durationMS": 665674,
+  "model": "minimax-H3-super",
+  "seconds": 15,
+  "size": "9:16",
+  "resolution": "768P",
+  "audio": true,
+  "referenceImages": 6,
+  "authoredPromptPreserved": true,
+  "promptSHA256": "1db9a52ba3b9ebbb8638dba380544255df71b630a75904ddb73e4b19f7a9b0d6",
+  "qualityApproved": false
+}

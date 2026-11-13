@@ -1,0 +1,166 @@
+{
+  "phase": "before",
+  "loads": [
+    {
+      "round": 0,
+      "readyMs": 7780,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 9005687,
+          "requestedProject": null,
+          "documentID": "canvas-828212c89e02ecdb71456e98",
+          "partial": true
+        }
+      ],
+      "timing": [
+        {
+          "path": "/src/app/canvas/route.tsx",
+          "startMs": 1190,
+          "endMs": 1195,
+          "decodedBytes": 5430
+        },
+        {
+          "path": "/src/app/canvas/page.tsx",
+          "startMs": 1355,
+          "endMs": 1424,
+          "decodedBytes": 1253995
+        },
+        {
+          "path": "/api/model-config",
+          "startMs": 2804,
+          "endMs": 2815,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 2807,
+          "endMs": 3052,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 2815,
+          "endMs": 4089,
+          "decodedBytes": 9005687
+        },
+        {
+          "path": "/src/app/canvas/canvas-agent-panel.tsx",
+          "startMs": 4593,
+          "endMs": 4611,
+          "decodedBytes": 277921
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "readyMs": 5274,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 9005687,
+          "requestedProject": null,
+          "documentID": "canvas-828212c89e02ecdb71456e98",
+          "partial": true
+        }
+      ],
+      "timing": [
+        {
+          "path": "/src/app/canvas/route.tsx",
+          "startMs": 436,
+          "endMs": 439,
+          "decodedBytes": 5430
+        },
+        {
+          "path": "/src/app/canvas/page.tsx",
+          "startMs": 484,
+          "endMs": 497,
+          "decodedBytes": 1253995
+        },
+        {
+          "path": "/api/model-config",
+          "startMs": 1093,
+          "endMs": 1100,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 1095,
+          "endMs": 1365,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 1136,
+          "endMs": 2472,
+          "decodedBytes": 9005687
+        },
+        {
+          "path": "/src/app/canvas/canvas-agent-panel.tsx",
+          "startMs": 2889,
+          "endMs": 2893,
+          "decodedBytes": 0
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "readyMs": 5604,
+      "reads": [
+        {
+          "method": "POST",
+          "status": 200,
+          "bytes": 9005687,
+          "requestedProject": null,
+          "documentID": "canvas-828212c89e02ecdb71456e98",
+          "partial": true
+        }
+      ],
+      "timing": [
+        {
+          "path": "/src/app/canvas/route.tsx",
+          "startMs": 428,
+          "endMs": 430,
+          "decodedBytes": 5430
+        },
+        {
+          "path": "/src/app/canvas/page.tsx",
+          "startMs": 506,
+          "endMs": 516,
+          "decodedBytes": 1253995
+        },
+        {
+          "path": "/api/model-config",
+          "startMs": 1104,
+          "endMs": 1111,
+          "decodedBytes": 62086
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 1106,
+          "endMs": 1312,
+          "decodedBytes": 0
+        },
+        {
+          "path": "/api/canvas",
+          "startMs": 1110,
+          "endMs": 2640,
+          "decodedBytes": 9005687
+        },
+        {
+          "path": "/src/app/canvas/canvas-agent-panel.tsx",
+          "startMs": 3066,
+          "endMs": 3073,
+          "decodedBytes": 277921
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 1
+}

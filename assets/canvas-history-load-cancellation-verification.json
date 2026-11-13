@@ -1,0 +1,68 @@
+{
+  "fixtureBytes": 9269960,
+  "before": {
+    "readyMs": [
+      10472,
+      8712,
+      9410
+    ],
+    "completeCanvasReadBytes": [
+      [
+        9272014,
+        9272014
+      ],
+      [
+        9272014,
+        9272014
+      ],
+      [
+        9272014,
+        9272014
+      ]
+    ]
+  },
+  "after": {
+    "readyMs": [
+      10005,
+      10186,
+      8240
+    ],
+    "completeCanvasReadBytes": [
+      [
+        0,
+        9272014
+      ],
+      [
+        0,
+        9272014
+      ],
+      [
+        0,
+        9272014
+      ]
+    ],
+    "cancelledReadErrors": [
+      "net::ERR_ABORTED",
+      "net::ERR_ABORTED",
+      "net::ERR_ABORTED"
+    ]
+  },
+  "checks": [
+    {
+      "name": "visible_history_and_tool_details_preserved_with_complete_server_transcript",
+      "passed": true
+    }
+  ],
+  "browserWrites": 0,
+  "generationSubmissions": 0,
+  "pageErrors": [],
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true,
+  "limits": [
+    "Development StrictMode invokes effects twice; this verifies discarded reads are cancelled, not that production always had two reads.",
+    "Client cancellation does not prove server storage work stopped.",
+    "The initial resource buffer was too small; it was raised before the baseline used here.",
+    "Timing fluctuates and does not establish end-to-end improvement.",
+    "Whole-session transfer, cloning, token estimation and content quality remain open."
+  ]
+}

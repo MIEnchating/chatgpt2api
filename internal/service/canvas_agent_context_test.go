@@ -1,12 +1,74 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	"chatgpt2api/internal/util"
 )
+
+func canvasAgentTestVideoModels() []CanvasAgentVideoModel {
+	return []CanvasAgentVideoModel{
+		{Model: "minimax-h3-768p", Capabilities: map[string]any{"contractConfigured": true, "audioControl": "always", "sizes": []string{"16:9"}, "resolutions": []string{"768p"}}, Defaults: map[string]any{"videoSize": "16:9", "videoQuality": "768p", "videoSeconds": 5, "videoGenerateAudio": true}},
+		{Model: "unknown-video", Capabilities: map[string]any{"contractConfigured": false, "audioControl": "unknown"}},
+		{Model: "seedance2.0-A", Capabilities: map[string]any{"contractConfigured": true, "audioControl": "none", "sizes": []string{"16:9"}, "resolutions": []string{"1080p"}}},
+	}
+}
+
+func TestCanvasAgentVideoConfigUsesServerContractAndReportsUnknown(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.service.SetVideoModels(canvasAgentTestVideoModels)
+	w.req.Generation["videoModel"] = "minimax-h3-768p"
+	w.req.Generation["videoSupportsAudio"] = false
+	w.req.Generation["capabilities"].(map[string]any)["video"] = map[string]any{"audioControl": "none"}
+	config, err := w.tool(map[string]any{"name": "get_generation_config"})
+	generation := agentMap(config["generation"])
+	video := agentMap(agentMap(generation["capabilities"])["video"])
+	if err != nil || generation["videoSupportsAudio"] != true || generation["videoGenerateAudio"] != true || video["audioControl"] != "always" || video["contractConfigured"] != true {
+		t.Fatalf("server fixed-audio contract did not override stale client claims: %v %v", config, err)
+	}
+	listed, err := w.tool(map[string]any{"name": "list_video_models"})
+	models := util.AsMapSlice(listed["models"])
+	if err != nil || len(models) != 3 || models[0]["model"] != "minimax-h3-768p" || agentMap(models[1]["capabilities"])["audioControl"] != "unknown" || agentMap(models[2]["capabilities"])["audioControl"] != "none" {
+		t.Fatalf("missing known and unknown model capabilities: %v %v", listed, err)
+	}
+	w.req.Generation["videoModel"] = "unknown-video"
+	config, err = w.tool(map[string]any{"name": "get_generation_config"})
+	generation = agentMap(config["generation"])
+	if err != nil || generation["videoSupportsAudio"] != nil || agentMap(agentMap(generation["capabilities"])["video"])["audioControl"] != "unknown" {
+		t.Fatalf("unknown audio was declared unsupported: %v %v", config, err)
+	}
+}
+
+func TestCanvasAgentVideoModelSwitchIsScopedAndRejectsUnavailableModels(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.service.SetVideoModels(canvasAgentTestVideoModels)
+	w.doc.AgentConfig = json.RawMessage(`{"videoModel":"old-video","imageModel":"keep-image","autoGenerateMedia":false}`)
+	w.doc.Nodes = []CanvasNode{{ID: "existing", Type: "video", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1, GenerationVideoModel: "old-video", GenerationVideoSize: "16:9", GenerationVideoSeconds: 5, TaskID: "existing-task"}}
+	before := cloneCanvasAgentDocument(w.doc)
+	for model, code := range map[string]string{"not-configured": "video_model_unavailable", "unknown-video": "video_contract_missing"} {
+		result, err := w.tool(map[string]any{"name": "set_video_model", "arguments": map[string]any{"model": model}})
+		if err != nil || result["code"] != code || string(w.doc.AgentConfig) != string(before.AgentConfig) {
+			t.Fatalf("invalid switch modified canvas: %v %v", result, err)
+		}
+	}
+	result, err := w.tool(map[string]any{"name": "set_video_model", "arguments": map[string]any{"model": "minimax-h3-768p"}})
+	if err != nil || result["ok"] != true || result["submitted"] != false || result["scope"] != "canvas" || !reflect.DeepEqual(w.doc.Nodes, before.Nodes) {
+		t.Fatalf("switch changed existing media or failed: %v %v", result, err)
+	}
+	if err = w.save(); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+	config := map[string]any{}
+	_ = json.Unmarshal(saved.AgentConfig, &config)
+	if err != nil || config["videoModel"] != "minimax-h3-768p" || config["imageModel"] != "keep-image" || config["autoGenerateMedia"] != false {
+		t.Fatalf("canvas selection or other preferences were lost: %v %v", config, err)
+	}
+}
 
 func TestCanvasAgentContextUsesBoundedIndexAndReadsFullDetailsByID(t *testing.T) {
 	w := memoryWorker(t, nil)

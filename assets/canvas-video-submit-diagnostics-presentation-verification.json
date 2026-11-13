@@ -1,0 +1,13 @@
+{
+  "kind": "isolated-display-fixture-not-supplier-recovery",
+  "startedAt": "2026-11-12T22:51:31.299Z",
+  "checks": [
+    "stage_and_http_status_visible_on_desktop_and_mobile",
+    "refresh_preserves_diagnostic_fixture",
+    "no_supplier_generation"
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "finishedAt": "2026-11-12T22:51:38.089Z",
+  "fixtureDeleted": true
+}

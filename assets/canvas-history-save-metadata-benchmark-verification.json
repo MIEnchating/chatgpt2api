@@ -1,0 +1,41 @@
+{
+  "benchmark": "BenchmarkCanvasDocumentLongHistoryGeometrySave",
+  "backend": "isolated SQLite",
+  "messages": 2000,
+  "protocolMessages": 4000,
+  "before": {
+    "iterations": 3,
+    "nanosecondsPerSave": 4055537141,
+    "bytesAllocatedPerSave": 530525365,
+    "allocationsPerSave": 129981
+  },
+  "after": {
+    "iterations": 3,
+    "nanosecondsPerSave": 3180040044,
+    "bytesAllocatedPerSave": 458350320,
+    "allocationsPerSave": 127881
+  },
+  "observedTimeReductionPercent": 21.587697672622554,
+  "allocationReductionPercent": 13.604447546065968,
+  "limitations": [
+    "Three iterations per sample; background load and compilation vary.",
+    "Measures geometry-only saves; changed conversation bodies still save in full.",
+    "Does not prove whole-page responsiveness is solved."
+  ],
+  "sourceSHA256": {
+    "internal/service/canvas_agent_history.go": "27ad9fd90cdc7a42d013f28458b39e22cc09aeb7b0dbb8253ee56bb0b4a0a87f",
+    "internal/service/canvas_agent_history_view.go": "45a57d5c159ca3636c75f047e12bc4f797630f6b28c329955b3f5c5c113a5fc4",
+    "internal/service/canvas_document.go": "0a2e67d9bb5df9cee54c12604ee5f6943cbdcdb67be4ec688ce8d1fc0b5f2c5a",
+    "internal/service/canvas_document_test.go": "30fa7e5002890b915f180386490ffa8756fa3fbe1b0d10164c560eeabef408ee"
+  },
+  "finalChecks": {
+    "servicePackageSeconds": 243.264,
+    "httpapiPackageSeconds": 110.523,
+    "newRegressions": "passed",
+    "browser": "passed",
+    "protectedOriginalProjects": "unchanged",
+    "embeddedWeb": "cached pass",
+    "frontendBuildAndLint": "reused previous unchanged-source pass",
+    "mysqlAndPostgres": "not configured; optional integration paths not rerun"
+  }
+}

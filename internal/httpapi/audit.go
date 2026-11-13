@@ -26,6 +26,7 @@ const (
 type requestIdentityContextKey struct{}
 type auditRequestContextKey struct{}
 type businessLogContextKey struct{}
+type authFailureContextKey struct{}
 
 type auditRequestCapture struct {
 	args      any
@@ -162,6 +163,9 @@ func (a *App) logHTTPRequest(r *http.Request, status int, duration time.Duration
 		"duration_ms", duration.Milliseconds(),
 		"ip_address", clientIP(r),
 	}
+	if reason := requestAuthFailure(r.Context()); reason != "" {
+		attrs = append(attrs, "auth_failure", reason)
+	}
 	switch {
 	case status >= http.StatusInternalServerError:
 		a.logger.Error("http request", attrs...)
@@ -197,6 +201,9 @@ func (a *App) writeAuditLog(r *http.Request, recorder *auditResponseWriter, stat
 	} else {
 		detail["username"] = "anonymous"
 	}
+	if reason := requestAuthFailure(r.Context()); reason != "" {
+		detail["auth_failure"] = reason
+	}
 
 	if err := a.logs.Add(strings.TrimSpace(r.Method+" "+r.URL.Path), detail); err != nil && a.logger != nil {
 		a.logger.Error("create audit log failed", "error", err, "path", r.URL.Path, "method", r.Method)
@@ -210,6 +217,15 @@ func withRequestIdentity(ctx context.Context, identity service.Identity) context
 func requestIdentity(ctx context.Context) (service.Identity, bool) {
 	identity, ok := ctx.Value(requestIdentityContextKey{}).(service.Identity)
 	return identity, ok
+}
+
+func withAuthFailure(ctx context.Context, reason string) context.Context {
+	return context.WithValue(ctx, authFailureContextKey{}, reason)
+}
+
+func requestAuthFailure(ctx context.Context) string {
+	reason, _ := ctx.Value(authFailureContextKey{}).(string)
+	return reason
 }
 
 func withAuditRequestCapture(ctx context.Context, capture auditRequestCapture) context.Context {

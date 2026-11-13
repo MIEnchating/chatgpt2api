@@ -1,0 +1,15 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "startedAt": "2026-11-11T20:59:21.331Z",
+  "checks": [
+    {
+      "name": "single_shot_regeneration_via_script_ui",
+      "passed": true
+    }
+  ],
+  "qualityApproved": false,
+  "videoID": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+  "taskID": "canvas-video-139e0c96-6195-4035-8a77-58a03057aa1e",
+  "status": "error",
+  "error": "供应商参考素材必须使用公网 HTTPS 链接或平台暂存文件"
+}

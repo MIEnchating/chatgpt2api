@@ -1,0 +1,38 @@
+{
+  "sourceHashes": {
+    "internal/service/canvas_document.go": "bd283a81bf9ca30f64ffc21d1e0e4dc69fdc3710e1ca3d0c02d882fc1c0f7f65",
+    "internal/service/canvas_agent.go": "777c56173803f468773c7e2d6285c30625d28c04dd3e1f8cb291b900f6eeb67a",
+    "internal/service/canvas_agent_history_view.go": "c06b6dd45a3b16a7e89c7d400cfddb37af667e5388910d5db352021957892c9e",
+    "internal/service/canvas_agent_test.go": "471e35a0273b7ee54f57cc9b67cdfc8affc7d2d3376d3f22a60aad500701ee34",
+    "internal/service/canvas_agent_runtime_test.go": "8063cb956d2a13a8243b75a987d2d0ed46f361ce9f46280ba6aff7852763f22e",
+    "internal/httpapi/canvas.go": "4c5c6f87b7875a4d553052d1db25f48505f6bd83ab599ac3c16e2ffee0c81b17",
+    "internal/httpapi/canvas_agent.go": "f5c5eceb181dca037e6dd104d84d0685a431bc4f886b5667b7589942363fb4e4",
+    "internal/httpapi/canvas_test.go": "8dd01a74f9a10f5362393a9293e2eb5e4d9ec8bbbc024f672004d29dfdc411bb",
+    "web/src/app/canvas/page.tsx": "6838250fc667b97b65f6e8d594f5df68b465c4b84d0162be28f9b2e43e529fca",
+    "web/src/services/api/canvas.ts": "4a16039159e4500a33e655423091b2cee8eea1c1114d60d9d0605d6bdb39fd42",
+    "web/tests/canvas-review-regressions.test.mjs": "4ccfd9c106ebfa9e5c36351965e71676c99dbe31f11757d28497bf9dd551679c"
+  },
+  "frontend": {
+    "passed": 1776,
+    "failed": 0,
+    "files": 194,
+    "durationSeconds": 130.07
+  },
+  "go": {
+    "passed": true,
+    "secondsByPackage": {
+      "internal/service": 239.585,
+      "internal/httpapi": 103.39,
+      "internal/web": 0.027
+    }
+  },
+  "build": {
+    "passed": true,
+    "viteSeconds": 17.43
+  },
+  "lint": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "databaseScope": "Isolated SQLite. No SQL, schema or persistence format changes. MySQL and PostgreSQL not rerun."
+}

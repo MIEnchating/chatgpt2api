@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "name": "save_thirty_sessions_over_three_megabytes",
+      "passed": true,
+      "bytes": 3251171
+    },
+    {
+      "name": "switch_and_refresh_preserve_complete_transcripts",
+      "passed": true
+    },
+    {
+      "name": "new_session_and_tool_run_preserve_old_history",
+      "passed": true
+    },
+    {
+      "name": "browser_export_and_import_preserve_all_history",
+      "passed": true
+    }
+  ],
+  "pageErrors": []
+}

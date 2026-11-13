@@ -35,7 +35,7 @@ func TestCanvasAgentConversationIsOneSmallStreamingTurnWithoutMediaRecovery(t *t
 			return nil, ctx.Err()
 		}
 		return map[string]any{"text_response": "你好，我可以协助你创作。"}, nil
-	}, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	}, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		t.Error("greeting resumed media generation")
 		return nil, nil
 	})
@@ -140,7 +140,7 @@ func TestCanvasAgentTaskWaitPublishesTextBeforeModelCompletes(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := WaitCanvasAgentTask(ctx, tasks, identity, "stream", func(text string) error { received <- text; return nil })
+		_, err := WaitCanvasAgentTask(ctx, tasks, identity, "stream", func(text string) error { received <- text; return nil }, nil)
 		done <- err
 	}()
 	select {

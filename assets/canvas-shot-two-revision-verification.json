@@ -1,0 +1,35 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "startedAt": "2026-11-11T21:11:01.690Z",
+  "checks": [
+    {
+      "name": "observation_resumes_existing_task_without_submit",
+      "passed": true
+    },
+    {
+      "name": "settings_original_result_and_history_preserved",
+      "passed": true
+    },
+    {
+      "name": "refresh_preserves_revision_and_original_task",
+      "passed": true
+    },
+    {
+      "name": "page_runtime",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "qualityApproved": false,
+  "videoID": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+  "taskID": "canvas-video-75b1d194-5d14-43b3-ab21-a07036383a95",
+  "status": "success",
+  "progress": 100,
+  "mediaBytes": 4749060,
+  "mediaMetadata": {
+    "width": 768,
+    "height": 1376,
+    "duration_ms": 15083
+  },
+  "finishedAt": "2026-11-11T21:13:10.982Z"
+}

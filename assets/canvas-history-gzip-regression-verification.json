@@ -1,0 +1,79 @@
+{
+  "sourceSHA256": {
+    "internal/util/http_encoding.go": "0ef01164821005f54febb7651d9ca08204bdb83f1b3696ee881a5d22bce4b9ee",
+    "internal/util/http_encoding_test.go": "7b3b7edb8721ede1ad46efc6ee7fc287779bd30a2694155105868de33e5a7291",
+    "internal/web/web.go": "407dd439c976f424a004f4c5ed2ce5cfdb88d4b80c4f4b1fba20526b3320e196",
+    "internal/httpapi/canvas.go": "5b1dfce914db2ef5a8978488f9a28327ca46b0bfb223629d5b28702711e00d54",
+    "internal/httpapi/canvas_agent.go": "5a59a728330d76d74b85432e63573913f8d447787091a75f277fd535171fbc2b",
+    "internal/httpapi/canvas_agent_history.go": "bdf132128826514ded08f6eba76d4d95fe23f0e82f05c10b44bca5bda58f75ee",
+    "internal/httpapi/canvas_test.go": "2be45d0413f484b1ec9841ad88c6798648c0f6d0381e9db6075f71dae1e2d99b"
+  },
+  "after": {
+    "stage": "after",
+    "generationSubmissions": 0,
+    "pageErrors": [],
+    "samples": [
+      {
+        "kind": "editor",
+        "encoding": "gzip",
+        "encodedBytes": 1097185,
+        "decodedBytes": 7606318,
+        "transferBytes": 1097485,
+        "durationMs": 1244,
+        "visibleMs": 5703
+      },
+      {
+        "kind": "editor",
+        "encoding": "gzip",
+        "encodedBytes": 1097185,
+        "decodedBytes": 7606318,
+        "transferBytes": 1097485,
+        "durationMs": 1107,
+        "visibleMs": 3702
+      },
+      {
+        "kind": "archive",
+        "encoding": "gzip",
+        "encodedBytes": 284994,
+        "decodedBytes": 1977245,
+        "transferBytes": 285294,
+        "durationMs": 129
+      }
+    ],
+    "fullHistoryPreserved": true,
+    "fixtureDeleted": true
+  },
+  "protectedProjects": {
+    "checkedAt": "2026-11-12T22:11:31.041Z",
+    "stage": "before",
+    "projectCount": 6,
+    "runningAgents": 0,
+    "projects": [
+      {
+        "id": "canvas-092fd45e58e8eb1db469bd56",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      },
+      {
+        "id": "canvas-04702de07993ea1fdf59d868",
+        "historyUnchanged": true,
+        "nodesUnchanged": true,
+        "runStatus": "success"
+      }
+    ],
+    "activeMedia": 0
+  },
+  "checks": {
+    "goHttpapi": "passed",
+    "goWeb": "passed",
+    "goUtil": "passed",
+    "frontendBuild": "passed",
+    "frontendLint": "passed"
+  },
+  "transport": {
+    "thresholdBytes": 32768,
+    "encoding": "gzip",
+    "responseJSONUnchanged": true
+  }
+}

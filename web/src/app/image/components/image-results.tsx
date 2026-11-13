@@ -29,14 +29,14 @@ import { ImagePreview } from "@/components/image-preview";
 import { MediaVideoPlayer } from "@/components/media-video-player";
 import { GenerationProgress } from "@/components/generation/generation-progress";
 import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
-import { isVideoSaveFailure, videoTaskErrorMessage } from "@/lib/video-task-error";
+import { canRecoverVideoTask, videoTaskErrorMessage } from "@/lib/video-task-error";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { StudioAgentProcess } from "./studio-agent-process";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
-import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/lib/image-options";
+import { formatImageSizeDisplay } from "@/lib/image-options";
 import type { ImageVisibility } from "@/lib/api";
 import {
   fetchAuthenticatedImageBlob,
@@ -124,11 +124,6 @@ function isStoredVideo(image: StoredImage) {
   return image.mediaType === "video" || Boolean(image.videoUrl) || image.mimeType?.startsWith("video/") === true;
 }
 
-function isTurnBusy(turn: ImageTurn) {
-  const status = getEffectiveImageTurnStatus(turn);
-  return status === "queued" || status === "generating";
-}
-
 function imageSelectionKey(conversationId: string, turnId: string, imageId: string) {
   return `${conversationId}:${turnId}:${imageId}`;
 }
@@ -187,16 +182,6 @@ function imageQualityCheckTitle(image: StoredImage) {
     ...(check.warnings || []),
   ].filter(Boolean);
   return parts.join("\n");
-}
-
-function getLongTaskHint(turn: ImageTurn) {
-  if (!isTurnBusy(turn)) {
-    return "";
-  }
-  if (isHighResolutionImageSize(turn.size, turn.sizeSelection)) {
-    return "大尺寸任务已提交，正在等待生成结果";
-  }
-  return "";
 }
 
 function imageVisibilityLabel(visibility?: ImageVisibility) {
@@ -577,7 +562,6 @@ export function ImageResults({
             ? progress?.message || "等待任务开始"
             : progress?.message || (turnBusy ? turn.mode === "video" ? "正在处理视频" : "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
-        const longTaskHint = getLongTaskHint(turn);
         const downloadActions = downloadableImages.length > 0
           ? (
             <>
@@ -781,7 +765,6 @@ export function ImageResults({
                       ) : null}
                     </div>
                   </MessageHeader>
-                  {turnBusy && isVideoTurn ? <p role="status" className="mt-1 text-sm text-muted-foreground">{progressMessage}{longTaskHint ? ` · ${longTaskHint}` : ""}</p> : null}
                 </div>
 
                 {textReplyImages.length > 0 ? (
@@ -857,47 +840,63 @@ export function ImageResults({
                     }
                     if (video && image.status !== "success") {
                       const failed = image.status === "error";
-                      const saveFailed = failed && isVideoSaveFailure(image);
+                      const recoverable = canRecoverVideoTask(image);
                       const cancelled = image.status === "cancelled";
                       const phase = getStoredImageLoadingPhase(image, turn);
                       const running = phase === "running";
-                      const waitingForVideoResult = running && normalizeGenerationProgress(image.taskProgress) === 100;
+                      const taskProgress = normalizeGenerationProgress(image.taskProgress);
+                      const waitingForVideoResult = running && taskProgress === 100;
                       const errorMessage = videoTaskErrorMessage(image.error);
+                      if (!failed && !cancelled) {
+                        return (
+                          <Card
+                            key={image.id}
+                            data-video-task-state={image.status}
+                            aria-label={`视频 ${index + 1}`}
+                            className="relative w-full min-w-0 gap-0 p-0"
+                            style={{ aspectRatio: turnFrameAspectRatio, maxWidth: turnVideoFrameMaxWidth }}
+                          >
+                            {turn.count > 1 ? <span className="absolute top-3 left-3 text-xs text-muted-foreground">视频 {index + 1} / {turn.count}</span> : null}
+                            <CardContent className="absolute inset-0 flex min-w-0 flex-col items-center justify-center gap-3 px-4 pt-2 pb-12">
+                              {running ? (
+                                <LoadingState
+                                  label={waitingForVideoResult ? "正在保存视频" : "正在生成视频"}
+                                  description={waitingForVideoResult ? "正在获取生成结果" : undefined}
+                                  className="h-auto min-h-0 p-0"
+                                />
+                              ) : <EmptyState compact icon={Clock3} title="视频排队中" role="status" className="min-h-0 flex-none p-0" />}
+                              {running && !waitingForVideoResult && taskProgress !== undefined ? <GenerationProgress progress={taskProgress} label="视频生成进度" className="max-w-48" /> : null}
+                            </CardContent>
+                            <div className="absolute inset-x-3 bottom-3 flex min-w-0 items-center justify-between gap-2">
+                              <span className="min-w-0 text-xs text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel}</span>
+                              <TooltipButton type="button" variant="ghost" size="icon-sm" tooltip="终止生成" aria-label="终止生成" onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop /></TooltipButton>
+                            </div>
+                          </Card>
+                        );
+                      }
                       return (
                         <Card key={image.id} data-video-task-state={image.status} className="min-w-0">
                           <CardContent>
                             <RunStatus
-                              status={failed ? "error" : cancelled ? "cancelled" : running ? "running" : "waiting"}
-                              title={saveFailed ? "视频已生成，保存失败" : failed ? "视频生成失败" : cancelled ? "视频生成已终止" : waitingForVideoResult ? "正在保存视频" : running ? "正在生成视频" : "视频排队中"}
+                              status={failed ? "error" : "cancelled"}
+                              title={recoverable ? "原视频任务待恢复" : failed ? "视频生成失败" : "视频生成已终止"}
                               description={`视频 ${index + 1} · ${turn.model}`}
-                            >
-                              {running && !failed && !cancelled ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{elapsedClock}</span> : null}
-                            </RunStatus>
+                            />
                           </CardContent>
-                          {failed || cancelled ? (
-                            <CardContent className="space-y-3">
-                              <p className="text-sm leading-6 text-muted-foreground">{saveFailed ? "上游已生成视频，但成品下载或保存失败。重试保存只获取已有视频，不会重新生成。" : failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
-                              {failed ? errorMessage.length > 280 ? (
-                                <Collapsible className="group">
-                                  <CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal cursor-pointer h-auto min-h-8">查看完整错误信息</Button></CollapsibleTrigger><CollapsibleContent forceMount className="data-[state=closed]:hidden">
-                                  <Alert variant="destructive"><AlertDescription><ScrollArea className="max-h-48" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</ScrollArea></AlertDescription></Alert>
-                                </CollapsibleContent></Collapsible>
-                              ) : <Alert variant="destructive"><AlertDescription className="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</AlertDescription></Alert> : image.error ? <ScrollArea className="max-h-36" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{image.error}</ScrollArea> : null}
-                            </CardContent>
-                          ) : (
-                            <CardContent className="space-y-3">
-                              {waitingForVideoResult ? <LoadingState label="正在等待视频结果" description="上游生成进度已到 100%，仍需返回或保存视频，就绪后会自动显示播放器。" /> : running ? <>
-                                <LoadingState label="正在把你的想法变成动态画面" description="视频生成需要一些时间，结果会自动出现在这里。" />
-                                <GenerationProgress className="mx-auto max-w-64" progress={image.taskProgress} label="视频生成进度" />
-                              </> : <EmptyState icon={Clock3} title="等待任务开始" description="轮到此任务时将自动开始生成。" />}
-                            </CardContent>
-                          )}
+                          <CardContent className="space-y-3">
+                            <p className="text-sm leading-6 text-muted-foreground">{recoverable ? "原任务已被上游接收，状态查询或成品保存未完成。可恢复原任务继续获取结果。" : failed ? "本次未能生成视频。可重试当前任务，或修改生成设置后重新生成。" : "此视频任务已停止。你可以修改设置，开始新的生成。"}</p>
+                            {failed ? errorMessage.length > 280 ? (
+                              <Collapsible className="group">
+                                <CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal cursor-pointer h-auto min-h-8">查看完整错误信息</Button></CollapsibleTrigger><CollapsibleContent forceMount className="data-[state=closed]:hidden">
+                                <Alert variant="destructive"><AlertDescription><ScrollArea className="max-h-48" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</ScrollArea></AlertDescription></Alert>
+                              </CollapsibleContent></Collapsible>
+                            ) : <Alert variant="destructive"><AlertDescription className="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorMessage}</AlertDescription></Alert> : image.error ? <ScrollArea className="max-h-36" contentClassName="whitespace-pre-wrap [overflow-wrap:anywhere]">{image.error}</ScrollArea> : null}
+                          </CardContent>
                           <CardFooter className="flex-wrap justify-between gap-3">
                             <span className="text-[11px] text-muted-foreground">{videoResolutionLabel} · {videoDurationLabel}</span>
                             <div className="flex items-center gap-2">
-                              {failed || cancelled ? <Button type="button" variant="outline" size="sm"  disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine  />调整设置</Button> : null}
-                              {failed ? <Button type="button" size="sm"  disabled={turnBusy || (!saveFailed && !turn.prompt.trim())} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw  />{saveFailed ? "重试保存视频" : "重试视频生成"}</Button> : null}
-                              {!failed && !cancelled ? <Button type="button" variant="outline" size="sm"  onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}><CircleStop  />终止生成</Button> : null}
+                              <Button type="button" variant="outline" size="sm"  disabled={turnBusy} onClick={() => onEditTurn(selectedConversation.id, turn.id)}><PencilLine  />调整设置</Button>
+                              {failed || recoverable ? <Button type="button" size="sm"  disabled={turnBusy || (!recoverable && !turn.prompt.trim())} onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}><RotateCcw  />{recoverable ? "恢复原任务" : "重试视频生成"}</Button> : null}
                             </div>
                           </CardFooter>
                         </Card>

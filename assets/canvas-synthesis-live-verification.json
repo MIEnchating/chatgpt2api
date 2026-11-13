@@ -1,0 +1,7 @@
+{
+  "checks": [],
+  "qualityApproved": false,
+  "mediaSubmissions": 0,
+  "error": "Supplier rejected the managed-image download because port 8002 is not allowed",
+  "testProjectDeleted": true
+}

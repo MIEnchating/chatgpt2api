@@ -1,0 +1,110 @@
+{
+  "checks": [
+    {
+      "name": "save_thirty_sessions_over_three_megabytes",
+      "passed": true,
+      "bytes": 3251171
+    },
+    {
+      "name": "editor_initial_load_fetches_active_body_and_directory_only",
+      "passed": true
+    },
+    {
+      "name": "repeated_reload_preserves_selected_transcript",
+      "passed": true,
+      "reloads": 4
+    },
+    {
+      "name": "switch_and_refresh_preserve_complete_transcripts",
+      "passed": true
+    },
+    {
+      "name": "explicit_unloaded_session_deletion_preserves_neighbours",
+      "passed": true
+    },
+    {
+      "name": "rename_loads_only_selected_body_and_preserves_messages",
+      "passed": true
+    },
+    {
+      "name": "editor_saves_send_only_changed_session_bodies",
+      "passed": true
+    },
+    {
+      "name": "new_session_and_tool_run_preserve_old_history",
+      "passed": true
+    },
+    {
+      "name": "browser_export_and_import_preserve_all_history",
+      "passed": true
+    },
+    {
+      "name": "mobile_history_directory_and_selected_body_open",
+      "passed": true
+    },
+    {
+      "name": "test_projects_removed_original_history_unchanged",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "transfers": [
+    {
+      "history": "active",
+      "bytes": 116628,
+      "loadedSessions": 1,
+      "directorySessions": 30
+    },
+    {
+      "history": "active",
+      "bytes": 116634,
+      "loadedSessions": 1,
+      "directorySessions": 30
+    },
+    {
+      "history": "active",
+      "bytes": 116634,
+      "loadedSessions": 1,
+      "directorySessions": 30
+    },
+    {
+      "history": "active",
+      "bytes": 116634,
+      "loadedSessions": 1,
+      "directorySessions": 30
+    },
+    {
+      "history": "active",
+      "bytes": 116634,
+      "loadedSessions": 1,
+      "directorySessions": 30
+    }
+  ],
+  "writes": [
+    {
+      "bytes": 7325,
+      "sessions": 0,
+      "partial": true
+    },
+    {
+      "bytes": 7336,
+      "sessions": 0,
+      "partial": true
+    },
+    {
+      "bytes": 115476,
+      "sessions": 1,
+      "partial": true
+    },
+    {
+      "bytes": 7438,
+      "sessions": 1,
+      "partial": true
+    }
+  ],
+  "reloadMs": [
+    3294,
+    3608,
+    3756
+  ]
+}

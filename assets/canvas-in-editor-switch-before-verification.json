@@ -1,0 +1,18 @@
+{
+  "phase": "before",
+  "loads": [],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "switch": {
+    "readyMs": 8023,
+    "startedRequests": 3,
+    "successfulBytes": [
+      8995671,
+      8995671
+    ]
+  },
+  "backRestoresSource": true,
+  "completeHistoryPreserved": true,
+  "originalProjectsUnchanged": true,
+  "temporaryProjectsDeleted": 2
+}

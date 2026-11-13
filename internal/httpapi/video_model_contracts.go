@@ -215,6 +215,8 @@ func (a *App) handleAdminVideoModelContracts(w http.ResponseWriter, r *http.Requ
 
 func (a *App) handleVideoModelContractAction(w http.ResponseWriter, r *http.Request, id, action string) {
 	switch action {
+	case "upload-credential":
+		a.handleVideoMaterialUploadCredential(w, r, id)
 	case "draft":
 		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -356,6 +358,14 @@ func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Req
 			"body": requestBody, "transport": contract.Transport,
 		},
 	}
+	if upload := contract.Transport.MaterialUpload; upload != nil {
+		result["material_upload"] = map[string]any{
+			"method": "POST", "url": upload.BaseURL + upload.Path,
+			"encoding": upload.Encoding, "field": upload.Field, "url_field": upload.URLField,
+			"base64_format": upload.Base64Format, "max_bytes": upload.MaxBytes,
+		}
+		result["notes"] = []string{"本项目先用独立供应商密钥上传本地素材，再将响应 URL 写入生成请求；此模拟仅展示配置，不读取密钥或执行上传。"}
+	}
 	if contract.Driver == protocol.VideoContractDriverAutoDL {
 		result["notes"] = []string{"此处展示画布输入映射；AutoDL 实际请求还会读取所选线路的工作流规则，转换素材字段并校验附加参数。"}
 	}
@@ -431,11 +441,12 @@ func (a *App) handleVideoModelContractJSONImport(w http.ResponseWriter, r *http.
 }
 
 type videoContractImportSource struct {
-	Type     string                     `json:"type"`
-	URL      string                     `json:"-"`
-	Name     string                     `json:"name"`
-	Warnings []string                   `json:"-"`
-	Site     *videoContractDocumentSite `json:"-"`
+	Type          string                     `json:"type"`
+	URLs          []string                   `json:"-"`
+	Name          string                     `json:"name"`
+	Warnings      []string                   `json:"-"`
+	Site          *videoContractDocumentSite `json:"-"`
+	documentBytes int
 }
 
 type videoContractImportResponse struct {
@@ -606,11 +617,10 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		content, source, err = readVideoContractUpload(r)
 	case "url":
 		reportProgress(videoContractImportProgressEvent{Stage: "reading_document", Message: "正在读取入口页面并发现相关文档"})
-		target := strings.TrimSpace(r.FormValue("url"))
-		if !isPublicReferenceURL(target) {
-			err = errors.New("请输入公网可访问的 HTTP 或 HTTPS 链接")
-		} else {
-			source = videoContractImportSource{Type: "url", Name: target, URL: target}
+		var targets []string
+		targets, err = normalizeVideoContractDocumentURLs(r.MultipartForm.Value["url"])
+		if err == nil {
+			source = videoContractImportSource{Type: "url", Name: strings.Join(targets, "\n"), URLs: targets}
 		}
 	default:
 		err = errors.New("请选择文档或链接")
@@ -632,7 +642,7 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 	tokenName := firstNonEmpty(strings.TrimSpace(r.FormValue("token_name")), firstString(preferences.DefaultTextRelayTokens, ""))
 	warnings = append(warnings, source.Warnings...)
 	content, truncated := truncateVideoContractDocument(content)
-	if source.URL == "" && strings.TrimSpace(content) == "" && source.Site == nil {
+	if len(source.URLs) == 0 && strings.TrimSpace(content) == "" && source.Site == nil {
 		if progressWriter != nil {
 			progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: "文档中没有可分析的文本内容"})
 			return
@@ -649,7 +659,7 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		util.WriteError(w, http.StatusBadRequest, message)
 		return
 	}
-	if source.URL == "" {
+	if len(source.URLs) == 0 {
 		reportProgress(videoContractImportProgressEvent{
 			Stage:   "document_ready",
 			Message: fmt.Sprintf("文档读取完成，共 %d 个字符", utf8.RuneCountInString(content)),
@@ -702,13 +712,14 @@ func readVideoContractUpload(r *http.Request) (string, videoContractImportSource
 	return content, videoContractImportSource{Type: "file", Name: name}, err
 }
 
-func fetchVideoContractDocument(parent context.Context, value string) (string, videoContractImportSource, error) {
-	if !isPublicReferenceURL(value) {
-		return "", videoContractImportSource{}, errors.New("请输入公网可访问的 HTTP 或 HTTPS 链接")
+func fetchVideoContractDocuments(parent context.Context, values []string) (string, videoContractImportSource, error) {
+	targets, err := normalizeVideoContractDocumentURLs(values)
+	if err != nil {
+		return "", videoContractImportSource{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, videoContractDocumentFetchTimeout)
 	defer cancel()
-	return fetchVideoContractDocumentSet(ctx, value, service.SafeMediaProxyHTTPClient())
+	return fetchVideoContractDocumentSources(ctx, targets, service.SafeMediaProxyHTTPClient())
 }
 
 func readLimitedVideoContractDocument(reader io.Reader) ([]byte, error) {
@@ -962,15 +973,9 @@ func decodeGeneratedVideoModelContracts(content, sourceDocument string) ([]proto
 func mergeEquivalentGeneratedVideoModelContracts(contracts []protocol.VideoModelContract) []protocol.VideoModelContract {
 	merged := make([]protocol.VideoModelContract, 0, len(contracts))
 	for _, contract := range contracts {
-		comparison := contract
-		comparison.Name = ""
-		comparison.Models = nil
 		mergedIntoExisting := false
 		for index := range merged {
-			existingComparison := merged[index]
-			existingComparison.Name = ""
-			existingComparison.Models = nil
-			if !reflect.DeepEqual(existingComparison, comparison) {
+			if !sameGeneratedVideoContractUpstream(merged[index], contract) {
 				continue
 			}
 			seen := make(map[string]struct{}, len(merged[index].Models))
@@ -983,9 +988,26 @@ func mergeEquivalentGeneratedVideoModelContracts(contracts []protocol.VideoModel
 					additional++
 				}
 			}
-			if len(merged[index].Models)+additional > 20 {
+			if len(merged[index].Models)+additional > protocol.MaxVideoContractModels {
 				continue
 			}
+			profiles := make([]protocol.VideoModelContractProfile, 0, len(merged[index].Models)+additional)
+			appendProfiles := func(source protocol.VideoModelContract) {
+				for _, model := range source.Models {
+					resolved, ok := protocol.ResolveVideoModelContract(source, model)
+					if !ok {
+						continue
+					}
+					transport, request := resolved.Transport, resolved.Request
+					profiles = append(profiles, protocol.VideoModelContractProfile{
+						Model: model, Capability: resolved.Capability, Generation: resolved.Generation,
+						Rules: resolved.Rules, Transport: &transport, Request: &request,
+					})
+				}
+			}
+			appendProfiles(merged[index])
+			appendProfiles(contract)
+			merged[index].ModelProfiles = profiles
 			for _, model := range contract.Models {
 				modelKey := strings.ToLower(model)
 				if _, ok := seen[modelKey]; ok {
@@ -1002,6 +1024,21 @@ func mergeEquivalentGeneratedVideoModelContracts(contracts []protocol.VideoModel
 		}
 	}
 	return merged
+}
+
+func sameGeneratedVideoContractUpstream(left, right protocol.VideoModelContract) bool {
+	clearModelSettings := func(contract protocol.VideoModelContract) protocol.VideoModelContract {
+		contract.Name = ""
+		contract.Models = nil
+		contract.ModelProfiles = nil
+		contract.Capability = protocol.VideoModelContractCapability{}
+		contract.Generation = protocol.VideoModelContractGeneration{}
+		contract.Rules = nil
+		contract.Transport = protocol.VideoModelContractTransport{}
+		contract.Request = protocol.VideoModelContractRequest{}
+		return contract
+	}
+	return reflect.DeepEqual(clearModelSettings(left), clearModelSettings(right))
 }
 
 func videoModelIDAppearsInDocument(document, model string) bool {

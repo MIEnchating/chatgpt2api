@@ -212,7 +212,13 @@ export function taskSnapshotIsOlder(previous: CreationTask, incoming: CreationTa
     return false;
   }
 
-  // A task is terminal forever. A late active response must never reopen it.
+  // Explicit recovery can reopen a video error at a newer server revision.
+  if (previous.mode === "video" && (previous.can_recover_video || incoming.can_recover_video) &&
+      numericRevision(previous.revision) !== undefined && numericRevision(incoming.revision) !== undefined &&
+      previous.revision !== incoming.revision) {
+    return Number(incoming.revision) < Number(previous.revision);
+  }
+  // Other terminal tasks reject late active responses.
   if (isTaskTerminal(previous.status) && isTaskActive(incoming.status)) {
     return true;
   }
@@ -410,6 +416,11 @@ function mergeStoredImageSnapshot(
     return preferIncoming ? incoming : previous;
   }
 
+  if ((previous.canRecoverVideo || incoming.canRecoverVideo) &&
+      numericRevision(previous.taskRevision) !== undefined && numericRevision(incoming.taskRevision) !== undefined &&
+      previous.taskRevision !== incoming.taskRevision) {
+    return Number(incoming.taskRevision) > Number(previous.taskRevision) ? incoming : previous;
+  }
   const previousTerminal = storedImageIsTerminal(previous);
   const incomingTerminal = storedImageIsTerminal(incoming);
   if (previousTerminal && !incomingTerminal) {

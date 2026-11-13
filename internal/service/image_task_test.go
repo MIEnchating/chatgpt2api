@@ -146,6 +146,23 @@ func TestImageTaskServicePreservesDeclaredVideoGenerationMode(t *testing.T) {
 	}
 }
 
+func TestImageTaskServiceDistinguishesVideoSubmissionUncertainty(t *testing.T) {
+	handler := func(_ context.Context, _ Identity, _ map[string]any) (map[string]any, error) {
+		return nil, errors.New("视频提交请求失败（HTTP 503）：是否接单尚未确认")
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	identity := Identity{ID: "alice", Role: AuthRoleUser}
+	if _, err := svc.SubmitVideo(context.Background(), identity, "video-submit-uncertain", "animate", "video-model", "16:9", 5, "720p", false, false, "text", nil, nil, nil, nil); err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+	waitForTaskStatus(t, svc, identity, "video-submit-uncertain", TaskStatusError)
+	items := svc.ListTasks(identity, []string{"video-submit-uncertain"})["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["submission_status"] != VideoSubmissionUnknown {
+		t.Fatalf("uncertain submission status = %#v", items)
+	}
+}
+
 func TestImageTaskServiceTracksVideoQueueAndUpstreamProgress(t *testing.T) {
 	queued := make(chan struct{})
 	continueRunning := make(chan struct{})
@@ -3015,18 +3032,17 @@ func waitForTaskOutputStatusCounts(t *testing.T, svc *ImageTaskService, identity
 	t.Fatalf("task %s output status counts did not reach %#v", taskID, want)
 }
 
-func TestRecoverVideoContentPreservesOwnershipAndNeverResubmits(t *testing.T) {
+func TestRecoverVideoTaskPreservesOwnershipAndNeverResubmits(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	submissions := 0
 	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
 		submissions++
-		callback := payload[VideoTaskProgressCallbackPayloadKey].(func(VideoTaskProgressUpdate))
-		callback(VideoTaskProgressUpdate{Status: TaskStatusRunning, UpstreamStatus: "completed", UpstreamTaskID: "upstream-video", Progress: 100, HasProgress: true, Recovery: &VideoContentRecovery{TaskID: "upstream-video", URL: "https://relay.example/v1/videos/upstream-video/content", BaseURL: "https://relay.example", TokenName: "original-token"}})
-		return nil, errors.New("视频已生成但保存失败: video content returned status 502")
+		payload[VideoTaskProgressCallbackPayloadKey].(func(VideoTaskProgressUpdate))(VideoTaskProgressUpdate{Status: TaskStatusRunning, UpstreamStatus: "completed", UpstreamTaskID: "upstream-video", Progress: 100, HasProgress: true, Recovery: &VideoTaskRecovery{TaskID: "upstream-video", URL: "https://relay.example/v1/videos/upstream-video/content", BaseURL: "https://relay.example", TokenName: "original-token"}})
+		return nil, errors.New("视频已生成但保存失败: HTTP 502")
 	}
 	svc := NewStoredImageTaskService(backend, nil, nil, nil, func() int { return 30 })
 	svc.SetVideoHandler(handler)
-	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	identity := Identity{ID: "alice", Role: AuthRoleUser}
 	if _, err := svc.SubmitVideo(context.Background(), identity, "recover-video", "animate", "video-model", "16:9", 5, "720p", false, false, "text", nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -3038,43 +3054,39 @@ func TestRecoverVideoContentPreservesOwnershipAndNeverResubmits(t *testing.T) {
 	defer svc.Close()
 	items := svc.ListTasks(identity, []string{"recover-video"})["items"].([]map[string]any)
 	if !util.ToBool(items[0]["can_recover_video"]) {
-		t.Fatalf("recovery lost after reload: %#v", items)
+		t.Fatal("recovery lost after reload")
 	}
 	if _, ok := items[0]["video_recovery"]; ok {
-		t.Fatal("private recovery coordinates exposed")
+		t.Fatal("private recovery exposed")
 	}
-	if _, err := svc.RecoverVideoContent(context.Background(), Identity{ID: "bob"}, "recover-video", func(context.Context, VideoContentRecovery) (string, error) {
-		t.Fatal("another owner reached download")
-		return "", nil
-	}); err == nil {
+	svc.SetVideoRecoveryHandler(func(context.Context, Identity, map[string]any) (map[string]any, error) { return nil, errors.New("502") })
+	if _, err := svc.RecoverVideoTask(Identity{ID: "bob"}, "recover-video"); err == nil {
 		t.Fatal("accepted wrong owner")
 	}
-	if _, err := svc.RecoverVideoContent(context.Background(), identity, "recover-video", func(context.Context, VideoContentRecovery) (string, error) { return "", errors.New("502") }); err == nil {
-		t.Fatal("accepted failed download")
+	if _, err := svc.RecoverVideoTask(identity, "recover-video"); err != nil {
+		t.Fatal(err)
 	}
+	waitForTaskStatus(t, svc, identity, "recover-video", TaskStatusError)
 	items = svc.ListTasks(identity, []string{"recover-video"})["items"].([]map[string]any)
-	if items[0]["status"] != TaskStatusError || !util.ToBool(items[0]["can_recover_video"]) {
-		t.Fatal("failed download destroyed recovery")
+	if !util.ToBool(items[0]["can_recover_video"]) {
+		t.Fatal("failed observation destroyed recovery")
 	}
 	downloads := 0
-	result, err := svc.RecoverVideoContent(context.Background(), identity, "recover-video", func(_ context.Context, r VideoContentRecovery) (string, error) {
+	svc.SetVideoRecoveryHandler(func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
 		downloads++
+		r := payload[VideoTaskRecoveryPayloadKey].(*VideoTaskRecovery)
 		if r.TaskID != "upstream-video" || r.TokenName != "original-token" {
-			t.Fatalf("wrong recovery: %#v", r)
+			t.Errorf("wrong recovery: %#v", r)
 		}
-		return "/videos/recovered.mp4", nil
+		return map[string]any{"data": []map[string]any{{"url": "/videos/recovered.mp4", "video_url": "/videos/recovered.mp4"}}, "output_type": "video"}, nil
 	})
-	if err != nil {
+	if _, err := svc.RecoverVideoTask(identity, "recover-video"); err != nil {
 		t.Fatal(err)
 	}
-	if result["status"] != TaskStatusSuccess || util.ToBool(result["can_recover_video"]) {
-		t.Fatalf("result = %#v", result)
-	}
-	if _, err := svc.RecoverVideoContent(context.Background(), identity, "recover-video", func(context.Context, VideoContentRecovery) (string, error) {
-		downloads++
-		return "", errors.New("unexpected")
-	}); err != nil {
-		t.Fatal(err)
+	waitForTaskStatus(t, svc, identity, "recover-video", TaskStatusSuccess)
+	result, err := svc.RecoverVideoTask(identity, "recover-video")
+	if err != nil || result["status"] != TaskStatusSuccess || util.ToBool(result["can_recover_video"]) {
+		t.Fatalf("result=%#v error=%v", result, err)
 	}
 	if submissions != 1 || downloads != 1 {
 		t.Fatalf("submissions=%d downloads=%d", submissions, downloads)

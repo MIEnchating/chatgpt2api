@@ -1,6 +1,7 @@
 "use client";
 
 import { I18nProvider } from "@videojs/react/i18n";
+import zhCN from "@videojs/react/i18n/locales/zh-CN";
 import { Video, VideoPlayer, VideoSkin } from "@videojs/react/video";
 import "@videojs/react/video/skin.css";
 
@@ -27,7 +28,7 @@ export function MediaVideoPlayer({
       role="group"
       aria-label={title}
     >
-      <I18nProvider locale="zh-CN">
+      <I18nProvider locale="zh-CN" translations={zhCN}>
         <VideoPlayer>
           <VideoSkin className={cn("absolute inset-0 h-full w-full", embedded && "rounded-none")}>
             <Video src={src} preload="metadata" playsInline />

@@ -1,0 +1,30 @@
+{
+  "verifiedAt": "2026-11-12T15:20:37.916682+00:00",
+  "benchmark": "BenchmarkCanvasDocumentLongHistoryGeometrySave",
+  "backend": "isolated SQLite",
+  "before": {
+    "iterations": 3,
+    "nanoseconds": 1867859768,
+    "bytesAllocated": 316874170,
+    "allocations": 113397
+  },
+  "after": {
+    "iterations": 3,
+    "nanoseconds": 1371485810,
+    "bytesAllocated": 298503794,
+    "allocations": 111383
+  },
+  "observedReduction": {
+    "timePercent": 26.57447665525178,
+    "allocatedBytesPercent": 5.797372502782416
+  },
+  "sourceSHA256": {
+    "internal/service/canvas_agent_history_view.go": "a0495a6f199d165da9d5ac93849b1017d313a7fe285d8599dbd971fd6d0524fb",
+    "internal/service/canvas_document.go": "f1eb3ae1fc0c0eb9fb0cfa1769765bd5a454c948a53b281c4ec92c47913ce423"
+  },
+  "limitations": [
+    "Three measured iterations per version, instrumented with CPU profiling; variable background load.",
+    "This measures unchanged-history geometry saves, not metadata or transcript edits.",
+    "No fixed latency guarantee, no claim of end-to-end loading or video quality completion."
+  ]
+}

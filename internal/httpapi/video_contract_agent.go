@@ -315,7 +315,7 @@ func (s *videoContractAgentState) readDocument(ctx context.Context, id int) (str
 		return "", err
 	}
 	site.remainingBytes -= len(page.data)
-	if !sameHTTPOrigin(site.baseURL, page.url) {
+	if !sameHTTPOrigin(link.url, page.url) {
 		return "", fmt.Errorf("文档页面不能跳转到其他站点")
 	}
 	if isVideoContractHTML(page.contentType, page.name) && videoContractHTMLIsLoadingShell(page.data) {

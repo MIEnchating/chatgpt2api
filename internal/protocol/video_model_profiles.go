@@ -5,17 +5,20 @@ import (
 	"strings"
 )
 
-// Model profiles replace the complete capability settings for an exact model.
-// Transport, field mappings and polling remain shared by the contract.
+// Model profiles replace model-specific capability, request and material transport settings.
 type VideoModelContractProfile struct {
 	Model      string                       `json:"model"`
 	Capability VideoModelContractCapability `json:"capability"`
 	Generation VideoModelContractGeneration `json:"generation"`
 	Rules      []VideoModelContractRule     `json:"rules"`
+	Transport  *VideoModelContractTransport `json:"transport,omitempty"`
+	Request    *VideoModelContractRequest   `json:"request,omitempty"`
 }
 
 func videoModelProfileFromContract(model string, contract VideoModelContract) VideoModelContractProfile {
-	return VideoModelContractProfile{Model: model, Capability: contract.Capability, Generation: contract.Generation, Rules: contract.Rules}
+	transport := contract.Transport
+	request := contract.Request
+	return VideoModelContractProfile{Model: model, Capability: contract.Capability, Generation: contract.Generation, Rules: contract.Rules, Transport: &transport, Request: &request}
 }
 
 func applyVideoModelProfile(contract VideoModelContract, profile VideoModelContractProfile) VideoModelContract {
@@ -23,6 +26,12 @@ func applyVideoModelProfile(contract VideoModelContract, profile VideoModelContr
 	contract.Capability = profile.Capability
 	contract.Generation = profile.Generation
 	contract.Rules = profile.Rules
+	if profile.Transport != nil {
+		contract.Transport = *profile.Transport
+	}
+	if profile.Request != nil {
+		contract.Request = *profile.Request
+	}
 	return contract
 }
 
@@ -30,8 +39,8 @@ func normalizeVideoModelProfiles(contract VideoModelContract) ([]VideoModelContr
 	if len(contract.ModelProfiles) == 0 {
 		return nil, nil
 	}
-	if len(contract.ModelProfiles) > 20 {
-		return nil, fmt.Errorf("每个契约最多配置 20 个模型能力")
+	if len(contract.ModelProfiles) > MaxVideoContractModels {
+		return nil, fmt.Errorf("每个契约最多配置 %d 个模型能力", MaxVideoContractModels)
 	}
 	profiles := make([]VideoModelContractProfile, 0, len(contract.ModelProfiles))
 	seen := make(map[string]bool)

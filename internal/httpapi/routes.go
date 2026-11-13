@@ -556,8 +556,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := splitPath(r.URL.Path)
-	if len(parts) == 4 && parts[0] == "api" && parts[1] == "creation-tasks" && parts[3] == "video-content" {
-		a.handleVideoContentRecovery(w, r, identity, parts[2])
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "creation-tasks" && parts[3] == "video-recovery" {
+		a.handleVideoTaskRecovery(w, r, identity, parts[2])
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/events" && r.Method == http.MethodGet {

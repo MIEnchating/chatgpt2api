@@ -16,7 +16,7 @@ func TestCanvasAgentFinishGenerationRejectsMissingMediaURL(t *testing.T) {
 	}
 	for name, task := range cases {
 		t.Run(name, func(t *testing.T) {
-			w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+			w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 				return task, nil
 			})
 			created, err := w.createGroupedCanvasWorkflow([]map[string]any{parallelImageStep("solo"), parallelImageStep("other")}, "empty media")
@@ -40,7 +40,7 @@ func TestCanvasAgentFinishGenerationRejectsMissingMediaURL(t *testing.T) {
 }
 
 func TestCanvasAgentFailedMediaTaskDoesNotRemainPending(t *testing.T) {
-	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		return nil, errors.New("upstream media failed")
 	})
 	created, err := w.createGroupedCanvasWorkflow([]map[string]any{parallelImageStep("failed"), parallelImageStep("other")}, "media failure")

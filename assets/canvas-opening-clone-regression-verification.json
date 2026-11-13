@@ -1,0 +1,24 @@
+{
+  "sourceHashes": {
+    "web/src/app/canvas/page.tsx": "e85da94386293e905413b38376d2c4bc6dd0611289ea68cb1e3ce9b33cde271b",
+    "web/tests/canvas-review-regressions.test.mjs": "d385e3764d6b7aadbb7b05946f8a1f57eea40e4658df166dad327d1bbc82170e"
+  },
+  "focusedTests": 155,
+  "fullFrontendTests": 1766,
+  "testFiles": 194,
+  "command": "npm run test -- --timeout 20000",
+  "buildPassed": true,
+  "lintWarnings": 0,
+  "lintErrors": 0,
+  "embeddedPassed": true,
+  "pageReadPassed": true,
+  "pageSavePassed": true,
+  "saves": 8,
+  "mediaSubmissions": 0,
+  "productionProjectsUnchanged": true,
+  "limitations": [
+    "Full conversation reads, initial structured copies and additional rendering costs remain.",
+    "Observed copy durations are not end-to-end speedup guarantees.",
+    "Content quality, actual standalone audio supplier generation and historical failure attribution remain open."
+  ]
+}

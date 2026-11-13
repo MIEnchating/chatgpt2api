@@ -359,10 +359,13 @@ func NewApp() (*App, error) {
 	app.agentExecutions.Register("studio", app.executeStudioAgent)
 	app.canvasAgent = service.NewCanvasAgentService(ctx, app.agentExecutions, canvas, app.agentSkills, app.runAgentModel, app.runCanvasAgentMedia)
 	app.canvasAgent.SetWorkflowService(workflows)
+	app.canvasAgent.SetVideoModels(app.canvasAgentVideoModels)
+	app.canvasAgent.SetVideoMerger(app.mergeCanvasVideos)
 	app.tasks.SetFileReferenceProtector(fileLifecycle)
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedVideoTask(ctx, identity, payload)
 	})
+	app.tasks.SetVideoRecoveryHandler(app.runRecoveredVideoTask)
 	app.tasks.SetAudioHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedAudioTask(ctx, identity, payload)
 	})
@@ -705,10 +708,6 @@ func (a *App) handleProxyTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"result": a.proxy.Test(candidate, 15*time.Second)})
-}
-
-func (a *App) resolveImageBaseURL() string {
-	return a.config.BaseURL()
 }
 
 const (

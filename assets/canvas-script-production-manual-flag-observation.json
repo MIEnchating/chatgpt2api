@@ -1,0 +1,29 @@
+{
+  "startedAt": "2026-11-12T13:24:12.665Z",
+  "checks": [
+    {
+      "name": "real_tool_and_saved_history_include_ordered_current_state_and_measured_durations",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "mediaSubmissions": 0,
+  "projectID": "canvas-99c1e23ab847afd6bf0c9b8a",
+  "summary": {
+    "totalShots": 4,
+    "plannedDurationSeconds": 60,
+    "actualDurationMS": 60332,
+    "canMerge": true,
+    "quality": [
+      "unchecked",
+      "unchecked",
+      "unchecked",
+      "unchecked"
+    ]
+  },
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\ntrue !== false\n\n    at file:///root/workspace/chatgpt2api/build/review/canvas-production/verify-script-production.mjs:54:9",
+  "fixtureRemoved": true,
+  "originalHistoryUnchanged": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-12T13:24:17.395Z"
+}

@@ -650,6 +650,80 @@ func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
 	}
 }
 
+func TestVideoModelContractImportMergesExactUpstreamModelSet(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "contracts.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	first := testVideoContract(t, "merge-model-a", "merge-model-a")
+	first.Name = "Split upstream A"
+	second := testVideoContract(t, "merge-model-b", "merge-model-b")
+	second.Name = "Split upstream B"
+	for _, contract := range []*protocol.VideoModelContract{&first, &second} {
+		contract.Provider = &protocol.VideoContractProvider{BaseURL: "https://same.example.com", AuthMode: "bearer"}
+	}
+	if err := service.CreateBatch([]ImportedVideoModelContract{{Contract: first, Enabled: true}, {Contract: second, Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := service.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID, secondID := "", ""
+	for _, item := range items {
+		switch item.Contract.Name {
+		case first.Name:
+			firstID = item.ID
+		case second.Name:
+			secondID = item.ID
+		}
+	}
+	if firstID == "" || secondID == "" {
+		t.Fatal("split upstream contracts were not created")
+	}
+	const uploadURL = "https://same.example.com/uploads"
+	if err := service.SetMaterialUploadAPIKey(secondID, uploadURL, "private-upload-key"); err != nil {
+		t.Fatal(err)
+	}
+
+	merged := testVideoContract(t, "combined-upstream", "merge-model-a")
+	merged.Name = "Combined upstream"
+	merged.Models = append(merged.Models, "merge-model-b")
+	merged.Provider = &protocol.VideoContractProvider{BaseURL: "https://same.example.com", AuthMode: "bearer"}
+	created, updated, err := service.Import([]ImportedVideoModelContract{{Contract: merged, Enabled: true}})
+	if err != nil || created != 0 || updated != 1 {
+		t.Fatalf("Import() = created %d, updated %d, error %v", created, updated, err)
+	}
+	items, err = service.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != len(protocol.DefaultVideoContracts())+1 {
+		t.Fatalf("split contracts were not collapsed: %d items", len(items))
+	}
+	var combined *ManagedVideoModelContract
+	for index := range items {
+		if items[index].Contract.Name == merged.Name {
+			combined = &items[index]
+		}
+		if items[index].Contract.Name == first.Name || items[index].Contract.Name == second.Name {
+			t.Fatalf("old split contract survived import: %s", items[index].Contract.Name)
+		}
+	}
+	if combined == nil || combined.ID != firstID {
+		t.Fatalf("combined contract did not retain the first existing ID: %#v", combined)
+	}
+	if key, err := service.MaterialUploadAPIKey(combined.ID, uploadURL); err != nil || key != "private-upload-key" {
+		t.Fatal("combined contract did not retain the existing upload credential")
+	}
+}
+
 func TestVideoModelContractDraftPublishAndRollbackLifecycle(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "contracts.db")
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))

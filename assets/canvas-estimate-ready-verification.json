@@ -1,0 +1,100 @@
+{
+  "phase": "estimate-ready",
+  "checks": [
+    {
+      "name": "ready_gate_close_reopen_reload_full_history_and_tool_details",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "browserWrites": 2,
+  "generationSubmissions": 0,
+  "loads": [
+    {
+      "readyMs": 13449,
+      "workers": [
+        {
+          "ready": false,
+          "released": false,
+          "terminated": true,
+          "sent": [],
+          "results": []
+        },
+        {
+          "ready": true,
+          "released": true,
+          "terminated": true,
+          "sent": [],
+          "results": []
+        },
+        {
+          "ready": true,
+          "released": true,
+          "terminated": false,
+          "sent": [
+            {
+              "type": "history",
+              "count": 4000,
+              "beforeReady": false
+            },
+            {
+              "type": "estimate",
+              "requestID": 1,
+              "beforeReady": false
+            }
+          ],
+          "results": [
+            {
+              "requestID": 1,
+              "tokens": 2994172
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "readyMs": 5669,
+      "workers": [
+        {
+          "ready": false,
+          "released": false,
+          "terminated": true,
+          "sent": [],
+          "results": []
+        },
+        {
+          "ready": true,
+          "released": true,
+          "terminated": false,
+          "sent": [
+            {
+              "type": "history",
+              "count": 4000,
+              "beforeReady": false
+            },
+            {
+              "type": "estimate",
+              "requestID": 1,
+              "beforeReady": false
+            }
+          ],
+          "results": [
+            {
+              "requestID": 1,
+              "tokens": 2994172
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fixtureBytes": 9269960,
+  "canvasReadRequests": 4,
+  "canvasReadFailures": [
+    "net::ERR_ABORTED",
+    "net::ERR_ABORTED"
+  ],
+  "panelSaves": 2,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

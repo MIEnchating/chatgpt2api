@@ -1,0 +1,18 @@
+{
+  "project_id": "canvas-092fd45e58e8eb1db469bd56",
+  "node_id": "video-b646787f-4243-4bef-bc36-dc40924e225a",
+  "method": "Automated operator inspection of sampled frames and independent unprompted ASR; not human quality approval",
+  "audio_observations": [
+    "新转录只出现一次“三年了”，后半句识别为“他還留著”，不再见原版重复前半句。",
+    "他/她为同音字，著/着存在转写差异；字符误差不能单独证明对白发音错误，也不能确认口型合格。"
+  ],
+  "visual_observations": [
+    "抽帧中唯一橙盔始终戴在头上，深蓝衣、单个牛皮色袋、右架白纸飞机与左空凳保持。",
+    "角色轻触纸飞机后敲门，未见摘盔或拿走纸飞机。",
+    "6秒与8秒抽帧仍见字幕，违背本次无字幕提示要求。"
+  ],
+  "result": "requires_review_and_subtitle_correction",
+  "manual_quality_pass": false,
+  "old_movie_preserved": true,
+  "remerged_movie": false
+}

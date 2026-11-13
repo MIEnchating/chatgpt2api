@@ -558,6 +558,19 @@ test("recovered video tasks restore progress and preserve it on failure", () => 
   assert.equal(success.nodes[0].generation_status, "success");
 });
 
+test("observing an active retried video clears the previous error without inventing progress", () => {
+  for (const status of ["queued", "running"]) {
+    const node = { id: "video", type: "video", task_id: "retry", generation_status: "loading", generation_progress: 30, generation_error: "Previous attempt failed" };
+    const updated = applyCanvasVideoTaskProgressNodes([node], { id: "retry", status })[0];
+    assert.equal(updated.generation_error, "");
+    assert.equal(updated.generation_progress, 30);
+    assert.equal(updated.generation_status, "loading");
+    assert.equal(applyCanvasVideoTaskProgressNodes([node], { id: "other-task", status })[0], node);
+    const failed = applyCanvasVideoTaskProgressNodes([node], { id: "retry", status: "error" })[0];
+    assert.equal(failed, node);
+  }
+});
+
 test("persisted script generation restores structured shots without overwriting the story", () => {
   const source = { id: "script-1", type: "script", prompt: "原故事", task_id: "script-task", generation_status: "loading", script_project: { step: 0, confirmed: false, shots: [], assets: [] }, script_operation: { kind: "script", shot_ids: [] } };
   const content = JSON.stringify({ assets: [], shots: [{ seconds: 5, description: "雨中的街道", asset_ids: [], dialogue: [] }] });

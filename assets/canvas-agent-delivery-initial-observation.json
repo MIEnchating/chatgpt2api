@@ -1,0 +1,46 @@
+{
+  "startedAt": "2026-11-11T22:48:11.438Z",
+  "method": "Real Agent UI in an isolated copy; second scenario uses an explicitly labelled review fixture",
+  "checks": [
+    {
+      "name": "unchecked_actual_clips",
+      "passed": true
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "unchecked_actual_clips",
+      "status": "success",
+      "reply": "已按当前脚本绑定的四段视频调用内置合并。镜头及顺序与已有最新版一致，因此复用该成片；旧成片和四段原片均保留，未重新生成任何图片或视频。\n成片实测60秒、768×1376像素，含音轨，可在成片卡播放或下载。画面、对白、说话人与口型尚待完整验收。",
+      "characters": 121,
+      "operations": [
+        {
+          "kind": "read",
+          "label": "正在读取节点",
+          "status": "success"
+        },
+        {
+          "kind": "generate",
+          "label": "正在合并分镜视频",
+          "status": "success"
+        },
+        {
+          "kind": "tool",
+          "label": "核对任务交付",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "name": "needs_fix_review_fixture",
+      "status": "success",
+      "reply": "",
+      "characters": 0,
+      "operations": []
+    }
+  ],
+  "qualityApproved": false,
+  "error": "Agent did not verify merge through the real tool",
+  "originalUnchanged": true,
+  "observationIssue": "Second scenario observer accepted the previous successful run before the new run started; no second-scenario product conclusion."
+}

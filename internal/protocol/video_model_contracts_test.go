@@ -31,6 +31,43 @@ func TestVideoModelContractAcceptsBase64MaterialTransport(t *testing.T) {
 	}
 }
 
+func TestVideoModelContractProviderUploadValidation(t *testing.T) {
+	valid := VideoMaterialUpload{BaseURL: "https://openai.fit", Path: "/v1/uploads", Encoding: "multipart", Field: "file", URLField: "data.url", MaxBytes: 100 << 20}
+	for _, scenario := range []struct {
+		name   string
+		change func(*VideoMaterialUpload)
+		valid  bool
+	}{
+		{"multipart", func(*VideoMaterialUpload) {}, true},
+		{"base64", func(u *VideoMaterialUpload) { u.Encoding, u.Field, u.Base64Format = "base64", "data_url", "data_url" }, true},
+		{"http", func(u *VideoMaterialUpload) { u.BaseURL = "http://openai.fit" }, false},
+		{"absolute-path", func(u *VideoMaterialUpload) { u.Path = "https://other.example.com/upload" }, false},
+		{"query", func(u *VideoMaterialUpload) { u.Path = "/upload?key=secret" }, false},
+		{"unsafe-json-path", func(u *VideoMaterialUpload) { u.URLField = "__proto__.url" }, false},
+		{"multipart-path", func(u *VideoMaterialUpload) { u.Field = "data.file" }, false},
+		{"unbounded", func(u *VideoMaterialUpload) { u.MaxBytes = 0 }, false},
+		{"oversized", func(u *VideoMaterialUpload) { u.MaxBytes++ }, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			contract := DefaultVideoContracts()[0]
+			contract.Transport.LocalMaterial = "url"
+			upload := valid
+			scenario.change(&upload)
+			contract.Transport.MaterialUpload = &upload
+			got, err := NormalizeVideoModelContract(contract)
+			if (err == nil) != scenario.valid {
+				t.Fatalf("valid=%v err=%v", scenario.valid, err)
+			}
+			if err == nil {
+				got.Transport.MaterialUpload.Path = "/changed"
+				if contract.Transport.MaterialUpload.Path == "/changed" {
+					t.Fatal("normalization shares upload configuration")
+				}
+			}
+		})
+	}
+}
+
 func TestVideoMaterialTransportPriority(t *testing.T) {
 	for _, methods := range [][]string{
 		{"url"}, {"base64"}, {"multipart"},
@@ -129,6 +166,40 @@ func TestCloneVideoContractsCopiesNestedState(t *testing.T) {
 		!slices.Contains(source[0].Rules[0].UI.Hide, "watermark") ||
 		source[0].Polling.ResultFields[0] == "mutated.result" {
 		t.Fatalf("cloneVideoContracts() shared nested state: %#v", source[0])
+	}
+}
+
+func TestVideoModelProfileInheritsSharedRequestAndTransport(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Models = []string{"profiled-video"}
+	contract.ModelProfiles = []VideoModelContractProfile{{
+		Model:      "profiled-video",
+		Capability: contract.Capability,
+		Generation: contract.Generation,
+		Rules:      contract.Rules,
+	}}
+	cloned := cloneVideoContract(contract)
+	if cloned.ModelProfiles[0].Transport != nil || cloned.ModelProfiles[0].Request != nil {
+		t.Fatal("cloning an omitted profile field must preserve inheritance")
+	}
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil {
+		t.Fatalf("normalize profile with inherited fields: %v", err)
+	}
+	resolved, ok := ResolveVideoModelContract(normalized, "profiled-video")
+	if !ok || !reflect.DeepEqual(resolved.Transport, normalized.Transport) || !reflect.DeepEqual(resolved.Request, normalized.Request) {
+		t.Fatalf("profile did not inherit shared request and transport: %#v", resolved)
+	}
+
+	profileTransport := normalized.Transport
+	profileTransport.LocalMaterial = "url"
+	profileRequest := normalized.Request
+	profileRequest.DurationField = "duration_seconds"
+	normalized.ModelProfiles[0].Transport = &profileTransport
+	normalized.ModelProfiles[0].Request = &profileRequest
+	resolved, ok = ResolveVideoModelContract(normalized, "profiled-video")
+	if !ok || resolved.Transport.LocalMaterial != "url" || resolved.Request.DurationField != "duration_seconds" {
+		t.Fatalf("profile overrides were not applied: %#v", resolved)
 	}
 }
 

@@ -1,4 +1,4 @@
-import { isCanvasScriptProject } from "./canvas-script.ts";
+import { detachScriptNodes, isCanvasScriptProject } from "./canvas-script.ts";
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 import { CANVAS_CONFIG_REFERENCE_PATTERN } from "./canvas-config-inputs";
 
@@ -8,7 +8,7 @@ export type CanvasClipboard = {
 };
 
 const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
-  "id", "type", "x", "y", "width", "height", "font_size", "natural_width", "natural_height", "bytes",
+  "id", "type", "x", "y", "width", "height", "font_size", "natural_width", "natural_height", "bytes", "media_metadata", "media_silent_clips", "media_probe_error",
   "free_resize", "scale_x", "scale_y", "angle", "url", "storage_key", "thumbnail_url", "title", "prompt",
   "composer_content", "exclude_upstream_text", "group_id", "task_id", "generation_model", "generation_size",
   "generation_resolution", "generation_quality", "generation_count", "generation_output_format",
@@ -35,9 +35,23 @@ const CANVAS_CLIPBOARD_CONNECTION_FIELDS = new Set<keyof CanvasConnection>([
 
 export function remapCanvasNodeReferences(node: CanvasNode, idMap: ReadonlyMap<string, string>): CanvasNode {
   const childIDs = node.batch_child_ids?.flatMap((id) => idMap.has(id) ? [idMap.get(id)!] : []);
+  const project = node.script_project ? detachScriptNodes(node.script_project, new Set(
+    node.script_project.assets.map((asset) => asset.image_node_id).filter((id) => id && !idMap.has(id)),
+  )) : undefined;
   return {
     ...node,
-    script_project: node.script_project ? { ...node.script_project, assets: node.script_project.assets.map((asset) => ({ ...asset, image_node_id: idMap.get(asset.image_node_id) || asset.image_node_id })) } : undefined,
+    script_project: project ? { ...project,
+      merged_video_node_id: idMap.get(project.merged_video_node_id || ""),
+      merged_video_fingerprint: undefined,
+      assets: project.assets.map((asset) => ({ ...asset, image_node_id: idMap.get(asset.image_node_id) || "" })),
+      shots: project.shots.map((shot) => ({ ...shot,
+        source_node_id: idMap.get(shot.source_node_id || ""),
+        image_node_id: idMap.get(shot.image_node_id || ""),
+        video_node_id: idMap.get(shot.video_node_id || ""),
+        image_outdated: idMap.has(shot.image_node_id || "") && shot.image_outdated,
+        video_outdated: idMap.has(shot.video_node_id || "") && shot.video_outdated,
+      })),
+    } : undefined,
     group_id: node.group_id ? idMap.get(node.group_id) : undefined,
     batch_root_id: node.batch_root_id ? idMap.get(node.batch_root_id) : undefined,
     batch_child_ids: childIDs?.length ? childIDs : undefined,
@@ -66,6 +80,11 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     const source = raw as Partial<CanvasNode>;
     if (Object.keys(source).some((key) => !CANVAS_CLIPBOARD_NODE_FIELDS.has(key as keyof CanvasNode))) return null;
     if (source.script_project !== undefined && (source.type !== "script" || !isCanvasScriptProject(source.script_project))) return null;
+    if (source.media_metadata !== undefined) {
+      const metadata=source.media_metadata;
+      if (!metadata || !Number.isInteger(metadata.width) || metadata.width<1 || metadata.width>32768 || !Number.isInteger(metadata.height) || metadata.height<1 || metadata.height>32768 || !Number.isInteger(metadata.duration_ms) || metadata.duration_ms<1 || metadata.duration_ms>86400000 || metadata.has_audio!==undefined && typeof metadata.has_audio!=="boolean") return null;
+    }
+    if (source.media_silent_clips!==undefined && (!Number.isInteger(source.media_silent_clips) || source.media_silent_clips<0 || source.media_silent_clips>200)) return null;
     const id = String(source.id || "").trim();
     const type = source.type;
     if (!id || id.length > 128 || ids.has(id) || !["image", "video", "audio", "panorama", "director", "script", "group", "text", "config"].includes(type || "")) return null;

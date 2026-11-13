@@ -1,0 +1,30 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "nodeID": "video-0db46a12-f8cf-4d46-9088-2aae62f94e47",
+  "qualityApproved": false,
+  "mediaSubmissions": 0,
+  "pageErrors": [],
+  "checks": [
+    {
+      "name": "real_video_playback",
+      "passed": true,
+      "duration": 15.083333,
+      "time": 0.701575,
+      "width": 768,
+      "height": 1376
+    },
+    {
+      "name": "review_refresh_and_original_history_preserved",
+      "passed": true,
+      "messages": 16,
+      "previousMoviePreserved": true,
+      "oldMovieMarkedOutdated": true
+    },
+    {
+      "name": "mobile_dialog_bounds",
+      "passed": true,
+      "width": 390
+    }
+  ],
+  "finishedAt": "2026-11-12T05:59:45.277Z"
+}

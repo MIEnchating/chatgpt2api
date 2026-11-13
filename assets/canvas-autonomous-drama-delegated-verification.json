@@ -1,0 +1,821 @@
+{
+  "startedAt": "2026-11-12T11:38:28.805Z",
+  "checks": [
+    {
+      "name": "single_complete_request_via_real_agent_ui",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "observations": [
+    {
+      "at": "2026-11-12T11:38:35.798Z",
+      "phase": "intake",
+      "nodeCount": 0,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:38:41.816Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 0,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:38:46.863Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 0,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:38:51.903Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 0,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:39:22.118Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 1,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:39:57.350Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 1,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:40:02.387Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 1,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:40:27.545Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 1,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:40:47.833Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:40:58.474Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:41:03.537Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:41:18.667Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:41:28.774Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:41:48.930Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:41:59.070Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:42:09.171Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:42:29.333Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:42:44.427Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:04.594Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:24.785Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:29.882Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:34.941Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:40.056Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 6,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:50.191Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:43:55.221Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:44:10.409Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:44:15.488Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:44:52.217Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:45:12.475Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:46:13.096Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:46:23.225Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:46:38.394Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:46:53.512Z",
+      "status": "running",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    },
+    {
+      "at": "2026-11-12T11:46:58.549Z",
+      "status": "waiting",
+      "phase": "intake",
+      "nodeCount": 11,
+      "messageCount": 2
+    }
+  ],
+  "prompt": "请从这个空画布独立制作一部完整的60秒有声短剧。故事、人物、分镜和合理制作参数由你决定，选择两位成年人物的温暖现实题材，包含清楚的中文对白和环境声；9:16竖屏，4镜各15秒。图片模型固定 gpt-image-2.6-flare（2.6），视频固定 minimax-H3-super，768P，使用模型原生声音。先核对当前模型能力。\n\n请完整执行故事与原生结构化脚本、必要的人物/场景参考素材、每镜一张单幅分镜图、四段有声视频，再用产品内置合并生成60秒成片。不要宫格、拼图、字幕、画面文字、标志或水印，台词只属于声音。人物、衣服、道具、场景与声音保持连续，动作安排简单可读，不要求同一镜头完成过多动作。\n\n本次完整制作已获授权，创作细节由你自主决定，在这一部短剧的范围内直接完成，不需要逐阶段让我确认创作方案或生成许可。复用已成功结果，不重复付费提交；确有任务失败则保留原节点和任务ID，先核对真实错误，不擅自重提失败生成。素材作为脚本和镜头的输入，每一项分镜及视频绑定到脚本对应镜头，镜头正文直接保存在脚本中。\n\n最后保留全部聊天和独立分镜视频，说明可播放成片的位置与真实未完成项。媒体生成和合并成功不等于人工质量验收通过，不得替真人勾选通过。现在开始，完整执行到最终成片。",
+  "mediaRequestCount": 0,
+  "projectID": "canvas-04702de07993ea1fdf59d868",
+  "current": {
+    "at": "2026-11-12T11:46:58.549Z",
+    "runID": "IR6XZ0iMOsYfgHFXw1SsR",
+    "runStatus": "waiting",
+    "phase": "intake",
+    "pendingQuestion": {
+      "id": "call_2802b3c1136d4f6293345f3a4ac92af5",
+      "kind": "confirmation",
+      "options": [
+        "授权仅重试第4张分镜，成功后继续完整制作（推荐）",
+        "暂不重试，保留现有成果并暂停制作"
+      ],
+      "question": "第4镜单幅分镜因图片服务120秒响应超时失败，已核对原任务确为失败，原节点和任务记录均保留；其余参考素材及前3张分镜已成功。重新提交可能产生费用，是否授权仅在原节点重试第4张分镜，成功后继续四段视频及合并？",
+      "reason": "你明确要求失败后先核对错误、不得擅自重提。现已确认是外部服务超时；继续完整制作需要补齐这张分镜。",
+      "request": "请从这个空画布独立制作一部完整的60秒有声短剧。故事、人物、分镜和合理制作参数由你决定，选择两位成年人物的温暖现实题材，包含清楚的中文对白和环境声；9:16竖屏，4镜各15秒。图片模型固定 gpt-image-2.6-flare（2.6），视频固定 minimax-H3-super，768P，使用模型原生声音。先核对当前模型能力。\n\n请完整执行故事与原生结构化脚本、必要的人物/场景参考素材、每镜一张单幅分镜图、四段有声视频，再用产品内置合并生成60秒成片。不要宫格、拼图、字幕、画面文字、标志或水印，台词只属于声音。人物、衣服、道具、场景与声音保持连续，动作安排简单可读，不要求同一镜头完成过多动作。\n\n本次完整制作已获授权，创作细节由你自主决定，在这一部短剧的范围内直接完成，不需要逐阶段让我确认创作方案或生成许可。复用已成功结果，不重复付费提交；确有任务失败则保留原节点和任务ID，先核对真实错误，不擅自重提失败生成。素材作为脚本和镜头的输入，每一项分镜及视频绑定到脚本对应镜头，镜头正文直接保存在脚本中。\n\n最后保留全部聊天和独立分镜视频，说明可播放成片的位置与真实未完成项。媒体生成和合并成功不等于人工质量验收通过，不得替真人勾选通过。现在开始，完整执行到最终成片。"
+    },
+    "messageCount": 2,
+    "reply": "第4镜单幅分镜因图片服务120秒响应超时失败，已核对原任务确为失败，原节点和任务记录均保留；其余参考素材及前3张分镜已成功。重新提交可能产生费用，是否授权仅在原节点重试第4张分镜，成功后继续四段视频及合并？",
+    "plan": {
+      "explanation": "",
+      "steps": [
+        {
+          "id": "script",
+          "status": "completed",
+          "title": "创作并核对四镜结构化脚本"
+        },
+        {
+          "id": "refs",
+          "status": "completed",
+          "title": "制作两位成年人物及场景参考"
+        },
+        {
+          "id": "boards",
+          "status": "in_progress",
+          "title": "制作四张单幅起始分镜"
+        },
+        {
+          "id": "videos",
+          "status": "pending",
+          "title": "生成四段15秒原生有声视频"
+        },
+        {
+          "id": "merge",
+          "status": "pending",
+          "title": "合并并核对成片真实属性"
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "script-canvas-57f40ada890cc88876873a0b",
+        "type": "script",
+        "title": "剧本｜留一盏灯",
+        "status": "success",
+        "hasMedia": false
+      },
+      {
+        "id": "image-canvas-13a7db63312f8ae75a0701e1",
+        "type": "image",
+        "title": "人物参考｜陈姨",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-3653ccfaa1b9774d9440dacd",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-56f062386931635998ca4a0c",
+        "type": "image",
+        "title": "人物参考｜林舟",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-f04509a2a720b2d348333484",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-05bb0c5758202c678682901a",
+        "type": "image",
+        "title": "场景参考｜夜雨缝补店",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-1e8b2af83519dceb5a9c3bce",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-6f9e733d089e110c725610ea",
+        "type": "image",
+        "title": "道具参考｜米白布袋",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-4623c7cf545ef7e0cfdbcdd8",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "group-canvas-b7cd24d63b354ba18bc5877b",
+        "type": "group",
+        "title": "正式视觉参考",
+        "status": "idle",
+        "hasMedia": false
+      },
+      {
+        "id": "image-canvas-59b485ecee283ef967d66d2c",
+        "type": "image",
+        "title": "单幅分镜01｜问候",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-542d2b3a2be9ed9f57ff5076",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-b0baf144bb3c9f89d41b5ead",
+        "type": "image",
+        "title": "单幅分镜02｜开线",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-50d00aeaeb0391f95815fcb3",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-da8c0f20bf4d0a52a5237a8d",
+        "type": "image",
+        "title": "单幅分镜03｜工钱",
+        "status": "success",
+        "progress": 100,
+        "taskID": "canvas-agent-media-canvas-d106acb2029c518d70842314",
+        "hasMedia": true,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "image-canvas-3680cce2614d4ede6869c5e1",
+        "type": "image",
+        "title": "单幅分镜04｜留灯",
+        "status": "error",
+        "error": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond.",
+        "taskID": "canvas-agent-media-canvas-85d1f9011623f3c8ebd4d194",
+        "hasMedia": false,
+        "model": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "group-canvas-b75e685a4f00191bb726aaf5",
+        "type": "group",
+        "title": "四镜单幅分镜",
+        "status": "idle",
+        "hasMedia": false
+      }
+    ],
+    "script": {
+      "step": 1,
+      "confirmed": true,
+      "shots": [
+        {
+          "video_prompt_outdated": true,
+          "id": "s1",
+          "seconds": 15,
+          "description": "林舟已站在台前，双手拿着布袋。陈姨看向他。",
+          "framing": "竖屏双人中景",
+          "lighting": "暖灯冷蓝夜雨",
+          "dialogue": [
+            {
+              "id": "d1",
+              "kind": "dialogue",
+              "asset_id": "lin",
+              "text": "陈姨，这么晚，还没收摊啊？"
+            },
+            {
+              "id": "d2",
+              "kind": "dialogue",
+              "asset_id": "chen",
+              "text": "等雨小一点。袋子怎么了？"
+            }
+          ],
+          "sound": "细雨钟表，无音乐",
+          "camera": "固定",
+          "asset_ids": [
+            "chen",
+            "lin",
+            "shop",
+            "bag"
+          ],
+          "image_prompt": "一张完整写实电影静帧，动作起始画面，绝非拼图。图片1女性陈姨站右侧木台后，图片2男性林舟站左侧台前，保持面孔服装；图片3锁定店内空间、暖灯、冷蓝夜雨、缝纫机和红针线盒；图片4锁定米白布袋，唯一一只。双人中景眼平，两人互看，林舟双手拿袋在腰前，未放上桌。人物自然真实，柔和暖光。无字幕、文字、标志、水印、网格、编号。",
+          "video_prompt": "",
+          "color": "",
+          "image_node_id": "image-canvas-59b485ecee283ef967d66d2c"
+        },
+        {
+          "video_prompt_outdated": true,
+          "id": "s2",
+          "seconds": 15,
+          "description": "林舟将布袋放到台面，手指轻点开线处。陈姨低头看。",
+          "framing": "双人较近中景，手袋可见",
+          "lighting": "暖灯冷蓝夜雨",
+          "dialogue": [
+            {
+              "id": "d3",
+              "kind": "dialogue",
+              "asset_id": "lin",
+              "text": "线开了。明天第一天上班，我想带点像样的东西。"
+            },
+            {
+              "id": "d4",
+              "kind": "dialogue",
+              "asset_id": "chen",
+              "text": "袋子挺好，补两针就行。"
+            }
+          ],
+          "sound": "雨声布料，无音乐",
+          "camera": "固定",
+          "asset_ids": [
+            "chen",
+            "lin",
+            "shop",
+            "bag"
+          ],
+          "image_prompt": "一张完整写实电影静帧，动作起始画面，绝非拼图。图片1陈姨右侧木台后，图片2林舟左侧台前，保持面孔服装。图片3锁定店内空间、暖灯、冷蓝夜雨、缝纫机及红针线盒。图片4唯一米白布袋尚在林舟手中，悬在桌面上方十厘米，准备放下，尚未指点。两人目光落在袋子上。双人较近中景，手、袋与台面清晰。无字幕、文字、标志、水印、网格、编号。",
+          "video_prompt": "",
+          "color": "",
+          "image_node_id": "image-canvas-b0baf144bb3c9f89d41b5ead"
+        },
+        {
+          "video_prompt_outdated": true,
+          "id": "s3",
+          "seconds": 15,
+          "description": "同一布袋已修补好，平放桌面。陈姨将袋子轻推向林舟；林舟看着她，未急着拿。",
+          "framing": "双人中景，台面可见",
+          "lighting": "暖灯冷蓝夜雨",
+          "dialogue": [
+            {
+              "id": "d5",
+              "kind": "dialogue",
+              "asset_id": "lin",
+              "text": "多少钱？"
+            },
+            {
+              "id": "d6",
+              "kind": "dialogue",
+              "asset_id": "chen",
+              "text": "等你下班，跟我说说第一天。就当工钱。"
+            }
+          ],
+          "sound": "雨声布袋擦木台，无音乐",
+          "camera": "固定",
+          "asset_ids": [
+            "chen",
+            "lin",
+            "shop",
+            "bag"
+          ],
+          "image_prompt": "一张完整写实电影静帧，动作起始画面，绝非拼图。图片1陈姨右侧木台后，图片2林舟左侧台前，保持面孔服装。图片3锁定空间、暖灯、冷蓝夜雨、缝纫机及红针线盒。图片4同一唯一米白布袋现在已经用米白线修好，平放台面靠近陈姨，陈姨右手靠近袋子尚未推，林舟空手看着她。双人中景，台面下三分之一，温暖克制。无字幕、文字、标志、水印、网格、编号。",
+          "video_prompt": "",
+          "color": "",
+          "image_node_id": "image-canvas-da8c0f20bf4d0a52a5237a8d"
+        },
+        {
+          "video_prompt_outdated": true,
+          "id": "s4",
+          "seconds": 15,
+          "description": "林舟已拿起补好的布袋，仍站在台前。陈姨在暖灯下看着他。两人轻轻一笑，暖灯稳定亮着，最后两秒安静停留。",
+          "framing": "双人中近景暖灯可见",
+          "lighting": "暖灯冷蓝夜雨",
+          "dialogue": [
+            {
+              "id": "d7",
+              "kind": "dialogue",
+              "asset_id": "lin",
+              "text": "那我明天，还能这么晚来吗？"
+            },
+            {
+              "id": "d8",
+              "kind": "dialogue",
+              "asset_id": "chen",
+              "text": "来吧。我给你留盏灯。"
+            }
+          ],
+          "sound": "细雨钟表，无音乐",
+          "camera": "固定",
+          "asset_ids": [
+            "chen",
+            "lin",
+            "shop",
+            "bag"
+          ],
+          "image_prompt": "一张完整写实电影静帧，动作起始画面，绝非拼图。图片1陈姨右侧木台后，图片2林舟左侧台前，两人互看尚未微笑，保持面孔服装。图片3锁定空间暖灯冷蓝夜雨、缝纫机和红针线盒。图片4唯一米白布袋已修补好，林舟双手拿在腰前，桌面没有另一个袋子。双人中近景，袋子和右上亮着的暖灯可见。自然克制。无字幕、文字、标志、水印、网格、编号。",
+          "video_prompt": "",
+          "color": "",
+          "image_node_id": "image-canvas-3680cce2614d4ede6869c5e1"
+        }
+      ],
+      "assets": [
+        {
+          "id": "chen",
+          "kind": "character",
+          "name": "陈姨",
+          "description": "56岁中国女性，短灰黑发，米色针织开衫、深棕围裙，黑长裤，温暖自然。温暖略沙中低女声，普通话。",
+          "image_node_id": "image-canvas-13a7db63312f8ae75a0701e1"
+        },
+        {
+          "id": "lin",
+          "kind": "character",
+          "name": "林舟",
+          "description": "30岁中国男性，短黑发，海军蓝外套、灰色圆领衫，深色长裤，清晰克制青年中音，普通话。",
+          "image_node_id": "image-canvas-56f062386931635998ca4a0c"
+        },
+        {
+          "id": "shop",
+          "kind": "scene",
+          "name": "夜雨缝补店",
+          "description": "初冬夜晚小缝补店，暖灯，左侧玻璃门外冷蓝细雨；右侧木工作台、黑色老式缝纫机，后方无字布料架，红针线盒。",
+          "image_node_id": "image-canvas-05bb0c5758202c678682901a"
+        },
+        {
+          "id": "bag",
+          "kind": "prop",
+          "name": "米白布袋",
+          "description": "无字米白棉布手提袋，两根提手，右上角短小开线。",
+          "image_node_id": "image-canvas-6f9e733d089e110c725610ea"
+        }
+      ]
+    },
+    "toolTrace": [
+      {
+        "id": "call_6334124550824f19a4b3edbe40a886dd",
+        "label": "正在读取生成配置",
+        "status": "success",
+        "detail": "操作已完成"
+      },
+      {
+        "id": "call_b3dd957348b24ff595185005c04de979",
+        "label": "正在更新执行计划",
+        "status": "success",
+        "detail": "操作已完成"
+      },
+      {
+        "id": "call_0e6d0bca18214056b65e42afb19d318d",
+        "label": "正在创建主剧本节点",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_58e4cb70d3c54b84bcf697ed19ce2984",
+        "label": "整理脚本与分镜",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_5378cefc81e64f29ad8b6acfd667ff18",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_e3cb0286fe1642c2b01b4c7e721cd954",
+        "label": "整理脚本与分镜",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_a8137fb0c3674dd79f8eab3ee30ecdec",
+        "label": "搭建画布工作流",
+        "status": "success",
+        "detail": "工作流已搭建，尚未提交媒体生成\n画布节点：4 个\n返回节点：0 个"
+      },
+      {
+        "id": "call_a8137fb0c3674dd79f8eab3ee30ecdec:image-canvas-13a7db63312f8ae75a0701e1",
+        "label": "人物参考｜陈姨",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_a8137fb0c3674dd79f8eab3ee30ecdec:image-canvas-56f062386931635998ca4a0c",
+        "label": "人物参考｜林舟",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_a8137fb0c3674dd79f8eab3ee30ecdec:image-canvas-05bb0c5758202c678682901a",
+        "label": "场景参考｜夜雨缝补店",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_a8137fb0c3674dd79f8eab3ee30ecdec:image-canvas-6f9e733d089e110c725610ea",
+        "label": "道具参考｜米白布袋",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_a1e391322b3b49cb8befd47b32249427",
+        "label": "执行画布工作流",
+        "status": "success",
+        "detail": "画布节点：4 个"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-3653ccfaa1b9774d9440dacd",
+        "label": "正在生成人物参考｜陈姨",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-3653ccfaa1b9774d9440dacd"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-f04509a2a720b2d348333484",
+        "label": "正在生成人物参考｜林舟",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-f04509a2a720b2d348333484"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-1e8b2af83519dceb5a9c3bce",
+        "label": "正在生成场景参考｜夜雨缝补店",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-1e8b2af83519dceb5a9c3bce"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-4623c7cf545ef7e0cfdbcdd8",
+        "label": "正在生成道具参考｜米白布袋",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-4623c7cf545ef7e0cfdbcdd8"
+      },
+      {
+        "id": "call_1c7e20b5e27744fc94a2adee323d3d75",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_72ca405b13314d298c9b725fc0aeabbf",
+        "label": "整理脚本与分镜",
+        "status": "success",
+        "detail": "节点：剧本｜留一盏灯"
+      },
+      {
+        "id": "call_c6bbd2a49e364b81b76d1db0fa4a6f56",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：场景参考｜夜雨缝补店"
+      },
+      {
+        "id": "call_67190f6ba72f49599ff4a92c7913fd61",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：人物参考｜陈姨"
+      },
+      {
+        "id": "call_99a3f9eeb53e43bb8f47be153cac9bfe",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：人物参考｜林舟"
+      },
+      {
+        "id": "call_f074fa634ae14ac090b8f1c1608fb84c",
+        "label": "正在读取节点",
+        "status": "success",
+        "detail": "节点：道具参考｜米白布袋"
+      },
+      {
+        "id": "call_61877a457c7c407d939354fd0c182b64",
+        "label": "正在更新执行计划",
+        "status": "success",
+        "detail": "操作已完成"
+      },
+      {
+        "id": "call_f10a7a0774bd4c24865243203ccf999d",
+        "label": "搭建画布工作流",
+        "status": "success",
+        "detail": "工作流已搭建，尚未提交媒体生成\n画布节点：4 个\n返回节点：0 个"
+      },
+      {
+        "id": "call_f10a7a0774bd4c24865243203ccf999d:image-canvas-59b485ecee283ef967d66d2c",
+        "label": "单幅分镜01｜问候",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_f10a7a0774bd4c24865243203ccf999d:image-canvas-b0baf144bb3c9f89d41b5ead",
+        "label": "单幅分镜02｜开线",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_f10a7a0774bd4c24865243203ccf999d:image-canvas-da8c0f20bf4d0a52a5237a8d",
+        "label": "单幅分镜03｜工钱",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_f10a7a0774bd4c24865243203ccf999d:image-canvas-3680cce2614d4ede6869c5e1",
+        "label": "单幅分镜04｜留灯",
+        "status": "success",
+        "detail": "已保存到画布"
+      },
+      {
+        "id": "call_417fa33e20384e56bc68da507804b4ab",
+        "label": "执行画布工作流",
+        "status": "error",
+        "detail": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-542d2b3a2be9ed9f57ff5076",
+        "label": "正在生成单幅分镜01｜问候",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-542d2b3a2be9ed9f57ff5076"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-50d00aeaeb0391f95815fcb3",
+        "label": "正在生成单幅分镜02｜开线",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-50d00aeaeb0391f95815fcb3"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-d106acb2029c518d70842314",
+        "label": "正在生成单幅分镜03｜工钱",
+        "status": "success",
+        "detail": "任务：canvas-agent-media-canvas-d106acb2029c518d70842314"
+      },
+      {
+        "id": "generation:canvas-agent-media-canvas-85d1f9011623f3c8ebd4d194",
+        "label": "正在生成单幅分镜04｜留灯",
+        "status": "error",
+        "detail": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+      },
+      {
+        "id": "call_31d461723adf4b98b9f7b0dbf7258350",
+        "label": "正在读取任务状态",
+        "status": "error",
+        "detail": "任务：canvas-agent-media-canvas-85d1f9011623f3c8ebd4d194"
+      }
+    ]
+  },
+  "terminalStatus": "waiting",
+  "stoppedAt": "2026-11-12T11:46:58.552Z",
+  "newTasks": [
+    {
+      "id": "canvas-agent-media-canvas-85d1f9011623f3c8ebd4d194",
+      "status": "error",
+      "error": "The origin web server did not return a complete response within the 120-second Proxy Read Timeout window. The connection was established, but the origin took too long to respond."
+    },
+    {
+      "id": "canvas-agent-media-canvas-d106acb2029c518d70842314",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-50d00aeaeb0391f95815fcb3",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-542d2b3a2be9ed9f57ff5076",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-1e8b2af83519dceb5a9c3bce",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-4623c7cf545ef7e0cfdbcdd8",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-3653ccfaa1b9774d9440dacd",
+      "status": "success"
+    },
+    {
+      "id": "canvas-agent-media-canvas-f04509a2a720b2d348333484",
+      "status": "success"
+    }
+  ],
+  "originalHistoryUnchanged": true,
+  "originalActiveProjectRestored": true
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "real-page-with-intercepted-task-fixture",
+  "paidSubmissions": 0,
+  "recoveryRequests": 1,
+  "pageErrors": [],
+  "checks": [
+    "manual recovery keeps original task and node",
+    "cached terminal SSE ignored",
+    "one recovery request and no generation",
+    "refresh retains recovered result",
+    "390px mobile page renders",
+    "original chat unchanged"
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "checkedAt": "2026-11-12T09:52:51.445014+00:00",
+  "status": "partial",
+  "changes": [
+    "Preserve unchanged session/message/reference identities during canvas synchronization",
+    "Skip node-driven plain historical task rendering while keeping node chips, workflow references and merged-video summaries current",
+    "Select a model profile before cloning its effective contract; do not copy unrelated profiles"
+  ],
+  "validation": {
+    "frontendFullTests": {
+      "passed": 1732,
+      "failed": 0,
+      "files": 194,
+      "log": "/tmp/canvas-profile-selection-full-tests.log"
+    },
+    "buildLog": "/tmp/canvas-model-profile-build.log",
+    "lintLog": "/tmp/canvas-model-profile-lint.log",
+    "historyTaskRendersAcrossFourRenames": 0,
+    "historyUnchanged": true,
+    "temporaryProjectRemoved": true,
+    "browserErrors": [],
+    "saveReceipts": 6,
+    "generationSubmissionsInPerformanceCheck": 0
+  },
+  "measurements": {
+    "beforeProfileSelectionMaxLongTaskMs": 805,
+    "afterProfileSelectionMaxLongTaskMs": 889,
+    "fixedSpeedupClaimed": false,
+    "initialReadyMs": [
+      8405,
+      7207,
+      6749
+    ]
+  },
+  "priorVideoFailures": [
+    {
+      "time": "2026-11-12 07:01:26",
+      "status": 503,
+      "durationMs": 77294,
+      "model": "minimax-H3-super",
+      "error": "服务暂时不可用，请稍后重试"
+    },
+    {
+      "time": "2026-11-12 07:01:21",
+      "status": 503,
+      "durationMs": 76273,
+      "model": "minimax-H3-super",
+      "error": "服务暂时不可用，请稍后重试"
+    },
+    {
+      "time": "2026-11-12 07:01:20",
+      "status": 503,
+      "durationMs": 73669,
+      "model": "minimax-H3-super",
+      "error": "服务暂时不可用，请稍后重试"
+    }
+  ],
+  "currentConnectivity": {
+    "host": "imageapi.yunmian.tech",
+    "dnsResolved": true,
+    "tlsConnected": true,
+    "headHTTPStatus": 200,
+    "scope": "Site root only; not proof of video submission availability"
+  },
+  "remaining": [
+    "Page-level long tasks and initial full transcript costs",
+    "One new first-shot quality verification still running; shots 2 and 4 remain failed",
+    "Updated 60-second native-audio movie and content quality acceptance",
+    "Independent Agent execution and historical disappearance/authentication attribution",
+    "No independent audio models configured; no provider audio generation performed"
+  ]
+}

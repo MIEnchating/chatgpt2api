@@ -20,11 +20,11 @@ import { AgentExecutionRecovery } from "@/components/agent/agent-execution-recov
 import { Alert } from "@/components/ui/alert";
 import { CodeBlock, CodeBlockContent, CodeBlockCopyButton } from "@/components/ui/code-block";
 
-import { ItemMedia , Item } from "@/components/ui/item";
-import { Card } from "@/components/ui/card";
+import { ItemMedia, Item } from "@/components/ui/item";
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 
-import { Toggle } from "@/components/ui/toggle";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
@@ -42,7 +42,7 @@ import { ContractRuleEditor } from "./video-contract-rules";
 import { VIDEO_RULE_SCENARIOS } from "./video-contract-rule-scenarios";
 import { AutoDLContractImport } from "./autodl-contract-import";
 import { VideoContractPluginDialog, type VideoContractPluginTarget } from "./video-contract-plugin-dialog";
-import { AudioLines, Braces, CheckCircle2, CheckCheck, CircleAlert, CircleHelp, Code2, Copy, Download, Eye, FileText, Film, FlaskConical, History, ImagePlus, Link2, Pencil, Plus, Power, PowerOff, ShieldCheck, SlidersHorizontal, Square, Trash2, Upload, Video, WandSparkles, X } from "lucide-react";
+import { AudioLines, Braces, CheckCircle2, CheckCheck, ChevronDown, CircleAlert, CircleHelp, Code2, Copy, Download, Eye, FileText, Film, FlaskConical, History, ImagePlus, LayoutGrid, Link2, MoreHorizontal, Pencil, Plus, Power, PowerOff, ShieldCheck, SlidersHorizontal, Square, Table2, Trash2, Upload, Video, WandSparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -60,7 +60,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel, FieldSet } from "@/components/ui/field";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldSet } from "@/components/ui/field";
 import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
 import { Input } from "@/components/ui/input";
 import { InputTag } from "@/components/ui/input-tag";
@@ -69,6 +70,7 @@ import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TooltipHint } from "@/components/ui/tooltip";
 import {
   VideoSettingsPanel,
@@ -141,6 +143,13 @@ type ContractDraft = {
   errorFields: string[];
   resultFields: string[];
 };
+
+const VIDEO_CONTRACT_EDITOR_SECTIONS = [
+  { id: "basic", label: "基本信息", description: "契约与模型匹配", icon: Film },
+  { id: "capability", label: "模型能力", description: "参数、素材与规则", icon: SlidersHorizontal },
+  { id: "request", label: "上游接口", description: "请求映射与结果读取", icon: Upload },
+  { id: "preview", label: "效果预览", description: "查看创作参数面板", icon: Eye },
+];
 
 function formatElapsedSeconds(seconds: number) {
   const minutes = Math.floor(seconds / 60);
@@ -484,7 +493,7 @@ function referenceTypeCount(contract: VideoModelContract) {
 
 function SectionTitle({ children, description }: { children: string; description?: string }) {
   return (
-    <div className="space-y-1 border-b border-border/70 pb-3">
+    <div className="space-y-1">
       <h3 className="text-sm font-semibold text-foreground">{children}</h3>
       {description ? <p className="text-xs leading-5 text-muted-foreground">{description}</p> : null}
     </div>
@@ -494,7 +503,7 @@ function SectionTitle({ children, description }: { children: string; description
 function ContractHelpIcon({ help, label }: { help: string; label: string }) {
   return (
     <TooltipHint content={help}>
-      <Button variant="ghost" size="icon-sm"
+      <Button variant="ghost" size="icon-xs"
         type="button"
         className="inline-flex shrink-0 items-center justify-center transition"
         aria-label={`${label}说明`}
@@ -749,18 +758,13 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
     watermark: value.watermark,
   };
   return (
-    <Card className="w-full overflow-hidden gap-0 p-0">
-      <header className="flex min-w-0 items-center gap-2.5 border-b border-border/70 bg-background px-3.5 py-3">
-        <ItemMedia variant="icon" className="flex size-7 shrink-0 items-center justify-center">
-          <SlidersHorizontal className="size-3.5" />
-        </ItemMedia>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-foreground">参数效果预览</h3>
-          <p className="truncate text-[11px] text-muted-foreground" title={contract.models.join(", ")}>{modelLabel}</p>
-        </div>
-        <Badge variant="secondary" >实时</Badge>
-      </header>
-      <div className="min-h-64 p-3.5">
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><SlidersHorizontal className="size-4" />参数效果预览</CardTitle>
+        <CardDescription className="break-all" title={contract.models.join(", ")}>{modelLabel}</CardDescription>
+        <CardAction><Badge variant="secondary">实时</Badge></CardAction>
+      </CardHeader>
+      <CardContent>
         <div className="flex flex-col gap-3.5">
           <ContractReferenceMaterialPreview contract={contract} ruleValues={ruleValues} />
           <VideoSettingsPanel
@@ -772,7 +776,7 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
             onChange={(patch) => setValue((current) => ({ ...current, ...patch }))}
           />
         </div>
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -818,6 +822,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [items, setItems] = useState<ManagedVideoModelContract[]>([]);
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState(10);
+  const [listView, setListView] = useState<"table" | "cards">("table");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
@@ -825,7 +830,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(() => new Set());
   const [isBulkActionBusy, setIsBulkActionBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const [editorSection, setEditorSection] = useState("capability");
+  const [editorSection, setEditorSection] = useState("basic");
   const [dialogOpen, setDialogOpen] = useState(Boolean(editor));
   const [editingItem, setEditingItem] = useState<ManagedVideoModelContract | null>(editor?.item ?? null);
   const [readOnly, setReadOnly] = useState(false);
@@ -837,6 +842,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [importSourceType, setImportSourceType] = useState<"file" | "url">("file");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importURL, setImportURL] = useState("");
+  const importURLs = useMemo(() => [...new Set(importURL.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))], [importURL]);
   const [importModel, setImportModel] = useState("");
   const [importTokenName, setImportTokenName] = useState("");
   const [importGeneratePlugin, setImportGeneratePlugin] = useState(false);
@@ -1008,10 +1014,15 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     });
   };
 
-  const updateProfile = (update: (profile: Pick<VideoModelContractProfile, "capability" | "generation" | "rules">) => void) => {
+  const updateProfile = (update: (profile: Pick<VideoModelContractProfile, "capability" | "generation" | "rules" | "transport" | "request">) => void) => {
     setDraft((current) => {
       const contract = cloneContract(current.contract);
       const profile = contract.model_profiles?.find((item) => item.model === current.profileModel) || contract;
+      if (profile !== contract) {
+        const resolved = resolveVideoModelContract(contract, current.profileModel);
+        profile.transport ||= structuredClone(resolved.transport);
+        profile.request ||= structuredClone(resolved.request);
+      }
       update(profile);
       return { ...current, contract };
     });
@@ -1047,6 +1058,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const openCreate = () => {
+    setEditorSection("basic");
     setGeneratedContracts([]);
     setGeneratedReviewOpen(false);
     setGeneratedEditingIndex(null);
@@ -1115,8 +1127,12 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       toast.error("请选择要分析的文档");
       return;
     }
-    if (importSourceType === "url" && !importURL.trim()) {
+    if (importSourceType === "url" && importURLs.length === 0) {
       toast.error("请输入文档链接");
+      return;
+    }
+    if (importSourceType === "url" && importURLs.length > 24) {
+      toast.error("文档地址最多 24 个，请减少地址后重试");
       return;
     }
     const controller = new AbortController();
@@ -1128,7 +1144,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setImportError("");
     setImportStatus({
       stage: "reading_document",
-      message: importSourceType === "file" ? "正在上传并读取文档" : "正在读取文档页面",
+      message: importSourceType === "file" ? "正在上传并读取文档" : `正在读取 ${importURLs.length} 份文档`,
       step: 0,
       completedSteps: [],
       connected: false,
@@ -1141,7 +1157,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         sourceType: importSourceType,
         generatePlugin: importGeneratePlugin,
         file: importSourceType === "file" ? importFile : null,
-        url: importSourceType === "url" ? importURL : "",
+        urls: importSourceType === "url" ? importURLs : [],
         model: importModel,
         tokenName: importTokenName,
         signal: controller.signal,
@@ -1168,6 +1184,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const openGeneratedContract = (index: number) => {
     const contract = generatedContracts[index];
     if (!contract) return;
+    setEditorSection("basic");
     setGeneratedEditingIndex(index);
     setEditingItem(null);
     setReadOnly(false);
@@ -1234,6 +1251,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const openView = (item: ManagedVideoModelContract) => {
+    setEditorSection("basic");
     abandonGeneratedContracts();
     setEditingItem(item);
     setReadOnly(true);
@@ -1246,6 +1264,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const openEdit = (item: ManagedVideoModelContract) => {
+    setEditorSection("basic");
     abandonGeneratedContracts();
     setEditingItem(item);
     setReadOnly(false);
@@ -1259,6 +1278,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const openCopy = (item: ManagedVideoModelContract) => {
+    setEditorSection("basic");
     abandonGeneratedContracts();
     const copied = cloneContract(item.contract);
     copied.name = `${copied.name} 副本`.slice(0, 100);
@@ -1699,7 +1719,8 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const contractDialog = (
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeContractDialog())}>
         <DialogContent
-          className={cn("sm:max-w-none", cn("h-[min(94dvh,940px)]", "w-[min(96vw,1360px)] max-w-none"))}
+          data-video-contract-dialog
+          className="h-[min(94dvh,940px)] w-[min(96vw,1360px)] max-w-none sm:max-w-none"
         >
           <DialogHeader >
             <div className="flex items-start gap-3">
@@ -1707,22 +1728,39 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               <div className="min-w-0 space-y-1.5">
                 <DialogTitle>
                   {generatedEditingIndex !== null
-                    ? `审核视频模型契约（${generatedEditingIndex + 1}/${generatedContracts.length}）`
-                    : readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
+                    ? `审核视频契约（${generatedEditingIndex + 1}/${generatedContracts.length}）`
+                    : readOnly ? "查看视频契约" : editingItem ? "编辑视频契约" : "添加视频契约"}
                 </DialogTitle>
-                <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}{editor ? "。修改的是全局契约，发布后对新任务生效；已有任务保留原版本记录。" : ""}</DialogDescription>
+                <DialogDescription>{readOnly ? "查看已配置的模型能力与上游接口。" : "配置模型能力与上游接口，实时预览创作参数。"}{editor ? "修改的是全局契约，发布后对新任务生效；已有任务保留原版本记录。" : ""}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
-          <ScrollAreaRoot role="group" aria-label="视频配置分区" data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden shrink-0 p-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 flex w-max min-w-full gap-1">
-            {[ ["capability", "模型能力"], ["rules", "条件规则"], ["request", "请求设置"], ["response", "结果解析"], ["preview", "效果预览"] ].map(([key, label]) => <Toggle  key={key} type="button" pressed={editorSection === key} onClick={() => setEditorSection(key)} className={cn("shrink-0 whitespace-nowrap sm:flex-1", key === "preview" && "lg:hidden")}>{label}</Toggle>)}
-          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-          <FieldSet disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(320px,22rem)] lg:grid-rows-[minmax(0,1fr)]">
-            <ScrollAreaRoot data-video-contract-details data-slot="scroll-area" className={cn("group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden", cn("h-full min-h-0 min-w-0", editorSection === "preview" && "hidden lg:block"))} onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain h-full overscroll-y-contain" aria-label="契约表单"><div className="min-w-0 flex flex-col gap-6 pb-1 [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:border-t [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:border-border/60 [&>section.flex-col:not(.hidden)~section.flex-col:not(.hidden)]:pt-6">
-              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+          <div className="shrink-0 lg:hidden">
+            <Select value={editorSection} onValueChange={setEditorSection}>
+              <SelectTrigger aria-label="视频配置分区" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>{VIDEO_CONTRACT_EDITOR_SECTIONS.map((section) => <SelectItem key={section.id} value={section.id}>{section.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <FieldSet disabled={isSaving || editorLoading} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-[176px_minmax(0,1fr)_300px]">
+            <ScrollArea className="hidden min-h-0 border-r lg:flex" contentClassName="grid gap-5 py-4 pr-4">
+              <div className="space-y-1 px-3">
+                <p className="text-xs font-medium text-muted-foreground">契约配置</p>
+                <p className="break-words text-sm font-medium [overflow-wrap:anywhere]">{draft.contract.name || "新视频契约"}</p>
+              </div>
+              <nav aria-label="视频配置分区" className="grid gap-1">
+                {VIDEO_CONTRACT_EDITOR_SECTIONS.map(({ id, label, description, icon: Icon }) => (
+                  <Button key={id} type="button" variant={editorSection === id ? "secondary" : "ghost"} aria-current={editorSection === id ? "step" : undefined} aria-label={label} onClick={() => setEditorSection(id)} className={cn("h-auto min-h-16 w-full items-start justify-start gap-2 py-3 text-left", id === "preview" && "xl:hidden")}>
+                    <Icon className="mt-0.5 shrink-0" />
+                    <span className="min-w-0"><span className="block font-medium">{label}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{description}</span></span>
+                  </Button>
+                ))}
+              </nav>
+            </ScrollArea>
+            <ScrollArea data-video-contract-details aria-label="契约表单" className={cn("min-h-0 min-w-0", editorSection === "preview" && "hidden xl:flex")} contentClassName="grid gap-5 p-1 pr-3 pb-4 lg:p-5" onWheel={(event) => event.stopPropagation()}>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "basic" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle>基本信息</SectionTitle>
-                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <TextField id="video-contract-name" label="契约名称" value={draft.contract.name} disabled={readOnly} placeholder="例如 MiniMax H3" onChange={(value) => updateContract((contract) => { contract.name = value; })} />
+                <div className="grid items-start gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2"><TextField id="video-contract-name" label="契约名称" value={draft.contract.name} disabled={readOnly} placeholder="例如 MiniMax H3" onChange={(value) => updateContract((contract) => { contract.name = value; })} /></div>
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-driver" label="接口协议" help="选择当前模型采用的视频协议。协议决定请求结构和参数转换，不控制创作页面显示哪些模型。" />
                     <Select value={draft.contract.driver} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.driver = value as VideoModelContract["driver"]; })}>
@@ -1730,19 +1768,24 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                       <SelectContent>{VIDEO_CONTRACT_DRIVERS.map((driver) => <SelectItem key={driver.value} value={driver.value}>{driver.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
-                  <NumericField id="video-contract-priority" label="同级优先级" help="仅在通配符具体度相同时生效，数值越大越优先；精确模型始终优先于通配符。" min={-1000} max={1000} value={draft.contract.priority} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.priority = value; })} />
-                  <div className="sm:col-span-2 lg:col-span-3"><TagListField id="video-contract-models" label="模型匹配规则" help="填写上游实际接收的模型 ID，支持 * 通配符。精确匹配优先，其次选择固定字符更多、通配符更少的规则。这里只负责匹配契约，不控制创作页面显示哪些模型。" value={draft.models} disabled={readOnly} placeholder="例如 minimax-h3-*" onValueChange={(value) => setDraft((current) => {
+                  <div className="sm:col-span-2"><TagListField id="video-contract-models" label="模型匹配规则" help="填写上游实际接收的模型 ID，支持 * 通配符。精确匹配优先，其次选择固定字符更多、通配符更少的规则。这里只负责匹配契约，不控制创作页面显示哪些模型。" value={draft.models} disabled={readOnly} placeholder="例如 minimax-h3-*" onValueChange={(value) => setDraft((current) => {
                     const contract = mutationFromDraft(current).contract;
                     contract.models = value;
                     contract.model_profiles = contract.model_profiles?.filter((profile) => value.some((model) => model.toLowerCase() === profile.model.toLowerCase()));
                     return draftFromContract(contract, current.enabled, value.includes(current.profileModel) ? current.profileModel : "");
                   })} /></div>
+                  <div className="sm:col-span-2">
+                    <Collapsible className="group" defaultOpen={draft.contract.priority !== 0}>
+                      <CollapsibleTrigger asChild><Button type="button" variant="ghost" size="sm" className="justify-start px-0"><span>高级匹配设置</span><ChevronDown className="ml-1 transition-transform group-data-[state=open]:rotate-180" /></Button></CollapsibleTrigger>
+                      <CollapsibleContent forceMount className="data-[state=closed]:hidden"><div className="max-w-sm pt-3"><NumericField id="video-contract-priority" label="同级优先级" help="仅在通配符具体度相同时生效，数值越大越优先；精确模型始终优先于通配符。" min={-1000} max={1000} value={draft.contract.priority} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.priority = value; })} /></div></CollapsibleContent>
+                    </Collapsible>
+                  </div>
                 </div>
-              </section>
+              </Card>
 
-              <Card className={cn("space-y-3 p-4", !["capability", "rules", "preview"].includes(editorSection) && "hidden")}>
+              <Card className={cn("gap-3 p-4 sm:p-5", !["capability", "preview"].includes(editorSection) && "hidden")}>
                 <Field>
-                  <ContractFieldLabel htmlFor="video-contract-profile" label="当前配置的模型能力" help="接口、请求字段和轮询由整条契约共用。此处分别配置各模型的参数、生成模式及条件规则；未单独配置的模型使用通用能力。" />
+                  <ContractFieldLabel htmlFor="video-contract-profile" label="当前配置的模型能力" help="选择一个型号，分别配置它的参数、生成方式和输入能力；没有独立配置的型号沿用通用能力。" />
                   <ModelPicker id="video-contract-profile" label="模型能力配置" value={draft.profileModel || "__default__"}
                     options={[{ value: "__default__", label: "通用能力" }, ...normalizeTags(draft.models).filter((model) => !model.includes("*"))]}
                     onValueChange={(value) => selectProfile(value === "__default__" ? "" : value)} />
@@ -1754,31 +1797,41 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                   setDraft(draftFromContract(contract, draft.enabled, ""));
                 }}>移除该模型的独立配置</Button> : null}
               </Card>
-              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle description="先填写模型支持的选项，再单独指定默认值。默认值用于首次选择该模型或请求未指定参数时。">生成参数</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <TagListField id="video-contract-sizes" label="画幅选项" value={draft.sizes} disabled={readOnly} placeholder="例如 16:9" onValueChange={(value) => setDraft((current) => ({ ...current, sizes: value }))} />
-                  <TagListField id="video-contract-seconds" label="时长选项" value={draft.seconds} disabled={readOnly || Boolean(capability.seconds_range)} placeholder="例如 5" validateTag={(tag) => Number.isInteger(Number(tag)) && Number(tag) >= 1 && Number(tag) <= 3600} invalidMessage="时长必须是 1–3600 的整数" onValueChange={(value) => setDraft((current) => ({ ...current, seconds: value }))} />
-                  <TagListField id="video-contract-resolutions" label="清晰度选项" value={draft.resolutions} disabled={readOnly} placeholder="例如 720p" onValueChange={(value) => setDraft((current) => ({ ...current, resolutions: value }))} />
-                  <TextField id="video-contract-default-size" label="默认画幅" value={capability.default_size} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_size = value; })} />
-                  <NumericField id="video-contract-default-seconds" label="默认时长" min={1} max={capability.seconds_range ? capability.seconds_range.max ?? Number.MAX_SAFE_INTEGER : 3600} value={capability.default_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateProfile((contract) => { contract.capability.default_seconds = value; })} />
-                  <TextField id="video-contract-default-resolution" label="默认清晰度" value={capability.default_resolution} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_resolution = value; })} />
+                  <div className="grid min-w-0 gap-4">
+                    <TagListField id="video-contract-sizes" label="画幅选项" value={draft.sizes} disabled={readOnly} placeholder="例如 16:9" onValueChange={(value) => setDraft((current) => ({ ...current, sizes: value }))} />
+                    <TextField id="video-contract-default-size" label="默认画幅" value={capability.default_size} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_size = value; })} />
+                  </div>
+                  <div className="grid min-w-0 gap-4">
+                    <TagListField id="video-contract-seconds" label="时长选项" value={draft.seconds} disabled={readOnly || Boolean(capability.seconds_range)} placeholder="例如 5" validateTag={(tag) => Number.isInteger(Number(tag)) && Number(tag) >= 1 && Number(tag) <= 3600} invalidMessage="时长必须是 1–3600 的整数" onValueChange={(value) => setDraft((current) => ({ ...current, seconds: value }))} />
+                    <NumericField id="video-contract-default-seconds" label="默认时长" min={1} max={capability.seconds_range ? capability.seconds_range.max ?? Number.MAX_SAFE_INTEGER : 3600} value={capability.default_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateProfile((contract) => { contract.capability.default_seconds = value; })} />
+                  </div>
+                  <div className="grid min-w-0 gap-4">
+                    <TagListField id="video-contract-resolutions" label="清晰度选项" value={draft.resolutions} disabled={readOnly} placeholder="例如 720p" onValueChange={(value) => setDraft((current) => ({ ...current, resolutions: value }))} />
+                    <TextField id="video-contract-default-resolution" label="默认清晰度" value={capability.default_resolution} disabled={readOnly} onChange={(value) => updateProfile((contract) => { contract.capability.default_resolution = value; })} />
+                  </div>
+                </div>
+                <div className="grid items-start gap-4 sm:grid-cols-2">
                   <Field><ContractFieldLabel htmlFor="video-contract-audio-control" label="音频生成" help="控制创作参数面板是否显示音频开关。不支持表示不生成音频，用户开关表示由用户选择，始终生成表示请求固定携带音频。" /><Select value={capability.audio_control} disabled={readOnly} onValueChange={(value) => updateProfile((contract) => { contract.capability.audio_control = value as VideoModelContract["capability"]["audio_control"]; })}><SelectTrigger id="video-contract-audio-control" ><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">不支持</SelectItem><SelectItem value="toggle">用户开关</SelectItem><SelectItem value="always">始终生成</SelectItem></SelectContent></Select></Field>
                   <ContractCheckboxField id="video-contract-watermark" label="支持水印开关" checked={capability.watermark} disabled={readOnly} className="min-h-11 self-end" onCheckedChange={(checked) => updateProfile((contract) => { contract.capability.watermark = checked; })} />
                 </div>
-              </section>
+              </Card>
 
-              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle>附加参数与输入约束</SectionTitle>
                 <ContractParametersEditor capability={capability} disabled={readOnly} onChange={value => updateProfile(profile => { profile.capability = value; })} />
-              </section>
-              <section className={cn("flex flex-col gap-4", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
+              </Card>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "capability" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle description="只勾选模型实际支持的输入方式，选中后再配置对应的上传要求。">支持哪些输入</SectionTitle>
                 <ContractMaterialsEditor generation={activeProfile.generation} disabled={readOnly} onChange={(generation) => updateProfile((profile) => { profile.generation = generation; })} />
-              </section>
+              </Card>
 
-              <section className={cn("flex flex-col gap-4", editorSection !== "rules" && "hidden")}>
-                <SectionTitle description="用“当…则…”表达参数之间的关系。一般数量限制在模型能力中填写，只有参数相互依赖时才需要规则。">参数条件规则</SectionTitle>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "capability" && "hidden")}>
+                <Collapsible key={draft.profileModel} className="group" defaultOpen={activeProfile.rules.length > 0}>
+                  <CollapsibleTrigger asChild><Button type="button" variant="ghost" className="h-auto min-h-8 w-full justify-start whitespace-normal px-0 text-left"><span className="min-w-0 flex-1"><span className="block font-medium">高级条件规则</span><span className="mt-1 block text-xs font-normal text-muted-foreground">仅在参数之间存在依赖时配置 · {activeProfile.rules.length} 条</span></span><ChevronDown className="shrink-0 transition-transform group-data-[state=open]:rotate-180" /></Button></CollapsibleTrigger>
+                  <CollapsibleContent forceMount className="data-[state=closed]:hidden">
                 <Item variant="muted" className="p-4">
                   <p className="mb-3 text-xs font-medium">从常见场景开始 <span className="font-normal text-muted-foreground">· 点击添加，再按接口要求调整</span></p>
                   <div className="grid gap-2">
@@ -1787,14 +1840,16 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                 </Item>
                 <div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">已配置 {activeProfile.rules.length} / 32 条规则</p>{!readOnly ? <Button type="button" variant="outline" size="sm" disabled={activeProfile.rules.length >= 32} onClick={() => addContractRule()}><Plus  />添加规则</Button> : null}</div>
                 {activeProfile.rules.length > 0 ? <div className="space-y-3">{activeProfile.rules.map((rule, index) => <ContractRuleEditor key={index} disabled={readOnly} index={index} rule={rule} onChange={(next) => updateContractRule(index, next)} onRemove={() => updateProfile((profile) => { profile.rules.splice(index, 1); })} />)}</div> : <EmptyState compact title="还没有条件规则" description="仅按已配置的能力与上传数量校验。" className="min-h-0 p-5" />}
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+
+              <section className={cn("grid gap-5", editorSection !== "request" && "hidden")}>
+                <SectionTitle description="按上游文档映射创建请求，并配置任务状态和视频获取方式。">请求设置</SectionTitle>
+                <ContractRequestEditor key={`${editingItem?.id ?? `draft-${generatedEditingIndex ?? draft.contract.name}`}:${draft.profileModel}`} contract={previewContract} contractID={editingItem?.id} generation={activeProfile.generation} disabled={readOnly} onChange={(update) => updateProfile((profile) => { update(profile as VideoModelContract); })} onGenerationChange={(generation) => updateProfile((profile) => { profile.generation = generation; })} />
               </section>
 
-              <section className={cn("flex flex-col gap-4", editorSection !== "request" && "hidden")}>
-                <SectionTitle description="告诉系统如何把用户选择的参数发送给上游。字段名称按接口文档填写；普通用户在创作时无需接触这些设置。">上游请求设置</SectionTitle>
-                <ContractRequestEditor contract={normalizedContract} generation={activeProfile.generation} disabled={readOnly} onChange={updateContract} onGenerationChange={(generation) => updateProfile((profile) => { profile.generation = generation; })} />
-              </section>
-
-              <section className={cn("flex flex-col gap-4", editorSection !== "response" && "hidden")}>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "request" && "hidden")}>
                 <SectionTitle description="任务完成后，选择从响应中的下载地址还是独立下载接口获取视频。">获取生成的视频</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
                   <Field>
@@ -1823,9 +1878,9 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                   <TextField id="video-contract-content-path" label="视频下载接口" help="必须包含 {task_id}，适用于 /v1/videos/{task_id}/content 这类内容代理。" value={artifact.content_path} disabled={readOnly || artifact.mode !== "task_content"} placeholder="/v1/videos/{task_id}/content" onChange={(value) => updateContract((contract) => { contract.artifact.content_path = value; })} />
                   <TagListField id="video-contract-artifact-hosts" label="允许域名" help="限制结果地址或允许携带中转鉴权的域名；支持 *.example.com。留空时，relay 鉴权只能发送到中转自身。" value={artifact.allowed_hosts} disabled={readOnly} placeholder="例如 cdn.example.com" onValueChange={(value) => updateContract((contract) => { contract.artifact.allowed_hosts = value; })} />
                 </div>
-              </section>
+              </Card>
 
-              <section className={cn("flex flex-col gap-4", editorSection !== "response" && "hidden")}>
+              <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "request" && "hidden")}>
                 <SectionTitle description="创建视频任务后，系统定时查询生成状态，并从上游返回的 JSON 中读取任务编号、进度和视频地址。">读取任务结果</SectionTitle>
                 <Item variant="muted" className="space-y-2 p-3"><p>例如上游返回下列内容：任务编号填 data.id，生成状态填 data.status，完成进度填 data.progress，视频下载地址填 data.video_url。</p><ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden font-mono" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><CodeBlock><CodeBlockContent wrap>{JSON.stringify({ data: { id: "task_123", status: "completed", progress: 100, video_url: "https://example.com/video.mp4" } }, null, 2)}</CodeBlockContent></CodeBlock></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot><p>“data.progress”表示 data 对象中的 progress 字段。多项按填写顺序读取；选填字段没有对应数据时可留空。</p></Item>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -1840,16 +1895,14 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                   <TagListField id="video-contract-failure-statuses" label="哪些值表示失败" help="上游任务查询接口返回这些状态值时，系统停止轮询并标记生成失败，例如 failed 或 cancelled。" value={draft.failureStatuses} disabled={readOnly} placeholder="例如 failed" onValueChange={(value) => setDraft((current) => ({ ...current, failureStatuses: value }))} />
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-unknown-status" label="遇到其他状态时" help="没有匹配以上四组的状态统一归为 unknown。系统会保留原始状态并继续轮询，不会误判为成功或失败。" />
-                    <Card id="video-contract-unknown-status" className="flex h-10 items-center gap-2 px-3 p-0 flex-row">
-                      <span className="text-xs text-muted-foreground">继续查询，直到成功、失败或超过最长等待时间</span>
-                    </Card>
+                    <Input id="video-contract-unknown-status" readOnly value="继续查询，直到成功、失败或超过最长等待时间" className="h-11 text-muted-foreground" />
                   </Field>
                   <TagListField id="video-contract-error-fields" label="失败原因取自（选填）" help="任务失败时错误信息的 JSON 路径，按顺序读取；可以留空。" value={draft.errorFields} disabled={readOnly} placeholder="例如 error.message" onValueChange={(value) => setDraft((current) => ({ ...current, errorFields: value }))} />
                   <TagListField id="video-contract-result-fields" label="视频下载地址取自" help="任务成功后视频地址的 JSON 路径，按顺序读取，例如 video_url 或 data.output.video_url。" value={draft.resultFields} disabled={readOnly} placeholder="例如 video_url" onValueChange={(value) => setDraft((current) => ({ ...current, resultFields: value }))} />
                 </div>
-              </section>
-            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-            <ScrollAreaRoot data-video-contract-preview data-slot="scroll-area" className={cn("group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden", cn("h-full min-h-0 min-w-0", editorSection !== "preview" && "hidden lg:block"))} onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain h-full overscroll-y-contain" aria-label="契约预览"><div className="min-w-0 space-y-3 pb-1 lg:pl-5">
+              </Card>
+            </ScrollArea>
+            <ScrollArea data-video-contract-preview aria-label="契约预览" className={cn("min-h-0 min-w-0 xl:border-l", editorSection !== "preview" && "hidden xl:flex")} contentClassName="grid gap-4 p-1 pr-3 pb-4 xl:pl-4 xl:pt-5" onWheel={(event) => event.stopPropagation()}>
               <ContractParameterPreview key={parameterPreviewKey} contract={previewContract} />
               <Collapsible className="group overflow-hidden">
                 <CollapsibleTrigger asChild><Button type="button" variant="ghost" className="w-full justify-start whitespace-normal flex cursor-pointer list-none items-center [&::-webkit-details-marker]:hidden h-auto min-h-8">
@@ -1893,14 +1946,14 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
                   <CodeBlock><CodeBlockContent wrap>{contractJSON}</CodeBlockContent></CodeBlock>
                 </div>
               </CollapsibleContent></Collapsible>
-            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            </ScrollArea>
           </FieldSet>
-          <DialogFooter className="sm:justify-between">
-            <div className="flex flex-wrap gap-2 [&>button]:flex-1 sm:[&>button]:flex-none">
-            <Button type="button" variant="outline" disabled={isSaving || editorLoading} onClick={() => setPluginTargets([{ id: editingItem?.id || "draft", contract: cloneVideoModelContract(normalizedContract), label: readOnly ? "当前查看版本" : "当前编辑快照", reviewPending: !readOnly, warnings: generatedEditingIndex !== null ? [...(generatedDryRun[generatedEditingIndex]?.review_issues || []), ...(generatedDryRun[generatedEditingIndex]?.missing_evidence || [])] : [] }])}><Code2  />生成 New API 插件</Button>
-            {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving || editorLoading}><ShieldCheck  />校验配置</Button> : null}
+          <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={isSaving || editorLoading} onClick={() => setPluginTargets([{ id: editingItem?.id || "draft", contract: cloneVideoModelContract(normalizedContract), label: readOnly ? "当前查看版本" : "当前编辑快照", reviewPending: !readOnly, warnings: generatedEditingIndex !== null ? [...(generatedDryRun[generatedEditingIndex]?.review_issues || []), ...(generatedDryRun[generatedEditingIndex]?.missing_evidence || [])] : [] }])}><Code2 />生成插件</Button>
+            {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving || editorLoading}><ShieldCheck  />校验配置</Button> : null}
             </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end [&>button]:flex-1 sm:[&>button]:flex-none">
+            <div className="flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
             {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving || editorLoading}><FileText  />保存草稿</Button> : null}
             {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving || editorLoading}>{isSaving ? <Spinner /> : <CheckCircle2  />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
@@ -1916,6 +1969,119 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   }} /> : null;
   if (editor) return <>{contractDialog}{pluginDialog}</>;
 
+  const contractEntries = visibleItems.map((item) => {
+    const pending = pendingIds.has(item.id);
+    const displayedEnabled = optimisticEnabledByID.get(item.id) ?? item.enabled;
+    const referenceTypes = referenceTypeCount(item.contract);
+    const selection = (
+      <Checkbox
+        className="shrink-0"
+        checked={selectedContractIds.has(item.id)}
+        disabled={isBulkActionBusy}
+        onCheckedChange={(checked) => toggleContractSelection(item.id, checked === true)}
+        aria-label={`选择 ${item.contract.name}`}
+      />
+    );
+    const moreActions = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={`更多操作：${item.contract.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => openView(item)}><Eye />查看契约</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void openVersions(item)}><History />版本历史</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))}><Download />导出契约</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setPluginTargets([{ id: item.id, contract: cloneVideoModelContract(item.contract), label: `已发布版本 v${item.revision}` }])}><Code2 />生成 New API 插件</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => openCopy(item)}><Copy />复制契约</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" disabled={pending || isBulkActionBusy} onSelect={() => setDeletingItem(item)}><Trash2 />删除契约</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+    const modelBadges = (
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="匹配模型">
+        {item.contract.models.length > 0 ? item.contract.models.slice(0, 2).map((model) => (
+          <Badge key={model} variant="outline" className="max-w-full break-all whitespace-normal font-mono">{model}</Badge>
+        )) : <span className="text-xs text-muted-foreground">未设置模型匹配规则</span>}
+        {item.contract.models.length > 2 ? <TooltipHint content={item.contract.models.slice(2).join("、")}><Badge variant="secondary">+{item.contract.models.length - 2}</Badge></TooltipHint> : null}
+        <Badge variant="secondary">v{item.revision}</Badge>
+        {item.draft ? <Badge variant="secondary">有草稿</Badge> : null}
+      </div>
+    );
+    const statusToggle = (
+      <Label className="flex items-center gap-2 text-xs">
+        <Switch
+          checked={displayedEnabled}
+          disabled={pending || isBulkActionBusy}
+          onCheckedChange={() => void toggleEnabled(item)}
+          aria-label={displayedEnabled ? "停用契约" : "启用契约"}
+        />
+        {displayedEnabled ? "已启用" : "已停用"}
+      </Label>
+    );
+    const editButton = (
+      <Button type="button" variant="outline" size="sm" disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约"><Pencil />编辑契约</Button>
+    );
+    if (listView === "table") {
+      return (
+        <TableRow key={item.id} data-video-contract-row data-state={selectedContractIds.has(item.id) ? "selected" : undefined}>
+          <TableCell className="px-4">{selection}</TableCell>
+          <TableCell className="space-y-2 py-4 whitespace-normal">
+            <h3 className="break-words font-medium [overflow-wrap:anywhere]">{item.contract.name}</h3>
+            <p className="text-xs text-muted-foreground">{videoContractDriverLabel(item.contract.driver)}</p>
+            {modelBadges}
+          </TableCell>
+          <TableCell className="py-4 whitespace-normal">
+            <div className="flex flex-wrap gap-1.5" aria-label="能力范围">
+              <Badge variant="secondary">{formatDurationRange(item.contract.capability.seconds)}</Badge>
+              <Badge variant="secondary" className="whitespace-normal">{item.contract.model_profiles?.length ? `${item.contract.model_profiles.length} 个模型独立配置` : item.contract.capability.resolutions.join(" / ") || "上游默认清晰度"}</Badge>
+              <Badge variant="secondary">{item.contract.capability.sizes.length > 0 ? `${item.contract.capability.sizes.length} 种画幅` : "上游默认画幅"}</Badge>
+              {referenceTypes > 0 ? <Badge variant="secondary">{referenceTypes} 类参考素材</Badge> : null}
+              {item.contract.rules.length > 0 ? <Badge variant="outline">{item.contract.rules.length} 条规则</Badge> : null}
+            </div>
+          </TableCell>
+          <TableCell>{statusToggle}</TableCell>
+          <TableCell className="text-xs text-muted-foreground">
+            <time dateTime={item.updated_at} className="block leading-5 tabular-nums">{formatDateTime(item.updated_at)}</time>
+            <span className="leading-5">轮询 {item.contract.polling.interval_seconds} 秒</span>
+          </TableCell>
+          <TableCell className="pr-4"><div className="flex items-center justify-end gap-1">{editButton}{moreActions}</div></TableCell>
+        </TableRow>
+      );
+    }
+    return (
+      <Card key={item.id} data-video-contract-row data-selected={selectedContractIds.has(item.id) || undefined} className="min-w-0">
+        <CardHeader>
+          <CardTitle className="flex items-start gap-3">
+            {selection}
+            <h3 className="min-w-0 break-words leading-6 [overflow-wrap:anywhere]">{item.contract.name}</h3>
+          </CardTitle>
+          <CardDescription className="pl-7">{videoContractDriverLabel(item.contract.driver)}</CardDescription>
+          <CardAction>
+            {moreActions}
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid flex-1 content-start gap-5">
+          {modelBadges}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-4 text-sm" aria-label="能力范围">
+            <div className="min-w-0 space-y-1"><dt className="text-xs text-muted-foreground">视频时长</dt><dd className="font-medium">{formatDurationRange(item.contract.capability.seconds)}</dd></div>
+            <div className="min-w-0 space-y-1"><dt className="text-xs text-muted-foreground">清晰度</dt><dd className="break-words font-medium">{item.contract.model_profiles?.length ? `${item.contract.model_profiles.length} 个模型独立配置` : item.contract.capability.resolutions.join(" / ") || "上游默认"}</dd></div>
+            <div className="min-w-0 space-y-1"><dt className="text-xs text-muted-foreground">画幅比例</dt><dd className="font-medium">{item.contract.capability.sizes.length > 0 ? `${item.contract.capability.sizes.length} 种画幅` : "上游默认"}</dd></div>
+            <div className="min-w-0 space-y-1"><dt className="text-xs text-muted-foreground">参考素材</dt><dd className="font-medium">{referenceTypes > 0 ? `${referenceTypes} 类参考素材` : "纯文本输入"}</dd></div>
+          </dl>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {item.contract.generation.modes.map((mode) => <Badge key={mode.id} variant="secondary">{mode.label}</Badge>)}
+            {item.contract.rules.length > 0 ? <Badge variant="outline">{item.contract.rules.length} 条规则</Badge> : null}
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">更新于 <time dateTime={item.updated_at} className="tabular-nums">{formatDateTime(item.updated_at)}</time><span className="mx-2">·</span>轮询 {item.contract.polling.interval_seconds} 秒</p>
+        </CardContent>
+        <CardFooter className="flex-wrap justify-between gap-3">
+          {statusToggle}
+          {editButton}
+        </CardFooter>
+      </Card>
+    );
+  });
+
   return (
     <>
       {pluginDialog}
@@ -1926,175 +2092,103 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         className="hidden"
         onChange={(event) => void prepareJSONImport(event.target.files?.[0] || null)}
       />
-      <SettingsPanel className="max-w-none"
+      <SettingsPanel className="max-w-none gap-5"
         contentClassName="p-0 sm:p-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
         contentScrollable={false}
-        title="视频模型"
-        description="管理视频模型能力、请求字段和异步轮询规则。"
+        title="视频契约"
+        description="配置视频生成能力、上游请求和任务轮询。"
         meta={<Badge variant="secondary" >{items.length} 个契约</Badge>}
-        action={
-          <div className="grid">
-            <div
-              data-video-contract-toolbar
-              aria-hidden={selectedItems.length > 0}
-              className={cn("col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1.5", selectedItems.length > 0 && "invisible pointer-events-none")}
-            >
-              <Button type="button" size="sm" variant="ghost" disabled={isJSONImporting || isBulkActionBusy || selectedItems.length > 0} onClick={() => jsonImportInputRef.current?.click()}>
-                <Upload  />
-                导入 JSON
-              </Button>
-              <Button type="button" size="sm" variant="ghost" disabled={items.length === 0 || selectedItems.length > 0} onClick={() => downloadVideoContractDocument(videoContractTransferDocument(items), "video-model-contracts.json")}>
-                <Download  />
-                导出
-              </Button>
-              <Separator orientation="vertical" className="mx-0.5 hidden h-5 xl:block" />
-              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openImport}>
-                <WandSparkles  />
-                从文档生成
-              </Button>
-              <AutoDLContractImport key={sessionKey} disabled={isBulkActionBusy || selectedItems.length > 0} onDraft={(contract) => { setGeneratedContracts([contract]); setGeneratedDryRun([]); setGeneratedReviewOpen(true); }} />
-              <Button type="button" size="sm" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openCreate}>
-                <Plus  />
-                添加契约
-              </Button>
-            </div>
-            <div
-              data-video-contract-bulk-toolbar
-              aria-hidden={selectedItems.length === 0}
-              className={cn("col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1.5", selectedItems.length === 0 && "invisible pointer-events-none")}
-            >
-              <span className="mr-1 whitespace-nowrap text-sm font-medium text-foreground">已选择 {selectedItems.length} 个</span>
-              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(true)}>
-                <Power  />批量启用
-              </Button>
-              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(false)}>
-                <PowerOff  />批量停用
-              </Button>
-              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={exportSelectedContracts}>
-                <Download  />导出选中
-              </Button>
-              <Button type="button" size="sm" variant="outline"  disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
-                <Trash2  />删除选中
-              </Button>
-              <TooltipHint content="清除选择">
-                <Button type="button" size="icon" variant="ghost"  disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setSelectedContractIds(new Set())} aria-label="清除契约选择">
-                  <X  />
-                </Button>
-              </TooltipHint>
-            </div>
-          </div>
-        }
+        action={<Button type="button" size="sm" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openCreate}><Plus />添加契约</Button>}
       >
+        <div className="grid shrink-0 pb-4">
+          <div
+            data-video-contract-toolbar
+            aria-hidden={selectedItems.length > 0}
+            className={cn("col-start-1 row-start-1 flex flex-wrap items-center gap-2", selectedItems.length > 0 && "invisible pointer-events-none")}
+          >
+            <Button type="button" size="sm" variant="ghost" disabled={isJSONImporting || isBulkActionBusy || selectedItems.length > 0} onClick={() => jsonImportInputRef.current?.click()}>
+              <Upload  />
+              导入 JSON
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={items.length === 0 || selectedItems.length > 0} onClick={() => downloadVideoContractDocument(videoContractTransferDocument(items), "video-model-contracts.json")}>
+              <Download  />
+              导出
+            </Button>
+            <Separator orientation="vertical" className="mx-1 hidden h-5 data-vertical:self-center sm:block" />
+            <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openImport}>
+              <WandSparkles  />
+              从文档生成
+            </Button>
+            <AutoDLContractImport key={sessionKey} disabled={isBulkActionBusy || selectedItems.length > 0} onDraft={(contract) => { setGeneratedContracts([contract]); setGeneratedDryRun([]); setGeneratedReviewOpen(true); }} />
+          </div>
+          <div
+            data-video-contract-bulk-toolbar
+            aria-hidden={selectedItems.length === 0}
+            className={cn("col-start-1 row-start-1 flex flex-wrap items-center gap-2", selectedItems.length === 0 && "invisible pointer-events-none")}
+          >
+            <span className="mr-1 whitespace-nowrap text-sm font-medium text-foreground">已选择 {selectedItems.length} 个</span>
+            <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(true)}>
+              <Power  />批量启用
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(false)}>
+              <PowerOff  />批量停用
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={exportSelectedContracts}>
+              <Download  />导出选中
+            </Button>
+            <Button type="button" size="sm" variant="outline"  disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
+              <Trash2  />删除选中
+            </Button>
+            <TooltipHint content="清除选择">
+              <Button type="button" size="icon" variant="ghost"  disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setSelectedContractIds(new Set())} aria-label="清除契约选择">
+                <X  />
+              </Button>
+            </TooltipHint>
+          </div>
+        </div>
         {isLoading ? (
-          <LoadingState className="h-auto" label="正在加载视频模型" />
+          <LoadingState className="h-auto" label="正在加载视频契约" />
         ) : items.length === 0 ? (
           <div className="p-5 sm:p-6"><SettingsEmptyState icon={Film} title="暂无视频模型契约" description="添加后可为模型设置中的视频模型提供参数和请求转换规则。" /></div>
         ) : (
-          <div data-video-contract-list className="flex min-h-0 flex-1 flex-col">
-            <div className="hidden grid-cols-[32px_minmax(140px,1.2fr)_minmax(120px,0.95fr)_minmax(150px,1.35fr)_110px_252px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
-              <Checkbox
-                checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
-                disabled={isBulkActionBusy}
-                onCheckedChange={(checked) => toggleVisibleContractSelection(checked === true)}
-                aria-label="选择当前页契约"
-              />
-              <span>契约</span>
-              <span>匹配模型</span>
-              <span>能力范围</span>
-              <span>更新时间</span>
-              <span className="text-right">操作</span>
-            </div>
-            <ScrollAreaRoot data-video-contract-rows data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
-              <div className="divide-y divide-border/70">
-                {visibleItems.map((item) => {
-                const pending = pendingIds.has(item.id);
-                const displayedEnabled = optimisticEnabledByID.get(item.id) ?? item.enabled;
-                const referenceTypes = referenceTypeCount(item.contract);
-                return (
-                  <Item
-                    key={item.id}
-                    variant={selectedContractIds.has(item.id) ? "muted" : "default"}
-                    data-video-contract-row
-                    data-selected={selectedContractIds.has(item.id) || undefined}
-                    className="grid min-w-0 gap-4 px-5 py-4 sm:px-6 xl:grid-cols-[32px_minmax(140px,1.2fr)_minmax(120px,0.95fr)_minmax(150px,1.35fr)_110px_252px] xl:items-center xl:gap-5"
-                  >
-                  <Label className="cursor-pointer has-disabled:cursor-not-allowed flex items-center gap-2 text-xs text-muted-foreground" data-disabled={isBulkActionBusy}>
-                    <Checkbox
-                      checked={selectedContractIds.has(item.id)}
-                      disabled={isBulkActionBusy}
-                      onCheckedChange={(checked) => toggleContractSelection(item.id, checked === true)}
-                      aria-label={`选择 ${item.contract.name}`}
-                    />
-                    <span className="xl:hidden">{selectedContractIds.has(item.id) ? "已选择" : "选择"}</span>
-                  </Label>
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-semibold text-foreground">{item.contract.name}</h3>
-                    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
-                      {/* Keep tooltip state on the wrapper so it cannot replace the switch state. */}
-                      <TooltipHint content={displayedEnabled ? "停用契约" : "启用契约"}>
-                        <span className="inline-flex shrink-0">
-                          <Switch
-                            checked={displayedEnabled}
-                            disabled={pending || isBulkActionBusy}
-                            onCheckedChange={() => void toggleEnabled(item)}
-                            aria-label={displayedEnabled ? "停用契约" : "启用契约"}
-                          />
-                        </span>
-                      </TooltipHint>
-                      <Badge variant={displayedEnabled ? "default" : "secondary"} >
-                        {displayedEnabled ? "已启用" : "已停用"}
-                      </Badge>
-                      <Badge variant="outline" >v{item.revision}</Badge>
-                      {item.draft ? <Badge variant="outline" >有草稿</Badge> : null}
-                    </div>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{videoContractDriverLabel(item.contract.driver)}</p>
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground xl:hidden">匹配模型</p>
-                    <div className="flex min-w-0 flex-wrap gap-1.5">
-                      {item.contract.models.length > 0 ? item.contract.models.slice(0, 2).map((model) => (
-                        <Badge key={model} variant="outline" className="max-w-full">
-                          <span className="truncate">{model}</span>
-                        </Badge>
-                      )) : <span className="text-sm text-muted-foreground">未设置</span>}
-                      {item.contract.models.length > 2 ? (
-                        <Badge variant="secondary">+{item.contract.models.length - 2}</Badge>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground xl:hidden">能力范围</p>
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <Badge variant="secondary">{formatDurationRange(item.contract.capability.seconds)}</Badge>
-                      <Badge variant="secondary">{item.contract.model_profiles?.length ? `${item.contract.model_profiles.length} 个模型独立配置` : item.contract.capability.resolutions.join(" / ") || "上游默认清晰度"}</Badge>
-                      <Badge variant="secondary">{item.contract.capability.sizes.length || 0} 种画幅</Badge>
-                      {referenceTypes > 0 ? <Badge variant="secondary">{referenceTypes} 类参考素材</Badge> : null}
-                      {item.contract.rules.length > 0 ? <Badge variant="secondary">{item.contract.rules.length} 条条件规则</Badge> : null}
-                    </div>
-                  </div>
-
-                  <div className="min-w-0 text-xs text-muted-foreground">
-                    <p className="mb-1.5 font-medium xl:hidden">更新时间</p>
-                    <time dateTime={item.updated_at} className="block tabular-nums leading-5">{formatDateTime(item.updated_at)}</time>
-                    <span className="block text-[11px] text-muted-foreground/75">轮询 {item.contract.polling.interval_seconds} 秒</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 border-t border-border/60 pt-3 xl:justify-end xl:border-t-0 xl:pt-0">
-                    <TooltipHint content={"查看契约"}><Button type="button" variant="ghost" size="icon"  onClick={() => openView(item)} aria-label="查看契约"><Eye  /></Button></TooltipHint>
-                    <TooltipHint content={"版本历史"}><Button type="button" variant="ghost" size="icon"  onClick={() => void openVersions(item)} aria-label="版本历史"><History  /></Button></TooltipHint>
-                    <TooltipHint content={"导出契约"}><Button type="button" variant="ghost" size="icon"  onClick={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))} aria-label="导出契约"><Download  /></Button></TooltipHint>
-                    <TooltipHint content={"生成 New API 插件"}><Button type="button" variant="ghost" size="icon"  onClick={() => setPluginTargets([{ id: item.id, contract: cloneVideoModelContract(item.contract), label: `已发布版本 v${item.revision}` }])} aria-label="生成 New API 插件"><Code2  /></Button></TooltipHint>
-                    <TooltipHint content={"复制契约"}><Button type="button" variant="ghost" size="icon"  onClick={() => openCopy(item)} aria-label="复制契约"><Copy  /></Button></TooltipHint>
-                    <TooltipHint content={"编辑契约"}><Button type="button" variant="ghost" size="icon"  disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约"><Pencil  /></Button></TooltipHint>
-                    <TooltipHint content={"删除契约"}><Button type="button" variant="ghost" size="icon"  disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约"><Trash2  /></Button></TooltipHint>
-                  </div>
-                  </Item>
-                );
-                })}
+          <div data-video-contract-list className="@container/video-contract-list flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-4 text-xs text-muted-foreground">
+              <Label className="flex items-center gap-2">
+                <Checkbox
+                  checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
+                  disabled={isBulkActionBusy}
+                  onCheckedChange={(checked) => toggleVisibleContractSelection(checked === true)}
+                  aria-label="选择当前页契约"
+                />
+                选择本页
+              </Label>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                <span>{items.filter((item) => item.enabled).length} 个已启用 · {items.filter((item) => !item.enabled).length} 个已停用</span>
+                <div role="group" aria-label="契约视图" className="flex items-center gap-1">
+                  <Button type="button" variant={listView === "table" ? "secondary" : "ghost"} size="icon-sm" aria-label="表格视图" aria-pressed={listView === "table"} onClick={() => setListView("table")}><Table2 /></Button>
+                  <Button type="button" variant={listView === "cards" ? "secondary" : "ghost"} size="icon-sm" aria-label="卡片视图" aria-pressed={listView === "cards"} onClick={() => setListView("cards")}><LayoutGrid /></Button>
+                </div>
               </div>
-            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            </div>
+            <ScrollArea data-video-contract-rows className="-mx-1 min-h-0 flex-1" contentClassName={cn("px-1 pt-1 pb-4", listView === "cards" && "grid items-stretch gap-4 @3xl/video-contract-list:grid-cols-2")} onWheel={(event) => event.stopPropagation()}>
+              {listView === "table" ? (
+                <Card className="gap-0 py-0">
+                  <Table aria-label="视频契约表格" className="min-w-[940px] table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12 px-4"><span className="sr-only">选择</span></TableHead>
+                        <TableHead className="w-[28%]">契约与匹配模型</TableHead>
+                        <TableHead>能力范围</TableHead>
+                        <TableHead className="w-28">状态</TableHead>
+                        <TableHead className="w-36">更新时间</TableHead>
+                        <TableHead className="w-36 pr-4 text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>{contractEntries}</TableBody>
+                  </Table>
+                </Card>
+              ) : contractEntries}
+            </ScrollArea>
             <ManagementPagination
               page={safeListPage}
               totalPages={listTotalPages}
@@ -2113,55 +2207,62 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       </SettingsPanel>
 
       <Dialog open={importOpen} onOpenChange={(open) => !isImporting && setImportOpen(open)}>
-        <DialogContent className="w-[min(calc(100%-2rem),58rem)] sm:max-w-none" showCloseButton={!isImporting}>
-          <DialogHeader >
-            <div className="flex items-start gap-3">
-              <ItemMedia variant="icon" className="flex size-11 shrink-0 items-center justify-center"><WandSparkles className="size-5" /></ItemMedia>
-              <div className="space-y-1.5">
-                <DialogTitle>从文档生成契约</DialogTitle>
-                <DialogDescription>{isImporting ? "按步骤读取文档、匹配协议并校验配置，执行记录实时更新。" : importStatus ? "本次执行已结束。查看当前步骤与执行记录，可调整文档或模型后重试。" : "Agent 按需读取文档、匹配协议并校验配置。审核后发布。"}</DialogDescription>
-              </div>
-            </div>
-          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
+        <DialogContent className="w-[min(calc(100%-2rem),60rem)] sm:max-w-none" showCloseButton={!isImporting}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 leading-6"><WandSparkles className="size-5 shrink-0" />从文档生成契约</DialogTitle>
+            <DialogDescription>{isImporting ? "按步骤读取文档、匹配协议并校验配置，执行记录实时更新。" : importStatus ? "本次执行已结束。查看执行记录，或调整文档与模型后重试。" : "提供 API 文档，由 Agent 提取视频能力与接口配置，生成可审核的契约草稿。"}</DialogDescription>
+          </DialogHeader>
+          <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 px-1 py-1">
             <AgentExecutionRecovery domain="video_contract" busy={isImporting} onResult={(data: Awaited<ReturnType<typeof importVideoModelContract>>) => { acceptImportedContracts(data); setImportOpen(false); }} />
-          <div className="space-y-5">
-            <section aria-label="文档来源" className={cn("space-y-3", importStatus && "hidden")}>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { value: "file", label: "上传文档", description: "从本地文件提取", icon: FileText },
-                  { value: "url", label: "文档链接", description: "读取网页及相关页面", icon: Link2 },
-                ] as const).map(({ value, label, description, icon: Icon }) => (
-                  <Toggle variant="outline" key={value} type="button" pressed={importSourceType === value} disabled={isImporting}
-                    className="flex min-w-0 items-center text-left disabled:cursor-not-allowed disabled:opacity-60 justify-start h-auto min-h-8 whitespace-normal py-2"
-                    onClick={() => { setImportSourceType(value); clearImportFeedback(); }}>
-                    <Icon className={cn("size-5 shrink-0", importSourceType === value ? "text-primary" : "text-muted-foreground")} />
-                    <span className="min-w-0"><span className="block text-sm font-medium">{label}</span><span className="mt-0.5 hidden text-xs text-muted-foreground sm:block">{description}</span></span>
-                  </Toggle>
-                ))}
-              </div>
-              {importSourceType === "file" ? (
-                <VideoContractDocumentUpload file={importFile} disabled={isImporting} onChange={file => { setImportFile(file); clearImportFeedback(); }} />
-              ) : (
-                <Card className="space-y-3 p-4 sm:p-5 gap-0">
-                  <Field>
-                    <FieldLabel htmlFor="video-contract-import-url">文档地址</FieldLabel>
-                    <Input id="video-contract-import-url" type="url" value={importURL} disabled={isImporting} placeholder="https://docs.example.com/video-api"  onChange={(event) => { setImportURL(event.target.value); clearImportFeedback(); }} />
-                    <FieldDescription >使用公开可访问的 HTTP 或 HTTPS 链接。保留入口正文，并按需读取相关接口页面。</FieldDescription>
-                  </Field>
+            <div className="grid gap-4">
+              <div className={cn("grid min-w-0 items-stretch gap-4 md:grid-cols-[minmax(0,1fr)_18rem]", importStatus && "hidden")}>
+                <Card className="min-w-0">
+                  <CardHeader>
+                    <CardTitle>文档来源</CardTitle>
+                    <CardDescription>上传本地文件，或提供多份在线文档。</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs value={importSourceType} onValueChange={(value) => { setImportSourceType(value as "file" | "url"); clearImportFeedback(); }} className="min-w-0 gap-4">
+                      <TabsList className="w-full" aria-label="文档来源">
+                        <TabsTrigger value="file" disabled={isImporting}><FileText />上传文档</TabsTrigger>
+                        <TabsTrigger value="url" disabled={isImporting}><Link2 />文档链接</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="file">
+                        <VideoContractDocumentUpload file={importFile} disabled={isImporting} onChange={file => { setImportFile(file); clearImportFeedback(); }} />
+                      </TabsContent>
+                      <TabsContent value="url" className="min-h-52 py-3">
+                        <Field>
+                          <FieldLabel htmlFor="video-contract-import-url">文档地址</FieldLabel>
+                          <Textarea id="video-contract-import-url" value={importURL} disabled={isImporting} rows={5} className="min-h-32 resize-y" placeholder={"https://docs.example.com/video/create\nhttps://docs.example.com/video/query"} aria-describedby="video-contract-import-url-help" onChange={(event) => { setImportURL(event.target.value); clearImportFeedback(); }} />
+                          <FieldDescription id="video-contract-import-url-help">每行一个公开的 HTTP 或 HTTPS 链接，最多 24 个。重复地址会去重，Agent 将合并分析所有文档及相关接口页面。</FieldDescription>
+                          <span className="text-xs text-muted-foreground" aria-live="polite">已填写 {importURLs.length} 个地址</span>
+                        </Field>
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
                 </Card>
-              )}
-            </section>
-            <Card className={cn("grid items-center gap-3 px-4 py-3.5 sm:grid-cols-[1fr_minmax(0,16rem)]", importStatus && "hidden")}>
-              <div className="space-y-1"><Label htmlFor="video-contract-analysis-model" className="text-sm font-medium">分析模型</Label><p className="text-xs leading-relaxed text-muted-foreground">选择支持工具调用的文本模型，使用个人默认文本 Key</p></div>
-              <ModelPicker id="video-contract-analysis-model" label="契约分析模型" value={importModel} options={textModels} disabled={isImporting || isLoadingImportOptions} onValueChange={setImportModel} placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} />
-            </Card>
-            <Card className={cn("flex items-center justify-between gap-4 px-4 py-3.5 flex-row", importStatus && "hidden")}>
-              <div className="space-y-1">
-                <Label htmlFor="video-contract-import-plugin" className="text-sm font-medium">生成 New API 插件</Label>
-                <p id="video-contract-import-plugin-help" className="text-xs leading-relaxed text-muted-foreground">默认关闭。开启后，文档草稿生成完成时进入插件配置，可逐份生成和下载。</p>
+                <Card className="min-w-0">
+                  <CardHeader>
+                    <CardTitle>生成设置</CardTitle>
+                    <CardDescription>选择分析模型和草稿生成后的操作。</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-5">
+                    <Field>
+                      <FieldLabel htmlFor="video-contract-analysis-model">分析模型</FieldLabel>
+                      <ModelPicker id="video-contract-analysis-model" label="契约分析模型" value={importModel} options={textModels} disabled={isImporting || isLoadingImportOptions} onValueChange={setImportModel} placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} />
+                      <FieldDescription>需支持工具调用，使用个人默认文本 Key。</FieldDescription>
+                    </Field>
+                    <Separator />
+                    <Field orientation="horizontal" className="items-start">
+                      <FieldContent>
+                        <FieldLabel htmlFor="video-contract-import-plugin">生成 New API 插件</FieldLabel>
+                        <FieldDescription id="video-contract-import-plugin-help">开启后，草稿生成完成时进入插件配置，可逐份生成和下载。</FieldDescription>
+                      </FieldContent>
+                      <Switch id="video-contract-import-plugin" aria-describedby="video-contract-import-plugin-help" checked={importGeneratePlugin} disabled={isImporting} onCheckedChange={setImportGeneratePlugin} />
+                    </Field>
+                  </CardContent>
+                </Card>
               </div>
-              <Switch id="video-contract-import-plugin" aria-describedby="video-contract-import-plugin-help" checked={importGeneratePlugin} disabled={isImporting} onCheckedChange={setImportGeneratePlugin} />
-            </Card>
             {importStatus ? <VideoContractImportProgress activity={importStatus} running={isImporting} error={importError} elapsed={formatElapsedSeconds(importElapsedSeconds)} /> : null}
             <VideoContractAgentDetails entries={importDetails} running={isImporting} />
             {importError && !importStatus ? (
@@ -2170,14 +2271,18 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </Alert>
             ) : null}
           </div>
-          </ScrollArea><DialogFooter className={isImporting ? "sm:justify-between" : undefined}>
-            {!isImporting && importStatus ? <Button type="button" variant="ghost" onClick={clearImportFeedback}>调整文档或模型</Button> : null}
-            <Button type="button" variant="outline" onClick={() => { if (isImporting) { importControllerRef.current?.abort(); void stopAgentExecution(importRunIDRef.current).catch((error: Error) => toast.error(error.message)); } else setImportOpen(false); }}>
-              {isImporting ? <Square className="fill-current" /> : null}{isImporting ? "停止分析" : "取消"}
-            </Button>
-            <Button type="button" disabled={isImporting || isLoadingImportOptions || !importModel || (importSourceType === "file" ? !importFile : !importURL.trim())} onClick={() => void generateFromDocument()}>
-              {isImporting ? <Spinner /> : <WandSparkles />}{isImporting ? "分析中" : importStatus ? "重新分析" : importGeneratePlugin ? "生成草稿并配置插件" : "生成契约草稿"}
-            </Button>
+          </ScrollArea>
+          <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0" />生成后先审核草稿，再发布生效。</p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!isImporting && importStatus ? <Button type="button" variant="ghost" onClick={clearImportFeedback}>调整文档或模型</Button> : null}
+              <Button type="button" variant="outline" onClick={() => { if (isImporting) { importControllerRef.current?.abort(); void stopAgentExecution(importRunIDRef.current).catch((error: Error) => toast.error(error.message)); } else setImportOpen(false); }}>
+                {isImporting ? <Square className="fill-current" /> : null}{isImporting ? "停止分析" : "取消"}
+              </Button>
+              <Button type="button" disabled={isImporting || isLoadingImportOptions || !importModel || (importSourceType === "file" ? !importFile : importURLs.length === 0)} onClick={() => void generateFromDocument()}>
+                {isImporting ? <Spinner /> : <WandSparkles />}{isImporting ? "分析中" : importStatus ? "重新分析" : importGeneratePlugin ? "生成草稿并配置插件" : "生成契约草稿"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

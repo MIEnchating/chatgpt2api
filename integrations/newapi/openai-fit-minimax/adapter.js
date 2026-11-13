@@ -1,57 +1,26 @@
-import * as self from './group-0.js';
-import * as spica from './group-1.js';
-import * as chovy from './group-2.js';
-import * as h3 from './group-3.js';
-import * as superH3 from './group-4.js';
+import * as minimax from './group-0.js';
 
-const groups = [self, spica, chovy, h3, superH3];
-
-function countUsageSchema(resolutions) {
-  return {
-    count: {
-      type: 'number',
-      unit: 'count',
-      unitLabel: { zh: '条', en: 'video' },
-      description: { zh: '视频生成单价', en: 'Video generation unit price' },
-    },
-    resolution: {
-      enum: resolutions,
-      description: { zh: '输出清晰度', en: 'Output resolution' },
-    },
-  };
+function isH3Self(model) {
+  return model === 'minimax H3-self';
 }
-
-const spicaUsageSchema = countUsageSchema(spica.meta.usageSchema.resolution.enum);
-const chovyUsageSchema = countUsageSchema(chovy.meta.usageSchema.resolution.enum);
-const superH3UsageSchema = countUsageSchema(superH3.meta.usageSchema.resolution.enum);
-
-export const meta = {
-  ...self.meta,
-  key: 'openai-fit-minimax',
-  name: 'openai.fit MiniMax 视频',
-  description: { zh: '内嵌五个 MiniMax 视频契约，支持参考素材、任务查询和成片下载', en: 'Five embedded MiniMax video contracts with references, polling and content downloads' },
-  models: groups.flatMap(group => group.meta.models),
-  usageProfiles: [
-    { models: spica.meta.models, schema: spicaUsageSchema },
-    { models: chovy.meta.models, schema: chovyUsageSchema },
-    { models: h3.meta.models, schema: h3.meta.usageSchema },
-    { models: superH3.meta.models, schema: superH3UsageSchema },
-  ],
-};
 
 function groupFor(ctx) {
-  const group = groups.find(group => group.meta.models.includes(ctx.upstreamModel))
-    || groups.find(group => group.meta.models.includes(ctx.model));
-  if (!group) throw new Error('模型不属于 openai.fit MiniMax 插件');
-  return group;
+  const model = minimax.meta.models.includes(ctx.upstreamModel) ? ctx.upstreamModel : ctx.model;
+  if (!minimax.meta.models.includes(model)) throw new Error('模型不属于 openai.fit MiniMax 插件');
+  return model;
 }
 
+export const meta = {
+  ...minimax.meta,
+  name: 'openai.fit MiniMax 视频',
+  description: { zh: '一个上游契约覆盖五个 MiniMax 视频型号', en: 'One upstream contract for five MiniMax video models' },
+};
+
 export function buildSubmitRequest(ctx) {
-  const group = groupFor(ctx);
-  const request = group.buildSubmitRequest(ctx);
-  if (group === self) {
-    // The provider combines resolution and orientation into one enum.
-    // The gateway contract uses an array; the provider uses numbered fields.
+  const model = groupFor(ctx);
+  const request = minimax.buildSubmitRequest(ctx);
+  if (isH3Self(model)) {
+    // H3-self combines resolution and orientation and numbers reference image fields.
     if (request.bodyType === 'multipart') {
       let index = 0;
       const ratio = request.parts.find(part => part.name === 'ratio').value;
@@ -74,7 +43,7 @@ export function buildSubmitRequest(ctx) {
       if (!url.startsWith('https://')) throw new Error('此模型的参考素材必须使用公网 HTTPS 链接');
     }
   }
-  if (group === chovy) {
+  if (model === 'minimax-h3-chovy') {
     const audios = request.body.audio_urls || [];
     for (const match of request.body.prompt.matchAll(/<Audio (\d+)>/g)) {
       const index = Number(match[1]);
@@ -86,19 +55,14 @@ export function buildSubmitRequest(ctx) {
 
 export const protocols = {
   openai_video: {
-    decodeRequest(ctx) { return groupFor(ctx).protocols.openai_video.decodeRequest(ctx); },
-    render(ctx, task) { return self.protocols.openai_video.render(ctx, task); },
+    decodeRequest(ctx) { return minimax.protocols.openai_video.decodeRequest(ctx); },
+    render(ctx, task) { return minimax.protocols.openai_video.render(ctx, task); },
   },
 };
-export function extractUsage(ctx) {
-  if (ctx.usagePurpose === 'billing_ratios') return {};
-  const group = groupFor(ctx);
-  const usage = group.extractUsage(ctx);
-  if (group === spica || group === chovy || group === superH3) return { count: 1, resolution: usage.resolution };
-  return usage;
-}
-export function parseSubmitResponse(ctx, response) { return self.parseSubmitResponse(ctx, response); }
-export function buildQueryRequest(ctx) { return self.buildQueryRequest(ctx); }
-export function parseTaskResult(ctx, body) { return self.parseTaskResult(ctx, body); }
-export function listArtifacts(task) { return self.listArtifacts(task); }
-export function buildContentRequest(ctx) { return self.buildContentRequest(ctx); }
+
+export const extractUsage = minimax.extractUsage;
+export const parseSubmitResponse = minimax.parseSubmitResponse;
+export const buildQueryRequest = minimax.buildQueryRequest;
+export const parseTaskResult = minimax.parseTaskResult;
+export const listArtifacts = minimax.listArtifacts;
+export const buildContentRequest = minimax.buildContentRequest;

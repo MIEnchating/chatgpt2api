@@ -7,6 +7,7 @@ import {
   expandCanvasRemovalNodeIDs,
   expandCanvasGroupNodeIDs,
   findCanvasGroupDropTarget,
+  findCanvasGroupDropTargetForNodes,
   findContainingCanvasGroupID,
   snapCanvasNodesIntoGroup,
 } from "../src/app/canvas/canvas-groups.ts";
@@ -38,6 +39,10 @@ test("ordinary nodes use their center to enter and leave the topmost group", () 
   assert.equal(findCanvasGroupDropTarget(new Set(["moving"]), nodes)?.id, "top");
   assert.equal(findContainingCanvasGroupID(moving, nodes), "top");
   assert.equal(findCanvasGroupDropTarget(new Set(["top"]), nodes), null);
+  assert.equal(findCanvasGroupDropTargetForNodes([moving], [bottom, top])?.id, "top");
+  assert.equal(findCanvasGroupDropTargetForNodes([moving], [bottom, top], new Set(["top"])), null);
+  assert.equal(findCanvasGroupDropTargetForNodes([moving], [bottom, top], new Set(["moving"]))?.id, "top");
+  assert.equal(findCanvasGroupDropTargetForNodes([moving], [bottom, top], new Set(["top", "moving"])), null);
 });
 
 test("dropping nodes clamps their bounds inside the group and records membership", () => {

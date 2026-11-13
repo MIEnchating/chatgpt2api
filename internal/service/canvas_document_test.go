@@ -1,9 +1,14 @@
 package service
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -26,6 +31,1388 @@ func saveCanvas(service *CanvasDocumentService, ownerID string, input CanvasDocu
 
 func clearCanvas(service *CanvasDocumentService, ownerID, projectID string) (CanvasDocument, error) {
 	return service.clear(ownerID, projectID, nil)
+}
+
+func newCanvasLongHistoryBenchmark(b *testing.B) (*CanvasDocumentService, CanvasDocument, CanvasDocument) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(b.TempDir(), "history.db")))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = backend.Close() })
+	svc := NewCanvasDocumentService(backend)
+	document, err := loadCanvas(svc, "benchmark-owner")
+	if err != nil {
+		b.Fatal(err)
+	}
+	var messages, protocol []map[string]any
+	for i := 0; i < 1000; i++ {
+		id := fmt.Sprintf("request-%d", i)
+		messages = append(messages, map[string]any{"id": id, "role": "user", "text": "Retained request"}, map[string]any{"id": fmt.Sprintf("reply-%d", i), "role": "assistant", "text": "Retained reply"})
+		protocol = append(protocol, map[string]any{"role": "user", "messageID": id, "content": "Retained request"}, map[string]any{"role": "assistant", "toolCalls": []map[string]any{{"id": id, "name": "get_canvas_summary", "arguments": map[string]any{}}}}, map[string]any{"role": "tool", "toolCallId": id, "content": strings.Repeat("Retained history. ", 480)}, map[string]any{"role": "assistant", "content": "Retained reply"})
+	}
+	document.AgentSessions, err = json.Marshal([]map[string]any{{"id": "long-session", "messages": messages, "protocolMessages": protocol}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	document.ActiveAgentSessionID = "long-session"
+	document, err = svc.SaveAtRevision("benchmark-owner", document)
+	if err != nil {
+		b.Fatal(err)
+	}
+	view, err := CanvasAgentHistoryView(document, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	view.AgentSessions = json.RawMessage("[]")
+	return svc, document, view
+}
+
+func BenchmarkCanvasDocumentLongHistoryGeometrySave(b *testing.B) {
+	svc, document, view := newCanvasLongHistoryBenchmark(b)
+	var err error
+	b.ReportAllocs()
+	b.SetBytes(int64(len(document.AgentSessions)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		view.Title = fmt.Sprintf("Geometry edit %d", i)
+		view, err = svc.SaveAtRevision("benchmark-owner", view)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if string(view.AgentSessions) != "[]" {
+			b.Fatal("geometry save retransmitted unchanged history")
+		}
+	}
+	b.StopTimer()
+	stored, err := svc.Project("benchmark-owner", document.ID)
+	if err != nil || string(stored.AgentSessions) != string(document.AgentSessions) {
+		b.Fatal("geometry save changed history", err)
+	}
+}
+
+func BenchmarkCanvasDocumentLongHistoryMetadataSave(b *testing.B) {
+	svc, document, view := newCanvasLongHistoryBenchmark(b)
+	var err error
+	b.ReportAllocs()
+	b.SetBytes(int64(len(document.AgentSessions)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine := "native"
+		if i%2 == 1 {
+			engine = "codex"
+		}
+		raw, _ := json.Marshal(engine)
+		view.AgentSessionUpdates = []CanvasAgentSessionUpdate{{ID: "long-session", Changes: map[string]json.RawMessage{"engine": raw}}}
+		view, err = svc.SaveAtRevision("benchmark-owner", view)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if string(view.AgentSessions) != "[]" || len(view.AgentSessionUpdates) != 1 {
+			b.Fatal("metadata save did not acknowledge the update without retransmitting history")
+		}
+	}
+	b.StopTimer()
+	stored, err := svc.Project("benchmark-owner", document.ID)
+	if err != nil {
+		b.Fatal(err)
+	}
+	var original, actual []map[string]json.RawMessage
+	_ = json.Unmarshal(document.AgentSessions, &original)
+	_ = json.Unmarshal(stored.AgentSessions, &actual)
+	if len(actual) != 1 || len(actual[0]["engine"]) == 0 {
+		b.Fatal("metadata save did not persist the chosen engine")
+	}
+	delete(actual[0], "engine")
+	if !reflect.DeepEqual(actual, original) {
+		b.Fatal("metadata save changed retained session fields")
+	}
+}
+
+func BenchmarkCanvasDocumentLongHistoryEditorRead(b *testing.B) {
+	svc, document, _ := newCanvasLongHistoryBenchmark(b)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(document.AgentSessions)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		workspace, err := svc.EditorWorkspace("benchmark-owner", document.ID, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !workspace.Document.AgentHistoryPartial || string(workspace.Document.AgentSessions) != string(document.AgentSessions) {
+			b.Fatal("editor read changed the active conversation")
+		}
+	}
+}
+
+func BenchmarkCanvasAgentSettledLongHistoryEditorRead(b *testing.B) {
+	canvas, document, _ := newCanvasLongHistoryBenchmark(b)
+	identity := Identity{ID: "benchmark-owner"}
+	document.AgentPanel.Open = true
+	document.AgentRun = &CanvasAgentRun{ID: "settled", SessionID: document.ActiveAgentSessionID, AssistantID: "reply-999", Status: "success"}
+	document, err := canvas.saveAgent(identity.ID, document)
+	if err != nil {
+		b.Fatal(err)
+	}
+	agent := NewCanvasAgentService(context.Background(), nil, canvas, nil, nil, nil)
+	b.Cleanup(agent.Close)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(document.AgentSessions)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := agent.Workspace(identity, document.ID, nil, CanvasHistoryEditor)
+		if err != nil || result.Document.Revision != document.Revision || string(result.Document.AgentSessions) != string(document.AgentSessions) {
+			b.Fatal("opening settled history changed the saved conversation", err)
+		}
+	}
+}
+
+func BenchmarkCanvasAgentHistoryChunkDecode(b *testing.B) {
+	data := []byte(strings.Repeat("Verified history. ", canvasAgentHistoryChunkBytes/18))
+	hash := fmt.Sprintf("%x", sha256.Sum256(data))
+	raw := map[string]any{"data": base64.StdEncoding.EncodeToString(data)}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	for b.Loop() {
+		decoded, err := decodeCanvasAgentHistoryChunk(raw, hash)
+		if err != nil || !reflect.DeepEqual(decoded, data) {
+			b.Fatal("history chunk was not preserved", err)
+		}
+	}
+}
+
+func TestCanvasAgentHistoryChunkDecodingPreservesIntegrity(t *testing.T) {
+	data := []byte(strings.Repeat("完整历史😀", 100))
+	hash := fmt.Sprintf("%x", sha256.Sum256(data))
+	decoded, err := decodeCanvasAgentHistoryChunk(map[string]any{"data": base64.StdEncoding.EncodeToString(data), "unused": "retained storage metadata"}, hash)
+	if err != nil || !reflect.DeepEqual(decoded, data) {
+		t.Fatal("valid history chunk was changed", err)
+	}
+	for _, raw := range []any{
+		nil, "invalid", map[string]any{}, map[string]any{"data": nil}, map[string]any{"data": false},
+		map[string]any{"data": ""}, map[string]any{"data": "invalid!"},
+		map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("corrupt history"))},
+		map[string]any{"data": base64.StdEncoding.EncodeToString(make([]byte, canvasAgentHistoryChunkBytes+1))},
+	} {
+		if _, err := decodeCanvasAgentHistoryChunk(raw, hash); err == nil {
+			t.Fatalf("invalid history chunk accepted: %T", raw)
+		}
+	}
+}
+
+func TestCanvasAgentHistoryBlockAssemblyPreservesExactBytesAndRejectsInvalidLengths(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	owner, project := "assembly-owner", "assembly-project"
+	payload := []byte(strings.Repeat("完整历史😀\n", 12000))
+	reference, err := svc.saveAgentHistoryBlockLocked(owner, project, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := fmt.Sprintf("canvas_agent_history/%x/", sha256.Sum256([]byte(owner)))
+	loaded, err := loadCanvasAgentHistoryBlock(backend, prefix, project, reference)
+	if err != nil || !reflect.DeepEqual(loaded, payload) {
+		t.Fatal("multi-chunk history was not reconstructed exactly", err)
+	}
+	loaded[0] ^= 1
+	loaded, err = loadCanvasAgentHistoryBlock(backend, prefix, project, reference)
+	if err != nil || !reflect.DeepEqual(loaded, payload) {
+		t.Fatal("mutating a read changed persisted chunks", err)
+	}
+	for _, size := range []int{reference.Bytes - 1, reference.Bytes + 1, 0, -1} {
+		invalid := reference
+		invalid.Bytes = size
+		if data, err := loadCanvasAgentHistoryBlock(backend, prefix, project, invalid); err == nil || data != nil {
+			t.Fatalf("invalid declared length %d returned partial history: err=%v", size, err)
+		}
+	}
+	invalid := reference
+	invalid.Chunks = append([]string(nil), reference.Chunks...)
+	invalid.Chunks[len(invalid.Chunks)-1] = strings.Repeat("0", sha256.Size*2)
+	if data, err := loadCanvasAgentHistoryBlock(backend, prefix, project, invalid); !errors.Is(err, errCanvasAgentHistoryChunkMissing) || data != nil {
+		t.Fatal("missing chunk returned partial history", err)
+	}
+	name := canvasAgentHistoryChunkName(owner, project, reference.Chunks[len(reference.Chunks)-1])
+	if err := backend.SaveJSONDocument(name, canvasAgentHistoryChunk{Data: []byte("corrupt")}); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := loadCanvasAgentHistoryBlock(backend, prefix, project, reference); err == nil || data != nil {
+		t.Fatal("corrupt chunk returned partial history", err)
+	}
+}
+
+func TestCanvasGeometrySaveReusesVerifiedHistoryWithoutRereadingChunks(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	doc := DefaultCanvasDocument()
+	doc.AgentSessions, _ = json.Marshal([]map[string]any{{"id": "s", "messages": []map[string]any{{"role": "user", "text": "Keep request"}}, "protocolMessages": []map[string]any{{"role": "assistant", "content": strings.Repeat("Complete retained protocol. ", 5000)}}}})
+	doc.ActiveAgentSessionID = "s"
+	doc.AgentMessages = []CanvasAgentMessage{{ID: "legacy", Role: "user", Content: "Keep legacy request"}}
+	workspace, err := svc.Import("verified-history-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc = workspace.Document
+	raw, err := backend.documents.LoadJSONDocument(canvasWorkspaceName("verified-history-owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(raw)
+	var manifest canvasWorkspace
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(canvasAgentHistoryHashes(manifest.AgentHistories[doc.ID])) < 3 {
+		t.Fatal("fixture did not persist the expected independent history chunks")
+	}
+	loads := make(map[string]int)
+	backend.beforeLoad = func(name string) { loads[name]++ }
+	partial, err := CanvasAgentHistoryView(workspace.Document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.AgentSessions = json.RawMessage("[]")
+	partial.Title = "Geometry changed"
+	receipt, err := svc.SaveAtRevision("verified-history-owner", partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hash := range canvasAgentHistoryHashes(manifest.AgentHistories[doc.ID]) {
+		name := canvasAgentHistoryChunkName("verified-history-owner", doc.ID, hash)
+		if loads[name] != 1 {
+			t.Fatalf("geometry save read the same verified immutable chunk %d times", loads[name])
+		}
+	}
+	if string(receipt.AgentSessions) != "[]" {
+		t.Fatal("geometry receipt returned the unchanged transcript")
+	}
+	reopened := NewCanvasDocumentService(backend)
+	stored, err := reopened.Project("verified-history-owner", doc.ID)
+	if err != nil || string(stored.AgentSessions) != string(workspace.Document.AgentSessions) || !reflect.DeepEqual(stored.AgentMessages, workspace.Document.AgentMessages) {
+		t.Fatal("reused history reference changed persisted messages", err)
+	}
+	stored.AgentMessages[0].Content = "Changed legacy request"
+	stored.AgentSessions = json.RawMessage(strings.Replace(string(stored.AgentSessions), "Keep request", "Changed request", 1))
+	changed, err := svc.SaveAtRevision("verified-history-owner", stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := reopened.Project("verified-history-owner", doc.ID)
+	if err != nil || string(loaded.AgentSessions) != string(changed.AgentSessions) || loaded.AgentMessages[0].Content != "Changed legacy request" || !strings.Contains(string(loaded.AgentSessions), "Changed request") {
+		t.Fatal("changed history reused an obsolete reference", err)
+	}
+}
+
+func TestCanvasPartialHistoryReadOnlyPreservesStoredBytes(t *testing.T) {
+	current := json.RawMessage("[\n  {\"id\": \"retained\", \"messages\": [{\"id\": \"reply\", \"role\": \"assistant\", \"text\": \"Original history\"}], \"protocolMessages\": []}\n]")
+	for _, incoming := range []json.RawMessage{nil, json.RawMessage("[]"), json.RawMessage("null")} {
+		merged, err := mergeCanvasPartialHistory(current, incoming, nil, nil, nil)
+		if err != nil || string(merged) != string(current) {
+			t.Fatalf("a read-only partial save rewrote unchanged history: %s, %v", merged, err)
+		}
+	}
+}
+
+func TestCanvasHistoryReceiptReusesOnlyMatchingVerifiedSummaries(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	doc := DefaultCanvasDocument()
+	doc.AgentSessions = json.RawMessage(`[{"id":"first","title":"First","messages":[{"role":"user","text":"Original request"}],"protocolMessages":[{"role":"tool","content":"Complete original result"}]},{"id":"second","title":"Second","messages":[]},{"id":"third","title":"Third","messages":[{"role":"assistant","text":"Other conversation"}]}]`)
+	doc.ActiveAgentSessionID = "first"
+	created, err := svc.Import("verified-receipt-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, found, err := svc.readWorkspaceLocked("verified-receipt-owner")
+	if err != nil || !found {
+		t.Fatal("cannot read verified fixture", err)
+	}
+	doc = workspace.Projects[canvasProjectIndex(workspace, created.Document.ID)]
+	verified, ok := workspace.verifiedAgentHistories[doc.ID]
+	if !ok || len(verified.reference.Sessions) != 3 || sha256.Sum256(doc.AgentSessions) != verified.sessionsHash {
+		t.Fatal("fixture did not produce verified current-format summaries")
+	}
+	acknowledged := make(map[string]string)
+	for _, session := range verified.reference.Sessions {
+		acknowledged[session.ID] = session.ContentHash
+	}
+	for _, scenario := range []struct {
+		name         string
+		active, run  string
+		keep         []string
+		wantIDs      []string
+		acknowledged map[string]string
+		updates      []CanvasAgentSessionUpdate
+	}{
+		{name: "active without acknowledgement", active: "first", wantIDs: []string{"first"}},
+		{name: "acknowledged bodies omitted", active: "first", acknowledged: acknowledged},
+		{name: "explicit body still returned", active: "first", keep: []string{"second"}, wantIDs: []string{"second"}, acknowledged: acknowledged},
+		{name: "unacknowledged running conversation", active: "first", run: "third", wantIDs: []string{"third"}, acknowledged: map[string]string{"first": acknowledged["first"]}},
+		{name: "stale acknowledgement", active: "first", wantIDs: []string{"first"}, acknowledged: map[string]string{"first": "stale"}},
+		{name: "metadata acknowledgement", active: "first", updates: []CanvasAgentSessionUpdate{{ID: "first", Changes: map[string]json.RawMessage{"title": json.RawMessage(`"First"`)}}}},
+		{name: "default active conversation", wantIDs: []string{"first"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			input := doc
+			input.ActiveAgentSessionID = scenario.active
+			if scenario.run != "" {
+				input.AgentRun = &CanvasAgentRun{SessionID: scenario.run}
+			}
+			want, err := canvasAgentHistoryView(input, scenario.keep, scenario.acknowledged, scenario.updates, canvasVerifiedAgentHistory{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := canvasAgentHistoryView(input, scenario.keep, scenario.acknowledged, scenario.updates, verified)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatal("verified summary reuse changed receipt selection or content", err)
+			}
+			var bodies []struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(got.AgentSessions, &bodies); err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, body := range bodies {
+				ids = append(ids, body.ID)
+			}
+			if !reflect.DeepEqual(ids, scenario.wantIDs) || len(got.AgentSessionSummaries) != 3 || got.AgentSessionSummaries[0].ContentHash != acknowledged["first"] {
+				t.Fatal("receipt omitted required bodies or changed the complete directory")
+			}
+			got.AgentSessionSummaries[0].Title = "Caller changed returned summary"
+			if verified.reference.Sessions[0].Title != "First" {
+				t.Fatal("returned summary changed private verification evidence")
+			}
+		})
+	}
+	for _, body := range []json.RawMessage{
+		json.RawMessage(strings.Replace(string(doc.AgentSessions), "Original request", "New request", 1)),
+		json.RawMessage(`[{"id":"replacement","title":"Replaced","messages":[]}]`),
+		json.RawMessage(`[]`),
+		nil,
+	} {
+		input := doc
+		input.AgentSessions = body
+		want, err := CanvasAgentHistoryView(input, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := canvasAgentHistoryView(input, nil, nil, nil, verified)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("changed history reused obsolete summaries", err)
+		}
+	}
+	for _, body := range []json.RawMessage{json.RawMessage(`[{"id":"bad","messages":{}}]`), json.RawMessage(`[{"id":"bad"}`)} {
+		input := doc
+		input.AgentSessions = body
+		if _, err := canvasAgentHistoryView(input, nil, nil, nil, verified); err == nil {
+			t.Fatal("corrupt changed history bypassed validation")
+		}
+	}
+}
+
+func TestCanvasPartialHistoryMetadataPreservesValidationAndVersionChecks(t *testing.T) {
+	for _, body := range []json.RawMessage{
+		json.RawMessage(`{"id":"retained","messages":{}}`),
+		json.RawMessage(`{"id":42,"messages":[]}`),
+		json.RawMessage(`{"id":"retained","title":false,"messages":[]}`),
+		json.RawMessage(`{"id":"retained","createdAt":42,"messages":[]}`),
+		json.RawMessage(`{"id":"retained","messages":[]`),
+	} {
+		current := append(append(json.RawMessage("["), body...), ']')
+		if _, err := mergeCanvasPartialHistory(current, json.RawMessage("[]"), nil, nil, nil); err == nil {
+			t.Fatalf("read-only merge accepted malformed stored metadata: %s", body)
+		}
+	}
+	stored := json.RawMessage(`{"id":"retained","messages":[{"id":"reply","text":"Original"}],"protocolMessages":[{"role":"assistant","content":"Private original"}]}`)
+	summary, err := canvasAgentSessionSummary(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := append(append(json.RawMessage("["), stored...), ']')
+	changed := json.RawMessage(`[{"id":"retained","messages":[{"id":"reply","text":"Edited"}]}]`)
+	for _, deletion := range []bool{false, true} {
+		incoming, deleted := changed, []string(nil)
+		if deletion {
+			incoming, deleted = json.RawMessage("[]"), []string{"retained"}
+		}
+		if _, err := mergeCanvasPartialHistory(current, incoming, deleted, nil, nil); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatalf("write without a baseline hash was accepted: %v", err)
+		}
+		if _, err := mergeCanvasPartialHistory(current, incoming, deleted, nil, []CanvasAgentSessionSummary{{ID: summary.ID, ContentHash: "stale"}}); !errors.Is(err, ErrCanvasRevisionConflict) {
+			t.Fatalf("write over another client's version was accepted: %v", err)
+		}
+		if _, err := mergeCanvasPartialHistory(current, incoming, deleted, nil, []CanvasAgentSessionSummary{summary}); err != nil {
+			t.Fatalf("write with the original verified hash was rejected: %v", err)
+		}
+	}
+}
+
+func TestCanvasPartialHistoryMixedWritesValidateEveryOriginalVersion(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	doc := DefaultCanvasDocument()
+	doc.AgentSessions = json.RawMessage(`[{"id":"edit","messages":[]},{"id":"metadata","title":"Original","messages":[]},{"id":"delete","messages":[]},{"id":"retained","messages":[{"role":"assistant","text":"Keep history"}]}]`)
+	created, err := svc.Import("mixed-versions-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CanvasAgentHistoryView(created.Document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.AgentSessions = json.RawMessage(`[{"id":"new","messages":[]},{"id":"edit","messages":[{"role":"user","text":"New request"}]}]`)
+	partial.DeletedAgentSessionIDs = []string{"delete"}
+	partial.AgentSessionUpdates = []CanvasAgentSessionUpdate{{ID: "metadata", Changes: map[string]json.RawMessage{"title": json.RawMessage(`"Renamed"`)}}}
+	for _, id := range []string{"edit", "metadata", "delete"} {
+		for _, missing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/missing=%t", id, missing), func(t *testing.T) {
+				input := partial
+				input.AgentSessionSummaries = nil
+				for _, summary := range partial.AgentSessionSummaries {
+					if summary.ID == id {
+						if missing {
+							continue
+						}
+						summary.ContentHash = "stale"
+					}
+					input.AgentSessionSummaries = append(input.AgentSessionSummaries, summary)
+				}
+				want := ErrCanvasRevisionConflict
+				if missing {
+					want = ErrInvalidCanvasDocument
+				}
+				if _, err := svc.SaveAtRevision("mixed-versions-owner", input); !errors.Is(err, want) {
+					t.Fatalf("mixed write bypassed original version for %s: %v", id, err)
+				}
+			})
+		}
+	}
+	stored, err := svc.Project("mixed-versions-owner", created.Document.ID)
+	if err != nil || !reflect.DeepEqual(stored, created.Document) {
+		t.Fatal("rejected mixed writes changed the stored project", err)
+	}
+	for index := range partial.AgentSessionSummaries {
+		if partial.AgentSessionSummaries[index].ID == "retained" {
+			partial.AgentSessionSummaries[index].ContentHash = "not-written"
+		}
+	}
+	if _, err := svc.SaveAtRevision("mixed-versions-owner", partial); err != nil {
+		t.Fatal("valid mixed write rejected an untouched session's stale acknowledgement", err)
+	}
+	stored, err = NewCanvasDocumentService(backend).Project("mixed-versions-owner", created.Document.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bodies []map[string]json.RawMessage
+	if err := json.Unmarshal(stored.AgentSessions, &bodies); err != nil || len(bodies) != 4 {
+		t.Fatal("mixed save lost a retained or newly created session", err)
+	}
+	for index, id := range []string{`"new"`, `"edit"`, `"metadata"`, `"retained"`} {
+		if string(bodies[index]["id"]) != id {
+			t.Fatal("mixed save changed session ordering or retained the deleted session")
+		}
+	}
+	if string(bodies[1]["messages"]) != `[{"role":"user","text":"New request"}]` || string(bodies[2]["title"]) != `"Renamed"` || string(bodies[3]["messages"]) != `[{"role":"assistant","text":"Keep history"}]` {
+		t.Fatal("mixed save changed accepted edits or untouched history")
+	}
+}
+
+func TestCanvasSessionMetadataUpdatesPreserveHistoryAndRequireOriginalVersion(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "metadata.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backend.Close() })
+	svc := NewCanvasDocumentService(backend)
+	doc := DefaultCanvasDocument()
+	doc.AgentSessions = json.RawMessage(`[{"id":"s","title":"Original","createdAt":"now","updatedAt":"now","messages":[{"id":"u","role":"user","text":"Keep full request"}],"protocolMessages":[{"role":"assistant","content":"Private complete protocol"}],"toolReceipts":[{"id":"server-receipt"}],"contextUsage":{"totalTokens":7},"futureField":{"retained":true}},{"id":"inactive","title":"Other conversation","messages":[]}]`)
+	doc.ActiveAgentSessionID = "s"
+	workspace, err := svc.Import("metadata-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CanvasAgentHistoryView(workspace.Document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.AgentSessions = json.RawMessage("[]")
+	partial.AgentSessionUpdates = []CanvasAgentSessionUpdate{{ID: "s", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`"codex"`), "title": json.RawMessage(`"Renamed"`), "updatedAt": json.RawMessage(`"later"`)}}}
+	receipt, err := svc.SaveAtRevision("metadata-owner", partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(receipt.AgentSessions) != "[]" || !reflect.DeepEqual(receipt.AgentSessionUpdates, partial.AgentSessionUpdates) || len(receipt.AgentSessionSummaries) != 2 || receipt.AgentSessionSummaries[0].ContentHash == partial.AgentSessionSummaries[0].ContentHash {
+		t.Fatalf("metadata receipt did not acknowledge the changed body without retransmitting it: %#v", receipt)
+	}
+	stored, err := svc.Project("metadata-owner", partial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual []map[string]any
+	_ = json.Unmarshal(workspace.Document.AgentSessions, &expected)
+	_ = json.Unmarshal(stored.AgentSessions, &actual)
+	expected[0]["engine"], expected[0]["title"], expected[0]["updatedAt"] = "codex", "Renamed", "later"
+	if !reflect.DeepEqual(actual, expected) || len(stored.AgentSessionUpdates) != 0 {
+		t.Fatal("metadata update changed messages, protocol, server-owned fields, unknown fields or session order")
+	}
+	stale := partial
+	stale.Revision = receipt.Revision
+	if _, err := svc.SaveAtRevision("metadata-owner", stale); !errors.Is(err, ErrCanvasRevisionConflict) {
+		t.Fatalf("fresh canvas revision bypassed the original conversation hash: %v", err)
+	}
+	stale.AgentSessionSummaries = nil
+	if _, err := svc.SaveAtRevision("metadata-owner", stale); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("metadata update without original hash was accepted: %v", err)
+	}
+	partial.AgentHistoryPartial = false
+	if _, err := svc.SaveAtRevision("metadata-owner", partial); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("complete document accepted a metadata-only update: %v", err)
+	}
+	unchanged, err := svc.Project("metadata-owner", partial.ID)
+	if err != nil || !reflect.DeepEqual(unchanged, stored) {
+		t.Fatal("rejected metadata update changed the saved document", err)
+	}
+	stored.AgentRun = &CanvasAgentRun{ID: "active-run", SessionID: "s", Status: "running", Engine: "codex"}
+	running, err := svc.saveWithAgent("metadata-owner", stored, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy, err := CanvasAgentHistoryView(running, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy.AgentSessions = json.RawMessage("[]")
+	busy.AgentSessionUpdates = []CanvasAgentSessionUpdate{{ID: "s", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`"native"`)}}}
+	if _, err := svc.SaveAtRevision("metadata-owner", busy); !errors.Is(err, ErrCanvasAgentBusy) {
+		t.Fatalf("running Agent accepted a session metadata update: %v", err)
+	}
+	unchanged, err = svc.Project("metadata-owner", partial.ID)
+	if err != nil || !reflect.DeepEqual(unchanged, running) {
+		t.Fatal("rejected busy update changed the running document", err)
+	}
+}
+
+func TestCanvasSessionMetadataAndBodyWritesPreserveExactValuesAndServerFields(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	doc := DefaultCanvasDocument()
+	doc.AgentSessions = json.RawMessage(`[{"id":"metadata","title":"Original","messages":[],"protocolMessages":[{"role":"tool","content":"Retain original protocol","result":{"integer":9007199254740993}}],"futureField":{"integer":9007199254740993,"decimal":1.234567890123456789}},{"id":"body","messages":[],"toolReceipts":[{"integer":9007199254740993}],"contextUsage":{"integer":9007199254740993,"decimal":1.234567890123456789}}]`)
+	doc.ActiveAgentSessionID = "metadata"
+	created, err := svc.Import("exact-session-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := CanvasAgentHistoryView(created.Document, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.AgentSessions = json.RawMessage(`[{"id":"body","messages":[{"role":"user","text":"New browser request"}],"toolReceipts":[{"forged":true}],"contextUsage":{"integer":0},"futureField":{"integer":9007199254740995,"decimal":9.876543210987654321}}]`)
+	partial.AgentSessionUpdates = []CanvasAgentSessionUpdate{{ID: "metadata", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`"codex"`)}}}
+	receipt, err := svc.SaveAtRevision("exact-session-owner", partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt.AgentSessionUpdates) != 1 || !reflect.DeepEqual(receipt.AgentSessionUpdates, partial.AgentSessionUpdates) {
+		t.Fatal("mixed save did not acknowledge the accepted metadata update")
+	}
+	stored, err := NewCanvasDocumentService(backend).Project("exact-session-owner", created.Document.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original, actual, submitted []map[string]json.RawMessage
+	_ = json.Unmarshal(created.Document.AgentSessions, &original)
+	_ = json.Unmarshal(stored.AgentSessions, &actual)
+	_ = json.Unmarshal(partial.AgentSessions, &submitted)
+	if len(actual) != 2 || string(actual[0]["engine"]) != `"codex"` {
+		t.Fatal("mixed save lost a session or its engine update")
+	}
+	for key, value := range original[0] {
+		if string(actual[0][key]) != string(value) {
+			t.Fatalf("metadata update altered untouched field %q", key)
+		}
+	}
+	for _, key := range []string{"toolReceipts", "contextUsage"} {
+		if string(actual[1][key]) != string(original[1][key]) {
+			t.Fatalf("browser write altered server-owned field %q", key)
+		}
+	}
+	for _, key := range []string{"messages", "futureField"} {
+		if string(actual[1][key]) != string(submitted[0][key]) {
+			t.Fatalf("browser write altered accepted field %q", key)
+		}
+	}
+}
+
+func TestCanvasSessionMetadataUpdatesRejectInvalidAndOverlappingWrites(t *testing.T) {
+	stored := json.RawMessage(`[{"id":"s","title":"Original","messages":[],"protocolMessages":[]}]`)
+	valid := CanvasAgentSessionUpdate{ID: "s", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`"native"`)}}
+	for _, update := range []CanvasAgentSessionUpdate{
+		{ID: "missing", Changes: valid.Changes},
+		{ID: "", Changes: valid.Changes},
+		{ID: "s"},
+		{ID: "s", Changes: map[string]json.RawMessage{"messages": json.RawMessage(`[]`)}},
+		{ID: "s", Changes: map[string]json.RawMessage{"toolReceipts": json.RawMessage(`[]`)}},
+		{ID: "s", Changes: map[string]json.RawMessage{"contextUsage": json.RawMessage(`{}`)}},
+		{ID: "s", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`"unknown"`)}},
+		{ID: "s", Changes: map[string]json.RawMessage{"engine": json.RawMessage(`false`)}},
+		{ID: "s", Changes: map[string]json.RawMessage{"title": json.RawMessage(`null`)}},
+	} {
+		if _, err := mergeCanvasPartialHistory(stored, json.RawMessage("[]"), nil, []CanvasAgentSessionUpdate{update}, nil); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatalf("invalid metadata update accepted: %#v, %v", update, err)
+		}
+	}
+	for _, item := range []struct {
+		incoming json.RawMessage
+		deleted  []string
+		updates  []CanvasAgentSessionUpdate
+	}{{json.RawMessage("[]"), nil, []CanvasAgentSessionUpdate{valid, valid}}, {stored, nil, []CanvasAgentSessionUpdate{valid}}, {json.RawMessage("[]"), []string{"s"}, []CanvasAgentSessionUpdate{valid}}} {
+		if _, err := mergeCanvasPartialHistory(stored, item.incoming, item.deleted, item.updates, nil); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatalf("overlapping metadata write accepted: %v", err)
+		}
+	}
+}
+
+func TestCanvasDocumentLongAgentHistorySurvivesIndependentStorage(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			var databaseURL string
+			if dialect == "sqlite" {
+				databaseURL = "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "history.db"))
+			} else {
+				databaseURL = os.Getenv("TEST_CANVAS_" + strings.ToUpper(dialect) + "_DATABASE_URL")
+				if databaseURL == "" {
+					t.Skip("isolated canvas database not configured")
+				}
+			}
+			backend, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = backend.Close() })
+			exerciseCanvasAgentHistoryStorage(t, backend, databaseURL)
+		})
+	}
+}
+
+func exerciseCanvasAgentHistoryStorage(t *testing.T, backend storage.Backend, databaseURL string) {
+	t.Helper()
+	svc := NewCanvasDocumentService(backend)
+	doc, err := loadCanvas(svc, "history-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sessions []map[string]any
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, map[string]any{"id": fmt.Sprintf("session-%d", i), "messages": []map[string]any{{"id": "reply", "role": "assistant", "text": strings.Repeat("Long history retained. ", 5000)}}})
+	}
+	doc.AgentSessions, err = json.Marshal(sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.ActiveAgentSessionID = "session-29"
+	saved, err := svc.SaveAtRevision("history-owner", doc)
+	if err != nil {
+		t.Fatalf("long history cannot be saved: %v", err)
+	}
+	reopened := NewCanvasDocumentService(backend)
+	loaded, err := reopened.Project("history-owner", saved.ID)
+	if err != nil || string(loaded.AgentSessions) != string(saved.AgentSessions) || loaded.ActiveAgentSessionID != "session-29" {
+		t.Fatal("long history changed after reopening", err)
+	}
+	projectWorkspace, err := reopened.ProjectWorkspace("history-owner", saved.ID)
+	if err != nil || !reflect.DeepEqual(projectWorkspace.Document, loaded) || projectWorkspace.ActiveProjectID != saved.ID {
+		t.Fatal("project workspace did not preserve the complete document", err)
+	}
+	raw, err := backend.(storage.JSONDocumentBackend).LoadJSONDocument(canvasWorkspaceName("history-owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(raw)
+	if err != nil || strings.Contains(string(data), "Long history retained.") || len(data) >= canvasDocumentMaxBytes {
+		t.Fatal("workspace still embeds the full transcript", err)
+	}
+	t.Run("history_pages_do_not_load_unrelated_message_bodies", func(t *testing.T) {
+		var chunksRead []string
+		wrapper := &countingCanvasDocumentBackend{Backend: backend, documents: backend.(storage.JSONDocumentBackend), saves: make(map[string]int), beforeLoad: func(name string) {
+			if strings.HasPrefix(name, "canvas_agent_history/") {
+				chunksRead = append(chunksRead, name)
+			}
+		}}
+		reader := NewCanvasDocumentService(wrapper)
+		cursor := ""
+		var ids []string
+		for {
+			page, err := reader.AgentHistoryPage("history-owner", saved.ID, cursor, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Sessions) > 7 || page.Revision != saved.Revision {
+				t.Fatal("invalid history page", page)
+			}
+			for _, item := range page.Sessions {
+				if item.MessageCount != 1 {
+					t.Fatal("incorrect message count", item)
+				}
+				ids = append(ids, item.ID)
+			}
+			cursor = page.NextCursor
+			if cursor == "" {
+				break
+			}
+		}
+		if len(ids) != 30 || len(chunksRead) != 0 {
+			t.Fatalf("index pagination loaded transcripts: sessions=%d chunks=%d", len(ids), len(chunksRead))
+		}
+		for index, id := range ids {
+			if id != fmt.Sprintf("session-%d", index) {
+				t.Fatal("session page skipped or repeated records", ids)
+			}
+		}
+		body, err := reader.AgentHistorySession("history-owner", saved.ID, "session-29", saved.Revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var original []json.RawMessage
+		if err := json.Unmarshal(saved.AgentSessions, &original); err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != string(original[29]) || len(chunksRead) != 2 {
+			t.Fatalf("single session read loaded wrong data or all history: chunks=%d err=%v", len(chunksRead), err)
+		}
+		chunksRead = nil
+		editor, err := reader.EditorWorkspace("history-owner", saved.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var selected []json.RawMessage
+		_ = json.Unmarshal(editor.Document.AgentSessions, &selected)
+		if !editor.Document.AgentHistoryPartial || len(editor.Document.AgentSessionSummaries) != 30 || len(selected) != 1 || len(chunksRead) != 2 || string(selected[0]) != string(original[29]) {
+			t.Fatalf("editor loaded inactive transcripts: selected=%d summaries=%d chunks=%d", len(selected), len(editor.Document.AgentSessionSummaries), len(chunksRead))
+		}
+		if _, err := reader.AgentHistorySession("history-owner", saved.ID, "session-29", saved.Revision-1); !errors.Is(err, ErrCanvasRevisionConflict) {
+			t.Fatal("stale session revision accepted", err)
+		}
+		if _, err := reader.AgentHistoryPage("other-owner", saved.ID, "", 7); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("other owner read the session index", err)
+		}
+		if _, err := reader.AgentHistorySession("history-owner", saved.ID, "missing", saved.Revision); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("unknown session returned data", err)
+		}
+		for _, limit := range []int{0, 51} {
+			if _, err := reader.AgentHistoryPage("history-owner", saved.ID, "", limit); !errors.Is(err, ErrInvalidCanvasDocument) {
+				t.Fatal("invalid page size accepted", err)
+			}
+		}
+		if _, err := reader.AgentHistoryPage("history-owner", saved.ID, "not-a-cursor", 7); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("invalid cursor accepted", err)
+		}
+		page, err := reader.AgentHistoryPage("history-owner", saved.ID, "", 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherCursor := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"project_id":"other-project","revision":%d,"offset":7}`, saved.Revision)))
+		if _, err := reader.AgentHistoryPage("history-owner", saved.ID, otherCursor, 7); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("cursor from another project accepted", err)
+		}
+		staleCursor := canvasAgentHistoryCursor{}
+		cursorBytes, _ := base64.RawURLEncoding.DecodeString(page.NextCursor)
+		_ = json.Unmarshal(cursorBytes, &staleCursor)
+		staleCursor.Revision--
+		cursorBytes, _ = json.Marshal(staleCursor)
+		if _, err := reader.AgentHistoryPage("history-owner", saved.ID, base64.RawURLEncoding.EncodeToString(cursorBytes), 7); !errors.Is(err, ErrCanvasRevisionConflict) {
+			t.Fatal("stale cursor accepted", err)
+		}
+	})
+	t.Run("partial_save_preserves_unloaded_sessions_and_requires_explicit_deletion", func(t *testing.T) {
+		workspace, err := svc.Import("partial-history-owner", saved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		partial := workspace.Document
+		partial, err = CanvasAgentHistoryView(partial, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal(partial)
+		var wire map[string]any
+		_ = json.Unmarshal(encoded, &wire)
+		wire["agent_history_partial"] = true
+		encoded, _ = json.Marshal(wire)
+		_ = json.Unmarshal(encoded, &partial)
+		updated, err := svc.SaveAtRevision("partial-history-owner", partial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		full, err := svc.Project("partial-history-owner", partial.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var retained []json.RawMessage
+		_ = json.Unmarshal(full.AgentSessions, &retained)
+		if len(retained) != 30 {
+			t.Fatalf("partial save removed unloaded history: got %d sessions", len(retained))
+		}
+		if !updated.AgentHistoryPartial || len(updated.AgentSessionSummaries) != 30 {
+			t.Fatal("partial save returned the wrong history view")
+		}
+		encoded, _ = json.Marshal(updated)
+		_ = json.Unmarshal(encoded, &wire)
+		wire["deleted_agent_session_ids"] = []string{"session-0"}
+		encoded, _ = json.Marshal(wire)
+		_ = json.Unmarshal(encoded, &partial)
+		if _, err := svc.SaveAtRevision("partial-history-owner", partial); err != nil {
+			t.Fatal(err)
+		}
+		full, err = svc.Project("partial-history-owner", partial.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = json.Unmarshal(full.AgentSessions, &retained)
+		if len(retained) != 29 {
+			t.Fatalf("explicit deletion removed wrong history: got %d sessions", len(retained))
+		}
+		for _, body := range retained {
+			var session map[string]any
+			_ = json.Unmarshal(body, &session)
+			if session["id"] == "session-0" {
+				t.Fatal("deleted session remained")
+			}
+		}
+		stale, err := CanvasAgentHistoryView(full, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var concurrent []map[string]any
+		_ = json.Unmarshal(full.AgentSessions, &concurrent)
+		concurrent[len(concurrent)-1]["title"] = "Changed in another window"
+		full.AgentSessions, _ = json.Marshal(concurrent)
+		changed, err := svc.SaveAtRevision("partial-history-owner", full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stale.Revision = changed.Revision
+		if _, err := svc.SaveAtRevision("partial-history-owner", stale); !errors.Is(err, ErrCanvasRevisionConflict) {
+			t.Fatal("stale body overwrote history at a fresh canvas revision", err)
+		}
+		stale.AgentSessionSummaries = nil
+		if _, err := svc.SaveAtRevision("partial-history-owner", stale); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("partial body accepted without a version", err)
+		}
+		if _, err := svc.Import("partial-import-owner", stale); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatal("partial history imported as complete", err)
+		}
+	})
+	t.Run("save_receipts_omit_unchanged_bodies_and_return_reconciled_history", func(t *testing.T) {
+		const owner = "history-receipt-owner"
+		workspace, err := svc.Import(owner, saved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		partial, err := CanvasAgentHistoryView(workspace.Document, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		partial.AgentSessions = json.RawMessage(`[]`)
+		partial.Title = "Geometry-only save"
+		receipt, err := svc.SaveAtRevision(owner, partial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bodies []json.RawMessage
+		if err := json.Unmarshal(receipt.AgentSessions, &bodies); err != nil || len(bodies) != 0 || len(receipt.AgentSessionSummaries) != 30 || !receipt.AgentHistoryPartial || receipt.ActiveAgentSessionID != "session-29" {
+			t.Fatalf("unchanged history was retransmitted: bodies=%d summaries=%d active=%s error=%v", len(bodies), len(receipt.AgentSessionSummaries), receipt.ActiveAgentSessionID, err)
+		}
+		full, err := svc.Project(owner, receipt.ID)
+		if err != nil || string(full.AgentSessions) != string(saved.AgentSessions) {
+			t.Fatal("omitting receipt bodies changed stored history", err)
+		}
+		var sessions []map[string]any
+		_ = json.Unmarshal(full.AgentSessions, &sessions)
+		sessions[29]["title"] = "Remote title"
+		full.AgentSessions, _ = json.Marshal(sessions)
+		remote, err := svc.SaveAtRevision(owner, full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Geometry-only saves may carry an older directory hash at a fresh
+		// canvas revision. Return the changed active body to refresh its cache.
+		receipt.Revision = remote.Revision
+		reconciled, err := svc.SaveAtRevision(owner, receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = json.Unmarshal(reconciled.AgentSessions, &bodies)
+		if len(bodies) != 1 || !strings.Contains(string(bodies[0]), "Remote title") {
+			t.Fatal("changed active history was hidden by receipt filtering")
+		}
+		// Editing an inactive body must return that accepted body without
+		// retransmitting the unchanged active conversation.
+		current, err := svc.Project(owner, receipt.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = json.Unmarshal(current.AgentSessions, &sessions)
+		sessions[0]["title"] = "Inactive edit"
+		encoded, _ := json.Marshal(sessions[:1])
+		reconciled.AgentSessions = encoded
+		edited, err := svc.SaveAtRevision(owner, reconciled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = json.Unmarshal(edited.AgentSessions, &bodies)
+		if len(bodies) != 1 || !strings.Contains(string(bodies[0]), "Inactive edit") || strings.Contains(string(bodies[0]), "session-29") {
+			t.Fatalf("receipt did not isolate the submitted body: count=%d", len(bodies))
+		}
+		reopened, err := NewCanvasDocumentService(backend).Project(owner, edited.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var retained []json.RawMessage
+		_ = json.Unmarshal(reopened.AgentSessions, &retained)
+		if len(retained) != 30 || !strings.Contains(string(reopened.AgentSessions), "Remote title") || !strings.Contains(string(reopened.AgentSessions), "Inactive edit") {
+			t.Fatal("receipt filtering lost persisted history on reload")
+		}
+	})
+	t.Run("partial_geometry_and_inactive_edits_preserve_cached_body_hashes", func(t *testing.T) {
+		const owner = "history-original-hash-owner"
+		source := saved
+		source.AgentSessions = json.RawMessage(`[{"id":"one","title":"Active","messages":[{"role":"assistant","id":"first","text":"Retained"}],"contextUsage":{"totalTokens":7}},{"id":"two","title":"Inactive","messages":[{"role":"assistant","id":"second","text":"Also retained"}]}]`)
+		source.ActiveAgentSessionID = "one"
+		workspace, err := svc.Import(owner, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		partial, err := CanvasAgentHistoryView(workspace.Document, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalSummaries := append([]CanvasAgentSessionSummary(nil), partial.AgentSessionSummaries...)
+		partial.AgentSessions = json.RawMessage(`[]`)
+		partial.Title = "Geometry edit"
+		receipt, err := svc.SaveAtRevision(owner, partial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(receipt.AgentSessions) != "[]" || !reflect.DeepEqual(receipt.AgentSessionSummaries, originalSummaries) {
+			t.Fatal("geometry-only save changed a cached body's representation or content hash")
+		}
+		receipt.AgentSessions = json.RawMessage(`[{"id":"two","title":"Renamed inactive","messages":[{"role":"assistant","id":"second","text":"Also retained"}],"toolReceipts":[{"forged":true}],"contextUsage":{"totalTokens":999}}]`)
+		edited, err := svc.SaveAtRevision(owner, receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bodies []map[string]any
+		if err := json.Unmarshal(edited.AgentSessions, &bodies); err != nil || len(bodies) != 1 || bodies[0]["id"] != "two" {
+			t.Fatal("inactive edit retransmitted an unchanged body", err)
+		}
+		if _, ok := bodies[0]["contextUsage"]; ok {
+			t.Fatal("browser forged server usage")
+		}
+		if _, ok := bodies[0]["toolReceipts"]; ok {
+			t.Fatal("browser forged tool receipts")
+		}
+		if edited.AgentSessionSummaries[0].ContentHash != originalSummaries[0].ContentHash {
+			t.Fatal("inactive edit changed the active body's hash")
+		}
+		full, err := NewCanvasDocumentService(backend).Project(owner, edited.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var original, retained []json.RawMessage
+		_ = json.Unmarshal(source.AgentSessions, &original)
+		_ = json.Unmarshal(full.AgentSessions, &retained)
+		if len(retained) != 2 || string(retained[0]) != string(original[0]) {
+			t.Fatal("saving changed an untouched transcript")
+		}
+	})
+	t.Run("failed_publish_preserves_committed_history", func(t *testing.T) {
+		documents := backend.(storage.JSONDocumentBackend)
+		wrapper := &countingCanvasDocumentBackend{Backend: backend, documents: documents, saves: make(map[string]int)}
+		writer := NewCanvasDocumentService(wrapper)
+		for _, failure := range []string{"chunk", "workspace"} {
+			t.Run(failure, func(t *testing.T) {
+				injected := errors.New("injected storage failure")
+				writes := 0
+				wrapper.failSave = func(name string) error {
+					if strings.HasPrefix(name, "canvas_agent_history/") {
+						writes++
+						if failure == "chunk" && writes == 2 {
+							return injected
+						}
+					}
+					if failure == "workspace" && name == canvasWorkspaceName("history-owner") {
+						return injected
+					}
+					return nil
+				}
+				candidate := saved
+				candidate.AgentSessions = json.RawMessage(fmt.Sprintf(`[{"id":"new","messages":[{"text":%q}]}]`, strings.Repeat(failure+" modified history. ", 10000)))
+				if _, err := writer.SaveAtRevision("history-owner", candidate); !errors.Is(err, injected) {
+					t.Fatalf("save did not report storage failure: %v", err)
+				}
+				wrapper.failSave = nil
+				current, err := reopened.Project("history-owner", saved.ID)
+				if err != nil || current.Revision != saved.Revision || string(current.AgentSessions) != string(saved.AgentSessions) {
+					t.Fatal("failed save changed committed history", err)
+				}
+			})
+		}
+	})
+	t.Run("missing_corrupt_and_other_owner_fail_closed", func(t *testing.T) {
+		documents := backend.(storage.JSONDocumentBackend)
+		var workspace canvasWorkspace
+		if err := json.Unmarshal(data, &workspace); err != nil {
+			t.Fatal(err)
+		}
+		name := canvasAgentHistoryChunkName("history-owner", saved.ID, canvasAgentHistoryHashes(workspace.AgentHistories[saved.ID])[0])
+		chunk, err := documents.LoadJSONDocument(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, corrupt := range []bool{false, true} {
+			if corrupt {
+				err = documents.SaveJSONDocument(name, canvasAgentHistoryChunk{Data: []byte("corrupt")})
+			} else {
+				err = documents.DeleteJSONDocument(name)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := reopened.Project("history-owner", saved.ID); err == nil {
+				t.Fatal("incomplete history returned as a successful read")
+			}
+			if _, err := reopened.ProjectWorkspace("history-owner", saved.ID); err == nil {
+				t.Fatal("project workspace silently accepted incomplete history")
+			}
+			if _, err := reopened.SaveAtRevision("history-owner", saved); err == nil {
+				t.Fatal("incomplete history accepted a replacement save")
+			}
+			if err := documents.SaveJSONDocument(name, chunk); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := documents.SaveJSONDocument(canvasWorkspaceName("other-history-owner"), workspace); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reopened.Project("other-history-owner", saved.ID); err == nil {
+			t.Fatal("another owner could read the source owner's chunks")
+		}
+	})
+	t.Run("inline_upgrade_and_reopen", func(t *testing.T) {
+		documents := backend.(storage.JSONDocumentBackend)
+		legacy := DefaultCanvasDocument()
+		legacy.AgentSessions = json.RawMessage(`[{"id":"old-session","messages":[{"text":"old conversation"}]}]`)
+		legacy.ActiveAgentSessionID = "old-session"
+		other := DefaultCanvasDocument()
+		workspace := canvasWorkspace{Version: 1, Generation: 1, ActiveProjectID: other.ID, Projects: []CanvasDocument{legacy, other}}
+		if err := documents.SaveJSONDocument(canvasWorkspaceName("legacy-history-owner"), workspace); err != nil {
+			t.Fatal(err)
+		}
+		if err := documents.SaveJSONDocument(canvasActiveProjectName("legacy-history-owner"), canvasActiveProject{Version: 1, WorkspaceGeneration: 1, ProjectID: legacy.ID}); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			service := NewCanvasDocumentService(backend)
+			selected, err := service.ProjectWorkspace("legacy-history-owner", legacy.ID)
+			if err != nil || selected.Document.ID != legacy.ID || string(selected.Document.AgentSessions) != string(legacy.AgentSessions) {
+				t.Fatal("project workspace did not preserve legacy history", err)
+			}
+			loaded, err := service.Workspace("legacy-history-owner")
+			if err != nil || loaded.Document.ID != legacy.ID || string(loaded.Document.AgentSessions) != string(legacy.AgentSessions) {
+				t.Fatal("legacy history or active pointer changed", err)
+			}
+			if _, err := service.SaveAtRevision("legacy-history-owner", loaded.Document); err != nil {
+				t.Fatal(err)
+			}
+		}
+		raw, err := documents.LoadJSONDocument(canvasWorkspaceName("legacy-history-owner"))
+		encoded, marshalErr := json.Marshal(raw)
+		if err != nil || marshalErr != nil || !strings.Contains(string(encoded), `"agent_histories"`) || strings.Contains(string(encoded), "old conversation") {
+			t.Fatal("inline history was not migrated", err, marshalErr)
+		}
+	})
+	t.Run("concurrent_project_saves_preserve_both_histories", func(t *testing.T) {
+		secondBackend, err := storage.NewDatabaseBackend(databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer secondBackend.Close()
+		second, err := svc.Import("history-owner", CanvasDocument{Title: "Second history", Viewport: CanvasViewport{Zoom: 1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		barrier := newCanvasSaveBarrier(2)
+		wrap := func(store storage.Backend) *CanvasDocumentService {
+			return NewCanvasDocumentService(&barrierCanvasDocumentBackend{Backend: store, documents: store.(storage.JSONDocumentBackend), barrier: barrier})
+		}
+		firstService, secondService := wrap(backend), wrap(secondBackend)
+		firstCandidate, secondCandidate := saved, second.Document
+		firstCandidate.AgentSessions = json.RawMessage(`[{"id":"first","messages":[{"text":"first concurrent transcript"}]}]`)
+		secondCandidate.AgentSessions = json.RawMessage(`[{"id":"second","messages":[{"text":"second concurrent transcript"}]}]`)
+		results := make(chan error, 2)
+		go func() { _, err := firstService.SaveAtRevision("history-owner", firstCandidate); results <- err }()
+		go func() { _, err := secondService.SaveAtRevision("history-owner", secondCandidate); results <- err }()
+		for range 2 {
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+		}
+		reader := NewCanvasDocumentService(secondBackend)
+		for _, candidate := range []CanvasDocument{firstCandidate, secondCandidate} {
+			actual, err := reader.Project("history-owner", candidate.ID)
+			if err != nil || string(actual.AgentSessions) != string(candidate.AgentSessions) {
+				t.Fatal("concurrent project history was lost", err)
+			}
+		}
+		// Keep the next assertion based on the new committed revision.
+		saved, err = reader.Project("history-owner", saved.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("geometry_save_reloads_reclaimed_sibling_history", func(t *testing.T) {
+		const owner = "verified-cas-owner"
+		secondBackend, err := storage.NewDatabaseBackend(databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer secondBackend.Close()
+		firstDoc := DefaultCanvasDocument()
+		firstDoc.AgentSessions = json.RawMessage(`[{"id":"first","messages":[{"text":"Retain first history"}]}]`)
+		first, err := svc.Import(owner, firstDoc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secondDoc := DefaultCanvasDocument()
+		secondDoc.AgentSessions = json.RawMessage(`[{"id":"sibling","messages":[{"text":"Old sibling history"}]}]`)
+		second, err := svc.Import(owner, secondDoc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := backend.(storage.JSONDocumentBackend).LoadJSONDocument(canvasWorkspaceName(owner))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(raw)
+		var original canvasWorkspace
+		if err := json.Unmarshal(data, &original); err != nil {
+			t.Fatal(err)
+		}
+		oldHashes := canvasAgentHistoryHashes(original.AgentHistories[second.Document.ID])
+		if len(oldHashes) != 1 {
+			t.Fatal("sibling fixture did not create one history chunk")
+		}
+		writer := NewCanvasDocumentService(secondBackend)
+		wrapper := &countingCanvasDocumentBackend{Backend: backend, documents: backend.(storage.JSONDocumentBackend), saves: make(map[string]int)}
+		injected := false
+		wrapper.failSave = func(name string) error {
+			if name != canvasWorkspaceName(owner) || injected {
+				return nil
+			}
+			injected = true
+			candidate := second.Document
+			candidate.AgentSessions = json.RawMessage(`[{"id":"sibling","messages":[{"text":"New committed sibling history"}]}]`)
+			_, err := writer.SaveAtRevision(owner, candidate)
+			return err
+		}
+		partial, err := CanvasAgentHistoryView(first.Document, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		partial.AgentSessions = json.RawMessage("[]")
+		partial.Title = "Committed geometry"
+		if _, err := NewCanvasDocumentService(wrapper).SaveAtRevision(owner, partial); err != nil {
+			t.Fatal("geometry save did not rebuild verified references after a root conflict", err)
+		}
+		if !injected || wrapper.saves[canvasWorkspaceName(owner)] != 2 {
+			t.Fatal("test did not force a retry after concurrent history pruning")
+		}
+		current, err := writer.Project(owner, first.Document.ID)
+		if err != nil || current.Title != partial.Title || string(current.AgentSessions) != string(first.Document.AgentSessions) {
+			t.Fatal("geometry retry changed the target conversation", err)
+		}
+		sibling, err := writer.Project(owner, second.Document.ID)
+		if err != nil || !strings.Contains(string(sibling.AgentSessions), "New committed sibling history") {
+			t.Fatal("geometry retry lost the concurrently committed sibling", err)
+		}
+		if raw, err := backend.(storage.JSONDocumentBackend).LoadJSONDocument(canvasAgentHistoryChunkName(owner, second.Document.ID, oldHashes[0])); err != nil || raw != nil {
+			t.Fatal("geometry retry resurrected a reclaimed sibling chunk", err)
+		}
+	})
+	t.Run("reader_reloads_manifest_replaced_during_pruning", func(t *testing.T) {
+		for _, read := range []string{"project", "file references", "history session"} {
+			t.Run(read, func(t *testing.T) {
+				var once sync.Once
+				wrapper := &countingCanvasDocumentBackend{Backend: backend, documents: backend.(storage.JSONDocumentBackend), saves: make(map[string]int)}
+				wrapper.beforeLoad = func(name string) {
+					if !strings.HasPrefix(name, "canvas_agent_history/") {
+						return
+					}
+					once.Do(func() {
+						candidate := saved
+						candidate.AgentSessions = json.RawMessage(fmt.Sprintf(`[{"id":"read-race","messages":[{"text":%q,"references":[{"storageKey":"server:read-object"}]}]}]`, read))
+						var err error
+						saved, err = reopened.SaveAtRevision("history-owner", candidate)
+						if err != nil {
+							t.Fatal(err)
+						}
+					})
+				}
+				reader := NewCanvasDocumentService(wrapper)
+				if read == "history session" {
+					var previous []map[string]any
+					_ = json.Unmarshal(saved.AgentSessions, &previous)
+					if _, err := reader.AgentHistorySession("history-owner", saved.ID, previous[0]["id"].(string), saved.Revision); !errors.Is(err, ErrCanvasRevisionConflict) {
+						t.Fatal("pruning during session read did not return a revision conflict", err)
+					}
+					return
+				}
+				if read == "project" {
+					actual, err := reader.Project("history-owner", saved.ID)
+					if err != nil || string(actual.AgentSessions) != string(saved.AgentSessions) {
+						t.Fatal("reader did not recover the new committed history", err)
+					}
+				} else if referenced, err := reader.ReferencesStorageObject("history-owner", "server:read-object"); err != nil || !referenced {
+					t.Fatal("pruning race hid a live file reference", err)
+				}
+			})
+		}
+	})
+	t.Run("clearing_history_drops_manifest", func(t *testing.T) {
+		candidate := saved
+		candidate.AgentSessions, candidate.AgentMessages = nil, nil
+		candidate.ActiveAgentSessionID = ""
+		cleared, err := reopened.SaveAtRevision("history-owner", candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := reopened.Project("history-owner", cleared.ID)
+		if err != nil || len(loaded.AgentSessions) != 0 {
+			t.Fatal("cleared history was resurrected", err)
+		}
+		raw, err := backend.(storage.JSONDocumentBackend).LoadJSONDocument(canvasWorkspaceName("history-owner"))
+		encoded, marshalErr := json.Marshal(raw)
+		var workspace canvasWorkspace
+		decodeErr := json.Unmarshal(encoded, &workspace)
+		_, stillReferenced := workspace.AgentHistories[cleared.ID]
+		if err != nil || marshalErr != nil || decodeErr != nil || stillReferenced {
+			t.Fatal("cleared history still has a manifest", err, marshalErr)
+		}
+		chunks, err := backend.(storage.JSONDocumentPrefixBackend).ListJSONDocuments(fmt.Sprintf("canvas_agent_history/%x/%x/", sha256.Sum256([]byte("history-owner")), sha256.Sum256([]byte(cleared.ID))))
+		if err != nil || len(chunks) != 0 {
+			t.Fatalf("cleared history still occupies storage: chunks=%d err=%v", len(chunks), err)
+		}
+	})
+	t.Run("version_three_index_gets_content_versions_on_successful_save", func(t *testing.T) {
+		owner := "version-three-history-owner"
+		workspace, err := svc.Import(owner, CanvasDocument{Title: "Version three", AgentSessions: json.RawMessage(`[{"id":"old-index-session","messages":[{"text":"retained"}]}]`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		documents := backend.(storage.JSONDocumentBackend)
+		raw, err := documents.LoadJSONDocument(canvasWorkspaceName(owner))
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal(raw)
+		var stored canvasWorkspace
+		_ = json.Unmarshal(encoded, &stored)
+		stored.Version = 3
+		ref := stored.AgentHistories[workspace.Document.ID]
+		ref.Sessions[0].ContentHash = ""
+		stored.AgentHistories[workspace.Document.ID] = ref
+		if err := documents.SaveJSONDocument(canvasWorkspaceName(owner), stored); err != nil {
+			t.Fatal(err)
+		}
+		view, err := reopened.EditorWorkspace(owner, workspace.Document.ID, nil)
+		if err != nil || len(view.Document.AgentSessionSummaries) != 1 || view.Document.AgentSessionSummaries[0].ContentHash == "" {
+			t.Fatal("old session index has no usable version", err)
+		}
+		if _, err := reopened.SaveAtRevision(owner, view.Document); err != nil {
+			t.Fatal("partial save did not migrate the index", err)
+		}
+		actual, err := reopened.Project(owner, workspace.Document.ID)
+		if err != nil || !strings.Contains(string(actual.AgentSessions), "retained") {
+			t.Fatal("version-three migration lost history", err)
+		}
+		raw, _ = documents.LoadJSONDocument(canvasWorkspaceName(owner))
+		encoded, _ = json.Marshal(raw)
+		_ = json.Unmarshal(encoded, &stored)
+		if stored.Version != canvasWorkspaceVersion || stored.AgentHistories[workspace.Document.ID].Sessions[0].ContentHash == "" {
+			t.Fatal("history index migration was not persisted")
+		}
+	})
+	t.Run("version_two_envelope_migrates_after_successful_save", func(t *testing.T) {
+		owner := "version-two-history-owner"
+		document := DefaultCanvasDocument()
+		document.AgentSessions = json.RawMessage(`[{"id":"old-envelope-session","title":"Original","messages":[{"id":"old-message","role":"assistant","text":"old envelope transcript"}]}]`)
+		payload, _ := json.Marshal(canvasAgentHistory{Sessions: document.AgentSessions})
+		block, err := svc.saveAgentHistoryBlockLocked(owner, document.ID, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored := document
+		stored.AgentSessions = nil
+		workspace := canvasWorkspace{Version: 2, Generation: 1, ActiveProjectID: document.ID, Projects: []CanvasDocument{stored}, AgentHistories: map[string]canvasAgentHistoryReference{document.ID: {Chunks: block.Chunks, Bytes: block.Bytes}}}
+		documents := backend.(storage.JSONDocumentBackend)
+		if err := documents.SaveJSONDocument(canvasWorkspaceName(owner), workspace); err != nil {
+			t.Fatal(err)
+		}
+		page, err := reopened.AgentHistoryPage(owner, document.ID, "", 20)
+		if err != nil || len(page.Sessions) != 1 || page.Sessions[0].ID != "old-envelope-session" {
+			t.Fatal("old envelope index could not be read", err)
+		}
+		session, err := reopened.AgentHistorySession(owner, document.ID, page.Sessions[0].ID, page.Revision)
+		if err != nil || !strings.Contains(string(session), "old envelope transcript") {
+			t.Fatal("old envelope session could not be read", err)
+		}
+		before, err := documents.LoadJSONDocument(canvasWorkspaceName(owner))
+		encoded, _ := json.Marshal(before)
+		if err != nil || !strings.Contains(string(encoded), `"version":2`) {
+			t.Fatal("history GET rewrote legacy data", err)
+		}
+		loaded, err := reopened.Project(owner, document.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reopened.SaveAtRevision(owner, loaded); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reopened.Project(owner, document.ID); err != nil {
+			t.Fatal("migrated history cannot be reopened", err)
+		}
+		oldChunk, err := documents.LoadJSONDocument(canvasAgentHistoryChunkName(owner, document.ID, block.Chunks[0]))
+		if err != nil || oldChunk != nil {
+			t.Fatal("old envelope was not reclaimed after migration", err)
+		}
+	})
+}
+
+func TestCanvasDocumentMediaReplacementClearsInheritedMeasurements(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	document, err := loadCanvas(service, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	audio := true
+	document.Nodes = []CanvasNode{{ID: "video", Type: "video", Width: 240, Height: 360, ScaleX: 1, ScaleY: 1, URL: "/old.mp4", GenerationVideoModel: "test", GenerationVideoSeconds: 15, GenerationVideoSize: "9:16", MediaMetadata: &CanvasMediaMetadata{Width: 768, Height: 1376, DurationMS: 15020, HasAudio: &audio}, MediaSilentClips: 1, MediaProbeError: "Old probe failure"}}
+	saved, err := service.SaveAtRevision("owner", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Nodes[0].X = 100
+	moved, err := service.SaveAtRevision("owner", saved)
+	if err != nil || !reflect.DeepEqual(moved.Nodes[0].MediaMetadata, saved.Nodes[0].MediaMetadata) {
+		t.Fatal("layout discarded actual measurements", err)
+	}
+	moved.Nodes[0].URL = "/replacement.mp4"
+	replaced, err := service.SaveAtRevision("owner", moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Nodes[0].MediaMetadata != nil || replaced.Nodes[0].MediaSilentClips != 0 || replaced.Nodes[0].MediaProbeError != "" {
+		t.Fatal("replacement inherited another file's measurements")
+	}
 }
 
 func TestCanvasDocumentServiceDoesNotRenewExpiredHistory(t *testing.T) {
@@ -270,8 +1657,10 @@ func TestCanvasDocumentServiceRejectsInvalidPendingAgentRequest(t *testing.T) {
 
 type countingCanvasDocumentBackend struct {
 	storage.Backend
-	documents storage.JSONDocumentBackend
-	saves     map[string]int
+	documents  storage.JSONDocumentBackend
+	saves      map[string]int
+	failSave   func(string) error
+	beforeLoad func(string)
 }
 
 type canvasSaveBarrier struct {
@@ -320,6 +1709,13 @@ func (b *barrierCanvasDocumentBackend) SaveJSONDocument(name string, value any) 
 	return b.documents.SaveJSONDocument(name, value)
 }
 
+func (b *barrierCanvasDocumentBackend) SaveJSONDocumentAndPrune(ctx context.Context, name string, value any, prefix string, retained []string) error {
+	if b.barrier != nil {
+		b.once.Do(b.barrier.wait)
+	}
+	return b.documents.(storage.JSONDocumentPruningBackend).SaveJSONDocumentAndPrune(ctx, name, value, prefix, retained)
+}
+
 func (b *barrierCanvasDocumentBackend) DeleteJSONDocument(name string) error {
 	return b.documents.DeleteJSONDocument(name)
 }
@@ -338,6 +1734,14 @@ func (b *blockingCanvasDocumentBackend) SaveJSONDocument(name string, value any)
 	return b.documents.SaveJSONDocument(name, value)
 }
 
+func (b *blockingCanvasDocumentBackend) SaveJSONDocumentAndPrune(ctx context.Context, name string, value any, prefix string, retained []string) error {
+	b.once.Do(func() {
+		close(b.started)
+		<-b.release
+	})
+	return b.documents.(storage.JSONDocumentPruningBackend).SaveJSONDocumentAndPrune(ctx, name, value, prefix, retained)
+}
+
 func (b *blockingCanvasDocumentBackend) DeleteJSONDocument(name string) error {
 	return b.documents.DeleteJSONDocument(name)
 }
@@ -353,12 +1757,30 @@ func newCountingCanvasDocumentBackend(t *testing.T) *countingCanvasDocumentBacke
 }
 
 func (b *countingCanvasDocumentBackend) LoadJSONDocument(name string) (any, error) {
+	if b.beforeLoad != nil {
+		b.beforeLoad(name)
+	}
 	return b.documents.LoadJSONDocument(name)
 }
 
 func (b *countingCanvasDocumentBackend) SaveJSONDocument(name string, value any) error {
 	b.saves[name]++
+	if b.failSave != nil {
+		if err := b.failSave(name); err != nil {
+			return err
+		}
+	}
 	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *countingCanvasDocumentBackend) SaveJSONDocumentAndPrune(ctx context.Context, name string, value any, prefix string, retained []string) error {
+	b.saves[name]++
+	if b.failSave != nil {
+		if err := b.failSave(name); err != nil {
+			return err
+		}
+	}
+	return b.documents.(storage.JSONDocumentPruningBackend).SaveJSONDocumentAndPrune(ctx, name, value, prefix, retained)
 }
 
 func (b *countingCanvasDocumentBackend) DeleteJSONDocument(name string) error {
@@ -1059,13 +2481,25 @@ func TestCanvasDocumentServiceClearsExplicitProject(t *testing.T) {
 	}
 }
 
-func TestCanvasDocumentServiceRejectsVideoWithoutGenerationModel(t *testing.T) {
+func TestCanvasDocumentServiceAllowsUnconfiguredVideoNode(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
-	_, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{{
+	document, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{{
 		ID: "video-1", Type: "video", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
 	}}})
-	if !errors.Is(err, ErrInvalidCanvasDocument) {
-		t.Fatalf("Save(video without model) error = %v, want ErrInvalidCanvasDocument", err)
+	if err != nil || len(document.Nodes) != 1 || document.Nodes[0].GenerationVideoModel != "" {
+		t.Fatalf("Save(video without model) = %#v, error = %v", document.Nodes, err)
+	}
+}
+
+func TestCanvasDocumentServiceAllowsUnconfiguredAudioAndTextNodes(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	document, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{
+		{ID: "audio-1", Type: "audio", Width: 340, Height: 160, ScaleX: 1, ScaleY: 1},
+		{ID: "text-config", Type: "config", GenerationMode: "text", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1},
+		{ID: "video-config", Type: "config", GenerationMode: "video", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1},
+	}})
+	if err != nil || len(document.Nodes) != 3 {
+		t.Fatalf("Save(unconfigured nodes) = %#v, error = %v", document.Nodes, err)
 	}
 }
 
@@ -1137,8 +2571,8 @@ func TestCanvasDocumentServiceStoresTextConfigurationParameters(t *testing.T) {
 	if _, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{{
 		ID: "config-text", Type: "config", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
 		GenerationMode: "text",
-	}}}); !errors.Is(err, ErrInvalidCanvasDocument) {
-		t.Fatalf("Save(text config without model) error = %v, want ErrInvalidCanvasDocument", err)
+	}}}); err != nil {
+		t.Fatalf("Save(text config without model) error = %v", err)
 	}
 }
 
@@ -1520,6 +2954,87 @@ func TestCanvasDocumentServiceActivatesProjectWithoutRewritingWorkspace(t *testi
 	}
 	if len(created.Projects) != len(workspace.Projects) {
 		t.Fatalf("project count = %d, want %d", len(workspace.Projects), len(created.Projects))
+	}
+}
+
+func TestCanvasProjectActivationFailuresPreserveActiveProjectAndHistory(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	svc := NewCanvasDocumentService(backend)
+	initial, err := svc.Workspace("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := svc.Import("owner", CanvasDocument{Title: "Target", AgentSessions: json.RawMessage(`[{"id":"selected","messages":[{"role":"assistant","text":"Retain complete history"}]}]`), ActiveAgentSessionID: "selected"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateProject("owner", "activate", initial.Document.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	rootName, activeName := canvasWorkspaceName("owner"), canvasActiveProjectName("owner")
+	before, err := backend.documents.LoadJSONDocument(rootName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootSaves, activeSaves := backend.saves[rootName], backend.saves[activeName]
+	for _, id := range []string{"", "missing", initial.Document.ID + "-foreign"} {
+		if _, err := svc.ActivateProjectWorkspace("owner", id, true); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatalf("invalid target accepted: %q %v", id, err)
+		}
+	}
+	if backend.saves[activeName] != activeSaves {
+		t.Fatal("invalid activation wrote active project")
+	}
+	injected := errors.New("active project storage unavailable")
+	backend.failSave = func(name string) error {
+		if name == activeName {
+			return injected
+		}
+		return nil
+	}
+	if _, err := svc.ActivateProjectWorkspace("owner", selected.Document.ID, true); !errors.Is(err, injected) {
+		t.Fatal("active pointer failure hidden", err)
+	}
+	backend.failSave = nil
+	loaded, err := svc.Workspace("owner")
+	if err != nil || loaded.ActiveProjectID != initial.Document.ID {
+		t.Fatal("failed activation changed active project", err)
+	}
+	data, _ := json.Marshal(before)
+	var manifest canvasWorkspace
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	ref := manifest.AgentHistories[selected.Document.ID].Sessions[0].Block
+	chunkName := canvasAgentHistoryChunkName("owner", selected.Document.ID, ref.Chunks[0])
+	chunk, err := backend.documents.LoadJSONDocument(chunkName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.documents.DeleteJSONDocument(chunkName); err != nil {
+		t.Fatal(err)
+	}
+	activeSaves = backend.saves[activeName]
+	if _, err := svc.ActivateProjectWorkspace("owner", selected.Document.ID, true); err == nil {
+		t.Fatal("missing target history accepted")
+	}
+	if backend.saves[activeName] != activeSaves {
+		t.Fatal("unreadable target changed active project")
+	}
+	if err := backend.documents.SaveJSONDocument(chunkName, chunk); err != nil {
+		t.Fatal(err)
+	}
+	after, err := backend.documents.LoadJSONDocument(rootName)
+	if err != nil || !reflect.DeepEqual(before, after) || backend.saves[rootName] != rootSaves {
+		t.Fatal("activation rewrote manifest", err)
+	}
+	loaded, err = svc.Workspace("owner")
+	if err != nil || loaded.ActiveProjectID != initial.Document.ID {
+		t.Fatal("missing history activation changed active project", err)
+	}
+	retained, err := svc.Project("owner", selected.Document.ID)
+	if err != nil || !reflect.DeepEqual(retained.AgentSessions, selected.Document.AgentSessions) {
+		t.Fatal("failed activation changed target history", err)
 	}
 }
 

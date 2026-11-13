@@ -1,0 +1,15 @@
+{
+  "phase": "after",
+  "errors": [],
+  "checks": [
+    "failed save stays on source, pending save delays navigation, successful save leaves, clean leave has no write"
+  ],
+  "mediaSubmissions": 0,
+  "saveAttempts": 3,
+  "dialogs": [],
+  "leftWithRejectedSave": false,
+  "attemptsOnLeave": 1,
+  "error": "locator.click: Error: strict mode violation: getByRole('button', { name: /临时：保存失败保护/ }).filter({ hasText: '1 个节点' }) resolved to 2 elements:\n    1) <button type=\"button\" data-slot=\"button\" data-size=\"default\" data-variant=\"ghost\" class=\"group/button items-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:ari…>…</button> aka getByRole('button', { name: '临时：保存失败保护 1 个节点 更新于 11/12 20:14' })\n    2) <button type=\"button\" data-slot=\"button\" data-size=\"default\" data-variant=\"ghost\" class=\"group/button items-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:ari…>…</button> aka getByRole('button', { name: '临时：保存失败保护 1 个节点 更新于 11/12 20:13' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: /临时：保存失败保护/ }).filter({ hasText: '1 个节点' })\u001b[22m\n\n    at /root/workspace/chatgpt2api/build/review/canvas-production/verify-library-leave.mjs:91:78",
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

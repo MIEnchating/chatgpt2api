@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,12 +35,77 @@ func parallelImageStep(key string, dependencies ...string) map[string]any {
 	return map[string]any{"key": key, "type": "image", "title": key, "prompt": key, "size": "1:1", "count": 1, "sourceNodeIds": []string{}, "attachmentIds": []string{}, "dependsOn": dependencies}
 }
 
+func TestCanvasAgentWorkflowFailureResultCanPersistConversation(t *testing.T) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
+		return nil, errors.New("provider rejected image")
+	})
+	created, err := w.createCanvasWorkflow([]map[string]any{parallelImageStep("failed-image")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.activeCall = map[string]any{"id": "workflow", "name": "run_canvas_workflow", "arguments": map[string]any{"nodeIds": created["nodeIds"]}}
+	result, err := w.runCanvasWorkflow(agentStrings(created["nodeIds"]))
+	if err != nil || result["ok"] != false {
+		t.Fatalf("expected media failure: err=%v", err)
+	}
+	if _, err := json.Marshal(result); err != nil {
+		t.Fatalf("workflow failure cannot be serialized: %v", err)
+	}
+	w.record(w.activeCall, result)
+	if err := w.finish("error", "provider rejected image"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := w.service.Snapshot(w.identity, w.doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, session, err := agentSession(saved, w.req.SessionID)
+	if err != nil || saved.AgentRun == nil || saved.AgentRun.Status != "error" {
+		t.Fatalf("failed workflow lost conversation: err=%v run=%+v", err, saved.AgentRun)
+	}
+	if len(util.AsMapSlice(session["messages"])) != 2 || !strings.Contains(string(saved.AgentSessions), "provider rejected image") {
+		t.Fatal("failed workflow lost messages or original error")
+	}
+}
+
+func TestCanvasAgentUnconfirmedScriptWorkflowKeepsConversation(t *testing.T) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
+		t.Error("unconfirmed script submitted a media task")
+		return nil, nil
+	})
+	created, err := w.createCanvasWorkflow([]map[string]any{parallelImageStep("storyboard")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := agentStrings(created["nodeIds"])
+	w.doc.Nodes = append(w.doc.Nodes, CanvasNode{
+		ID: "script", Type: "script", Prompt: "Original story", Width: 360, Height: 360, ScaleX: 1, ScaleY: 1,
+		ScriptProject: &CanvasScriptProject{Step: 2, Shots: []CanvasScriptShot{{ID: "shot", Seconds: 5, Description: "Opening shot", ImageNodeID: ids[0]}}},
+	})
+	w.activeCall = map[string]any{"id": "workflow", "name": "run_canvas_workflow", "arguments": map[string]any{"nodeIds": ids}}
+	result, err := w.runCanvasWorkflow(ids)
+	if err != nil || result["code"] != "script_not_confirmed" {
+		t.Fatalf("expected unconfirmed script error: err=%v", err)
+	}
+	w.record(w.activeCall, result)
+	if err := w.finish("error", util.Clean(result["message"])); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := w.service.Snapshot(w.identity, w.doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := agentSession(saved, w.req.SessionID); err != nil || saved.AgentRun == nil || saved.AgentRun.Status != "error" {
+		t.Fatalf("blocked workflow lost its conversation: err=%v", err)
+	}
+}
+
 func TestCanvasAgentWorkflowParallelismAndDependencyInputs(t *testing.T) {
 	var active, maximum, firstWave atomic.Int32
 	barrier := make(chan struct{})
 	var completedMu sync.Mutex
 	completed := map[string]bool{}
-	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		count := active.Add(1)
 		defer active.Add(-1)
 		for {
@@ -110,7 +176,7 @@ func TestCanvasAgentWorkflowParallelismAndDependencyInputs(t *testing.T) {
 func TestCanvasAgentParallelFailureDrainsSubmittedWorkAndBlocksDownstream(t *testing.T) {
 	entered := make(chan string, 4)
 	release := make(chan struct{})
-	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		entered <- n.Title
 		select {
 		case <-release:
@@ -173,7 +239,7 @@ func TestCanvasAgentParallelFailureDrainsSubmittedWorkAndBlocksDownstream(t *tes
 func TestCanvasAgentParallelGroupDeletionDoesNotRestoreResults(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
-	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, n CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		entered <- struct{}{}
 		select {
 		case <-release:
@@ -240,7 +306,7 @@ func TestCanvasAgentParallelGroupDeletionDoesNotRestoreResults(t *testing.T) {
 }
 
 func TestCanvasAgentAdditionalOutputsRetainSourcesAndGroupDeletionScope(t *testing.T) {
-	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any) (map[string]any, error) {
+	w := parallelAgentWorker(t, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
 		return map[string]any{"data": []map[string]any{{"url": "/first.png"}, {"url": "/second.png"}}}, nil
 	})
 	w.doc.Nodes = []CanvasNode{{ID: "source", Type: "image", Title: "原照", URL: "/source.png", GenerationStatus: "success", Width: 360, Height: 360}}
@@ -297,7 +363,7 @@ func TestCanvasAgentSDKRunsIndependentWorkflowInParallel(t *testing.T) {
 		default:
 			return agentTurn(), nil
 		}
-	}, func(ctx context.Context, _ Identity, node CanvasNode, _ map[string]any) (map[string]any, error) {
+	}, func(ctx context.Context, _ Identity, node CanvasNode, _ map[string]any, _ func(int) error) (map[string]any, error) {
 		if started.Add(1) == 4 {
 			close(barrier)
 		}
@@ -329,5 +395,122 @@ func TestCanvasAgentSDKRunsIndependentWorkflowInParallel(t *testing.T) {
 	}
 	if count != 4 {
 		t.Fatalf("expected four individual generation progress rows, got %d", count)
+	}
+}
+
+func TestCanvasAgentPublishesMediaProgressBeforeCompletion(t *testing.T) {
+	for _, parallel := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parallel-%t", parallel), func(t *testing.T) {
+			release := make(chan struct{})
+			releaseGeneration := sync.OnceFunc(func() { close(release) })
+			defer releaseGeneration()
+			w := parallelAgentWorker(t, func(ctx context.Context, _ Identity, node CanvasNode, _ map[string]any, progress func(int) error) (map[string]any, error) {
+				if progress != nil {
+					if err := progress(37); err != nil {
+						return nil, err
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-release:
+				}
+				return map[string]any{"data": []map[string]any{{"url": "/" + node.ID + ".png"}}}, nil
+			})
+			steps := []map[string]any{parallelImageStep("first")}
+			if parallel {
+				steps = append(steps, parallelImageStep("second"))
+			}
+			created, err := w.createGroupedCanvasWorkflow(steps, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := agentStrings(created["nodeIds"])
+			projectID := w.doc.ID
+			done := make(chan error, 1)
+			go func() {
+				var result map[string]any
+				var err error
+				if parallel {
+					result, err = w.runCanvasWorkflow(ids)
+				} else {
+					result, err = w.generateNode(ids[0])
+				}
+				if err == nil && result["ok"] != true {
+					err = fmt.Errorf("generation failed: %v", result)
+				}
+				done <- err
+			}()
+			deadline := time.NewTimer(3 * time.Second)
+			defer deadline.Stop()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+		published:
+			for {
+				select {
+				case <-deadline.C:
+					t.Fatal("in-progress media was not published before completion")
+				case err := <-done:
+					t.Fatalf("generation finished before release: %v", err)
+				case <-ticker.C:
+					doc, err := w.service.canvas.Project(w.identity.ID, projectID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					count := 0
+					for _, node := range doc.Nodes {
+						if slices.Contains(ids, node.ID) && node.GenerationProgress == 37 && node.GenerationStatus == "loading" && node.URL == "" {
+							count++
+						}
+					}
+					if count == len(ids) {
+						break published
+					}
+				}
+			}
+			releaseGeneration()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCanvasAgentProgressSaveFailureKeepsOriginalTaskRecoverable(t *testing.T) {
+	var w *canvasAgentWorker
+	storageFailure := errors.New("progress storage unavailable")
+	var firstTaskID string
+	w = parallelAgentWorker(t, func(_ context.Context, _ Identity, node CanvasNode, _ map[string]any, progress func(int) error) (map[string]any, error) {
+		if firstTaskID != "" {
+			if node.TaskID != firstTaskID {
+				t.Fatal("progress observer failure caused a new paid task ID")
+			}
+			return map[string]any{"data": []map[string]any{{"url": "/original-task.png"}}}, nil
+		}
+		firstTaskID = node.TaskID
+		failed := false
+		w.service.canvas.store = &countingCanvasDocumentBackend{documents: w.service.canvas.store, saves: map[string]int{}, failSave: func(string) error {
+			if !failed {
+				failed = true
+				return storageFailure
+			}
+			return nil
+		}}
+		return nil, progress(37)
+	})
+	created, err := w.createCanvasWorkflow([]map[string]any{parallelImageStep("progress")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := agentStrings(created["nodeIds"])[0]
+	_, err = w.generateNode(id)
+	if !errors.Is(err, storageFailure) {
+		t.Fatalf("progress persistence failure not returned: %v", err)
+	}
+	if node := w.node(id); node.TaskID != firstTaskID || node.GenerationStatus != "loading" || !slices.Contains(agentStrings(w.state["pendingTaskIds"]), firstTaskID) {
+		t.Fatalf("observer failure falsely ended the original paid task: node=%+v state=%v", node, w.state)
+	}
+	if result, err := w.generateNode(id); err != nil || result["ok"] != true || w.node(id).URL != "/original-task.png" {
+		t.Fatalf("failed to resume the existing task: result=%v err=%v", result, err)
 	}
 }

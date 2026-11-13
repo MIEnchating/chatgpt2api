@@ -1,0 +1,30 @@
+{
+  "checks": [
+    {
+      "name": "five_pages_preserve_order_and_omit_bodies",
+      "passed": true,
+      "sessions": 30,
+      "pages": 5,
+      "listBytes": 5198,
+      "fullDocumentBytes": 3252723,
+      "selectedSessionBytes": 108409
+    },
+    {
+      "name": "existing_editor_and_refresh_preserve_all_transcripts",
+      "passed": true
+    },
+    {
+      "name": "stale_cursor_and_session_revision_rejected",
+      "passed": true
+    },
+    {
+      "name": "authentication_and_required_parameters_enforced",
+      "passed": true
+    },
+    {
+      "name": "test_project_removed_original_history_unchanged",
+      "passed": true
+    }
+  ],
+  "pageErrors": []
+}

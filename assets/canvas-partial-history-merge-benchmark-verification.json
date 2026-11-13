@@ -1,0 +1,60 @@
+{
+  "verifiedAt": "2026-11-12T15:48:02.982413+00:00",
+  "benchmark": "BenchmarkCanvasDocumentLongHistoryMetadataSave",
+  "backend": "isolated SQLite",
+  "fixture": "Same approximately 9 MB fixture, 2000 UI messages and 4000 protocol messages.",
+  "before": {
+    "iterations": 3,
+    "nanoseconds": 3757175849,
+    "bytesAllocated": 424946610,
+    "allocations": 127544
+  },
+  "beforeEvidence": "assets/canvas-session-protection-benchmark-verification.json",
+  "beforeSourceSHA256": {
+    "internal/service/canvas_document.go": "bb7c0b72cc03475368eb1d265ecdea5d3069a33c5becbf2380e827b9a3baf547",
+    "internal/service/canvas_document_test.go": "c1e44453a70ea81de59756032e00d994d9a83fb073f097a9b619efa6f1111ed1",
+    "internal/service/canvas_agent_history_view.go": "a0495a6f199d165da9d5ac93849b1017d313a7fe285d8599dbd971fd6d0524fb"
+  },
+  "after": {
+    "iterations": 3,
+    "nanoseconds": 3305601367,
+    "bytesAllocated": 415327072,
+    "allocations": 125517
+  },
+  "observedReduction": {
+    "timePercent": 12.01898713684615,
+    "allocatedBytesPercent": 2.263705080504108
+  },
+  "sourceSHA256": {
+    "internal/service/canvas_document.go": "771d4db3a0abcfc5d3b997a0bf1c220c1e72be53ddf54b8e8e20876944514772",
+    "internal/service/canvas_document_test.go": "75fcddb0bc064ed21a902873ebf569ba49785c2bbd5762d2933e485d11a73f37",
+    "internal/service/canvas_agent_history_view.go": "a136cc08dca9a76c367b4a9f920f85f364946972f6b4658680cc1f4fed47f5d8"
+  },
+  "limitations": [
+    "Before sample reused from previous iteration after checking all listed product/fixture fingerprints matched before editing.",
+    "Three iterations per sample with CPU profiling; variable background load; not a strict controlled comparison.",
+    "Cumulative allocations are not resident memory; no latency guarantee.",
+    "No database format/protocol changes; isolated SQLite used, MySQL/PostgreSQL not repeated.",
+    "This measures metadata saves, not loading, frontend editing, media generation or quality."
+  ],
+  "validation": {
+    "focusedService": {
+      "passed": true,
+      "seconds": 14.747
+    },
+    "completePackages": {
+      "passed": true,
+      "command": "go test ./internal/service ./internal/httpapi -count=1",
+      "seconds": {
+        "service": 233.516,
+        "httpapi": 106.703
+      }
+    },
+    "embeddedWeb": {
+      "passed": true,
+      "cached": true
+    },
+    "frontend": "Unchanged in this iteration; tests/build/lint not repeated.",
+    "repositoryWideGo": "Not run."
+  }
+}

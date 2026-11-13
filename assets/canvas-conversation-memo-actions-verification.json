@@ -1,0 +1,24 @@
+{
+  "checks": [
+    {
+      "name": "draft_edit_and_cancel_preserve_original_request_and_composer",
+      "passed": true
+    },
+    {
+      "name": "node_content_update_refreshes_message_chip_and_focus_action",
+      "passed": true
+    },
+    {
+      "name": "switching_history_uses_current_message_actions",
+      "passed": true
+    },
+    {
+      "name": "mobile_edit_cancel_and_reload_preserve_complete_sessions",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "generationSubmissions": 0,
+  "testProjectDeleted": true,
+  "originalHistoryUnchanged": true
+}

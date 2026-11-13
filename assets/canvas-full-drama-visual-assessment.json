@@ -1,0 +1,32 @@
+{
+  "project_id": "canvas-092fd45e58e8eb1db469bd56",
+  "stage": "storyboard_before_video",
+  "method": "Automated operator visual inspection of actual generated images; not human quality approval",
+  "contact_sheet": "assets/canvas-full-drama-boards-contact.jpg",
+  "observations": [
+    {
+      "shot_id": "shot-01",
+      "observed": "林远戴橙盔，藏蓝雨衣，角色右手提浅牛皮色黑提手袋、左手看手机，雨夜小店和电动车。"
+    },
+    {
+      "shot_id": "shot-02",
+      "observed": "同盔同衣，右手袋、左手触纸飞机；画面右架、左空凳，门关闭。"
+    },
+    {
+      "shot_id": "shot-03",
+      "observed": "开门起点仍戴盔，角色右手袋，母亲米色毛衣和深蓝围裙站门内；右架和左空凳保持。"
+    },
+    {
+      "shot_id": "shot-04",
+      "observed": "盛汤前，儿子无盔，母亲衣服一致；袋在画面左桌端、带盖汤罐仍在袋内，两碗未见汤，未端碗。"
+    }
+  ],
+  "result": "sufficient_for_video_trial",
+  "manual_quality_pass": false,
+  "post_video_reassessment": {
+    "method": "Reinspection of the same storyboard contact sheet after inspecting generated video frames; not a new image generation or human approval",
+    "missed_issue": "镜4分镜左侧窗外已有白昼光照，与雨夜故事不一致。首次动作起点检查没有拦截，视频又出现由白昼跳成夜色的变化。",
+    "result": "requires_continuity_correction_before_retry",
+    "manual_quality_pass": false
+  }
+}

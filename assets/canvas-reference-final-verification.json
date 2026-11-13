@@ -1,0 +1,50 @@
+{
+  "projectID": "canvas-092fd45e58e8eb1db469bd56",
+  "movieID": "video-canvas-8f9ae64dc086b33c178ebc30",
+  "checks": [
+    {
+      "name": "portrait_movie_frame",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "width": 334.875,
+      "height": 599.984375,
+      "ratio": 0.5581395348837209,
+      "playback": {
+        "time": 0.729517,
+        "duration": 60
+      },
+      "passed": true
+    },
+    {
+      "name": "portrait_movie_frame",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "width": 282.640625,
+      "height": 506.390625,
+      "ratio": 0.5581474281835292,
+      "playback": {
+        "time": 1.47487,
+        "duration": 60
+      },
+      "passed": true
+    },
+    {
+      "name": "shot_video_frame",
+      "width": 334.875,
+      "height": 599.984375,
+      "ratio": 0.5581395348837209,
+      "passed": true
+    },
+    {
+      "name": "chat_shots_preserved_and_no_generation",
+      "messageCount": 14,
+      "submissions": 0,
+      "passed": true
+    }
+  ],
+  "qualityApproved": false
+}

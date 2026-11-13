@@ -1,0 +1,96 @@
+{
+  "checkedAt": "2026-11-12",
+  "status": "partial",
+  "changes": [
+    "Retain the untouched initial server response as the baseline while keeping one isolated editable copy",
+    "Retain protocol history inside the token-estimate worker across canvas-context changes",
+    "Ignore obsolete worker responses and release workers on visibility, transcript, summary changes or failure",
+    "Preserve local transcript references for equal acknowledged content while still merging remote metadata and actual updates",
+    "Measure retained history once in the worker and retain only exact byte/image counts across context updates"
+  ],
+  "frontend": {
+    "batches": [
+      {
+        "log": "/tmp/canvas-long-history-final-focused.log",
+        "passed": 189,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-long-history-cache-remaining-tests-0.log",
+        "passed": 198,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-long-history-cache-remaining-tests-1.log",
+        "passed": 167,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-long-history-cache-remaining-tests-2.log",
+        "passed": 194,
+        "failed": 0
+      },
+      {
+        "log": "/tmp/canvas-long-history-cache-remaining-tests-3.log",
+        "passed": 17,
+        "failed": 0
+      }
+    ],
+    "totalPassed": 765,
+    "fileCount": 67,
+    "focusedLog": "/tmp/canvas-long-history-final-focused.log",
+    "focusedPassed": 189,
+    "focusedCountsOverlap": true,
+    "buildLog": "/tmp/canvas-long-history-cache-final-build.log",
+    "lintLog": "/tmp/canvas-long-history-cache-final-lint.log",
+    "embeddedLog": "/tmp/canvas-long-history-cache-final-embedded.log",
+    "checksPassed": true
+  },
+  "backend": {
+    "businessSourceChanged": false,
+    "businessTestsRerun": false,
+    "sourceServicesRestarted": false,
+    "note": "Frontend HMR reused; only embedded-resource Go check executed for this change"
+  },
+  "measurements": {
+    "initialCompleteTranscriptCopiesBefore": [
+      2,
+      2,
+      2
+    ],
+    "initialCompleteTranscriptCopiesAfter": [
+      1,
+      1,
+      1
+    ],
+    "fourNodeRenameHistoryTransfersBefore": 16,
+    "fourNodeRenameHistoryTransfersAfter": 0,
+    "protocolContentCharsPerTransfer": 8687670,
+    "finalInitialReadyMs": [
+      10591,
+      9654,
+      9336
+    ],
+    "finalEditMaxLongTaskMs": 966,
+    "baselineEditMaxLongTaskMs": 1096,
+    "fixedSpeedupClaimed": false,
+    "parallelBrowserAndBuildLoad": true
+  },
+  "browserReports": [
+    "canvas-history-token-transfer-reuse-after-verification.json",
+    "canvas-long-history-worker-concurrent-chat-verification.json",
+    "canvas-long-history-worker-lazy-verification.json",
+    "canvas-long-history-worker-production-verification.json"
+  ],
+  "preservedFailureReport": "canvas-history-token-transfer-reuse-first-failure-verification.json",
+  "remaining": [
+    "Initial complete active transcript fetch, browser rendering and other long tasks",
+    "Initial development-mode worker history transfers and rendering costs",
+    "Server workspace read and save overhead",
+    "Three latest video submissions failed with HTTP 503; updated 60-second movie incomplete",
+    "Subtitle, action, speaker, cross-shot voice and complete lip-sync acceptance",
+    "Independent complete Agent execution stability",
+    "Real separate audio-provider generation acceptance",
+    "Historical disappearance and authentication faults not fully attributed"
+  ]
+}
