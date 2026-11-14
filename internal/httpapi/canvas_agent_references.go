@@ -39,7 +39,7 @@ func (a *App) canvasAgentModelImages(ctx context.Context, identity service.Ident
 				if err != nil {
 					return nil, err
 				}
-				protected := strings.HasPrefix(parsed.Path, "/api/files/") || strings.HasPrefix(parsed.Path, "/images/")
+				protected := strings.HasPrefix(parsed.Path, "/api/files/") || strings.HasPrefix(parsed.Path, "/images/") || strings.HasPrefix(parsed.Path, service.ImageConversationAssetURLPrefix)
 				if !protected && isPublicReferenceURL(raw) {
 					content = append(content, part)
 					continue
@@ -75,6 +75,12 @@ func (a *App) canvasAgentImage(ctx context.Context, identity service.Identity, r
 	}
 	var reader io.ReadCloser
 	switch {
+	case strings.HasPrefix(parsed.Path, service.ImageConversationAssetURLPrefix):
+		ref, e := a.conversationAssets.Access(parsed.Path, identityScope(identity), false)
+		if e != nil {
+			return protocol.UploadedImage{}, e
+		}
+		reader, err = service.OpenMediaFile(ref.Path)
 	case strings.HasPrefix(parsed.Path, "/api/files/"):
 		parts := strings.Split(strings.TrimPrefix(parsed.Path, "/api/files/"), "/")
 		if len(parts) != 2 || parts[1] != "content" {
@@ -132,7 +138,7 @@ func (a *App) canvasAgentVideoReference(ctx context.Context, identity service.Id
 	if err != nil {
 		return "", err
 	}
-	if contract.Transport.LocalMaterial == "url" && isPublicReferenceURL(raw) && !strings.HasPrefix(parsed.Path, "/api/files/") && !strings.HasPrefix(parsed.Path, "/images/") && !strings.HasPrefix(parsed.Path, "/videos/") && !strings.HasPrefix(parsed.Path, "/audios/") {
+	if contract.Transport.LocalMaterial == "url" && isPublicReferenceURL(raw) && !strings.HasPrefix(parsed.Path, "/api/files/") && !strings.HasPrefix(parsed.Path, "/images/") && !strings.HasPrefix(parsed.Path, service.ImageConversationAssetURLPrefix) && !strings.HasPrefix(parsed.Path, "/videos/") && !strings.HasPrefix(parsed.Path, "/audios/") {
 		return raw, nil
 	}
 	var data []byte

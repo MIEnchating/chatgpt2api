@@ -35,27 +35,46 @@ func TestCanvasAgentModelImagesKeepPublicURLsAndResolveProtectedImagesAtTranspor
 	if err != nil {
 		t.Fatal(err)
 	}
-	public := "https://cdn.example.test/product.png"
-	messages := []map[string]any{{"role": "user", "content": []map[string]any{
-		{"type": "text", "text": "比较两张产品图"},
-		{"type": "image_url", "image_url": map[string]any{"url": upload.URL}},
-		{"type": "image_url", "image_url": map[string]any{"url": public}},
-	}}}
-	before, _ := json.Marshal(messages)
-	converted, err := app.canvasAgentModelImages(context.Background(), owner, messages)
+	validated, err := app.conversationAssets.ReadValidatedReader(context.Background(), bytes.NewReader(pixels.Bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	parts := util.AsMapSlice(converted[0]["content"])
-	if !strings.HasPrefix(util.Clean(parts[1]["image_url"].(map[string]any)["url"]), "data:image/png;base64,") || parts[2]["image_url"].(map[string]any)["url"] != public {
-		t.Fatal("incorrect image transport")
+	asset, err := app.conversationAssets.StoreValidatedContext(context.Background(), owner.ID, "product.png", validated)
+	if err != nil {
+		t.Fatal(err)
 	}
-	after, _ := json.Marshal(messages)
-	if !bytes.Equal(before, after) {
-		t.Fatal("transport conversion mutated agent memory")
-	}
-	if _, err := app.canvasAgentModelImages(context.Background(), service.Identity{ID: "other-owner"}, messages); err == nil {
-		t.Fatal("private image ownership bypassed")
+	public := "https://cdn.example.test/product.png"
+	for _, source := range []struct{ name, url string }{
+		{"storage file", upload.URL},
+		{"conversation asset", asset.URL},
+		{"absolute conversation asset", "https://studio.example.test" + asset.URL},
+	} {
+		t.Run(source.name, func(t *testing.T) {
+			messages := []map[string]any{{"role": "user", "content": []map[string]any{
+				{"type": "text", "text": "比较两张产品图"},
+				{"type": "image_url", "image_url": map[string]any{"url": source.url, "detail": "high"}},
+				{"type": "image_url", "image_url": map[string]any{"url": public}},
+			}}}
+			before, _ := json.Marshal(messages)
+			converted, err := app.canvasAgentModelImages(context.Background(), owner, messages)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts := util.AsMapSlice(converted[0]["content"])
+			transportImage := util.StringMap(parts[1]["image_url"])
+			if transportImage["url"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(pixels.Bytes()) || transportImage["detail"] != "high" || util.StringMap(parts[2]["image_url"])["url"] != public {
+				t.Fatal("incorrect image transport")
+			}
+			after, _ := json.Marshal(messages)
+			if !bytes.Equal(before, after) {
+				t.Fatal("transport conversion mutated agent memory")
+			}
+			for _, identity := range []service.Identity{{ID: "other-owner"}, {ID: "other-admin", Role: service.AuthRoleAdmin}} {
+				if _, err := app.canvasAgentModelImages(context.Background(), identity, messages); err == nil {
+					t.Fatal("private image ownership bypassed")
+				}
+			}
+		})
 	}
 }
 
@@ -224,6 +243,40 @@ func TestCanvasAgentVideoReferenceHonorsContractTransport(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+func TestCanvasAgentVideoReferenceResolvesConversationAssetsWithOwnership(t *testing.T) {
+	t.Setenv("IMAGE_BASE_URL", "https://media.example.test")
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	owner := *app.auth.Authenticate(token)
+	asset := uploadHTTPTestConversationAssets(t, app, token, 1, true).Items[0]
+	var pixels bytes.Buffer
+	if err := encodeHTTPTestPNG(&pixels); err != nil {
+		t.Fatal(err)
+	}
+	for _, transport := range []string{"url", "base64", "multipart"} {
+		for _, source := range []string{asset.URL, "https://studio.example.test" + asset.URL} {
+			t.Run(transport+"/"+source, func(t *testing.T) {
+				contract := protocol.DefaultVideoContracts()[0]
+				contract.Transport.LocalMaterial = transport
+				result, err := app.canvasAgentVideoReference(context.Background(), owner, source, "image", contract)
+				if err != nil {
+					t.Fatal(err)
+				}
+				file, local, err := app.localVideoReferenceFile(result)
+				if err != nil || !local || !bytes.Equal(file.Data, pixels.Bytes()) {
+					t.Fatalf("conversation asset not converted to video reference: local=%v err=%v", local, err)
+				}
+				for _, identity := range []service.Identity{{ID: "other-owner"}, {ID: "other-admin", Role: service.AuthRoleAdmin}} {
+					if _, err := app.canvasAgentVideoReference(context.Background(), identity, source, "image", contract); err == nil {
+						t.Fatal("video reference bypassed conversation asset ownership")
+					}
+				}
+			})
 		}
 	}
 }

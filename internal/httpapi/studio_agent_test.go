@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,6 +162,133 @@ func TestStudioAgentAdjustsParametersGeneratesAndResumesWithoutDuplicatePayment(
 	app.Handler().ServeHTTP(w, r)
 	if w.Code != 404 && w.Code != 403 {
 		t.Fatalf("conversation owner isolation: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStudioAgentReadsConversationAssetAndSubmitsEdit(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"text_models": []string{"studio-text"}, "image_models": []string{"gpt-image-2.6-sunburst"}}); err != nil {
+		t.Fatal(err)
+	}
+	token := adminSessionToken(t, app)
+	owner := *app.auth.Authenticate(token)
+	asset := uploadHTTPTestConversationAssets(t, app, token, 1, true).Items[0]
+	var pixels bytes.Buffer
+	if err := encodeHTTPTestPNG(&pixels); err != nil {
+		t.Fatal(err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(pixels.Bytes())
+	var modelCalls, mediaCalls atomic.Int32
+	var taskID atomic.Value
+	var sawVisual atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/images/edits" {
+			mediaCalls.Add(1)
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Error(err)
+				util.WriteError(w, 400, "invalid multipart body")
+				return
+			}
+			defer r.MultipartForm.RemoveAll()
+			count := 0
+			for _, files := range r.MultipartForm.File {
+				for _, file := range files {
+					count++
+					reader, err := file.Open()
+					if err != nil {
+						t.Error(err)
+						continue
+					}
+					data, err := io.ReadAll(reader)
+					reader.Close()
+					if err != nil || !bytes.Equal(data, pixels.Bytes()) {
+						t.Error("edit did not receive the uploaded conversation image")
+					}
+				}
+			}
+			if count != 1 {
+				t.Errorf("edit received %d files, want one reference image", count)
+			}
+			util.WriteJSON(w, 200, map[string]any{"data": []map[string]any{{"b64_json": encoded}}})
+			return
+		}
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		for _, message := range util.AsMapSlice(body["messages"]) {
+			for _, part := range util.AsMapSlice(message["content"]) {
+				if part["type"] == "image_url" && util.StringMap(part["image_url"])["url"] == "data:image/png;base64,"+encoded {
+					sawVisual.Store(true)
+				}
+			}
+			if message["role"] == "tool" && message["name"] == "edit_image" {
+				var output map[string]any
+				_ = json.Unmarshal([]byte(util.Clean(message["content"])), &output)
+				if tasks := util.AsMapSlice(output["tasks"]); len(tasks) > 0 {
+					taskID.Store(util.Clean(tasks[0]["id"]))
+				}
+			}
+		}
+		call := modelCalls.Add(1)
+		name, args := "get_history", map[string]any{}
+		switch call {
+		case 1:
+		case 2:
+			name = "get_generation_config"
+		case 3:
+			name, args = "read_image", map[string]any{"reference_id": "turn-reference-1"}
+		case 4:
+			name, args = "edit_image", map[string]any{"prompt": "Make this image a cartoon", "reference_ids": []string{"turn-reference-1"}}
+		case 5:
+			name, args = "get_generation_task", map[string]any{"task_id": taskID.Load()}
+		default:
+			name, args = "finish_task", map[string]any{"text": "已完成卡通图"}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		chunk := map[string]any{"choices": []map[string]any{{"delta": map[string]any{"tool_calls": []map[string]any{{"index": 0, "id": fmt.Sprintf("asset-call-%d", call), "type": "function", "function": map[string]any{"name": name, "arguments": agentJSONValue(args)}}}}, "finish_reason": "tool_calls"}}}
+		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", agentJSONValue(chunk))
+	}))
+	defer upstream.Close()
+	externalWorkflowTestClient(app, upstream)
+	textConfig, err := app.customRelayConfigs.Create(identityScope(owner), "text", "text", "http://studio-model.example", "test-text-key", "openai", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageConfig, err := app.customRelayConfigs.Create(identityScope(owner), "image", "image", "http://studio-model.example", "test-image-key", "openai", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := map[string]any{"id": "turn", "prompt": "Make a cartoon", "model": "gpt-image-2.6-sunburst", "mode": "image", "count": 1, "size": "1024x1024", "apiMode": "images", "tokenName": imageConfig.TokenName, "referenceImages": []any{map[string]any{"name": asset.Name, "type": asset.Type, "dataUrl": asset.DataURL}}, "images": []any{}, "status": "queued", "studioAgent": map[string]any{"runId": "turn-agent"}}
+	conversation := map[string]any{"id": "conversation", "createdAt": util.NowISO(), "updatedAt": util.NowISO(), "turns": []any{turn}, "composerMode": "image"}
+	if _, _, err := app.history.MergeWithAcknowledgementsMinimal(context.Background(), identityScope(owner), []map[string]any{conversation}); err != nil {
+		t.Fatal(err)
+	}
+	body := agentJSONValue(studioAgentInput{ConversationID: "conversation", TurnID: "turn", RunID: "turn-agent", Model: "studio-text", TokenName: textConfig.TokenName})
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/agent", strings.NewReader(body))
+	setRequestAuthCookie(req, token)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, req)
+	if response.Code != 200 {
+		t.Fatalf("start: %d %s", response.Code, response.Body.String())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	run, err := app.waitAgentExecution(ctx, owner, "turn-agent", nil)
+	if err != nil || run.Status != "success" || mediaCalls.Load() != 1 || !sawVisual.Load() {
+		t.Fatalf("run=%+v err=%v media=%d visual=%v", run, err, mediaCalls.Load(), sawVisual.Load())
+	}
+	for _, event := range run.Events {
+		if event["status"] == "error" {
+			t.Errorf("tool failed: %#v", event)
+		}
 	}
 }
 
