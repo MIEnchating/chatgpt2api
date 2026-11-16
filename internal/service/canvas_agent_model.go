@@ -13,7 +13,7 @@ func (w *canvasAgentWorker) prompt() string {
 	if w.modelInstructions != "" {
 		return w.modelInstructions
 	}
-	parts := []string{"任务完成前必须调用 finish_task 进行真实交付验收；验收未通过继续执行。需要用户信息或确认时调用 ask_user_question。不得以普通文字结束代替执行。", w.req.SystemPrompt, agentPrompts["CORE_SKILL"], agentPrompts["CANVAS_AGENT_INTERACTION_PROMPT"], fmt.Sprintf("每轮最多返回 %d 个工具调用，更多操作必须分成多轮；批量创建和生成优先使用 create_canvas_workflow、run_canvas_workflow。超限批次不会执行，不得反复发送同一超限批次。", canvasAgentMaxToolCalls)}
+	parts := []string{"任务完成前必须调用 finish_task 进行真实交付验收；验收未通过继续执行。需要用户信息或确认时调用 ask_user_question。不得以普通文字结束代替执行。", w.req.SystemPrompt, agentPrompts["CORE_SKILL"], agentPrompts["CANVAS_AGENT_INTERACTION_PROMPT"], "用户明确只要求讨论、分析、解释或提供创作建议，并明确表示暂不生成时，直接基于已有信息用文字回答；不得为凑齐制作信息而调用 ask_user_question，也不得创建图片、视频、音频或工作流。", fmt.Sprintf("每轮最多返回 %d 个工具调用，更多操作必须分成多轮；批量创建和生成优先使用 create_canvas_workflow、run_canvas_workflow。超限批次不会执行，不得反复发送同一超限批次。", canvasAgentMaxToolCalls)}
 	if len(w.skills) > 0 {
 		for _, s := range w.skills {
 			paths := []string{}

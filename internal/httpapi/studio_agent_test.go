@@ -292,6 +292,155 @@ func TestStudioAgentReadsConversationAssetAndSubmitsEdit(t *testing.T) {
 	}
 }
 
+func TestStudioAgentRejectsOtherMediaToolsBeforeSubmitting(t *testing.T) {
+	for _, scenario := range []struct{ mode, wrongTool, tool string }{
+		{"generate", "generate_video", "generate_image"},
+		{"image", "generate_video", "edit_image"},
+		{"edit", "generate_video", "edit_image"},
+		{"video", "generate_image", "generate_video"},
+		{"video", "edit_image", "generate_video"},
+	} {
+		t.Run(scenario.mode+"/"+scenario.wrongTool, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+			contract := newAPIExampleVideoContracts(t)["seedance2.0"]
+			contract.Polling.IntervalSeconds = 1
+			if _, _, err := app.videoContracts.Import([]videocontract.ImportedVideoModelContract{{Contract: contract, Enabled: true}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := app.config.Update(map[string]any{"text_models": []string{"studio-text"}, "image_models": []string{"gpt-image-2.6-sunburst"}, "video_models": []string{"seedance2.0"}}); err != nil {
+				t.Fatal(err)
+			}
+			token := adminSessionToken(t, app)
+			owner := *app.auth.Authenticate(token)
+			var pixels bytes.Buffer
+			if err := encodeHTTPTestPNG(&pixels); err != nil {
+				t.Fatal(err)
+			}
+			var modelCalls, imageCalls, videoCalls atomic.Int32
+			var taskID atomic.Value
+			mediaType, model, prompt := "image", "gpt-image-2.6-sunburst", "只生成一张海边海报图片，不要视频"
+			if scenario.mode == "video" {
+				mediaType, model, prompt = "video", "seedance2.0", "生成一段海浪运动的视频，不要静态图片"
+			}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method + " " + r.URL.Path {
+				case "POST /v1/images/generations", "POST /v1/images/edits":
+					imageCalls.Add(1)
+					util.WriteJSON(w, 200, map[string]any{"data": []map[string]any{{"b64_json": base64.StdEncoding.EncodeToString(pixels.Bytes())}}})
+					return
+				case "POST /v1/videos":
+					videoCalls.Add(1)
+					util.WriteJSON(w, 200, map[string]any{"id": "media-video", "status": "queued"})
+					return
+				case "GET /v1/videos/media-video":
+					util.WriteJSON(w, 200, map[string]any{"id": "media-video", "status": "completed"})
+					return
+				case "GET /v1/videos/media-video/content":
+					w.Header().Set("Content-Type", "video/mp4")
+					_, _ = w.Write([]byte("test-video-content"))
+					return
+				case "POST /v1/chat/completions":
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				for _, message := range util.AsMapSlice(body["messages"]) {
+					if message["role"] != "tool" {
+						continue
+					}
+					var output map[string]any
+					_ = json.Unmarshal([]byte(util.Clean(message["content"])), &output)
+					switch message["name"] {
+					case "get_generation_config":
+						if output["media_type"] != mediaType {
+							t.Errorf("model was not told current media type: got %v, want %s", output["media_type"], mediaType)
+						}
+					case scenario.wrongTool:
+						if output["ok"] != false || output["message"] != "工具与本轮媒体类型不一致" {
+							t.Errorf("wrong media tool was not explicitly rejected: %#v", output)
+						}
+					case scenario.tool:
+						if tasks := util.AsMapSlice(output["tasks"]); len(tasks) == 1 {
+							taskID.Store(util.Clean(tasks[0]["id"]))
+						}
+					}
+				}
+				call := modelCalls.Add(1)
+				name, args := "get_history", map[string]any{}
+				switch call {
+				case 1:
+				case 2:
+					name = "get_generation_config"
+				case 3:
+					name, args = scenario.wrongTool, map[string]any{"prompt": prompt, "reference_ids": []string{}}
+				case 4:
+					if imageCalls.Load() != 0 || videoCalls.Load() != 0 {
+						t.Error("wrong media tool caused an upstream submission")
+					}
+					refs := []string{}
+					if scenario.tool == "edit_image" {
+						refs = append(refs, "turn-reference-1")
+					}
+					name, args = scenario.tool, map[string]any{"prompt": prompt, "reference_ids": refs}
+				case 5:
+					name, args = "get_generation_task", map[string]any{"task_id": taskID.Load()}
+				default:
+					name, args = "finish_task", map[string]any{"text": "已按请求完成"}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				chunk := map[string]any{"choices": []map[string]any{{"delta": map[string]any{"tool_calls": []map[string]any{{"index": 0, "id": fmt.Sprintf("media-call-%d", call), "type": "function", "function": map[string]any{"name": name, "arguments": agentJSONValue(args)}}}}, "finish_reason": "tool_calls"}}}
+				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", agentJSONValue(chunk))
+			}))
+			defer upstream.Close()
+			externalWorkflowTestClient(app, upstream)
+			textConfig, err := app.customRelayConfigs.Create(identityScope(owner), "text", "text", "http://studio-model.example", "test-text-key", "openai", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mediaConfig, err := app.customRelayConfigs.Create(identityScope(owner), mediaType, "media", "http://studio-model.example", "test-media-key", "openai", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			turn := map[string]any{"id": "turn", "prompt": prompt, "model": model, "mode": scenario.mode, "count": 1, "size": "1024x1024", "apiMode": "images", "tokenName": mediaConfig.TokenName, "referenceImages": []any{}, "images": []any{}, "status": "queued", "studioAgent": map[string]any{"runId": "turn-agent"}}
+			if mediaType == "video" {
+				turn["size"], turn["videoSeconds"] = contract.Capability.DefaultSize, 8
+			}
+			if scenario.tool == "edit_image" {
+				asset := uploadHTTPTestConversationAssets(t, app, token, 1, true).Items[0]
+				turn["referenceImages"] = []any{map[string]any{"name": asset.Name, "type": asset.Type, "dataUrl": asset.DataURL}}
+			}
+			conversation := map[string]any{"id": "conversation", "createdAt": util.NowISO(), "updatedAt": util.NowISO(), "turns": []any{turn}, "composerMode": mediaType}
+			if _, _, err := app.history.MergeWithAcknowledgementsMinimal(context.Background(), identityScope(owner), []map[string]any{conversation}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := app.agentExecutions.Start(owner, "turn-agent", "studio", studioAgentInput{ConversationID: "conversation", TurnID: "turn", RunID: "turn-agent", Model: "studio-text", TokenName: textConfig.TokenName}); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			defer cancel()
+			run, err := app.waitAgentExecution(ctx, owner, "turn-agent", nil)
+			if err != nil || run.Status != "success" {
+				t.Fatalf("run status=%s error=%v events=%v", run.Status, err, run.Events)
+			}
+			wantImage, wantVideo := int32(1), int32(0)
+			if mediaType == "video" {
+				wantImage, wantVideo = 0, 1
+			}
+			if imageCalls.Load() != wantImage || videoCalls.Load() != wantVideo || len(util.AsMapSlice(util.StringMap(run.Result)["tasks"])) != 1 {
+				t.Fatalf("image submissions=%d video submissions=%d result=%v", imageCalls.Load(), videoCalls.Load(), run.Result)
+			}
+		})
+	}
+}
+
 func TestStudioHistoryExcludesFutureAndCurrentOutputsAndRetainsManualReferences(t *testing.T) {
 	conversation := map[string]any{"turns": []any{
 		map[string]any{"id": "old", "prompt": "red coat", "images": []any{map[string]any{"status": "success", "url": "https://example.test/old.png"}}},

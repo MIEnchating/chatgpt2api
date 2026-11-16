@@ -256,3 +256,10 @@ func TestCanvasAgentPromptExplainsVideoModesAndNativeAudio(t *testing.T) {
 		}
 	}
 }
+
+func TestCanvasAgentPromptAnswersDiscussionWithoutPausingForProductionDetails(t *testing.T) {
+	w := &canvasAgentWorker{state: map[string]any{}, req: CanvasAgentRequest{UserText: "只分析猫咪视频的拍摄方案，不生成图片或视频。"}}
+	if prompt := w.prompt(); !strings.Contains(prompt, "只要求讨论、分析、解释或提供创作建议") || !strings.Contains(prompt, "不得为凑齐制作信息而调用 ask_user_question") {
+		t.Fatalf("discussion-only requests must receive a direct text answer: %s", prompt)
+	}
+}

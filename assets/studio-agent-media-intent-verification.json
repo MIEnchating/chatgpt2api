@@ -1,0 +1,221 @@
+{
+  "verified_at_utc": "2026-11-16T10:37:03.335746+00:00",
+  "model": "gpt-6.1-sol",
+  "verification_scope": "Live text-model tool selection after synthetic history/config reads, using repository instructions and tool schemas. Tool results are simulated; generation and editing calls are intercepted before execution. No actual image/video generation or image-understanding verification.",
+  "media_upstream_calls": 0,
+  "passed": 11,
+  "total": 11,
+  "cases": [
+    {
+      "id": "image-explicit",
+      "mode": "image",
+      "prompt": "生成一张猫咪海报，不要视频。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "generate_image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "prompt": "设计一张精致可爱的猫咪主题静态海报，正方形构图。主体是一只毛茸茸的橘白猫，圆润脸庞、清澈眼睛，端坐在画面中央，尾巴自然环绕身体，神态温暖好奇。奶油白背景，柔和橘色与鼠尾草绿色点缀，少量手绘小鱼、猫爪印和植物作为装饰，留白充足。现代日系治愈插画风，细腻毛发质感与平面海报设计融合，柔和光照，配色协调，高品质印刷视觉。顶部排版清晰醒目的中文标题“今天也要喵开心”，底部小字“把日子过成温柔的模样”。文字准确可读，精心设计字距与层级，整体干净雅致，不要水印。",
+        "reference_ids": []
+      },
+      "trace": [
+        "generate_image"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 10.15
+    },
+    {
+      "id": "video-explicit",
+      "mode": "video",
+      "prompt": "生成一段5秒猫咪奔跑的视频，不要静态图片。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "generate_video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "prompt": "5秒写实风格动态视频，16:9。一只活泼可爱的橘色猫咪在阳光柔和的草地上快速奔跑，侧面低机位平稳跟拍，全身清晰可见。猫咪从第一秒起持续向前跑动，四肢呈自然协调的奔跑步态，身体随落地轻微起伏，尾巴自然摆动，毛发随运动轻轻飘动，草地与背景产生连续位移和自然运动模糊。单一连续镜头，真实动物运动，画面生动流畅，无定格，无静态图片推拉，无幻灯片，无字幕。",
+        "reference_ids": []
+      },
+      "trace": [
+        "generate_video"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 7.18
+    },
+    {
+      "id": "video-cover-is-image",
+      "mode": "image",
+      "prompt": "给我的猫咪视频做一张静态封面，标题是猫咪日常。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "generate_image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "prompt": "制作一张精美猫咪生活视频的静态封面，1:1方形构图。温暖自然光的居家场景，一只可爱的橘白猫作为视觉主体，近景大眼睛看向镜头，毛发柔软细致，姿态轻松俏皮，前爪靠近画面下缘，背景是奶油色沙发和虚化的绿色植物。真实宠物摄影质感，温馨治愈，奶油白与暖橙色配色，画面干净有层次。封面上方留出清晰文字区域，以醒目的大号圆润中文字体准确写出标题“猫咪日常”，四个字完整清晰，无其他文字；深棕色字搭配细腻浅色描边，确保缩略图可读。少量简洁爪印图形点缀，专业社交媒体视频封面设计，猫咪面部不被文字遮挡。",
+        "reference_ids": []
+      },
+      "trace": [
+        "generate_image"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 8.7
+    },
+    {
+      "id": "animate-image-is-video",
+      "mode": "video",
+      "prompt": "让这张图片动起来，输出5秒视频，镜头缓缓拉近。",
+      "previous_media_type": null,
+      "has_image_reference": true,
+      "expected_tool": "generate_video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "first_frame_id": "current-reference-1",
+        "reference_ids": [],
+        "prompt": "以提供的图片为首帧，生成5秒视频。保持蓝色背景、居中的猫以及原图的外观、色彩、光线和横幅构图。镜头全程平稳缓缓拉近，从原图构图自然推近猫的面部，运动轻柔匀速，无切镜、无突然变焦或晃动。猫保持坐姿，只有自然细微的呼吸和轻轻眨眼，保持形态稳定，不新增主体、文字或场景元素。"
+      },
+      "trace": [
+        "read_image",
+        "generate_video"
+      ],
+      "passed": true,
+      "call_count": 2,
+      "elapsed_seconds": 7.69
+    },
+    {
+      "id": "edit-photo",
+      "mode": "image",
+      "prompt": "把这张照片改成卡通插画，保留主体和构图。",
+      "previous_media_type": null,
+      "has_image_reference": true,
+      "expected_tool": "edit_image",
+      "actual_tool": "edit_image",
+      "arguments": {
+        "prompt": "将参考照片转绘为精致的卡通插画。严格保留原照片中猫的主体身份、外形特征、毛色和花纹、坐姿、朝向、画面位置及占比，保留居中的主体和原有横幅构图、蓝色背景。以清晰柔和的轮廓线、简洁自然的色块、细腻的卡通明暗表达，形象生动但不夸张变形。不要新增人物、动物、装饰、文字，不裁切主体，不更换场景。",
+        "reference_ids": [
+          "current-reference-1"
+        ]
+      },
+      "trace": [
+        "read_image",
+        "set_generation_parameters",
+        "edit_image"
+      ],
+      "passed": true,
+      "call_count": 3,
+      "elapsed_seconds": 10.8
+    },
+    {
+      "id": "image-after-video",
+      "mode": "image",
+      "prompt": "这次只要一张产品海报：白色陶瓷杯，标题是清晨。",
+      "previous_media_type": "video",
+      "has_image_reference": false,
+      "expected_tool": "generate_image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "prompt": "制作一张精致极简的白色陶瓷杯产品海报，正方形构图。主角为一只温润白釉陶瓷杯，清晰呈现杯把与细腻釉面，摆放在浅米白色桌面上，清晨柔和的侧向日光与淡淡窗影，宁静、清新、温暖的氛围，高级商业产品摄影，真实材质、克制布景、充足留白。海报上方精心排版清晰准确的中文标题“清晨”，优雅而醒目，与主体保持视觉平衡。画面只出现“清晨”两个文字，不添加副标题、英文、品牌、标识或水印。单张完整静态产品海报。",
+        "reference_ids": []
+      },
+      "trace": [
+        "generate_image"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 7.99
+    },
+    {
+      "id": "video-after-image",
+      "mode": "video",
+      "prompt": "这次改成一段5秒产品旋转的视频，主体仍是白色陶瓷杯。",
+      "previous_media_type": "image",
+      "has_image_reference": false,
+      "expected_tool": "generate_video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "prompt": "5秒高质感产品展示视频，主体是一只纯白色陶瓷杯，经典简洁杯型，单个圆润杯把，无文字无图案。杯子位于干净浅灰色摄影棚背景中央，放置在同色无缝台面上，围绕自身竖直中心轴匀速旋转一整圈，展示杯口、杯身和杯把，首尾朝向一致。摄影机固定，三分之四视角，杯子完整入镜，构图稳定，不推拉、不切镜。柔和专业棚拍灯光，真实陶瓷釉面细腻光泽和柔和接触阴影。旋转过程杯子形状与杯把结构始终保持一致，不变形、不漂移，不出现其他物体或字幕。",
+        "reference_ids": []
+      },
+      "trace": [
+        "generate_video"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 7.09
+    },
+    {
+      "id": "video-request-in-image-mode",
+      "mode": "image",
+      "prompt": "生成5秒猫咪奔跑视频，我要动态视频。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "ask_user_question",
+      "actual_tool": "ask_user_question",
+      "arguments": {
+        "text": "你要的是5秒猫咪奔跑的动态视频，但当前选择的是图片模式。请切换到视频模式后重新提交这条需求，我再为你生成。"
+      },
+      "trace": [
+        "ask_user_question"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 4.59
+    },
+    {
+      "id": "image-request-in-video-mode",
+      "mode": "video",
+      "prompt": "只生成一张猫咪静态海报，不要视频。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "ask_user_question",
+      "actual_tool": "ask_user_question",
+      "arguments": {
+        "text": "你要的是一张猫咪静态海报，但当前选择的是视频模式。请先切换到图片模式，再重新提交请求；本轮不会生成视频。"
+      },
+      "trace": [
+        "ask_user_question"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 5.5
+    },
+    {
+      "id": "image-discussion-only",
+      "mode": "image",
+      "prompt": "只分析拍摄方案：白色陶瓷杯怎样布光，不生成图片或视频。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "finish_task",
+      "actual_tool": "finish_task",
+      "arguments": {
+        "text": "白色陶瓷杯布光的关键是：**用明暗渐变表现杯身体积，用可控的反射表现釉面，同时避免白色高光过曝。**下面以常见的亮釉白瓷杯为例，仅分析拍摄方案。\n\n### 推荐方案：侧后方大柔光＋白板补光＋黑卡勾边\n- **背景**：先选浅灰或中灰背景，比纯白更容易突出杯子的轮廓。杯子与背景拉开距离，便于分别控制亮度。\n- **主光**：在杯子左侧偏后、约侧后方45°的位置，放一盏带柔光箱的灯，略高于杯口并向下照。优先使用较大的柔光面，必要时再加一层柔光布，让杯身出现连续、柔和的亮度过渡。\n- **补光**：在右前侧放白色反光板，将暗部轻轻提起来。先不加第二盏灯，以免多处反光让杯面显得杂乱。\n- **勾边**：在杯子左右两侧的画面外放窄黑卡，移动至杯身边缘出现淡淡的暗线。黑卡不是越近越好，暗线过重会像杯子沾了黑边。\n- **杯柄**：让杯柄偏向镜头一侧，尽量保留孔洞。若杯柄与杯身混成一片，可微转杯子或调整灯位，让两者形成亮度差。\n\n### 亮釉陶瓷最需要控制的是“反射形状”\n杯身会映出灯、窗户和周围环境。通常一条干净的长条高光，比几个小而亮的光点更能表现釉面。可用条形柔光箱，或让灯透过一块较大的柔光布；通过移动柔光面、杯子和机位，调整高光的位置与宽度。关闭不必要的室内灯，避免杂乱反射和混合色温。\n\n### 如果想拍纯白背景\n背景最好单独打光，不要靠提高整体曝光把它“冲白”。先把杯子的层次拍好，再提高背景亮度；同时用遮光板减少背景光溢到杯身，否则杯沿和杯柄很容易消失。白底不代表杯身也要处处纯白，保留浅灰渐变才有立体感。\n\n### 曝光与相机建议\n- 使用RAW、低ISO、三脚架；光圈可从 **f/8** 起试，根据景深调整。\n- 固定白平衡，最好拍一张灰卡作校准，避免白瓷偏黄或偏蓝。\n- 查看高光警示或直方图，重点保护杯口和杯身高光，不要让大片釉面失去细节。\n- 白色主体容易被自动测光拍灰，但不要机械地增加曝光；以杯身层次和高光是否溢出为准。\n\n### 建议的调灯顺序\n**只开主光确定形体 → 加白板控制暗部 → 加黑卡整理轮廓 → 最后调整背景。**每次只改变一个因素，最容易判断问题来源。\n\n如果杯子是哑光釉，可把主光稍微向侧面移动，用侧光带出细微质感；不必追求明显的镜面高光。本轮未生成图片或视频。"
+      },
+      "trace": [
+        "finish_task"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 28.83
+    },
+    {
+      "id": "video-explanation-only",
+      "mode": "video",
+      "prompt": "解释怎样把图片变成视频，先别生成。",
+      "previous_media_type": null,
+      "has_image_reference": false,
+      "expected_tool": "finish_task",
+      "actual_tool": "finish_task",
+      "arguments": {
+        "text": "把图片变成视频，通常有两种方式：\n\n- **简单动态化**：让静态图片缓慢放大、平移，或添加景深、转场。适合照片展示，画面内容基本不变。\n- **AI 图生视频**：以图片作为首帧或视觉参考，让人物、物体、环境发生自然运动，例如人物眨眼、头发随风飘动、海浪起伏，同时可以加入镜头移动。\n\n**AI 图生视频的一般步骤**\n1. **上传图片**：优先选主体清晰、构图完整的图片。\n2. **描述运动**：说清楚“谁在动、怎么动、镜头怎么动”，以及哪些内容要保持不变。\n3. **设置参数**：选择时长、画幅和分辨率；画幅尽量与原图一致，避免裁掉主体。\n4. **生成并检查**：重点看人物面部、手部、物体形状是否稳定，运动是否自然。\n\n例如，一张海边人物照可以这样描述：\n> 保持人物身份、服装和原有构图一致。人物自然眨眼，微风轻轻吹动头发，背景海浪缓慢起伏，镜头轻微向前推进，运动柔和，避免面部变形。\n\n**小技巧**：第一次先做短片、少量动作，通常比同时要求大幅转身、奔跑和复杂运镜更稳。AI 会推测原图中看不到的部分，因此动作越大，越容易出现细节变化。\n\n本轮仅作说明，没有提交生成任务。"
+      },
+      "trace": [
+        "finish_task"
+      ],
+      "passed": true,
+      "call_count": 1,
+      "elapsed_seconds": 13.95
+    }
+  ]
+}

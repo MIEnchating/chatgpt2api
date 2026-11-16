@@ -1,0 +1,176 @@
+{
+  "verified_at_utc": "2026-11-16T10:47:56.912931+00:00",
+  "model": "gpt-6.1-sol",
+  "verification_scope": "Live gpt-6.1-sol tool-selection checks with actual per-request canvas instructions and tool schemas, synthetic canvas/config data and simulated receipts. Seven generation-direction, reference and plan-switch cases passed in the initial run; after clarifying discussion-only behavior, that specific case was rerun and passed. Media calls are intercepted. No image/video generation, image-understanding or full-project execution verified.",
+  "media_upstream_calls": 0,
+  "passed": 8,
+  "total": 8,
+  "cases": [
+    {
+      "id": "static-poster",
+      "prompt": "生成一张猫咪海报，不要视频。",
+      "expected_media_type": "image",
+      "actual_media_type": "image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "count": 1,
+        "size": "1024x1536",
+        "sourceNodeIds": [],
+        "attachmentIds": [],
+        "title": "猫咪海报｜把日子过成呼噜声",
+        "prompt": "设计一张精致的竖版猫咪主题平面海报，暖色治愈风。主体是一只毛茸茸的橘白猫，蜷坐在奶油色窗台软垫上，微微仰头闭眼享受午后阳光，表情满足可爱，猫的解剖结构自然，细腻柔软毛发。背景为简约奶油白与杏色室内，柔和窗影和少量绿色植物点缀，画面温暖、干净、有呼吸感。高级杂志封面式排版，上方留出充足负空间，以清晰优雅的中文字体写主标题“把日子过成呼噜声”，下方小字“慢一点，也很美好”。标题准确可读，不遮挡猫咪面部。细腻插画与真实毛发质感结合，柔和胶片色彩，主体突出，完整单幅海报，无拼图、无水印、无品牌标志，不添加其他文字。"
+      },
+      "trace": [
+        "generate_image"
+      ],
+      "call_count": 1,
+      "passed": true
+    },
+    {
+      "id": "text-to-video",
+      "prompt": "生成一段5秒猫咪奔跑的动态视频，不需要先生成图片。",
+      "expected_media_type": "video",
+      "actual_media_type": "video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "generateAudio": false,
+        "prompt": "5秒写实自然摄影视频，一个连续镜头。一只橘色短毛猫在阳光柔和的公园草地上从左向右轻快奔跑，四肢协调自然地交替蹬地，尾巴保持平衡，毛发随运动轻微起伏。低机位侧面平行跟拍，猫咪全身始终在画面内，前方留出奔跑空间，背景草地与远处树木自然形成运动模糊，暖色日光，真实比例，动作流畅，正常速度。无字幕、无水印、无额外文字，无多余肢体、无畸变、无拉伸。",
+        "seconds": 5,
+        "size": "16:9",
+        "resolution": "720p",
+        "sourceNodeIds": [],
+        "attachmentIds": [],
+        "title": "猫咪奔跑｜5秒"
+      },
+      "trace": [
+        "generate_video"
+      ],
+      "call_count": 1,
+      "passed": true
+    },
+    {
+      "id": "video-cover",
+      "prompt": "给猫咪视频做一张静态封面图片，标题为猫咪日常，只要封面。",
+      "expected_media_type": "image",
+      "actual_media_type": "image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "count": 1,
+        "size": "1536x1024",
+        "quality": "high",
+        "sourceNodeIds": [],
+        "attachmentIds": [],
+        "title": "静态封面｜猫咪日常",
+        "prompt": "制作一张猫咪生活视频的静态封面，横版1536×1024。温暖治愈的写实宠物摄影结合简洁精致的封面排版：一只圆脸、毛茸茸的橘白猫趴在奶油色沙发上，抬头看向镜头，眼神灵动，前爪自然搭在沙发边缘；背景为干净舒适的居家客厅，午后柔和窗光，背景轻微虚化，奶油白、浅杏色和暖橙色调，毛发细节自然清晰。猫咪占据画面右侧约60%，脸部为视觉重点，左侧留出干净标题空间。左侧上中部用大号、清晰、醒目、圆润可爱的中文字体准确排出唯一标题“猫咪日常”，四个字分两行“猫咪”“日常”，深棕色字配浅奶油色细描边，缩略图下依然易读；少量小巧猫爪图形点缀，不喧宾夺主。整体具有亲切、轻松、日常陪伴的气质，构图简洁，主体与标题不重叠，边缘保留安全留白。只输出一张完整静态封面，不要拼图、视频界面、播放按钮、时间码、额外文字、品牌标志或水印；不要多余肢体或畸形猫爪。"
+      },
+      "trace": [
+        "generate_image"
+      ],
+      "call_count": 1,
+      "passed": true
+    },
+    {
+      "id": "image-to-video",
+      "prompt": "让选中的猫咪图片动起来，生成5秒视频，镜头缓缓拉近。",
+      "expected_media_type": "video",
+      "actual_media_type": "video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "generateAudio": false,
+        "prompt": "图片1作为起始画面。保持猫咪的身份、姿态、毛发细节和蓝色背景一致，猫咪自然呼吸并有非常轻微的眼神变化，动作平稳克制。镜头从中景开始，沿光轴缓慢、连续地向猫咪推进，逐渐变为更亲近的中近景，保持主体居中、画面稳定、光线和背景不变。无对白、无音乐、无字幕、无水印、无额外文字、无畸变、无拉伸。",
+        "resolution": "720p",
+        "seconds": 5,
+        "size": "16:9",
+        "sourceNodeIds": [
+          "reference-image"
+        ],
+        "title": "猫咪｜缓慢拉近｜5秒"
+      },
+      "trace": [
+        "generate_video"
+      ],
+      "call_count": 1,
+      "passed": true
+    },
+    {
+      "id": "edit-image",
+      "prompt": "把选中的猫咪照片改成卡通插画，保留主体与构图。",
+      "expected_media_type": "image",
+      "actual_media_type": "image",
+      "actual_tool": "edit_image",
+      "arguments": {
+        "sourceNodeIds": [
+          "reference-image"
+        ],
+        "attachmentIds": [],
+        "count": 1,
+        "size": "1024x1024",
+        "quality": "high",
+        "prompt": "将参考照片转换为精致的卡通插画风格。严格保留原照片中猫咪的主体身份、姿态、朝向、在画面中的位置与大小，以及原有构图和蓝色背景；仅改变绘画媒介为清晰、生动、柔和上色的卡通插画，保持猫咪特征可辨，不添加其他主体或文字。",
+        "title": "猫咪卡通插画"
+      },
+      "trace": [
+        "get_selected_nodes",
+        "edit_image"
+      ],
+      "call_count": 2,
+      "passed": true
+    },
+    {
+      "id": "image-overrides-video-plan",
+      "prompt": "取消之前的视频计划，这次只生成一张白色陶瓷杯海报，不要视频。",
+      "expected_media_type": "image",
+      "actual_media_type": "image",
+      "actual_tool": "generate_image",
+      "arguments": {
+        "prompt": "一张极简白色陶瓷杯产品海报，竖版构图。唯一主体是一只精致纯白釉面陶瓷杯，圆润杯身、单个弧形把手，比例真实，杯口和杯壁结构准确。杯子置于浅米白色石质台面，背景为温暖浅灰白色，左上方柔和自然光勾勒釉面细腻高光，右下投下柔和长阴影。杯子位于画面中下部，三分之四视角，视觉焦点清晰，上部保留大量干净留白，形成高级家居杂志静态海报的平衡构图。专业静物摄影，85mm镜头观感，克制的暖白色调，细腻真实陶瓷材质。无人物、无多余杯子、无品牌、无文字、无水印，不添加产品功能或功效宣称。",
+        "size": "1024x1536",
+        "count": 1,
+        "sourceNodeIds": [],
+        "attachmentIds": [],
+        "title": "白色陶瓷杯｜极简竖版海报"
+      },
+      "trace": [
+        "set_agent_state",
+        "generate_image"
+      ],
+      "call_count": 2,
+      "passed": true
+    },
+    {
+      "id": "video-overrides-image-plan",
+      "prompt": "之前的图片计划取消，这次直接生成5秒白色陶瓷杯旋转视频，不要静态图片。",
+      "expected_media_type": "video",
+      "actual_media_type": "video",
+      "actual_tool": "generate_video",
+      "arguments": {
+        "generateAudio": false,
+        "prompt": "A clean studio product video of a plain white ceramic mug rotating slowly in place through one smooth 360-degree turn. The mug is centered against a seamless neutral light-gray background, fully visible with handle clearly shown, soft even studio lighting, subtle realistic ceramic glaze highlights and a soft grounded shadow. Locked camera, no cuts, no other objects, no hands, no text, no logo, no watermark, no distortion. Silent video.",
+        "seconds": 5,
+        "size": "16:9",
+        "sourceNodeIds": [],
+        "title": "白色陶瓷杯｜5秒旋转视频"
+      },
+      "trace": [
+        "generate_video"
+      ],
+      "call_count": 1,
+      "passed": true
+    },
+    {
+      "id": "discussion-only",
+      "prompt": "只分析猫咪视频的拍摄方案，不生成图片或视频。",
+      "expected_media_type": "none",
+      "actual_media_type": "none",
+      "actual_tool": "finish_task",
+      "arguments": {
+        "text": "只分析拍摄方案，不生成图片或视频。未提供具体素材，以下按“居家猫咪日常”设计，不针对某段现有视频作判断。\n\n**建议方向：用一个小动作串起故事**\n比起零散卖萌镜头，“发现玩具→试探→扑抓→抱住或失去兴趣”更有起伏，也更容易实拍。可参考这四个节拍，剪成约15–20秒：\n1. **建立环境**：猫在窗边或地毯上休息，用平视中景交代空间，约3秒。\n2. **引起注意**：拍耳朵转动、眼神跟随或爪子微动，约3–4秒，让观众期待下一步。\n3. **动作高潮**：用侧面中全景拍试探、扑抓，约5–7秒；给运动方向留空间，不要只拍脸而丢掉动作。\n4. **反差收尾**：猫抱住玩具、舔爪或突然走开，约3–5秒，保留自然的喜剧感。\n\n**拍摄关键**\n- **机位**：手机尽量降到猫眼高度，少用俯拍；先固定机位等待行为，避免追着猫晃动。\n- **光线**：优先窗边柔和侧光，避开强烈逆光、直射阳光和闪光灯。\n- **参数**：普通活动用每秒30帧；扑跳可在光线充足时用每秒60帧，后期适度慢放。对焦优先锁定眼睛，白毛高光不要过曝。\n- **声音与剪辑**：收录爪子触地、玩具摩擦和呼噜声；在视线变化或动作发生时切镜，少用花哨转场。\n- **安全与舒适**：不惊吓、不强迫摆姿，不用激光直射眼睛；出现躲避、甩尾或耳朵后压时暂停。线绳类玩具全程看护，拍完收走。\n\n最值得先做的是观察猫最常主动重复的一个行为，再围绕它布置机位，而不是要求猫按剧本表演。"
+      },
+      "trace": [
+        "finish_task"
+      ],
+      "call_count": 1,
+      "passed": true
+    }
+  ]
+}
