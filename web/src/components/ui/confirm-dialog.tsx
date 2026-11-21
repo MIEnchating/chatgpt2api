@@ -41,7 +41,7 @@ function ConfirmDialog({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent className="w-[min(92vw,440px)] sm:max-w-none">
+      <DialogContent className="w-[min(92vw,440px)] sm:max-w-none" showCloseButton={!busy} aria-busy={busy}>
         <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1 [overflow-wrap:anywhere]">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>

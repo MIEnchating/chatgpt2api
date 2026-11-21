@@ -11,6 +11,7 @@ export function EditorWorkspace({
   onBack,
   busy = false,
   actions,
+  status,
   children,
 }: {
   title: string;
@@ -19,6 +20,7 @@ export function EditorWorkspace({
   onBack: () => void;
   busy?: boolean;
   actions: ReactNode;
+  status?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -32,6 +34,7 @@ export function EditorWorkspace({
           <p className="mt-1 hidden text-sm text-muted-foreground sm:block">{description}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        {status ? <div className="w-full min-w-0">{status}</div> : null}
       </header>
       <ScrollArea
         className="min-h-0 min-w-0 flex-1"

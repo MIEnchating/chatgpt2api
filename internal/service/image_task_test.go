@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,148 @@ func (s *ImageTaskService) ListTasks(identity Identity, taskIDs []string) map[st
 		return map[string]any{"items": []map[string]any{}, "missing_ids": []string{}}
 	}
 	return result
+}
+
+func TestWorkflowTaskHistoryPaginatesWholeBatchesAndRestoresActiveRuns(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "workflow-history.db"))
+	backend, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backend.Close() })
+	other, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+	store := &workflowCleanupConflictStore{JSONDocumentBackend: backend}
+	svc := newImageTaskService(store, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = svc.Close() })
+	identity := Identity{ID: "owner", Role: AuthRoleAdmin}
+	now := time.Now().UTC().Truncate(time.Second)
+	add := func(owner, id, workflow, batch, status string, started, updated time.Time, index, count int, image bool) {
+		context := map[string]any{
+			"workflow_id": workflow, "workflow_name": "Workflow", "prompt": "Draw",
+			"batch_task_id": batch, "batch_index": index, "batch_count": count, "count": count,
+			"inputs": map[string]any{}, "references": []any{},
+			"config": map[string]any{
+				"model": "", "image_model": "", "quality": "", "size": "", "count": "1",
+				"timeout": "10", "system_prompt": "", "prompt_template": "Draw", "negative_prompt": "", "api_mode": "images",
+			},
+			"execution": map[string]any{"stream": false, "partial_images": 0, "response_format_b64_json": false, "codex_cli_compatibility": false},
+		}
+		task := map[string]any{
+			"id": id, "owner_id": owner, "status": status, "mode": "generate", "workflow_context": context,
+			"created_at": started.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano),
+		}
+		if image {
+			task["data"] = []any{map[string]any{"url": "/images/unique.png"}}
+		}
+		svc.tasks[taskKey(owner, id)] = task
+	}
+
+	svc.mu.Lock()
+	add("owner", "first-1", "design", "batch", TaskStatusSuccess, now.Add(-30*time.Second), now, 1, 2, true)
+	add("owner", "first-2", "design", "batch", TaskStatusRunning, now.Add(-25*time.Second), now, 2, 2, false)
+	add("owner", "ready", "design", "", TaskStatusSuccess, now.Add(-40*time.Second), now.Add(-10*time.Second), 1, 1, true)
+	add("owner", "awaiting-sibling", "design", "pending", TaskStatusSuccess, now.Add(-50*time.Second), now.Add(-20*time.Second), 1, 2, true)
+	add("owner", "missing-sibling", "design", "expired", TaskStatusSuccess, now.Add(-10*time.Minute), now.Add(-9*time.Minute), 1, 2, true)
+	add("owner", "empty", "design", "", TaskStatusSuccess, now.Add(-11*time.Minute), now.Add(-10*time.Minute), 1, 1, false)
+	add("other", "private", "other-workflow", "batch", TaskStatusSuccess, now, now, 3, 3, true)
+	add("owner", "studio", "", "", TaskStatusSuccess, now, now, 1, 1, true)
+	for id, refs := range map[string][]map[string]any{
+		"ready": {{"id": "shared", "name": "shared", "role": "product", "url": "/ref/shared", "storageKey": "server:shared", "temporary": true},
+			{"id": "unused", "name": "unused", "role": "product", "url": "/ref/unused", "storageKey": "server:unused", "temporary": true}},
+		"first-2": {{"id": "shared", "name": "shared", "role": "product", "url": "/ref/shared", "storageKey": "server:shared"}},
+	} {
+		util.StringMap(svc.tasks[taskKey("owner", id)]["workflow_context"])["references"] = refs
+	}
+	if err := svc.persistLocked(); err != nil {
+		svc.mu.Unlock()
+		t.Fatal(err)
+	}
+	svc.mu.Unlock()
+
+	list := func(query WorkflowTaskHistoryQuery, ids []string, total, page int) WorkflowTaskHistoryPage {
+		t.Helper()
+		result, err := svc.WorkflowTaskHistory(identity, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]string, 0, len(result.Items))
+		for _, item := range result.Items {
+			got = append(got, item["id"].(string))
+		}
+		if len(ids) > 1 {
+			slices.Sort(got)
+			slices.Sort(ids)
+		}
+		if !reflect.DeepEqual(got, ids) || result.Total != total || result.Page != page || result.Counts != (WorkflowTaskHistoryCounts{All: 5, Running: 2, Success: 1, Failed: 2}) {
+			t.Fatalf("page = %#v, item IDs = %v, want IDs %v, total %d, page %d", result, got, ids, total, page)
+		}
+		return result
+	}
+	list(WorkflowTaskHistoryQuery{Status: "all", Page: 1, PageSize: 1}, []string{"first-1", "first-2"}, 5, 1)
+	list(WorkflowTaskHistoryQuery{Status: "all", Page: 2, PageSize: 1}, []string{"ready"}, 5, 2)
+	list(WorkflowTaskHistoryQuery{Status: "failed", Page: 9, PageSize: 1}, []string{"empty"}, 2, 2)
+	active := list(WorkflowTaskHistoryQuery{Active: true}, []string{"first-1", "first-2", "awaiting-sibling"}, 2, 1)
+	if want := map[string]int64{"design": now.Add(-10 * time.Second).UnixMilli()}; !reflect.DeepEqual(active.LatestRunAt, want) {
+		t.Fatalf("latest runs = %#v, want %#v", active.LatestRunAt, want)
+	}
+
+	store.beforeSave = func(name string) {
+		raw, err := other.LoadJSONDocument(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := util.StringMap(raw)
+		items := util.AsMapSlice(doc["tasks"])
+		for _, task := range items {
+			if task["id"] != "missing-sibling" {
+				continue
+			}
+			child := util.CopyMap(task)
+			child["id"], child["status"], child["updated_at"] = "new-sibling", TaskStatusRunning, util.NowISO()
+			context := util.CopyMap(util.StringMap(child["workflow_context"]))
+			context["batch_index"] = 2
+			child["workflow_context"] = context
+			doc["tasks"] = append(items, child)
+			if err := other.SaveJSONDocument(name, doc); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		t.Fatal("missing seed batch")
+	}
+	cleared, err := svc.ClearWorkflowTaskHistory(identity, []string{"empty"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cleared.DeletedBatchIDs, []string{"ready"}) || !slices.Equal(cleared.ResultURLs, []string{"/images/unique.png"}) {
+		t.Fatalf("cleanup = %#v", cleared)
+	}
+	if len(cleared.References) != 1 || cleared.References[0].StorageKey != "server:unused" {
+		t.Fatalf("cleanup references = %#v", cleared.References)
+	}
+	reader := newImageTaskService(other, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = reader.Close() })
+	left, err := reader.WorkflowTaskHistory(identity, WorkflowTaskHistoryQuery{Status: "all", PageSize: 12})
+	if err != nil || left.Counts != (WorkflowTaskHistoryCounts{All: 4, Running: 3, Failed: 1}) || len(left.Items) != 6 {
+		t.Fatalf("remaining history = %#v, err = %v", left, err)
+	}
+}
+
+type workflowCleanupConflictStore struct {
+	storage.JSONDocumentBackend
+	beforeSave func(name string)
+}
+
+func (s *workflowCleanupConflictStore) SaveJSONDocument(name string, value any) error {
+	if beforeSave := s.beforeSave; beforeSave != nil {
+		s.beforeSave = nil
+		beforeSave(name)
+	}
+	return s.JSONDocumentBackend.SaveJSONDocument(name, value)
 }
 
 func (s *ImageTaskService) markImageOutputStatus(key string, index int, status string) bool {
@@ -878,6 +1021,66 @@ func (s *pausedImageTaskSnapshotStore) LoadJSONDocument(name string) (any, error
 	return raw, err
 }
 
+type pausedImageTaskObserver struct {
+	storage.JSONDocumentBackend
+	storage.JSONDocumentObserver
+	captured chan struct{}
+	resume   chan struct{}
+	once     sync.Once
+}
+
+func (s *pausedImageTaskObserver) ObserveJSONDocument(ctx context.Context, name, version string) (any, string, bool, error) {
+	raw, next, changed, err := s.JSONDocumentObserver.ObserveJSONDocument(ctx, name, version)
+	s.once.Do(func() {
+		close(s.captured)
+		<-s.resume
+	})
+	return raw, next, changed, err
+}
+
+func TestImageTaskMonitorRechecksCancellationForWorkerRegisteredDuringObservation(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := &pausedImageTaskObserver{
+		JSONDocumentBackend:  jsonDocumentStoreFromBackend(backend),
+		JSONDocumentObserver: backend.(storage.JSONDocumentObserver),
+		captured:             make(chan struct{}),
+		resume:               make(chan struct{}),
+	}
+	identity := Identity{ID: "owner"}
+	const id = "late-worker"
+	now := util.NowISO()
+	remote := map[string]any{"id": id, "owner_id": ownerID(identity), "mode": "generate", "status": TaskStatusCancelled, "created_at": now, "updated_at": now}
+	if err := store.SaveJSONDocument("image_tasks.json", map[string]any{"tasks": []map[string]any{remote}}); err != nil {
+		t.Fatal(err)
+	}
+	svc := newImageTaskService(store, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = svc.Close() })
+	subscription, err := svc.SubscribeTasks(identity, CreationTaskEventScope{TaskIDs: []string{id}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	var release sync.Once
+	resume := func() { release.Do(func() { close(store.resume) }) }
+	defer resume()
+	select {
+	case <-store.captured:
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitor did not read the remote cancellation")
+	}
+	worker, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc.mu.Lock()
+	svc.cancels[taskKey(ownerID(identity), id)] = cancel
+	svc.mu.Unlock()
+	resume()
+	select {
+	case <-worker.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("monitor did not revisit the unchanged cancellation")
+	}
+}
+
 func TestImageTaskMonitorDoesNotCancelTaskCreatedAfterSnapshotRead(t *testing.T) {
 	store := &pausedImageTaskSnapshotStore{JSONDocumentBackend: jsonDocumentStoreFromBackend(newTestStorageBackend(t)), captured: make(chan struct{}), resume: make(chan struct{}), nextRead: make(chan struct{})}
 	started, cancelled, finish := make(chan struct{}), make(chan struct{}), make(chan struct{})
@@ -894,7 +1097,7 @@ func TestImageTaskMonitorDoesNotCancelTaskCreatedAfterSnapshotRead(t *testing.T)
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
 	t.Cleanup(func() { _ = svc.Close() })
 	identity := Identity{ID: "snapshot-owner", Role: AuthRoleUser}
-	subscription, err := svc.SubscribeTasks(identity)
+	subscription, err := svc.SubscribeTasks(identity, CreationTaskEventScope{TaskIDs: []string{"new-model-turn"}})
 	if err != nil {
 		t.Fatal(err)
 	}

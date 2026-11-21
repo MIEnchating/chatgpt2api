@@ -199,6 +199,19 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 	ownerID := identityScope(identity)
 	switch r.Method {
 	case http.MethodGet:
+		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
+			item, found, err := a.myAssets.Get(ownerID, id)
+			if err != nil {
+				util.WriteError(w, http.StatusServiceUnavailable, "素材暂时无法读取")
+				return
+			}
+			if !found {
+				util.WriteError(w, http.StatusNotFound, "素材不存在")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
+			return
+		}
 		if r.URL.Query().Get("scope") == "visible" {
 			items, err := a.myAssets.ListVisible(ownerID, identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity))
 			if err != nil {
@@ -560,12 +573,17 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		a.handleVideoTaskRecovery(w, r, identity, parts[2])
 		return
 	}
-	if r.URL.Path == "/api/creation-tasks/events" && r.Method == http.MethodGet {
+	if r.URL.Path == "/api/creation-tasks/events" && r.Method == http.MethodPost {
 		a.handleCreationTaskEvents(w, r, identity)
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks" && r.Method == http.MethodGet {
-		tasks, err := a.tasks.ListTasksWithError(identity, util.ParseCommaList(r.URL.Query().Get("ids")))
+		query := r.URL.Query()
+		if query.Get("scope") == "workflow" {
+			a.handleWorkflowTaskHistory(w, r, identity)
+			return
+		}
+		tasks, err := a.tasks.ListTasksWithError(identity, util.ParseCommaList(query.Get("ids")))
 		if err != nil {
 			a.writeCreationTaskStorageError(w, err)
 			return
@@ -577,6 +595,10 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		body, err := readJSONMap(r)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		if r.URL.Query().Get("scope") == "workflow" {
+			a.handleClearWorkflowTaskHistory(w, r, identity, body)
 			return
 		}
 		ids := util.AsStringSlice(body["ids"])

@@ -279,6 +279,9 @@ func isNoisySuccessfulAuditRequest(r *http.Request) bool {
 		return false
 	}
 	path := r.URL.Path
+	if r.Method == http.MethodPost && path == "/api/creation-tasks/events" {
+		return true
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 		switch {

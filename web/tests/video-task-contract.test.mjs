@@ -52,8 +52,12 @@ test("task contract normalization keeps only valid summary fields", () => {
 
 test("task retries discard the previous task's contract reference", async () => {
   const page = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
-  assert.equal((page.match(/taskRevision: undefined,/g) || []).length, (page.match(/taskRevision: undefined,\s+videoContract: undefined,/g) || []).length);
-  assert.match(page, /videoContract: task\.video_contract/);
+  const history = await readFile(new URL("../src/app/image/studio-history-recovery.ts", import.meta.url), "utf8");
+  const results = await readFile(new URL("../src/app/image/studio-task-results.ts", import.meta.url), "utf8");
+  for (const source of [page, history]) {
+    assert.equal((source.match(/taskRevision: undefined,/g) || []).length, (source.match(/taskRevision: undefined,\s+videoContract: undefined,/g) || []).length);
+  }
+  assert.match(results, /videoContract: task\.video_contract/);
 });
 
 test("repeated task polls do not create history changes for an identical contract reference", () => {

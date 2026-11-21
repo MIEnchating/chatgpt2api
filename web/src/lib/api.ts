@@ -548,6 +548,7 @@ export type SystemLogPage = {
   total: number | null;
   page_size: number;
   view?: LogView | string;
+  default_view?: LogView | string;
   has_more: boolean;
   snapshot_cursor: string;
   next_cursor: string;
@@ -1391,12 +1392,13 @@ export async function createImageEditTask(
 
 export async function fetchCreationTasks(
   ids: string[],
-  requestOptions?: CreationTaskRequestOptions,
+  requestOptions?: CreationTaskRequestOptions & { scope?: "workflow" },
 ) {
   const params = new URLSearchParams();
   if (ids.length > 0) {
     params.set("ids", ids.join(","));
   }
+  if (requestOptions?.scope) params.set("scope", requestOptions.scope);
   const data = await httpRequest<CreationTaskListResponse>(
     `/api/creation-tasks${params.toString() ? `?${params.toString()}` : ""}`,
     {
@@ -1732,6 +1734,7 @@ export type NewAPIVideoPluginOptions = {
   version: string;
   base_url: string;
   models: string[];
+  models_path?: string;
   auth_mode: "bearer" | "header" | "none";
   auth_header: string;
   download_mode: "signed_url" | "task_content" | "authenticated_url";
@@ -1959,6 +1962,7 @@ export async function fetchSystemLogs(
     total: typeof data.total === "number" ? data.total : null,
     page_size: typeof data.page_size === "number" ? data.page_size : options.pageSize || 0,
     view: data.view,
+    default_view: data.default_view,
     has_more: data.has_more === true && nextCursor !== "",
     snapshot_cursor: snapshotCursor,
     next_cursor: nextCursor,

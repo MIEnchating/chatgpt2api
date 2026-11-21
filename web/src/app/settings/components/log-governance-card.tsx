@@ -6,13 +6,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { Card } from "@/components/ui/card";
 
 import { ItemMedia } from "@/components/ui/item";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Clock3, Info, RefreshCw, Save, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -128,6 +128,10 @@ export function LogGovernanceCard() {
     (state) => state.cleanupLogsByRetention,
   );
 
+  useEffect(() => {
+    void loadLogGovernance();
+  }, [loadLogGovernance]);
+
   const retentionDays = Math.max(1, Number(config?.log_retention_days) || 7);
   const scheduleEnabled = config?.log_cleanup_schedule_enabled === true;
   const cleanupHour = Number(config?.log_cleanup_hour ?? 3);
@@ -161,7 +165,7 @@ export function LogGovernanceCard() {
             variant="outline"
             size="sm"
             onClick={() => void loadLogGovernance()}
-            disabled={isLoadingLogGovernance}
+            disabled={isLoadingLogGovernance || isCleaningLogs}
           >
             {isLoadingLogGovernance ? (
               <Spinner data-icon="inline-start" className="animate-spin" />
@@ -275,7 +279,7 @@ export function LogGovernanceCard() {
               size="sm"
               className="w-full sm:w-auto"
               onClick={() => setCleanupDialogOpen(true)}
-              disabled={isCleaningLogs || total === 0}
+              disabled={isLoadingLogGovernance || isCleaningLogs || total === 0}
             >
               {isCleaningLogs ? (
                 <Spinner data-icon="inline-start" className="animate-spin" />
@@ -284,8 +288,10 @@ export function LogGovernanceCard() {
               )}
               按策略清理
             </Button>}>
-          {isLoadingLogGovernance ? (
+          {isLoadingLogGovernance && !logGovernance ? (
             <LoadingState className="h-auto border-y" label="正在加载日志统计" />
+          ) : !logGovernance ? (
+            <EmptyState compact title="暂无日志统计" action={<Button variant="outline" size="sm" onClick={() => void loadLogGovernance()}>重试</Button>} />
           ) : (
             <div className="grid gap-3 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-border/70">
               <LogMetric label="日志总量" value={String(total)} />
@@ -314,11 +320,11 @@ export function LogGovernanceCard() {
         busy={isCleaningLogs}
         destructive
         onConfirm={() => void handleCleanup()}
-      ><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          <Card className="p-4">
-            当前保留策略为最近 {retentionDays} 天。确认后会清理更早的历史日志。
-          </Card>
-          </ScrollArea></ConfirmDialog>
+      >
+        <Card className="p-4">
+          当前保留策略为最近 {retentionDays} 天。确认后会清理更早的历史日志。
+        </Card>
+      </ConfirmDialog>
     </SettingsPanel>
   );
 }

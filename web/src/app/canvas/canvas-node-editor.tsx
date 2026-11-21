@@ -27,7 +27,7 @@ export function CanvasNodeEditor({ title, open, children, onClose }: {
   </Dialog>;
 
   return <Card className={cn("gap-0 overflow-visible p-0", !open && "hidden")}>
-    <PromptInput data-canvas-node-editor data-expanded="false" aria-label={`${title}，节点编辑`} className="group/editor relative flex h-[var(--canvas-node-editor-height)] w-full min-h-0 flex-col items-stretch" onKeyDown={(event) => {
+    <PromptInput data-canvas-node-editor data-expanded="false" aria-label={`${title}，节点编辑`} className="group/editor relative flex h-[280px] w-full min-h-0 flex-col items-stretch" onKeyDown={(event) => {
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
       event.preventDefault();

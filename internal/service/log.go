@@ -245,58 +245,60 @@ func normalizedLogLimit(limit int) int {
 	return limit
 }
 
-func logQueryDateBounds(query LogQuery) (string, string) {
-	startDate := strings.TrimSpace(query.StartDate)
-	endDate := strings.TrimSpace(query.EndDate)
-	if start := normalizeLogTimeFilter(query.StartTime, false); len(start) >= 10 {
-		startDate = start[:10]
+func (scope logCursorQueryScope) dateBounds() (string, string) {
+	startDate := scope.StartDate
+	endDate := scope.EndDate
+	if len(scope.StartTime) >= 10 {
+		startDate = scope.StartTime[:10]
 	}
-	if end := normalizeLogTimeFilter(query.EndTime, true); len(end) >= 10 {
-		endDate = end[:10]
+	if len(scope.EndTime) >= 10 {
+		endDate = scope.EndTime[:10]
 	}
 	return startDate, endDate
 }
 
-func matchLogQuery(item map[string]any, query LogQuery) bool {
-	if !matchLogDate(item, strings.TrimSpace(query.StartDate), strings.TrimSpace(query.EndDate)) {
+func (scope logCursorQueryScope) matches(item map[string]any) bool {
+	if scope.StartDate != "" || scope.EndDate != "" {
+		day := logDay(item)
+		if (scope.StartDate != "" && day < scope.StartDate) || (scope.EndDate != "" && day > scope.EndDate) {
+			return false
+		}
+	}
+	if scope.StartTime != "" || scope.EndTime != "" {
+		logTime := util.Clean(item["time"])
+		if (scope.StartTime != "" && logTime < scope.StartTime) || (scope.EndTime != "" && logTime > scope.EndTime) {
+			return false
+		}
+	}
+	if scope.Username != "" && !strings.Contains(strings.ToLower(logActor(item)), scope.Username) {
 		return false
 	}
-	logTime := util.Clean(item["time"])
-	if start := normalizeLogTimeFilter(query.StartTime, false); start != "" && logTime < start {
+	if scope.Module != "" && !strings.Contains(strings.ToLower(logModule(item)), scope.Module) {
 		return false
 	}
-	if end := normalizeLogTimeFilter(query.EndTime, true); end != "" && logTime > end {
+	if scope.Summary != "" && !strings.Contains(strings.ToLower(util.Clean(item["summary"])), scope.Summary) {
 		return false
 	}
-	if !containsFold(logActor(item), query.Username) {
+	if scope.Method != "" && !strings.EqualFold(logDetailString(item, "method"), scope.Method) {
 		return false
 	}
-	if !containsFold(logModule(item), query.Module) {
+	if !matchLogStatus(item, scope.Status) {
 		return false
 	}
-	if !containsFold(util.Clean(item["summary"]), query.Summary) {
+	if scope.IPAddress != "" && !strings.Contains(strings.ToLower(logDetailString(item, "ip_address")), scope.IPAddress) {
 		return false
 	}
-	if method := strings.TrimSpace(query.Method); method != "" && !strings.EqualFold(logDetailString(item, "method"), method) {
+	if scope.OperationType != "" && !strings.Contains(strings.ToLower(logDetailString(item, "operation_type")), scope.OperationType) {
 		return false
 	}
-	if !matchLogStatus(item, query.Status) {
+	if scope.LogLevel != "" && logLevel(item) != scope.LogLevel {
 		return false
 	}
-	if !containsFold(logDetailString(item, "ip_address"), query.IPAddress) {
-		return false
-	}
-	if !containsFold(logOperationType(item), query.OperationType) {
-		return false
-	}
-	if level := strings.TrimSpace(query.LogLevel); level != "" && logLevel(item) != strings.ToLower(level) {
-		return false
-	}
-	return matchLogView(item, query.View)
+	return matchLogView(item, scope.View)
 }
 
 func matchLogView(item map[string]any, view string) bool {
-	switch NormalizeLogView(view, LogViewAll) {
+	switch view {
 	case LogViewBusiness:
 		return !isAuditLogItem(item)
 	case LogViewMeaningful:
@@ -336,17 +338,6 @@ func isAuditLogItem(item map[string]any) bool {
 		return false
 	}
 	return strings.HasPrefix(summary, method+" ")
-}
-
-func matchLogDate(item map[string]any, startDate, endDate string) bool {
-	day := logDay(item)
-	if strings.TrimSpace(startDate) != "" && day < strings.TrimSpace(startDate) {
-		return false
-	}
-	if strings.TrimSpace(endDate) != "" && day > strings.TrimSpace(endDate) {
-		return false
-	}
-	return true
 }
 
 func normalizeLogTimeFilter(value string, endOfDay bool) string {
@@ -389,13 +380,6 @@ func logModule(item map[string]any) string {
 	return "系统日志"
 }
 
-func logOperationType(item map[string]any) string {
-	if value := logDetailString(item, "operation_type"); value != "" {
-		return value
-	}
-	return ""
-}
-
 func logLevel(item map[string]any) string {
 	if value := logDetailString(item, "log_level"); value != "" {
 		return strings.ToLower(value)
@@ -411,11 +395,10 @@ func logStatus(item map[string]any) string {
 }
 
 func matchLogStatus(item map[string]any, filter string) bool {
-	filter = strings.TrimSpace(filter)
 	if filter == "" {
 		return true
 	}
-	switch strings.ToLower(filter) {
+	switch filter {
 	case "success", "failed":
 		return strings.EqualFold(logOutcome(item), filter)
 	default:
@@ -445,14 +428,6 @@ func logOutcome(item map[string]any) string {
 
 func logDetailString(item map[string]any, key string) string {
 	return util.Clean(util.StringMap(item["detail"])[key])
-}
-
-func containsFold(value, filter string) bool {
-	filter = strings.TrimSpace(filter)
-	if filter == "" {
-		return true
-	}
-	return strings.Contains(strings.ToLower(value), strings.ToLower(filter))
 }
 
 func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) (map[string]map[string]any, error) {

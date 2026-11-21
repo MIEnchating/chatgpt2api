@@ -122,6 +122,6 @@ test("workflow task ownership can be registered synchronously without duplicates
   assert.doesNotMatch(workspaceSource, /agentReferencesRef\.current = agentReferences/);
   assert.match(workspaceSource, /const discarded = workflowReferencesRef\.current;\s*updateWorkflowReferences\(\(\) => \[\]\);\s*cleanupDiscardedWorkflowReferences\(discarded\)/);
   assert.match(workspaceSource, /item\.id === id \? \{ \.\.\.item, references: \[\] \} : item[\s\S]*cleanupDiscardedWorkflowReferences\(taskReferences\)/);
-  assert.match(workspaceSource, /const referenceKeys = workflowReferenceCleanupKeys\([\s\S]*removableTasks\.flatMap\([\s\S]*workflowReferencesRef\.current,[\s\S]*agentReferencesRef\.current/);
+  assert.match(workspaceSource, /const referenceKeys = workflowReferenceCleanupKeys\([\s\S]*result\.references[\s\S]*ownedTaskReferences\(\),[\s\S]*workflowReferencesRef\.current,[\s\S]*agentReferencesRef\.current/);
   assert.match(workspaceSource, /await deleteStoredImages\(referenceKeys\)/);
 });

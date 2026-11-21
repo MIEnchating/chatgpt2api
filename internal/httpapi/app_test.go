@@ -1812,6 +1812,9 @@ func TestLogsEndpointUsesDefaultLogView(t *testing.T) {
 	if summaries := logPayloadSummaries(logItems(payload)); !reflect.DeepEqual(summaries, []string{"新增账号"}) {
 		t.Fatalf("default logs summaries = %#v", summaries)
 	}
+	if payload["view"] != "business" || payload["default_view"] != "business" {
+		t.Fatalf("initial log views = %#v", payload)
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/logs?view=all", nil)
 	setRequestAuthCookie(req, adminSessionToken(t, app))
@@ -1825,6 +1828,9 @@ func TestLogsEndpointUsesDefaultLogView(t *testing.T) {
 	}
 	if summaries := logPayloadSummaries(logItems(payload)); !reflect.DeepEqual(summaries, []string{"GET /api/profile", "新增账号"}) {
 		t.Fatalf("all logs summaries = %#v", summaries)
+	}
+	if payload["view"] != "all" || payload["default_view"] != "business" {
+		t.Fatalf("filtered log views = %#v", payload)
 	}
 }
 
@@ -4067,6 +4073,68 @@ func TestCreationTaskPollingDisablesCaching(t *testing.T) {
 	}
 	if got := res.Header().Get("Pragma"); got != "no-cache" {
 		t.Fatalf("Pragma = %q, want no-cache", got)
+	}
+}
+
+func TestWorkflowTaskHistoryQueryValidation(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	_, rawKey, err := createTestUserSession(app, "workflow-history", service.AuthOwner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"view=unknown", "view=history&page=0", "view=history&page_size=100", "view=history&status=bogus"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/creation-tasks?scope=workflow&"+suffix, nil)
+		setRequestAuthCookie(req, "Bearer "+rawKey)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400", suffix, res.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/creation-tasks?scope=workflow&view=history&page=3", nil)
+	setRequestAuthCookie(req, "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	var page service.WorkflowTaskHistoryPage
+	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &page) != nil || page.Page != 1 || page.Items == nil || page.Total != 0 {
+		t.Fatalf("history status = %d, body = %s", res.Code, res.Body.String())
+	}
+
+	for _, request := range []struct {
+		body string
+		want int
+	}{
+		{`{"ids":["task"]}`, http.StatusBadRequest},
+		{`{"confirm":true}`, http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodDelete, "/api/creation-tasks?scope=workflow", strings.NewReader(request.body))
+		setRequestAuthCookie(req, "Bearer "+rawKey)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != request.want {
+			t.Fatalf("cleanup status = %d, want %d, body = %s", res.Code, request.want, res.Body.String())
+		}
+	}
+}
+
+func TestWorkflowTaskHistoryCleanupFiltersExternalMedia(t *testing.T) {
+	current, _ := url.Parse("https://app.example.test")
+	configured, _ := url.Parse("https://media.example.test/site")
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"/images/result.png", true},
+		{"https://app.example.test/images/result.png", true},
+		{"https://media.example.test/site/images/result.png", true},
+		{"https://app.example.test/other/images/result.png", false},
+		{"https://remote.example.test/images/result.png", false},
+		{"//remote.example.test/images/result.png", false},
+	} {
+		if got := isWorkflowCleanupImageURL(tc.url, current, configured); got != tc.want {
+			t.Errorf("cleanup URL %q = %v, want %v", tc.url, got, tc.want)
+		}
 	}
 }
 

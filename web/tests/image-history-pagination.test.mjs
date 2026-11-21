@@ -12,7 +12,7 @@ import {
   shouldResetImageConversationHistoryCursor,
 } from "../src/lib/image-conversation-history.ts";
 
-const pageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
+const recoverySource = await readFile(new URL("../src/app/image/studio-history-recovery.ts", import.meta.url), "utf8");
 
 test("history merge body contains only conversation items", () => {
   const items = [{ id: "conversation-1" }];
@@ -50,6 +50,6 @@ test("transient detail failures do not make the UI fall back to another conversa
 });
 
 test("history recovery reconciles locally failed media whose server task was still active", () => {
-  assert.match(pageSource, /image\.status === "error" &&\s*image\.taskId &&\s*\(image\.taskStatus === "queued" \|\| image\.taskStatus === "running"\)/);
-  assert.match(pageSource, /const persistedTasks = await Promise\.all\(taskList\.items\.map\(\(task\) => persistCreationTaskOutputs\(task, \{\s*assetContext: assetContextByTaskID\.get\(task\.id\)/);
+  assert.match(recoverySource, /image\.status === "error" &&\s*image\.taskId &&\s*\(image\.taskStatus === "queued" \|\| image\.taskStatus === "running"\)/);
+  assert.match(recoverySource, /const persistedTasks = await Promise\.all\(taskList\.items\.map\(\(task\) => persistCreationTaskOutputs\(task, \{\s*assetContext: assetContextByTaskID\.get\(task\.id\)/);
 });

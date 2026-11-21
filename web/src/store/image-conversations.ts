@@ -812,11 +812,8 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
   };
 }
 
-function sortImageConversations(conversations: ImageConversation[]): ImageConversation[] {
-  return [...conversations].sort((a, b) => {
-    const updated = b.updatedAt.localeCompare(a.updatedAt);
-    return updated !== 0 ? updated : b.id.localeCompare(a.id);
-  });
+export function compareImageConversations(a: ImageConversation, b: ImageConversation) {
+  return b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id);
 }
 
 /** Merge page/active/detail responses by ID without allowing stale snapshots
@@ -832,7 +829,7 @@ export function mergeImageConversationItems(
       byID.set(item.id, previous ? mergeImageConversationSnapshot(previous, item) : item);
     }
   }
-  return sortImageConversations([...byID.values()]);
+  return [...byID.values()].sort(compareImageConversations);
 }
 
 function normalizeHistoryGeneration(value: unknown): string | null {
@@ -859,9 +856,8 @@ function normalizeHistoryPageItems(rawItems: unknown): ImageConversation[] {
   if (!Array.isArray(rawItems)) {
     return [];
   }
-  return sortImageConversations(
-    rawItems.map((item) => normalizeConversation(item as ImageConversation & Record<string, unknown>)),
-  );
+  return rawItems.map((item) => normalizeConversation(item as ImageConversation & Record<string, unknown>))
+    .sort(compareImageConversations);
 }
 
 function mergeFailedSnapshotsIntoHistory(

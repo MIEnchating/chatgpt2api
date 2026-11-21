@@ -7,6 +7,7 @@ test('document provider and content protocol populate plugin options',()=>{
  const value=videoPluginDefaults({...contract,provider:{base_url:'https://api.example.com',auth_mode:'header',auth_header:'X-Api-Key'}});
  assert.equal(value.baseURL,'https://api.example.com');assert.equal(value.authMode,'header');assert.equal(value.authHeader,'X-Api-Key');
  assert.equal(value.downloadMode,'task_content');assert.equal(value.models,'MiniMax H3');assert.equal(value.version,'1.0.0');assert.equal(value.resultFields,'');
+ assert.equal(value.modelsPath,'/v1/models');
 });
 test('unknown provider remains unset and documented no-auth remains explicit',()=>{
  const unknown=videoPluginDefaults(contract);assert.equal(unknown.baseURL,'');assert.equal(unknown.authMode,'');assert.equal(unknown.authHeader,'');

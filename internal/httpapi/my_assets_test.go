@@ -74,3 +74,31 @@ func TestProfileAssetItemAPIKeepsConcurrentGenerationWrites(t *testing.T) {
 		t.Fatalf("legacy table PUT status = %d body = %s", res.Code, res.Body.String())
 	}
 }
+
+func TestProfileAssetDetailReadsOnlyCurrentOwnersAsset(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	_, owner := createPasswordUserSession(t, app, "asset-detail-owner", "Password123", "Asset Owner")
+	_, other := createPasswordUserSession(t, app, "asset-detail-other", "Password123", "Other User")
+	request := func(token, method, query, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/api/profile/assets"+query, strings.NewReader(body))
+		setRequestAuthCookie(req, "Bearer "+token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+	for _, id := range []string{"target", "unrelated"} {
+		body := fmt.Sprintf(`{"item":{"id":%q,"kind":"image","title":%q,"url":%q}}`, id, id, "/images/"+id+".png")
+		if res := request(owner, http.MethodPost, "", body); res.Code != http.StatusOK {
+			t.Fatalf("seed asset status = %d body = %s", res.Code, res.Body.String())
+		}
+	}
+	res := request(owner, http.MethodGet, "?id=target", "")
+	var payload map[string]any
+	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &payload) != nil || util.StringMap(payload["item"])["id"] != "target" || payload["items"] != nil {
+		t.Fatalf("asset detail status = %d body = %s", res.Code, res.Body.String())
+	}
+	if res := request(other, http.MethodGet, "?id=target&scope=visible", ""); res.Code != http.StatusNotFound {
+		t.Fatalf("foreign asset detail status = %d body = %s", res.Code, res.Body.String())
+	}
+}

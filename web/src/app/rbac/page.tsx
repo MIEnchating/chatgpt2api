@@ -87,6 +87,7 @@ function RBACContent() {
   const [selectedApiPermissions, setSelectedApiPermissions] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -95,6 +96,7 @@ function RBACContent() {
   const [deletingRole, setDeletingRole] = useState<ManagedRole | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [pendingRole, setPendingRole] = useState<ManagedRole | null>(null);
+  const [confirmCreate, setConfirmCreate] = useState(false);
   const isMutating = isSaving || isCreating || isDeleting;
 
   const applySelectedRole = useCallback((role: ManagedRole | null | undefined) => {
@@ -116,6 +118,7 @@ function RBACContent() {
     const controller = new AbortController();
     loadRBACAbortRef.current = controller;
     setIsLoading(true);
+    setLoadError("");
     try {
       const [rolesData, catalogData] = await Promise.all([
         fetchManagedRoles({ signal: controller.signal }),
@@ -134,7 +137,7 @@ function RBACContent() {
       applySelectedRole(nextSelected);
     } catch (error) {
       if (controller.signal.aborted || requestID !== loadRBACRequestRef.current) return;
-      toast.error(error instanceof Error ? error.message : "加载角色权限失败");
+      setLoadError(error instanceof Error ? error.message : "加载角色权限失败");
     } finally {
       if (requestID === loadRBACRequestRef.current) {
         setIsLoading(false);
@@ -181,6 +184,11 @@ function RBACContent() {
       return;
     }
     applySelectedRole(role);
+  };
+
+  const requestCreate = () => {
+    if (isDirty) setConfirmCreate(true);
+    else setIsCreateDialogOpen(true);
   };
 
   const handleSave = async () => {
@@ -290,6 +298,10 @@ function RBACContent() {
   return (
     <ManagementPage data-rbac-layout aria-label="角色权限" className="p-4 sm:p-6">
       <ManagementHeader title="角色权限" description="管理角色可访问的页面与 API 权限。" className="px-0 pt-0 sm:px-0" />
+      {loadError ? (
+        <EmptyState role="alert" compact icon={ShieldCheck} title="无法加载角色权限" description={loadError}
+          action={<Button variant="outline" size="sm" onClick={() => void loadRBAC()} disabled={isMutating}>重试</Button>} />
+      ) : null}
       {/* Bound Radix's content wrapper so nested panels keep their own scroll height. */}
       <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain xl:h-full [&>div]:block! xl:[&>div]:h-full"><div className="min-w-0 grid h-full grid-rows-[auto_minmax(40rem,1fr)] gap-[var(--page-section-gap)] xl:grid-rows-1 xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
         <div className="flex min-w-0 items-center gap-2 xl:hidden">
@@ -301,7 +313,7 @@ function RBACContent() {
             <SelectContent>{roles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant="outline" size="icon" aria-label="刷新角色权限" disabled={isLoading || isDirty || isMutating} onClick={() => void loadRBAC()}>{isLoading ? <Spinner /> : <RefreshCw />}</Button>
-          <Button size="icon" aria-label="创建角色" disabled={isLoading || isMutating} onClick={() => setIsCreateDialogOpen(true)}><Plus /></Button>
+          <Button size="icon" aria-label="创建角色" disabled={isLoading || isMutating || Boolean(loadError)} onClick={requestCreate}><Plus /></Button>
         </div>
         <ManagementPanel className="hidden min-h-0 xl:flex">
             <ManagementToolbar className="flex items-center gap-2 px-4 py-3">
@@ -319,8 +331,8 @@ function RBACContent() {
             </Button></TooltipHint>
             <TooltipHint content={"创建角色"}><Button aria-label="创建角色"
               size="icon"
-              onClick={() => setIsCreateDialogOpen(true)}
-              disabled={isLoading || isMutating}
+              onClick={requestCreate}
+              disabled={isLoading || isMutating || Boolean(loadError)}
 
             >
               <Plus  />
@@ -330,7 +342,7 @@ function RBACContent() {
               {isLoading ? (
                 <LoadingState className="min-h-[320px]" label="正在加载角色" />
               ) : null}
-              {!isLoading && filteredRoles.length === 0 ? (
+              {!isLoading && !loadError && filteredRoles.length === 0 ? (
                 <EmptyState compact icon={ShieldCheck} title={searchText.trim() ? "没有匹配的角色" : "暂无角色"} description={searchText.trim() ? "换个关键词，或清除搜索查看全部角色。" : "创建角色后可配置菜单与功能权限"} action={searchText.trim() ? <Button variant="outline" size="sm" onClick={() => setSearchText("")}>清除搜索</Button> : undefined} />
               ) : null}
               {!isLoading
@@ -472,15 +484,15 @@ function RBACContent() {
                   }}
                   disabled={isMutating}
                 />
-              ) : (
+              ) : !loadError ? (
                 <EmptyState icon={ShieldCheck} title="暂无角色" description="请先创建或选择一个角色" className="min-h-[420px]" />
-              )}
+              ) : null}
             </div>
         </ManagementPanel>
       </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={(open) => { if (!mutationPendingRef.current) setIsCreateDialogOpen(open); }}>
-        <DialogContent>
+        <DialogContent showCloseButton={!isCreating}>
           <DialogHeader >
             <DialogTitle>创建角色</DialogTitle>
             <DialogDescription >新角色会复制默认用户权限，创建后可继续调整。</DialogDescription>
@@ -525,16 +537,23 @@ function RBACContent() {
       />
 
       <ConfirmDialog
-        open={Boolean(pendingRole)}
+        open={Boolean(pendingRole) || confirmCreate}
         title="放弃未保存的修改？"
-        description={`当前角色的名称、说明或权限已经修改。切换到「${pendingRole?.name}」后，这些修改不会保留。`}
-        confirmLabel="放弃并切换"
+        description={confirmCreate ? "新角色创建成功后会打开它的权限，当前修改将丢失。" : `当前角色的名称、说明或权限已经修改。切换到「${pendingRole?.name}」后，这些修改不会保留。`}
+        confirmLabel={confirmCreate ? "继续创建" : "放弃并切换"}
         cancelLabel="继续编辑"
         destructive
-        onOpenChange={(open) => { if (!open) setPendingRole(null); }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRole(null);
+            setConfirmCreate(false);
+          }
+        }}
         onConfirm={() => {
-          applySelectedRole(pendingRole);
+          if (confirmCreate) setIsCreateDialogOpen(true);
+          else applySelectedRole(pendingRole);
           setPendingRole(null);
+          setConfirmCreate(false);
         }}
       />
     </ManagementPage>

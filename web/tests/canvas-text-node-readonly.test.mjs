@@ -17,7 +17,8 @@ test("text generation input stays separate from the read-only result", () => {
     pageSource.indexOf("function CanvasNodePromptPanel"),
   );
   assert.match(panelSource, /aria-label="文本生成要求"/);
-  assert.match(panelSource, /useState\(node\.composer_content \|\| ""\)/);
+  assert.match(panelSource, /const content = node\.composer_content \|\| ""/);
+  assert.match(panelSource, /value=\{content\}/);
   assert.match(pageSource, /<CanvasTextPromptPanel/);
   assert.match(pageSource, /onPromptChange=\{\(value, commit\) => updateNodeComposerContent\(node\.id, value, commit\)\}/);
   assert.doesNotMatch(panelSource, /onPromptChange.*node\.prompt/);

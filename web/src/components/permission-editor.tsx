@@ -5,12 +5,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Item } from "@/components/ui/item";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { KeyRound, Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SearchInput } from "@/components/ui/search-input";
 import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import type { ApiPermission, PermissionMenu } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -25,16 +26,14 @@ function flattenMenuPermissions(items: PermissionMenu[] | null | undefined): Per
 }
 
 function groupApiPermissions(items: ApiPermission[]) {
-  return items.reduce<Array<{ group: string; items: ApiPermission[] }>>((groups, item) => {
+  const groups = new Map<string, ApiPermission[]>();
+  for (const item of items) {
     const group = item.group || "其他";
-    const existing = groups.find((entry) => entry.group === group);
-    if (existing) {
-      existing.items.push(item);
-      return groups;
-    }
-    groups.push({ group, items: [item] });
-    return groups;
-  }, []);
+    const existing = groups.get(group);
+    if (existing) existing.push(item);
+    else groups.set(group, [item]);
+  }
+  return Array.from(groups, ([group, items]) => ({ group, items, keys: items.map((item) => item.key) }));
 }
 
 function toggleListValue(values: string[], value: string, checked: boolean) {
@@ -74,10 +73,22 @@ export function PermissionEditor({
   disabled = false,
   className,
 }: PermissionEditorProps) {
+  const [apiQuery, setApiQuery] = useState("");
   const menuPermissions = useMemo(() => flattenMenuPermissions(menus), [menus]);
-  const apiPermissionGroups = useMemo(() => groupApiPermissions(apis), [apis]);
+  const apiSearchEntries = useMemo(() => apis.map((permission) => ({
+    permission,
+    search: `${permission.method} ${permission.path} ${permission.label} ${permission.group || ""}`.toLowerCase(),
+  })), [apis]);
+  const apiQueryTerms = apiQuery.trim().toLowerCase();
+  const apiPermissionGroups = useMemo(() => {
+    if (!apiQueryTerms) return groupApiPermissions(apis);
+    const terms = apiQueryTerms.split(/\s+/);
+    return groupApiPermissions(apiSearchEntries.filter(({ search }) => terms.every((term) => search.includes(term))).map(({ permission }) => permission));
+  }, [apiQueryTerms, apiSearchEntries, apis]);
   const allMenuPaths = useMemo(() => menuPermissions.map((item) => item.path), [menuPermissions]);
-  const allApiPermissionKeys = useMemo(() => apis.map((item) => item.key), [apis]);
+  const selectedMenuSet = useMemo(() => new Set(selectedMenuPaths), [selectedMenuPaths]);
+  const selectedApiSet = useMemo(() => new Set(selectedApiPermissions), [selectedApiPermissions]);
+  const visibleApiKeys = useMemo(() => apiPermissionGroups.flatMap((group) => group.keys), [apiPermissionGroups]);
 
   return (
     <Tabs
@@ -110,7 +121,7 @@ export function PermissionEditor({
           {menuPermissions.length ? (
             <div className="divide-y divide-border">
               {menuPermissions.map((item) => {
-                const checked = selectedMenuPaths.includes(item.path);
+                const checked = selectedMenuSet.has(item.path);
                 return (
                   <Item key={item.path} asChild><Label data-selected={checked} className="min-h-[58px] cursor-pointer">
                     <Checkbox checked={checked} disabled={disabled} onCheckedChange={(value) => onMenuPathsChange(toggleListValue(selectedMenuPaths, item.path, Boolean(value)))} />
@@ -134,20 +145,23 @@ export function PermissionEditor({
             <KeyRound className="size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <h3 className="text-sm font-semibold text-foreground">功能权限</h3>
-              <p className="text-xs tabular-nums text-muted-foreground">{selectedApiPermissions.length} / {allApiPermissionKeys.length}</p>
+              <p className="text-xs tabular-nums text-muted-foreground">{selectedApiPermissions.length} / {apis.length}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedApiPermissions.length === allApiPermissionKeys.length} onClick={() => onApiPermissionsChange(allApiPermissionKeys)}>全选</Button>
-            <Button type="button" variant="ghost" size="sm"  disabled={disabled || selectedApiPermissions.length === 0} onClick={() => onApiPermissionsChange([])}>清空</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={disabled || visibleApiKeys.every((key) => selectedApiSet.has(key))} onClick={() => onApiPermissionsChange(toggleListValues(selectedApiPermissions, visibleApiKeys, true))}>{apiQueryTerms ? "全选匹配项" : "全选"}</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={disabled || (apiQueryTerms ? !visibleApiKeys.some((key) => selectedApiSet.has(key)) : !selectedApiSet.size)} onClick={() => onApiPermissionsChange(apiQueryTerms ? toggleListValues(selectedApiPermissions, visibleApiKeys, false) : [])}>{apiQueryTerms ? "清空匹配项" : "清空"}</Button>
           </div>
+        </div>
+        <div className="shrink-0 border-b px-4 py-2 sm:px-5">
+          <SearchInput value={apiQuery} onValueChange={setApiQuery} aria-label="搜索 API 权限" placeholder="搜索名称、方法或路径" />
         </div>
         <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 p-4 sm:p-5">
           {apiPermissionGroups.length ? (
             <div className="space-y-6">
               {apiPermissionGroups.map((group) => {
-                const groupKeys = group.items.map((item) => item.key);
-                const selectedCount = groupKeys.filter((key) => selectedApiPermissions.includes(key)).length;
+                const groupKeys = group.keys;
+                const selectedCount = groupKeys.filter((key) => selectedApiSet.has(key)).length;
                 const groupChecked = selectedCount === groupKeys.length ? true : selectedCount > 0 ? "indeterminate" : false;
                 return (
                   <section key={group.group} className="min-w-0">
@@ -160,7 +174,7 @@ export function PermissionEditor({
                     </Item>
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                       {group.items.map((permission) => {
-                        const checked = selectedApiPermissions.includes(permission.key);
+                        const checked = selectedApiSet.has(permission.key);
                         return (
                           <Item key={permission.key} variant="outline" asChild><Label data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 px-3.5 py-3">
                             <Checkbox checked={checked} disabled={disabled} className="mt-0.5" onCheckedChange={(value) => onApiPermissionsChange(toggleListValue(selectedApiPermissions, permission.key, Boolean(value)))} />
@@ -179,7 +193,7 @@ export function PermissionEditor({
                 );
               })}
             </div>
-          ) : <EmptyState compact icon={KeyRound} title="暂无功能权限" className="min-h-48" />}
+          ) : <EmptyState compact icon={KeyRound} title={apiQueryTerms ? "没有匹配的权限" : "暂无功能权限"} className="min-h-48" />}
         </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </section>
       </TabsContent>

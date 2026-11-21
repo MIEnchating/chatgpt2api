@@ -96,6 +96,18 @@ export function fetchVisibleMyAssets(scope: string, signal?: AbortSignal) {
   return fetchAssets(scope, "visible", signal);
 }
 
+export async function fetchMyAsset(id: string, signal: AbortSignal): Promise<MyAsset | null> {
+  try {
+    const response = await httpRequest<{ item: MyAsset }>(`/api/profile/assets?${new URLSearchParams({ id })}`, { signal });
+    const item = normalizeMyAssets([response.item])[0];
+    if (!item || item.id !== id) throw new Error("素材读取响应无效");
+    return item;
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return null;
+    throw error;
+  }
+}
+
 export async function upsertMyAsset(asset: MyAsset, signal?: AbortSignal) {
   signal?.throwIfAborted();
   invalidateAssetCache();

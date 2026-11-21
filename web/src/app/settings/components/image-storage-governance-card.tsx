@@ -3,7 +3,8 @@
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
 
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
 
 import { Progress } from "@/components/ui/progress";
 
@@ -11,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { ItemMedia } from "@/components/ui/item";
 import { Card } from "@/components/ui/card";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Database, FileText, Film, Image as ImageIcon, Music2, RefreshCw, Trash2, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,10 @@ export function ImageStorageGovernanceCard() {
     (state) => state.cleanupImageThumbnails,
   );
 
+  useEffect(() => {
+    void loadImageStorageGovernance();
+  }, [loadImageStorageGovernance]);
+
   const governance = imageStorageGovernance;
   const totalBytes = governance?.total_bytes ?? 0;
   const localMedia = governance?.local_media;
@@ -166,24 +171,24 @@ export function ImageStorageGovernanceCard() {
         <Button
           type="button"
           variant="outline"
-          size="lg"
+          size="sm"
           onClick={() => void loadImageStorageGovernance()}
-          disabled={isLoadingImageStorageGovernance}
+          disabled={isLoadingImageStorageGovernance || isCleaningImageStorage}
         >
           {isLoadingImageStorageGovernance ? (
             <Spinner data-icon="inline-start" className="animate-spin" />
           ) : (
             <RefreshCw data-icon="inline-start" />
           )}
-          刷新
+          刷新统计
         </Button>
       }
     >
       <div className="grid gap-8">
         {isLoadingImageStorageGovernance && !governance ? (
-          <Card className="flex items-center justify-center py-10 gap-0 flex-row">
-            <Spinner className="size-5 animate-spin text-muted-foreground" />
-          </Card>
+          <LoadingState className="h-auto" label="正在加载媒体统计" />
+        ) : !governance ? (
+          <EmptyState compact title="暂无媒体统计" action={<Button variant="outline" size="sm" onClick={() => void loadImageStorageGovernance()}>重试</Button>} />
         ) : (
           <>
             <SettingsSection title="本机素材" description="文本、图片、视频和音频均按服务器本机实际文件统计，容量上限在“存储配置”中设置。">
@@ -214,9 +219,9 @@ export function ImageStorageGovernanceCard() {
               </div>
               <p className="text-xs text-muted-foreground">存储时间：{formatTime(governance?.oldest_image_at)} 至 {formatTime(governance?.latest_image_at)}</p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <Button type="button" variant="outline"  onClick={() => setCleanupAction("thumbnails")} disabled={isCleaningImageStorage || (governance?.thumbnail_files ?? 0) === 0}><ImageIcon data-icon="inline-start" />清缩略图</Button>
-                <Button type="button" variant="outline"  onClick={() => setCleanupAction("retention")} disabled={isCleaningImageStorage || storedImageCount === 0}><Trash2 data-icon="inline-start" />按天数清理</Button>
-                <Button type="button" variant={overLimit ? "destructive" : "outline"}  onClick={() => setCleanupAction("quota")} disabled={isCleaningImageStorage || limitMb <= 0 || storedImageCount === 0}><Database data-icon="inline-start" />按容量清理</Button>
+                <Button type="button" variant="outline" onClick={() => setCleanupAction("thumbnails")} disabled={isLoadingImageStorageGovernance || isCleaningImageStorage || (governance?.thumbnail_files ?? 0) === 0}><ImageIcon data-icon="inline-start" />清缩略图</Button>
+                <Button type="button" variant="outline" onClick={() => setCleanupAction("retention")} disabled={isLoadingImageStorageGovernance || isCleaningImageStorage || storedImageCount === 0}><Trash2 data-icon="inline-start" />按天数清理</Button>
+                <Button type="button" variant={overLimit ? "destructive" : "outline"} onClick={() => setCleanupAction("quota")} disabled={isLoadingImageStorageGovernance || isCleaningImageStorage || limitMb <= 0 || storedImageCount === 0}><Database data-icon="inline-start" />按容量清理</Button>
               </div>
             </SettingsSection>
           </>
@@ -247,15 +252,15 @@ export function ImageStorageGovernanceCard() {
         busy={isCleaningImageStorage}
         destructive
         onConfirm={() => void handleCleanup()}
-      ><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          <Card className="p-4">
-            {cleanupAction === "quota"
-              ? `当前容量上限为 ${limitMb} MB。`
-              : cleanupAction === "retention"
-                ? `当前图片保留策略为最近 ${retentionDays} 天。`
-                : `当前缩略图缓存占用 ${formatBytes(governance?.thumbnails_bytes)}。`}
-          </Card>
-          </ScrollArea></ConfirmDialog>
+      >
+        <Card className="p-4">
+          {cleanupAction === "quota"
+            ? `当前容量上限为 ${limitMb} MB。`
+            : cleanupAction === "retention"
+              ? `当前图片保留策略为最近 ${retentionDays} 天。`
+              : `当前缩略图缓存占用 ${formatBytes(governance?.thumbnails_bytes)}。`}
+        </Card>
+      </ConfirmDialog>
     </SettingsPanel>
   );
 }

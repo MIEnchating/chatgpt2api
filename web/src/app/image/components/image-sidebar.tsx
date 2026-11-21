@@ -6,7 +6,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { Badge } from "@/components/ui/badge";
 
 import { Download, History, X, SquarePen, Search, Trash2, Pin, PinOff, MoreHorizontal, Pencil, ListChecks } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAppMeta } from "@/lib/use-app-meta";
 import { resolveSiteIconSrc } from "@/lib/app-meta";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -27,6 +27,8 @@ import {
 type ImageSidebarProps = {
   conversations: ImageConversation[];
   isLoadingHistory: boolean;
+  historyError: string;
+  onRetryHistory: () => void;
   isLoadingMoreHistory: boolean;
   hasMoreHistory: boolean;
   selectedConversationId: string | null;
@@ -45,6 +47,8 @@ type ImageSidebarProps = {
 export function ImageSidebar({
   conversations,
   isLoadingHistory,
+  historyError,
+  onRetryHistory,
   isLoadingMoreHistory,
   hasMoreHistory,
   selectedConversationId,
@@ -63,10 +67,14 @@ export function ImageSidebar({
   const [searchOpen, setSearchOpen] = useState(false);
   const batch = useHistoryDownload(conversations);
   const [query, setQuery] = useState("");
-  const pinOrder = new Map(pinnedIds.map((id, index) => [id, index]));
-  const visibleConversations = conversations
-    .filter((conversation) => conversation.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
-    .sort((a, b) => (pinOrder.get(a.id) ?? Infinity) - (pinOrder.get(b.id) ?? Infinity));
+  const pinOrder = useMemo(() => new Map(pinnedIds.map((id, index) => [id, index])), [pinnedIds]);
+  const unreadSet = useMemo(() => new Set(unreadIds), [unreadIds]);
+  const sortedConversations = useMemo(() => [...conversations]
+    .sort((a, b) => (pinOrder.get(a.id) ?? Infinity) - (pinOrder.get(b.id) ?? Infinity)), [conversations, pinOrder]);
+  const search = query.trim().toLocaleLowerCase();
+  const visibleConversations = useMemo(() => search
+    ? sortedConversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(search))
+    : sortedConversations, [search, sortedConversations]);
   const selectedVisibleCount = visibleConversations.filter((conversation) => batch.selected.has(conversation.id)).length;
   const allVisibleSelected = visibleConversations.length > 0 && selectedVisibleCount === visibleConversations.length;
   return (
@@ -135,10 +143,11 @@ export function ImageSidebar({
         )}
         <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative -mx-3 flex min-h-0 min-w-0 w-[calc(100%+1.5rem)] flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0 pl-3">
           <div className="flex min-h-full flex-col gap-0.5">
+            {historyError ? <EmptyState compact role="alert" title="会话记录读取失败" description={historyError} className="min-h-0 px-2 py-4" action={<Button variant="outline" size="sm" onClick={onRetryHistory}>重试读取</Button>} /> : null}
             {isLoadingHistory ? (
               <LoadingState compact className="justify-start px-2 py-3" label="正在读取会话记录" />
             ) : conversations.length === 0 ? (
-              <EmptyState compact icon={History} title="还没有创作记录" description="从一个想法开始，你的创作会保存在这里。" className="px-4 py-10" />
+              !historyError ? <EmptyState compact icon={History} title="还没有创作记录" description="从一个想法开始，你的创作会保存在这里。" className="px-4 py-10" /> : null
             ) : (
               <>
               {visibleConversations.length === 0 ? <EmptyState compact title="没有匹配的会话" className="min-h-0 px-2 py-5" action={<Button variant="link" size="sm" onClick={() => setQuery("")}>清除搜索</Button>} /> : null}
@@ -146,8 +155,8 @@ export function ImageSidebar({
                 const active = conversation.id === selectedConversationId;
                 const stats = getImageConversationStats(conversation);
                 const busy = stats.running + stats.queued > 0;
-                const pinned = pinnedIds.includes(conversation.id);
-                const unread = unreadIds.includes(conversation.id) && !active;
+                const pinned = pinOrder.has(conversation.id);
+                const unread = unreadSet.has(conversation.id) && !active;
                 return (
                   <div key={conversation.id} className="group relative w-full" data-conversation-id={conversation.id}>
                     <Button variant={(batch.selecting ? batch.selected.has(conversation.id) : active) ? "secondary" : "ghost"}

@@ -74,9 +74,10 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(promptsSource, /data-prompt-library-grid/);
   assert.match(promptsSource, /grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
   assert.match(workflowsSource, /data-workflow-grid/);
-  assert.match(workflowsSource, /data-workflow-task-list/);
+  const taskDialogsSource = readFileSync(new URL("../src/app/workflows/workflow-task-dialogs.tsx", import.meta.url), "utf8");
+  assert.match(taskDialogsSource, /data-workflow-task-list/);
   assert.match(workflowsSource, /<WorkflowTaskHistoryDialog/);
-  assert.match(workflowsSource, />任务记录</);
+  assert.match(taskDialogsSource, />任务记录</);
   assert.doesNotMatch(workflowsSource, /<section aria-labelledby="workflow-task-title"/);
   assert.doesNotMatch(workflowsSource, />新建多图</);
   assert.doesNotMatch(workflowsSource, />工作流模板</);
@@ -98,17 +99,13 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /<ManagementPage aria-label="工作流">/);
   assert.doesNotMatch(workflowsSource, /<ManagementPage[^>]+\btitle=/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
-  assert.match(workflowsSource, /<Button[^>]*aria-label=\{`查看任务/);
+  assert.match(taskDialogsSource, /<Button[^>]*aria-label=\{`查看任务/);
   assert.match(workflowsSource, /<WorkflowTaskDialog task=\{selectedTask\}/);
 });
 
 test("prompt filters match the reference category and tag taxonomy", () => {
-  assert.match(promptsSource, /function promptFilterTags/);
   assert.doesNotMatch(promptsSource, /SYSTEM_PROMPT_CATEGORY|SYSTEM_PROMPT_SOURCE_ID/);
-  assert.match(promptsSource, /localizedPrompt\.tags\.filter/);
-  assert.match(promptsSource, /keywordFilteredPrompts/);
-  assert.match(promptsSource, /promptMatchesKeyword\(getLocalizedPrompt\(prompt\), keyword\)/);
-  assert.doesNotMatch(promptsSource, /filterTags\.some\(\(tag\) => includesKeyword/);
+  assert.match(promptsSource, /searchPromptMarketEntries\(sourceFilteredPrompts, keyword\)/);
   assert.doesNotMatch(promptsSource, /prompts\.filter\(\(prompt\) => !prompt\.isNsfw\)/);
   assert.doesNotMatch(promptsSource, /localizedPrompt\.category,[\s\S]*localizedPrompt\.subCategory,[\s\S]*\.\.\.localizedPrompt\.tags/);
   assert.match(promptsSource, /分类：/);

@@ -199,6 +199,36 @@ func TestAdminUserMutationsRemainSuccessfulWhenUsageStatsFail(t *testing.T) {
 	}
 }
 
+func TestAdminUserMutationKeepsUsageForAnItemOutsideTheCurrentPage(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	user, err := app.auth.CreatePasswordUser("usage_outside", "Password123", "Before", service.DefaultManagedRoleID, true)
+	if err != nil {
+		t.Fatalf("create managed user: %v", err)
+	}
+	userID := util.Clean(user["id"])
+	token := adminSessionToken(t, app)
+	for _, search := range []string{"usage_outside", "no-result"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/users/"+userID+"?search="+search, strings.NewReader(`{"name":"After"}`))
+		setRequestAuthCookie(req, token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("update status = %d body = %s", res.Code, res.Body.String())
+		}
+		response := decodeManagedUserMutationResponse(t, res)
+		item := util.StringMap(response["item"])
+		curve, _ := item["usage_curve"].([]any)
+		if item["id"] != userID || item["name"] != "After" || len(curve) != 14 || response["usage_stats_available"] != true {
+			t.Fatalf("mutation item = %#v", response)
+		}
+		pageItem := findManagedUser(logItems(response), userID)
+		if (pageItem != nil) != (search == "usage_outside") {
+			t.Fatalf("unexpected membership for %s: %#v", search, response)
+		}
+	}
+}
+
 func installFailingUsageLogService(t *testing.T, app *App, queryErr error) {
 	t.Helper()
 	backend, err := app.config.StorageBackend()

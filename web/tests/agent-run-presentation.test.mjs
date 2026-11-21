@@ -32,7 +32,7 @@ test("video results preserve queued, saving, stopped and recoverable failure sta
  for (const scenario of scenarios) {
   const turn = { id: "turn", createdAt: now, processingStartedAt: now, prompt: "隔离视频提示词", model: "isolated-video", mode: "video", size: "auto", count: 1, status: scenario.status === "loading" ? scenario.taskStatus === "queued" ? "queued" : "generating" : scenario.status, referenceImages: [], images: [{ id: "video", mediaType: "video", ...scenario }] };
   const html = render(TooltipProvider, {}, createElement(Conversation, {}, createElement(ImageResults, {
-   conversationId: "conversation", selectedConversation: { id: "conversation", turns: [turn] }, progressByTurnKey: { "conversation:turn": { message: "正在生成视频" } }, progressNow: Date.parse(now) + 12000, formatConversationTime: () => "刚刚",
+   conversationId: "conversation", selectedConversation: { id: "conversation", turns: [turn] }, progressByTurnKey: { "conversation:turn": { message: "正在生成视频" } }, formatConversationTime: () => "刚刚",
   })));
   if (scenario.status === "loading") {
    assert.match(html, /aria-label="视频 1"/);

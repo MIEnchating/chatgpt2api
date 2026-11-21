@@ -100,11 +100,15 @@ func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAss
 		return nil, err
 	}
 	documents, batched := s.listAssetDocumentsLocked()
+	labelsByKey := indexMyAssetLabelNames(viewerDocument.groups)
 	items := make([]MyAsset, 0)
 	for _, owner := range ownerByID {
+		owned := owner.ID == viewerID
 		var ownedItems []MyAsset
 		raw := documents[myAssetDocumentName(owner.ID)]
-		if batched && (raw == nil || util.StringMap(raw)["labelsUnified"] == true) {
+		if owned {
+			ownedItems = viewerDocument.items
+		} else if batched && (raw == nil || util.StringMap(raw)["labelsUnified"] == true) {
 			ownedItems = decodeMyAssets(raw)
 		} else {
 			var err error
@@ -114,14 +118,18 @@ func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAss
 			}
 		}
 		for _, item := range ownedItems {
-			owned := owner.ID == viewerID
 			if !admin && !owned && item.Visibility != MyAssetPublic {
 				continue
 			}
 			item.OwnerID = owner.ID
 			item.OwnerName = owner.Name
 			item.Owned = owned
-			item.Tags = myAssetLabelNames(viewerDocument.groups, myAssetLabelKey(viewerID, owner.ID+":"+item.ID))
+			if !owned {
+				item.Tags = labelsByKey[owner.ID+":"+item.ID]
+				if item.Tags == nil {
+					item.Tags = []string{}
+				}
+			}
 			items = append(items, item)
 		}
 	}
@@ -185,6 +193,19 @@ func (s *MyAssetService) List(ownerID string) ([]MyAsset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.loadLocked(ownerID)
+}
+
+func (s *MyAssetService) Get(ownerID, id string) (MyAsset, bool, error) {
+	items, err := s.List(ownerID)
+	if err != nil {
+		return MyAsset{}, false, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, true, nil
+		}
+	}
+	return MyAsset{}, false, nil
 }
 
 // ReadStorageObjectForIdentity grants shared reads only through a public asset

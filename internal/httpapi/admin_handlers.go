@@ -146,13 +146,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			response := a.managedUsersResponseAfterMutation(query)
-			if current := a.managedUser(util.Clean(item["id"])); current != nil {
-				if err := a.attachManagedUserUsage([]map[string]any{current}); err != nil {
-					response["usage_stats_available"] = false
-				}
-				item = current
-			}
-			response["item"] = item
+			a.attachManagedUserMutationItem(response, item)
 			util.WriteJSON(w, http.StatusOK, response)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -204,31 +198,20 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if len(updates) > 0 {
-			item, err := a.auth.UpdateUser(userID, updates)
-			if err != nil {
-				if a.writeAuthPersistenceError(w, err) {
-					return
-				}
-				util.WriteError(w, http.StatusInternalServerError, "failed to update user")
+		item, err := a.auth.UpdateUser(userID, updates)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
 				return
 			}
-			if item == nil {
-				util.WriteError(w, http.StatusNotFound, "user not found")
-				return
-			}
-		} else if findManagedUser(a.auth.ListUsers(), userID) == nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to update user")
+			return
+		}
+		if item == nil {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
 		response := a.managedUsersResponseAfterMutation(query)
-		item := a.managedUser(userID)
-		if item != nil {
-			if err := a.attachManagedUserUsage([]map[string]any{item}); err != nil {
-				response["usage_stats_available"] = false
-			}
-		}
-		response["item"] = item
+		a.attachManagedUserMutationItem(response, item)
 		util.WriteJSON(w, http.StatusOK, response)
 	case http.MethodDelete:
 		query, err := parseManagedUsersQuery(r)

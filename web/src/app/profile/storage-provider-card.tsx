@@ -40,12 +40,16 @@ export function StorageProviderCard() {
   const [s3, setS3] = useState<UserS3StorageProvider>(defaultUserStorageProvider());
   const [webdav, setWebDAV] = useState<UserWebDAVStorageProvider>(defaultUserWebDAVStorageProvider());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [measuring, setMeasuring] = useState(false);
   const [usage, setUsage] = useState<Record<"s3" | "webdav", string>>({ s3: "", webdav: "" });
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError("");
     void Promise.all([fetchStorageConfig(), fetchUserStorageProviders()])
       .then(([config, providers]) => {
         if (cancelled) return;
@@ -55,15 +59,16 @@ export function StorageProviderCard() {
         if (providers.webdav?.enabled) setActiveType("webdav");
       })
       .catch((error) => {
-        if (!cancelled) toast.error(error instanceof Error ? error.message : "读取存储配置失败");
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "读取存储配置失败");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [loadAttempt]);
 
   if (loading) return <SettingsPanel title="素材存储"><LoadingState label="正在读取存储配置" /></SettingsPanel>;
+  if (loadError) return <SettingsPanel title="素材存储"><EmptyState role="alert" title="无法读取存储配置" description={loadError} action={<Button variant="outline" onClick={() => setLoadAttempt((n) => n + 1)}>重试</Button>} /></SettingsPanel>;
   if (!allowed) return <SettingsPanel title="素材存储"><EmptyState icon={HardDrive} title="使用服务器本机存储" description="管理员暂未开放个人外部存储配置" /></SettingsPanel>;
 
   const provider: UserStorageProvider = activeType === "s3" ? s3 : webdav;

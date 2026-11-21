@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assetLabels, assetMatchesGroup } from "../src/app/assets/asset-filters.ts";
+import { indexAssetLabels } from "../src/app/assets/asset-filters.ts";
 import { assetListKey } from "../src/app/assets/asset-library.ts";
 import { normalizeMyAssets, normalizeMyAssetTags } from "../src/lib/my-assets-core.ts";
 
@@ -13,14 +13,16 @@ test("tag normalization preserves existing labels, including literal commas, whe
   assert.deepEqual(normalizeMyAssetTags([" 产品 ", "", "产品", "人物"]), ["产品", "人物"]);
 });
 
-test("group filtering keeps identically named assets from different owners separate", () => {
+test("asset labels preserve group order and keep matching IDs from different owners separate", () => {
   const shared = { ...asset, ownerId: "other", owned: false, visibility: "public" };
-  const groups = [{ id: "group", name: "产品", assetKeys: [assetListKey(asset)] }];
-  assert.deepEqual(assetLabels(asset, groups), ["产品"]);
-  assert.deepEqual(assetLabels(shared, groups), []);
-  assert.equal(assetMatchesGroup(asset, groups, "group"), true);
-  assert.equal(assetMatchesGroup(shared, groups, "group"), false);
-  assert.equal(assetMatchesGroup(shared, groups, "ungrouped"), true);
-  assert.equal(assetMatchesGroup(asset, groups, "ungrouped"), false);
-  assert.equal(assetMatchesGroup(shared, groups, "all"), true);
+  const ownKey = assetListKey(asset);
+  const sharedKey = assetListKey(shared);
+  const labels = indexAssetLabels([
+    { id: "product", name: "产品", assetKeys: [ownKey, ownKey] },
+    { id: "shared", name: "公开", assetKeys: [sharedKey] },
+    { id: "approved", name: "已审核", assetKeys: [ownKey, sharedKey] },
+  ]);
+  assert.deepEqual(labels.get(ownKey), ["产品", "已审核"]);
+  assert.deepEqual(labels.get(sharedKey), ["公开", "已审核"]);
+  assert.equal(labels.has("self:untagged"), false);
 });

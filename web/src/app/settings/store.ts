@@ -176,6 +176,7 @@ type SettingsSessionData = {
   activeSessionKey: string | null;
   sessionGeneration: number;
   config: SettingsConfig | null;
+  configLoadError: string;
   isLoadingConfig: boolean;
   isSavingConfig: boolean;
   logGovernance: LogGovernanceSummary | null;
@@ -192,7 +193,6 @@ type SettingsStore = SettingsSessionData & {
   activateSession: (sessionKey: string) => void;
   deactivateSession: (sessionKey: string) => void;
 
-  initialize: (sessionKey: string) => Promise<void>;
   loadConfig: () => Promise<void>;
   saveConfig: () => Promise<void>;
   setImageTaskTimeoutSeconds: (value: string) => void;
@@ -230,9 +230,9 @@ type SettingsStore = SettingsSessionData & {
   setLoginPageImageTransform: (transform: { zoom: number; positionX: number; positionY: number }) => void;
   restoreDefaultLoginPageImage: () => void;
   saveLoginPageImage: (options: { file?: File | null; action: "keep" | "replace" | "remove" }) => Promise<boolean>;
-  loadLogGovernance: (silent?: boolean) => Promise<void>;
+  loadLogGovernance: () => Promise<void>;
   cleanupLogsByRetention: () => Promise<void>;
-  loadImageStorageGovernance: (silent?: boolean) => Promise<void>;
+  loadImageStorageGovernance: () => Promise<void>;
   cleanupImageStorageByRetention: () => Promise<void>;
   cleanupImageStorageByQuota: (includePublic?: boolean) => Promise<void>;
   cleanupImageThumbnails: () => Promise<void>;
@@ -245,6 +245,7 @@ type SettingsSessionToken = {
 
 const CLEARED_SETTINGS_SESSION_DATA = {
   config: null,
+  configLoadError: "",
   isLoadingConfig: false,
   isSavingConfig: false,
   logGovernance: null,
@@ -359,28 +360,19 @@ export function createSettingsStore(
     });
   },
 
-  initialize: async (sessionKey) => {
-    if (get().activeSessionKey !== sessionKey) {
-      return;
-    }
-    await Promise.allSettled([get().loadConfig(), get().loadLogGovernance(), get().loadImageStorageGovernance()]);
-  },
-
   loadConfig: async () => {
     const token = getSessionToken();
-    if (!token) {
+    if (!token || get().isLoadingConfig) {
       return;
     }
-    setForSession(token, { isLoadingConfig: true });
+    setForSession(token, { isLoadingConfig: true, configLoadError: "" });
     try {
       const data = await dependencies.fetchSettingsConfig();
       setForSession(token, {
         config: normalizeConfig(data.config),
       });
     } catch (error) {
-      if (sessionIsCurrent(token)) {
-        dependencies.toastError(error instanceof Error ? error.message : "加载系统配置失败");
-      }
+      setForSession(token, { configLoadError: error instanceof Error ? error.message : "加载系统配置失败" });
     } finally {
       setForSession(token, { isLoadingConfig: false });
     }
@@ -484,10 +476,7 @@ export function createSettingsStore(
       if (!sessionIsCurrent(token)) {
         return;
       }
-      await get().loadImageStorageGovernance(true);
-      if (sessionIsCurrent(token)) {
-        dependencies.toastSuccess("配置已保存");
-      }
+      dependencies.toastSuccess("配置已保存");
     } catch (error) {
       if (sessionIsCurrent(token)) {
         dependencies.toastError(error instanceof Error ? error.message : "保存系统配置失败");
@@ -780,21 +769,21 @@ export function createSettingsStore(
     }
   },
 
-  loadLogGovernance: async (silent = false) => {
+  loadLogGovernance: async () => {
     const token = getSessionToken();
-    if (!token) {
+    if (!token || get().isLoadingLogGovernance) {
       return;
     }
-    if (!silent) setForSession(token, { isLoadingLogGovernance: true });
+    setForSession(token, { isLoadingLogGovernance: true });
     try {
       const data = await dependencies.fetchLogGovernance();
       setForSession(token, { logGovernance: data.governance });
     } catch (error) {
-      if (!silent && sessionIsCurrent(token)) {
+      if (sessionIsCurrent(token)) {
         dependencies.toastError(error instanceof Error ? error.message : "加载日志治理数据失败");
       }
     } finally {
-      if (!silent) setForSession(token, { isLoadingLogGovernance: false });
+      setForSession(token, { isLoadingLogGovernance: false });
     }
   },
 
@@ -824,21 +813,21 @@ export function createSettingsStore(
     }
   },
 
-  loadImageStorageGovernance: async (silent = false) => {
+  loadImageStorageGovernance: async () => {
     const token = getSessionToken();
-    if (!token) {
+    if (!token || get().isLoadingImageStorageGovernance) {
       return;
     }
-    if (!silent) setForSession(token, { isLoadingImageStorageGovernance: true });
+    setForSession(token, { isLoadingImageStorageGovernance: true });
     try {
       const data = await dependencies.fetchImageStorageGovernance();
       setForSession(token, { imageStorageGovernance: data.governance });
     } catch (error) {
-      if (!silent && sessionIsCurrent(token)) {
+      if (sessionIsCurrent(token)) {
         dependencies.toastError(error instanceof Error ? error.message : "加载媒体存储数据失败");
       }
     } finally {
-      if (!silent) setForSession(token, { isLoadingImageStorageGovernance: false });
+      setForSession(token, { isLoadingImageStorageGovernance: false });
     }
   },
 

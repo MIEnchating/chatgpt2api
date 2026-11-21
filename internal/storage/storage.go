@@ -45,6 +45,10 @@ type ContextJSONDocumentBackend interface {
 	SaveJSONDocumentContext(ctx context.Context, name string, value any) error
 }
 
+type JSONDocumentObserver interface {
+	ObserveJSONDocument(ctx context.Context, name, version string) (value any, nextVersion string, changed bool, err error)
+}
+
 // JSONDocumentPruningBackend commits a document and prunes unreferenced child
 // documents in the same transaction. All writers publishing children must CAS
 // the parent and rebuild their children after a parent conflict.
@@ -703,6 +707,34 @@ func (b *DatabaseBackend) LoadJSONDocumentContext(ctx context.Context, name stri
 	}
 	b.documentSnapshots[rel] = snapshot
 	return value, nil
+}
+
+// ObserveJSONDocument reads the payload only when its version differs from the
+// observer's. It leaves the compare-and-swap snapshot used by writers untouched.
+func (b *DatabaseBackend) ObserveJSONDocument(ctx context.Context, name, version string) (any, string, bool, error) {
+	rel, err := cleanDocumentName(name)
+	if err != nil {
+		return nil, "", false, err
+	}
+	query := "SELECT updated_at, CASE WHEN updated_at = NULLIF(" + b.placeholder(1) +
+		", '') THEN NULL ELSE data END FROM json_documents WHERE name = " + b.placeholder(2)
+	var nextVersion string
+	var data sql.NullString
+	err = b.db.QueryRowContext(ctx, query, version, rel).Scan(&nextVersion, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", true, nil
+	}
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !data.Valid {
+		return nil, nextVersion, false, nil
+	}
+	value, err := decodeJSONString(data.String)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return value, nextVersion, true, nil
 }
 
 func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {

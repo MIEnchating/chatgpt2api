@@ -38,7 +38,7 @@ const kindOptions: Array<{ value: MyAssetKind; label: string; icon: typeof FileT
 type AssetEditorProps = {
   asset: MyAsset | null;
   onClose: () => void;
-  onSave: (asset: MyAsset) => Promise<void>;
+  onSave: (asset: MyAsset, signal: AbortSignal) => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
 };
 
@@ -257,7 +257,7 @@ export function AssetEditor({ asset, onClose, onSave, onBusyChange }: AssetEdito
             updatedAt: new Date().toISOString(),
           }
         : createMyAsset({ ...base, ...(kind === "text" ? { content: value } : { url: value }) });
-      await onSave(next);
+      await onSave(next, formSignal);
       if (!formSignal.aborted) {
         toast.success(asset ? "素材已更新" : "素材已保存");
         onClose();

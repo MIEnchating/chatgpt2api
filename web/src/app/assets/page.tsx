@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { AssetCard, AssetListRow, AssetPreview } from "@/app/assets/asset-display";
 import { useNavigate } from "react-router-dom";
 import { AssetGroupMenu } from "@/app/assets/asset-groups";
-import { assetLabels } from "@/app/assets/asset-filters";
+import { indexAssetLabels } from "@/app/assets/asset-filters";
 import { useAssetGroups } from "@/lib/use-asset-groups";
 import { assetListKey, assetModel, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary, selectPersistedAssets, settleAssetOperations } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
@@ -72,7 +72,7 @@ export default function AssetsPage() {
 function AssetsContent({ session }: { session: StoredAuthSession }) {
   const navigate = useNavigate();
   const scope = session.key;
-  const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, true);
+  const { assets, upsertAsset, deleteAsset, loading, loadError, reload } = useMyAssets(scope, true);
   const groupState = useAssetGroups(scope);
   const [groupFilter, setGroupFilter] = useState("all");
   const mutationControllerRef = useRef<AbortController | null>(null);
@@ -94,6 +94,8 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   const [managedReloadKey, setManagedReloadKey] = useState(0);
   const [visibleRemoteAssets, setVisibleRemoteAssets] = useState<MyAsset[]>([]);
   const [visibleLoading, setVisibleLoading] = useState(true);
+  const [visibleError, setVisibleError] = useState("");
+  const [visibleReloadKey, setVisibleReloadKey] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [kind, setKind] = useState<"all" | MyAssetKind>("all");
   const [view, setView] = useState<"list" | "grid">("grid");
@@ -114,13 +116,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     setManagedLoading(true);
     setManagedError("");
     const load = async () => {
-      if (session.role === "admin") {
-        const { items } = await fetchManagedImages({ scope: "all" }, { signal: controller.signal });
-        if (controller.signal.aborted) return;
-        setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
-        return;
-      }
-      const { items } = await fetchManagedImages({ scope: "visible" }, { signal: controller.signal });
+      const { items } = await fetchManagedImages({ scope: session.role === "admin" ? "all" : "visible" }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
     };
@@ -136,14 +132,15 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     if (!session) return;
     const controller = new AbortController();
     setVisibleLoading(true);
+    setVisibleError("");
     void fetchVisibleMyAssets(scope, controller.signal)
       .then((items) => { if (!controller.signal.aborted) setVisibleRemoteAssets(items.filter((item) => item.owned !== true)); })
       .catch((error) => {
-        if (!controller.signal.aborted) toast.error(error instanceof Error ? `共享素材读取失败：${error.message}` : "共享素材读取失败");
+        if (!controller.signal.aborted) setVisibleError(error instanceof Error ? error.message : "共享素材暂时不可用");
       })
       .finally(() => { if (!controller.signal.aborted) setVisibleLoading(false); });
     return () => controller.abort();
-  }, [scope, session]);
+  }, [scope, session, visibleReloadKey]);
 
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const sourcesLoading = loading || visibleLoading || managedLoading;
@@ -151,26 +148,26 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     if (!sourcesLoading) setInitialLoadComplete(true);
   }, [sourcesLoading]);
 
+  const labelsByAsset = useMemo(() => indexAssetLabels(groupState.groups), [groupState.groups]);
   const allAssets = useMemo(() => {
     if (!initialLoadComplete) return [];
-    return mergeAssetLibrary(assets, visibleRemoteAssets, managedAssets).map((asset) => ({ ...asset, tags: assetLabels(asset, groupState.groups) }));
-  }, [assets, initialLoadComplete, managedAssets, visibleRemoteAssets, groupState.groups]);
+    return mergeAssetLibrary(assets, visibleRemoteAssets, managedAssets).map((asset) => ({ ...asset, tags: labelsByAsset.get(assetListKey(asset)) || [] }));
+  }, [assets, initialLoadComplete, labelsByAsset, managedAssets, visibleRemoteAssets]);
   const availableGroupKeys = useMemo(() => new Set(allAssets.map(assetListKey)), [allAssets]);
-  const groupedKeys = useMemo(() => new Set(groupState.groups.flatMap((group) => group.assetKeys)), [groupState.groups]);
   const activeGroupKeys = useMemo(() => new Set(groupState.groups.find((group) => group.id === groupFilter)?.assetKeys), [groupState.groups, groupFilter]);
 
   const filtered = useMemo(() => {
     const query = keyword.trim().toLowerCase();
     return allAssets.filter((asset) => {
       const key = assetListKey(asset);
-      if (groupFilter === "ungrouped" && groupedKeys.has(key)) return false;
+      if (groupFilter === "ungrouped" && labelsByAsset.has(key)) return false;
       if (groupFilter !== "all" && groupFilter !== "ungrouped" && !activeGroupKeys.has(key)) return false;
       if (kind !== "all" && asset.kind !== kind) return false;
       if (visibility !== "all" && asset.visibility !== visibility) return false;
       if (!query) return true;
       return [asset.title, asset.content || "", asset.url || "", asset.note || "", asset.source || "", asset.ownerName || "", asset.mimeType || "", assetModel(asset), ...asset.tags].join(" ").toLowerCase().includes(query);
     });
-  }, [allAssets, kind, keyword, visibility, groupFilter, groupedKeys, activeGroupKeys]);
+  }, [allAssets, kind, keyword, visibility, groupFilter, labelsByAsset, activeGroupKeys]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visibleAssets = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -187,12 +184,11 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   useEffect(() => setPage(1), [keyword, kind, pageSize, visibility, groupFilter]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
   useEffect(() => {
-    const availableKeys = new Set(allAssets.map(assetListKey));
     setSelectedKeys((current) => {
-      const next = new Set([...current].filter((key) => availableKeys.has(key)));
+      const next = new Set([...current].filter((key) => availableGroupKeys.has(key)));
       return next.size === current.size ? current : next;
     });
-  }, [allAssets]);
+  }, [availableGroupKeys]);
 
   const copyText = (asset: MyAsset) => copyWithToast(asset.content || "", "文本已复制");
 
@@ -657,20 +653,25 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
               onWheel={(event) => event.stopPropagation()}
             >
               <div data-asset-content className="flex min-w-0 w-full flex-col gap-[var(--page-section-gap)]">
-                {managedError ? (
-                  <Alert variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span>
+                {[
+                  { name: "自有素材", error: loadError, retry: reload },
+                  { name: "生成图片", error: managedError, retry: () => setManagedReloadKey((value) => value + 1) },
+                  { name: "共享素材", error: visibleError, retry: () => setVisibleReloadKey((value) => value + 1) },
+                ].map(({ name, error, retry }) => error ? (
+                  <Alert key={name} variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 flex-1 break-words">{name}读取失败：{error}</span>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setManagedReloadKey((value) => value + 1)}
+                      aria-label={`重试读取${name}`}
+                      onClick={retry}
                     >
                       <RefreshCw />
                       重试
                     </Button>
                   </Alert>
-                ) : null}
+                ) : null)}
                 {!initialLoadComplete ? (
                   <LoadingState className="min-h-80" label="正在同步素材…" />
                 ) : visibleAssets.length ? (
@@ -700,7 +701,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
                       </div>
                     )}
                   </>
-                ) : managedError && allAssets.length === 0 ? null : (
+                ) : (loadError || managedError || visibleError) && allAssets.length === 0 ? null : (
                   <EmptyState
                     icon={ImageIcon}
                     title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"}
@@ -754,7 +755,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
           </>
         )}
       </LibraryWorkspace>
-      <AssetPreview asset={preview ? { ...preview, tags: assetLabels(preview, groupState.groups) } : null} onClose={() => setPreview(null)} onDownload={() => preview && void download(preview)} />
+      <AssetPreview asset={preview ? { ...preview, tags: labelsByAsset.get(assetListKey(preview)) || [] } : null} onClose={() => setPreview(null)} onDownload={() => preview && void download(preview)} />
       <ConfirmDialog
         open={Boolean(deleting)}
         onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}

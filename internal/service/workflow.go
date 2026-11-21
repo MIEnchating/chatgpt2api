@@ -155,12 +155,20 @@ func NewWorkflowService(backend ...storage.Backend) *WorkflowService {
 
 func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	document, err := s.loadLocked()
+	document, err := s.readDocumentLocked()
+	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	return visibleWorkflows(document.Items, ownerID), nil
+	visible := slices.DeleteFunc(document.Items, func(item CreativeWorkflow) bool {
+		return item.OwnerID != ownerID && !strings.EqualFold(strings.TrimSpace(item.Scope), "public")
+	})
+	visible = normalizeStoredWorkflows(visible)
+	for i := range visible {
+		visible[i].Editable = visible[i].OwnerID == ownerID
+	}
+	sort.SliceStable(visible, func(i, j int) bool { return visible[i].UpdatedAt > visible[j].UpdatedAt })
+	return visible, nil
 }
 
 func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWorkflow) ([]CreativeWorkflow, error) {
@@ -797,6 +805,15 @@ func normalizeSeriesConfig(config *WorkflowSeriesConfig) {
 }
 
 func (s *WorkflowService) loadLocked() (workflowDocument, error) {
+	document, err := s.readDocumentLocked()
+	if err != nil {
+		return workflowDocument{}, err
+	}
+	document.Items = normalizeStoredWorkflows(document.Items)
+	return document, nil
+}
+
+func (s *WorkflowService) readDocumentLocked() (workflowDocument, error) {
 	document := workflowDocument{Items: []CreativeWorkflow{}, PendingObjectDeletions: make(map[string][]string)}
 	raw, err := loadStoredJSON(s.store, workflowDocumentName)
 	if err != nil || raw == nil {
@@ -815,20 +832,25 @@ func (s *WorkflowService) loadLocked() (workflowDocument, error) {
 	if document.PendingObjectDeletions == nil {
 		document.PendingObjectDeletions = make(map[string][]string)
 	}
-	valid := make([]CreativeWorkflow, 0, len(document.Items))
-	for i := range document.Items {
-		if document.Items[i].Revision <= 0 {
-			document.Items[i].Revision = 1
+	return document, nil
+}
+
+func normalizeStoredWorkflows(items []CreativeWorkflow) []CreativeWorkflow {
+	valid := items[:0]
+	for i := range items {
+		item := &items[i]
+		if item.Revision <= 0 {
+			item.Revision = 1
 		}
 		// A single invalid stored item must not make every workflow unavailable.
-		if err := normalizeWorkflow(&document.Items[i]); err != nil {
-			slog.Error("skipping invalid stored workflow", "index", i, "id", document.Items[i].ID, "error", err)
+		if err := normalizeWorkflow(item); err != nil {
+			slog.Error("skipping invalid stored workflow", "id", item.ID, "error", err)
 			continue
 		}
-		valid = append(valid, document.Items[i])
+		valid = append(valid, *item)
 	}
-	document.Items = valid
-	return document, nil
+	clear(items[len(valid):])
+	return valid
 }
 
 func (s *WorkflowService) saveLocked(document workflowDocument) error {

@@ -41,6 +41,7 @@ function sessionData(state) {
   return {
     activeSessionKey: state.activeSessionKey,
     config: state.config,
+    configLoadError: state.configLoadError,
     isLoadingConfig: state.isLoadingConfig,
     isSavingConfig: state.isSavingConfig,
     logGovernance: state.logGovernance,
@@ -57,6 +58,7 @@ function sessionData(state) {
 const clearedSessionData = {
   activeSessionKey: null,
   config: null,
+  configLoadError: "",
   isLoadingConfig: false,
   isSavingConfig: false,
   logGovernance: null,
@@ -224,8 +226,32 @@ describe("settings store session isolation", () => {
     firstRequest.reject(new Error("stale request failed"));
     await firstLoad;
     expect(store.getState().config.app_title).toBe("Fresh mount");
+    expect(store.getState().configLoadError).toBe("");
     expect(store.getState().isLoadingConfig).toBe(false);
     expect(errors).toEqual([]);
+  });
+
+  test("configuration failure is retryable and parallel retry clicks share one load", async () => {
+    const retry = deferred();
+    let requests = 0;
+    const store = createSettingsStore({
+      fetchSettingsConfig: async () => {
+        if (++requests === 1) throw new Error("Settings unavailable");
+        return retry.promise;
+      },
+    });
+    store.getState().activateSession("session-a");
+    await store.getState().loadConfig();
+    expect(store.getState().config).toBeNull();
+    expect(store.getState().configLoadError).toBe("Settings unavailable");
+
+    const pending = store.getState().loadConfig();
+    await store.getState().loadConfig();
+    expect(requests).toBe(2);
+    expect(store.getState().configLoadError).toBe("");
+    retry.resolve({ config: config("Recovered") });
+    await pending;
+    expect(store.getState().config.app_title).toBe("Recovered");
   });
 
   test("a stale save has no UI, app metadata, cache, or follow-up request side effects", async () => {
@@ -303,9 +329,37 @@ describe("settings store session isolation", () => {
   test("the page activates before mounting cards and clears the store on unmount", () => {
     expect(settingsPageSource).toContain("useLayoutEffect(() => {");
     expect(settingsPageSource).toContain("activateSession(sessionKey);");
-    expect(settingsPageSource).toContain("void initialize(sessionKey);");
+    expect(settingsPageSource).toContain("void loadConfig();");
     expect(settingsPageSource).toMatch(/return \(\) => \{[\s\S]*?deactivateSession\(sessionKey\);/);
     expect(settingsPageSource).toContain("return activeSessionKey === sessionKey ? children : null;");
     expect(settingsPageSource).toContain("<AdminSettingsPageContent key={`${session.key}:${sessionRevision}`} session={session} />");
+  });
+
+  test("configuration reads and saves leave governance loading to the relevant panel", async () => {
+    let logReads = 0;
+    let mediaReads = 0;
+    const media = deferred();
+    const store = createSettingsStore({
+      fetchSettingsConfig: async () => ({ config: config("Settings") }),
+      updateSettingsConfig: async () => ({ config: config("Saved") }),
+      fetchLogGovernance: async () => ({ governance: { total: ++logReads } }),
+      fetchImageStorageGovernance: () => { mediaReads++; return media.promise; },
+      dispatchAppMetaUpdated: () => {},
+      invalidateStorageProviderCache: () => {},
+      toastSuccess: () => {},
+    });
+    store.getState().activateSession("session-a");
+    await store.getState().loadConfig();
+    await store.getState().saveConfig();
+    expect([logReads, mediaReads]).toEqual([0, 0]);
+
+    const first = store.getState().loadImageStorageGovernance();
+    await store.getState().loadImageStorageGovernance();
+    expect([logReads, mediaReads]).toEqual([0, 1]);
+    media.resolve({ governance: { total_bytes: 100 } });
+    await first;
+    expect(store.getState().imageStorageGovernance.total_bytes).toBe(100);
+    await store.getState().loadLogGovernance();
+    expect([logReads, mediaReads]).toEqual([1, 1]);
   });
 });

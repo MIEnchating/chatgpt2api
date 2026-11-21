@@ -89,6 +89,7 @@ type ImageToolOptions struct {
 type ImageTaskService struct {
 	fileReferences       FileReferenceProtector
 	mu                   sync.RWMutex
+	taskDocumentMu       sync.Mutex
 	closeOnce            sync.Once
 	closeErr             error
 	taskWorkers          sync.WaitGroup
@@ -384,21 +385,9 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 		}
 	}
 	s.mu.Lock()
-	if s.stopping || s.closed {
+	if err := s.prepareTaskReadLocked(); err != nil {
 		s.mu.Unlock()
-		return nil, ErrImageTaskServiceClosed
-	}
-	if err := s.ensureLoadedLocked(); err != nil {
-		s.mu.Unlock()
-		return nil, ImageTaskLoadError{Err: err}
-	}
-	if err := s.refreshTasksForReadLocked(); err != nil {
-		s.mu.Unlock()
-		return nil, ImageTaskLoadError{Err: err}
-	}
-	recovered := s.recoverUnfinishedLocked()
-	if s.cleanupLocked() || recovered {
-		_ = s.saveWithRetryLocked()
+		return nil, err
 	}
 	items := make([]map[string]any, 0)
 	missing := make([]string, 0)
@@ -421,6 +410,23 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 	}
 	s.mu.Unlock()
 	return map[string]any{"items": items, "missing_ids": missing}, nil
+}
+
+func (s *ImageTaskService) prepareTaskReadLocked() error {
+	if s.stopping || s.closed {
+		return ErrImageTaskServiceClosed
+	}
+	if err := s.ensureLoadedLocked(); err != nil {
+		return ImageTaskLoadError{Err: err}
+	}
+	if err := s.refreshTasksForReadLocked(); err != nil {
+		return ImageTaskLoadError{Err: err}
+	}
+	recovered := s.recoverUnfinishedLocked()
+	if s.cleanupLocked() || recovered {
+		_ = s.saveWithRetryLocked()
+	}
+	return nil
 }
 
 func (s *ImageTaskService) CanAccessMediaResult(identity Identity, resultURL string) (bool, error) {
@@ -1398,6 +1404,7 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 // so callers can read the document outside s.mu and decode it under the lock.
 func (s *ImageTaskService) decodeTasksLocked(raw any) (map[string]map[string]any, error) {
 	if obj, ok := raw.(map[string]any); ok {
+		newDeletion := false
 		for _, item := range util.AsMapSlice(obj["deleted_tasks"]) {
 			id := util.Clean(item["id"])
 			owner := util.Clean(item["owner_id"])
@@ -1408,7 +1415,11 @@ func (s *ImageTaskService) decodeTasksLocked(raw any) (map[string]map[string]any
 			deletedAt := firstNonEmpty(util.Clean(item["deleted_at"]), util.NowISO())
 			if current := s.deletedTasks[key]; current == "" || parseTaskTime(deletedAt).After(parseTaskTime(current)) {
 				s.deletedTasks[key] = deletedAt
+				newDeletion = newDeletion || current == ""
 			}
+		}
+		if newDeletion {
+			s.notifyTaskSubscribersLocked()
 		}
 		raw = obj["tasks"]
 	}
@@ -1560,6 +1571,7 @@ func (s *ImageTaskService) startRemoteMonitorLocked() {
 func (s *ImageTaskService) monitorRemoteCancellations() {
 	ticker := time.NewTicker(imageTaskRemotePollInterval)
 	defer ticker.Stop()
+	var documentVersion string
 	for {
 		select {
 		case <-s.persistenceStop:
@@ -1577,26 +1589,42 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 		}
 		s.mu.Unlock()
 		// The storage read happens outside the service lock.
-		rawRemote, rawErr := loadStoredJSONBounded(s.store, s.docName)
-		if rawErr != nil {
-			continue
+		s.taskDocumentMu.Lock()
+		var rawRemote any
+		var rawErr error
+		var nextVersion string
+		changed := true
+		if observer, ok := s.store.(storage.JSONDocumentObserver); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(taskStorageTimeout.Load()))
+			rawRemote, nextVersion, changed, rawErr = observer.ObserveJSONDocument(ctx, s.docName, documentVersion)
+			cancel()
+		} else {
+			rawRemote, rawErr = loadStoredJSONBounded(s.store, s.docName)
 		}
+		s.taskDocumentMu.Unlock()
 		s.mu.Lock()
 		if s.stopping || s.closed || len(s.cancels) == 0 && len(s.taskSubscribers) == 0 {
 			s.remoteMonitorRunning = false
 			s.mu.Unlock()
 			return
 		}
+		if rawErr != nil || !changed {
+			s.mu.Unlock()
+			continue
+		}
 		remoteTasks, err := s.decodeTasksLocked(rawRemote)
 		if err != nil {
 			s.mu.Unlock()
 			continue
 		}
+		documentVersion = nextVersion
 		s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 		cancels := make([]context.CancelFunc, 0)
 		for key, cancel := range s.cancels {
 			observedAttempt, observed := observedTasks[key]
 			if !observed || observedAttempt != util.ToInt(s.tasks[key]["video_recovery_attempt"], 0) {
+				// Recheck this version once the new worker is in the read set.
+				documentVersion = ""
 				continue
 			}
 			remoteTask := remoteTasks[key]

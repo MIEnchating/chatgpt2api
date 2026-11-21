@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import * as imageOptions from "../src/lib/image-options.ts";
+import { isRetryableTaskPollError } from "../src/lib/generation-task-contract.ts";
+import { imageTurnUsesReferenceImages } from "../src/lib/image-turn-validation.ts";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
+import aigasapiDocument from "../../integrations/newapi/aigasapi/contract.json" with { type: "json" };
 import { activeVideoModelContracts, installVideoModelContracts, videoModelContract } from "../src/lib/video-model-contracts.ts";
-import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
-import { videoModelRequiresHTTPSReferences } from "../src/lib/video-model-capabilities.ts";
+import { normalizeVideoRequest, videoReferenceCombinationError } from "../src/lib/video-request-normalizer.ts";
+import { videoModelRequiresHTTPSReferences, videoWorkbenchDisplaySeconds } from "../src/lib/video-model-capabilities.ts";
 import { isPublicHTTPSReferenceURL } from "../src/lib/public-reference-url.ts";
 import { canRecoverVideoTask } from "../src/lib/video-task-error.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
@@ -14,10 +17,36 @@ import { imageConversationHasActiveTurn, canDispatchImageTurn, canStartImageConv
 import { DEFAULT_PROMPT_MARKET_SOURCES, normalizePromptMarketSources } from "../src/app/image/banana-prompts.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const submission = ts.transpileModule(
+  readFileSync(new URL("../src/app/image/studio-task-submission.ts", import.meta.url), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+
+function studioSubmitter(api, timer = callback => callback()) {
+  const exports = {};
+  new Function("require", "exports", "setTimeout", submission)(name => {
+    if (name === "@/lib/api") return api;
+    if (name === "@/lib/image-turn-validation") return { imageTurnUsesReferenceImages };
+    if (name === "@/lib/generation-task-contract") return { isRetryableTaskPollError };
+    throw new Error(`Unexpected import: ${name}`);
+  }, exports, timer);
+  return exports;
+}
+
+function studioSubmissionOptions(turn) {
+  return {
+    turn: { prompt: "fixture", model: "fixture-model", images: [], ...turn },
+    image: { referenceFiles: [], quality: "auto", stream: false, partialImages: 0 },
+    videoReferenceURLs: [],
+    requestOptions: { redirectOnUnauthorized: false },
+    assertDispatchAllowed: () => {},
+    isSessionCurrent: () => true,
+  };
+}
 
 // Execute source functions with deferred API boundaries to exercise races.
 function extract(name, context, sourceFile = source) {
-  context = { videoModelRequiresHTTPSReferences, isPublicHTTPSReferenceURL, ...context };
+  context = { videoModelRequiresHTTPSReferences, videoWorkbenchDisplaySeconds, isPublicHTTPSReferenceURL, ...context };
   let expression;
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) expression = node.getText(sourceFile);
@@ -103,24 +132,22 @@ test("history recovery stops between saves after an account change", async () =>
 });
 
 test("a video submission cancelled in flight runs compensation", async () => {
-  class Aborted extends Error {}
   let allowed = true;
   const response = deferred();
   const cancellations = [];
-  const groups = [{ taskId: "task", count: 1 }];
-  const submit = extract("submitTaskGroups", {
-    activeTurn: { mode: "video", prompt: "draw", model: "video", images: [] }, videoReferenceUrls: [], activeTurnRelayTokenName: undefined,
-    assertTaskDispatchAllowed: () => { if (!allowed) throw new Aborted(); },
-    taskDispatchIsAllowed: () => allowed, submitVideoTaskGroups: () => response.promise,
-    pageActiveRef: { current: true }, runnerSessionEpoch: 0, pageSessionEpochRef: { current: 0 },
-    ImageTaskDispatchAbortedError: Aborted,
-    cancelTaskGroupsAfterSameSessionAbort: async ids => cancellations.push(...ids),
+  const { createStudioTaskSubmitter, ImageTaskDispatchAbortedError } = studioSubmitter({
+    createVideoGenerationTask: () => response.promise,
+    cancelCreationTask: async id => cancellations.push(id),
   });
-  const pending = submit(groups);
+  const submit = createStudioTaskSubmitter({
+    ...studioSubmissionOptions({ mode: "video" }),
+    assertDispatchAllowed: () => { if (!allowed) throw new ImageTaskDispatchAbortedError(); },
+  });
+  const pending = submit([{ taskId: "task", count: 1 }]);
   allowed = false;
-  response.resolve({ submitted: [{ id: "task" }], failed: [] });
-  await assert.rejects(pending, Aborted);
-  assert.deepEqual(cancellations, ["task"]);
+  response.resolve({ id: "task" });
+  await assert.rejects(pending, ImageTaskDispatchAbortedError);
+  assert.deepEqual(cancellations, ["task", "task"]);
 });
 
 test("video queue does not upload a reference downloaded by an expired session", async () => {
@@ -180,26 +207,52 @@ test("video queue forwards public reference URLs without downloading them", asyn
   assert.equal(downloads, 0);
 });
 
-test("video submit reports unsupported contracts without rejecting the event handler", async () => {
+const videoSubmitContext = {
+  selectedConversationId: null, isLoadingHistory: false, historyError: "",
+  isSubmitDispatchingRef: { current: false }, referenceUploadPendingCountRef: { current: 0 },
+  videoFrameUploadsRef: { current: new Map() }, videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
+  composerMode: "video", smartContextEnabled: false, imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
+  referenceImages: [], videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [],
+  videoSize: "16:9", videoResolution: "768p", videoGenerateAudio: false, videoWatermark: false, videoParameters: {},
+  absoluteReferenceURL: value => value, cleanReferenceURLs: values => values, requireRelayToken: () => true,
+  videoRequiresReferenceImage: () => false, videoRequiresReferenceVideo: () => false, videoRequiresReferenceAudio: () => false,
+  videoRequiresMultimodalReferenceMode: () => false, supportsVideoMultimodalReferences: () => false,
+  videoWorkbenchReferenceLimitError: () => "", imageConversationReferenceLimitMessage: () => "", videoReferenceImageLimit: () => 1,
+  normalizeVideoRequest,
+};
+
+test("video submit reports validation errors without rejecting the event handler", async () => {
   const errors = [];
   const submit = extract("handleSubmit", {
-    selectedConversationId: null, isLoadingHistory: false,
-    isSubmitDispatchingRef: { current: false }, referenceUploadPendingCountRef: { current: 0 },
-    videoFrameUploadsRef: { current: new Map() }, videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
-    composerMode: "video", smartContextEnabled: false, imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
-    referenceImages: [], videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [],
-    videoModel: "missing-contract", videoModelOptions: [{ value: "missing-contract" }], videoSeconds: "4", videoSize: "1280x720",
-    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: {},
-    absoluteReferenceURL: value => value, cleanReferenceURLs: values => values, requireRelayToken: () => true,
-    videoRequiresReferenceImage: () => false, videoRequiresReferenceVideo: () => false, videoRequiresReferenceAudio: () => false,
-    videoRequiresMultimodalReferenceMode: () => false, supportsVideoMultimodalReferences: () => false,
-    videoWorkbenchReferenceLimitError: () => "", videoAudioGenerationError: () => "", videoReferenceCombinationError: () => "",
-    imageConversationReferenceLimitMessage: () => "", videoReferenceImageLimit: () => 1,
-    normalizeVideoRequest, toast: { error: message => errors.push(message) },
+    ...videoSubmitContext, videoModel: "missing-contract", videoModelOptions: [{ value: "missing-contract" }], videoSeconds: "4",
+    videoReferenceCombinationError, toast: { error: message => errors.push(message) },
   });
   await submit();
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /missing-contract/);
+  assert.deepEqual(errors, ["视频模型 missing-contract 未配置启用的视频模型契约"]);
+});
+
+test("video submit validates and normalizes the displayed duration for a stale draft", async () => {
+  const previous = activeVideoModelContracts();
+  installVideoModelContracts(aigasapiDocument.contracts.map(item => item.contract));
+  try {
+    const model = "video-minimax-h3-768p";
+    const errors = [];
+    let seconds;
+    const submit = extract("handleSubmit", {
+      ...videoSubmitContext, videoModel: model, videoModelOptions: [{ value: model }], videoSeconds: "4",
+      videoReferenceCombinationError,
+      normalizeVideoRequest(input) {
+        seconds = normalizeVideoRequest(input).seconds;
+        throw new Error("stop after normalization");
+      },
+      toast: { error: message => errors.push(message) },
+    });
+    await submit();
+    assert.equal(seconds, 5);
+    assert.deepEqual(errors, ["stop after normalization"]);
+  } finally {
+    installVideoModelContracts(previous);
+  }
 });
 
 test("canvas prompt loading preserves explicitly disabled built-in sources", async () => {
@@ -211,11 +264,11 @@ test("canvas prompt loading preserves explicitly disabled built-in sources", asy
     fetchPromptMarketPrompts: async (_signal, received) => {
       assert.deepEqual(received, configured);
       assert.equal(normalizePromptMarketSources(received).some(item => item.enabled), false);
-      return [];
+      return { prompts: [], failedSources: [] };
     },
-    localizedPrompt: item => item, sortPromptMarketPrompts: items => items, cacheSidePanelPrompts: () => {},
+    preparePromptMarketEntries: items => items, cacheSidePanelPrompts: () => {},
   }, canvasSource);
-  assert.deepEqual(await load("session"), { prompts: [], categories: [] });
+  assert.deepEqual(await load("session"), { prompts: [], failedSources: [], categories: [] });
 });
 
 for (const stage of ["configuration", "prompts"]) {
@@ -235,7 +288,7 @@ for (const stage of ["configuration", "prompts"]) {
     let promptsRequested = 0;
     const commits = [];
     const context = {
-      open: true, prompts: [], setIsLoading: value => commits.push(["loading", value]), setError: value => commits.push(["error", value]),
+      open: true, loadedPromptKey: { current: null }, promptReloadKey: 0, setIsLoading: value => commits.push(["loading", value]), setError: value => commits.push(["error", value]),
       fetchPromptSourcesConfig: () => stage === "configuration" ? response.promise : Promise.resolve({ sources: [] }),
       normalizePromptMarketSources: items => items, setSourceConfigs: value => commits.push(["sources", value]),
       fetchPromptMarketPrompts: () => { promptsRequested++; return response.promise; }, setPrompts: value => commits.push(["prompts", value]),
@@ -245,7 +298,7 @@ for (const stage of ["configuration", "prompts"]) {
     await Promise.resolve();
     cleanup();
     const before = commits.slice();
-    response.resolve(stage === "configuration" ? { sources: [] } : [{ id: "stale" }]);
+    response.resolve(stage === "configuration" ? { sources: [] } : { prompts: [{ id: "stale" }], failedSources: [] });
     await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(commits, before);
     assert.equal(promptsRequested, stage === "configuration" ? 0 : 1);
@@ -254,13 +307,22 @@ for (const stage of ["configuration", "prompts"]) {
 
 test("compensating cancellation stops after the session changes during its delay", async () => {
   let current = true;
+  let allowed = true;
+  const response = deferred();
   const cancelled = [];
-  const cancel = extract("cancelTaskGroupsAfterSameSessionAbort", {
-    pageActiveRef: { current: true }, runnerSessionEpoch: 0, pageSessionEpochRef: { current: 0 },
-    getCachedAuthSession: () => ({ key: current ? "a" : "b" }), expectedSessionKey: "a", creationTaskRequestOptions: {},
-    cancelCreationTask: async id => cancelled.push(id), sleep: async () => { current = false; },
+  const { createStudioTaskSubmitter, ImageTaskDispatchAbortedError } = studioSubmitter({
+    createVideoGenerationTask: () => response.promise,
+    cancelCreationTask: async id => cancelled.push(id),
+  }, (resume, delay) => { assert.equal(delay, 500); current = false; resume(); });
+  const submit = createStudioTaskSubmitter({
+    ...studioSubmissionOptions({ mode: "video" }),
+    assertDispatchAllowed: () => { if (!allowed || !current) throw new ImageTaskDispatchAbortedError(); },
+    isSessionCurrent: () => current,
   });
-  await cancel(["task", "task"]);
+  const pending = submit([{ taskId: "task", count: 1 }]);
+  allowed = false;
+  response.resolve({ id: "task" });
+  await assert.rejects(pending, ImageTaskDispatchAbortedError);
   assert.deepEqual(cancelled, ["task"]);
 });
 
@@ -523,19 +585,14 @@ test("video retry preserves uploadable local references without duplicating URL 
 });
 
 for (const mode of ["generate", "edit"]) {
-  test(`${mode} task dispatch uses the turn API mode after preferences change`, () => {
+  test(`${mode} task dispatch uses the turn API mode after preferences change`, async () => {
     let options;
-    const submit = extract("submitTaskGroup", {
-      activeTurn: { mode, apiMode: "responses", model: "image", prompt: "draw" }, imageAPIMode: "images",
-      usesReferenceImages: value => value === "edit", referenceFiles: [],
-      activeTurnSizeRequest: {}, taskQuality: "auto", taskImageResolution: undefined,
-      taskOutputFormat: undefined, taskOutputCompression: undefined, taskStream: false, taskPartialImages: 0,
-      imageResponseFormatB64JSON: false, imageCodexCLICompatibility: false, imageGenerationPreferences: {},
-      activeTurnRelayTokenGroup: undefined, activeTurnRelayTokenName: undefined, creationTaskRequestOptions: {},
+    const { createStudioTaskSubmitter } = studioSubmitter({
       createImageGenerationTask: (...args) => { options = args[13]; },
       createImageEditTask: (...args) => { options = args[14]; },
     });
-    submit({ taskId: "task", count: 1 });
+    const submit = createStudioTaskSubmitter(studioSubmissionOptions({ mode, apiMode: "responses" }));
+    await submit([{ taskId: "task", count: 1 }]);
     assert.equal(options.apiMode, "responses");
   });
 }
@@ -592,23 +649,65 @@ test("video recovery follows the original task asynchronously with the configure
  assert.equal(fixture.saved.turns[0].images[0].taskId,"original-video");
 });
 
-test("a persisted accepted video is observed and cannot be resubmitted when missing", async () => {
- for(const missing of [false,true]) {
-  const groups=[{taskId:"accepted-original",count:1}];
-  const options={sessionKey:"original-auth"};
-  let requests=0;
-  const submit=extract("submitTaskGroups",{
-   activeTurn:{mode:"video",prompt:"fixture",model:"video",images:[{taskId:"accepted-original",taskRevision:2,status:"loading"}]},
-   videoReferenceUrls:[],activeTurnRelayTokenName:undefined,creationTaskRequestOptions:options,
-   fetchCreationTasks:async(ids,auth)=>{requests++;assert.equal(auth,options);assert.deepEqual(ids,["accepted-original"]);return {items:missing?[]:[{id:"accepted-original",status:"running"}],missing_ids:missing?["accepted-original"]:[]};},
-   submitVideoTaskGroups:async groups=>{assert.deepEqual(groups,[]);return {submitted:[],failed:[]};},
-   assertTaskDispatchAllowed:()=>{},taskDispatchIsAllowed:()=>true,
-   ImageTaskDispatchAbortedError:class extends Error{},
+for (const outcome of ["found", "missing", "lookup error"]) {
+  test(`an accepted video with ${outcome} observes its original ID and keeps new submissions`, async () => {
+    const accepted = { taskId: "accepted-original", count: 1 };
+    const fresh = { taskId: "new-submission", count: 1 };
+    const options = studioSubmissionOptions({
+      mode: "video", images: [{ taskId: accepted.taskId, taskRevision: 2, status: "loading" }],
+    });
+    const calls = [];
+    const { createStudioTaskSubmitter } = studioSubmitter({
+      fetchCreationTasks: async (ids, auth) => {
+        assert.equal(auth, options.requestOptions);
+        calls.push(["lookup", ...ids]);
+        if (outcome === "lookup error") throw new Error("Temporary lookup error");
+        return { items: outcome === "found" ? [{ id: accepted.taskId, status: "running" }] : [] };
+      },
+      createVideoGenerationTask: async ({ clientTaskId }) => {
+        calls.push(["create", clientTaskId]);
+        return { id: clientTaskId, status: "queued" };
+      },
+    });
+    const result = await createStudioTaskSubmitter(options)([accepted, fresh]);
+    assert.deepEqual(calls, [["lookup", accepted.taskId], ["create", fresh.taskId]]);
+    assert.deepEqual(result.submitted.map(task => task.id), outcome === "found" ? [accepted.taskId, fresh.taskId] : [fresh.taskId]);
+    assert.deepEqual(result.failed.map(({ group }) => group.taskId), outcome === "found" ? [] : [accepted.taskId]);
   });
-  const result=await submit(groups);
-  assert.equal(requests,1);
-  assert.equal(result.submitted.length,missing?0:1);
-  assert.equal(result.failed.length,missing?1:0);
-  if(missing) assert.match(result.failed[0].error.message,/未重新生成/);
- }
+}
+
+test("a retryable image submission reuses its ID and preserves other task outcomes", async () => {
+  const calls = [];
+  const retries = [];
+  const { createStudioTaskSubmitter } = studioSubmitter({
+    createImageGenerationTask: async (id) => {
+      calls.push(id);
+      if (id === "retry" && calls.filter(item => item === id).length === 1) throw { status: 503 };
+      if (id === "invalid") throw { status: 400 };
+      return { id, status: "queued" };
+    },
+  }, (resume, delay) => { retries.push(delay); resume(); });
+  const result = await createStudioTaskSubmitter(studioSubmissionOptions({ mode: "generate" }))(
+    ["retry", "invalid", "success"].map(taskId => ({ taskId, count: 1 })),
+  );
+  assert.deepEqual(calls, ["retry", "invalid", "success", "retry"]);
+  assert.deepEqual(retries, [750]);
+  assert.deepEqual(result.submitted.map(task => task.id), ["retry", "success"]);
+  assert.deepEqual(result.failed.map(({ group }) => group.taskId), ["invalid"]);
+});
+
+test("a session change before retry discards the result and skips cancellation", async () => {
+  let current = true;
+  let requests = 0;
+  const { createStudioTaskSubmitter, ImageTaskDispatchAbortedError } = studioSubmitter({
+    createImageGenerationTask: async () => { requests++; throw { status: 503 }; },
+    cancelCreationTask: () => assert.fail("A new account cannot cancel the old account's tasks"),
+  }, (resume) => { current = false; resume(); });
+  const submit = createStudioTaskSubmitter({
+    ...studioSubmissionOptions({ mode: "generate" }),
+    assertDispatchAllowed: () => { if (!current) throw new ImageTaskDispatchAbortedError(); },
+    isSessionCurrent: () => current,
+  });
+  await assert.rejects(submit([{ taskId: "retry", count: 1 }]), ImageTaskDispatchAbortedError);
+  assert.equal(requests, 1);
 });

@@ -32,8 +32,9 @@ test("canvas Agent uses only configured models and cannot start without its text
   assert.match(librarySource, /disabled=\{!agentPrompt\.trim\(\) \|\| !agentTextModel \|\| uploadingAsset \|\| busy\}/);
 });
 
-test("canvas Agent clears its text model on an empty response and preserves it on fetch failure", () => {
+test("canvas Agent only enables submission with a model confirmed after opening the dialog", () => {
+  assert.match(librarySource, /if \(!agentStarterOpen\) return;[\s\S]{0,300}setAgentTextModel\(""\)/);
   assert.match(librarySource, /setAgentTextModel\(textModel\)/);
-  assert.match(librarySource, /\.catch\(\(\) => undefined\)/);
-  assert.doesNotMatch(librarySource, /\.catch\(\(\) => \{[\s\S]*?setAgent(?:Text|Image|Video)Model\(""\)/);
+  assert.match(librarySource, /\.catch\(\(error\) => \{ if \(active\) setAgentModelError/);
+  assert.match(librarySource, /onClick=\{\(\) => setAgentModelAttempt\(\(n\) => n \+ 1\)\}/);
 });

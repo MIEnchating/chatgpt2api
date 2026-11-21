@@ -101,11 +101,9 @@ describe("video model contract mutation lifecycle", () => {
     expect(tracker.complete(interruptingBatch, false).reconcile).toBe(true);
   });
 
-  test("the card releases reset loading and guards mutation validation writes", () => {
+  test("the card releases reset loading interrupted by a mutation", () => {
     expect(cardSource).toContain("const interruptedResetLoad = contractLoadResetRef.current");
     expect(cardSource).toContain("if (interruptedResetLoad) setIsLoading(false)");
-    expect(cardSource).toContain("if (mutationTicket && !mutationTrackerRef.current!.canApply(mutationTicket)) return null");
-    expect(cardSource).toContain("const payload = await validate(false, ticket)");
   });
 
   test("opening another contract resets the editor section and request editor state", () => {

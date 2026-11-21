@@ -18,6 +18,7 @@ import {
   workflowGenerationDefaultsFromPreferences,
 } from "../src/app/workflows/workflow-runtime.ts";
 import {
+  mergeWorkflowTaskProgress,
   restoreWorkflowTasks,
 } from "../src/app/workflows/workflow-task-runtime.ts";
 
@@ -384,19 +385,20 @@ test("workflow batch reports failure after all child tasks finish", () => {
       execution: workflowExecution,
       count: 1,
       batch_task_id: "batch",
-      batch_count: 2,
+      batch_count: 3,
     },
   };
   const restored = restoreWorkflowTasks([
     { ...base, id: "success", status: "success", data: [{ b64_json: "AAAA", output_format: "webp" }], workflow_context: { ...base.workflow_context, batch_index: 1 } },
     { ...base, id: "failed", status: "error", error: "额度不足", data: [], workflow_context: { ...base.workflow_context, batch_index: 2 } },
+    { ...base, id: "empty", status: "success", data: [], workflow_context: { ...base.workflow_context, batch_index: 3 } },
   ]);
   assert.equal(restored[0].status, "failed");
-  assert.equal(restored[0].error, "额度不足");
+  assert.equal(restored[0].error, "额度不足\n接口没有返回图片");
   assert.equal(restored[0].image_urls[0], "data:image/webp;base64,AAAA");
   assert.equal(restored[0].images[0].index, 0);
-  assert.deepEqual(restored[0].completed_units, [1, 2]);
-  assert.deepEqual(restored[0].unit_errors, { 2: "额度不足" });
+  assert.deepEqual(restored[0].completed_units, [1, 2, 3]);
+  assert.deepEqual(restored[0].unit_errors, { 2: "额度不足", 3: "接口没有返回图片" });
 });
 
 test("workflow batch stays running until every expected child is persisted", () => {
@@ -427,6 +429,58 @@ test("workflow batch stays running until every expected child is persisted", () 
   assert.equal(restored[0].count, 3);
   assert.equal(restored[0].status, "running");
   assert.deepEqual(restored[0].completed_units, [1]);
+});
+
+test("duplicate indexes do not satisfy missing workflow units or disable recovery deadlines", () => {
+  const now = Date.parse("2026-08-26T08:00:00Z");
+  const child = {
+    id: "first", status: "success", mode: "generation", created_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString(),
+    data: [{ url: "  ", video_url: "/images/first.png" }],
+    workflow_context: {
+      workflow_id: "workflow", workflow_name: "Batch", prompt: "first", inputs: {}, references: [],
+      config: { ...workflowConfig, timeout: "10" }, execution: workflowExecution, count: 2,
+      batch_task_id: "batch", batch_index: 1, batch_count: 2,
+    },
+  };
+  const tasks = [{ ...child, id: "duplicate" }, child];
+  const pending = restoreWorkflowTasks(tasks, now + 140000)[0];
+  assert.equal(pending.status, "running");
+  assert.equal(pending.recovery_deadline, now + 140000);
+  assert.deepEqual(pending.completed_units, [1]);
+  assert.deepEqual(pending.backend_task_ids, ["duplicate", "first"]);
+  assert.deepEqual(pending.image_urls, ["/images/first.png", "/images/first.png"]);
+  const expired = restoreWorkflowTasks(tasks, now + 140001)[0];
+  assert.equal(expired.status, "failed");
+  assert.equal(expired.recovery_deadline, undefined);
+  assert.match(expired.recovery_error, /缺少 1 个子任务/);
+  const newChild = { ...child, id: "second", workflow_context: { ...child.workflow_context, batch_index: 2 } };
+  const [restored] = restoreWorkflowTasks([child, newChild], now);
+  assert.equal(restored.status, "success");
+  assert.deepEqual(restored.backend_task_ids, ["first", "second"]);
+});
+
+test("workflow progress keeps local images and errors when the next snapshot contains another child", () => {
+  const local = {
+    id: "batch", count: 3, status: "running", completed_units: [1], unit_errors: {},
+    images: [{ index: 0, url: "/images/local.png" }], backend_task_ids: ["local"],
+  };
+  const remote = {
+    id: local.id, count: 3, status: "failed", completed_units: [2], unit_errors: { 2: "quota reached" },
+    images: [], backend_task_ids: ["remote"], ended_at: 10, recovery_error: "The batch is missing a child",
+  };
+
+  const inFlight = mergeWorkflowTaskProgress(local, remote, true);
+  assert.equal(inFlight.status, "running");
+  assert.equal(inFlight.ended_at, undefined);
+  assert.equal(inFlight.error, "quota reached");
+  assert.deepEqual(inFlight.image_urls, ["/images/local.png"]);
+  assert.deepEqual(inFlight.backend_task_ids, ["local", "remote"]);
+
+  const finished = mergeWorkflowTaskProgress(inFlight, remote, false);
+  assert.equal(finished.status, "failed");
+  assert.equal(finished.ended_at, 10);
+  assert.equal(finished.error, "quota reached\nThe batch is missing a child");
+  assert.deepEqual(finished.completed_units, [1, 2]);
 });
 
 test("workflow normalization projects only current configuration fields", () => {

@@ -2,7 +2,8 @@ import type { NewAPIVideoPluginResult } from "./api";
 import type { VideoModelContract } from "./video-model-contracts";
 
 export type GeneratedVideoPlugin = {
-  meta: { apiVersion: number; key: string; version: string; baseUrl?: string; auth: string; models: string[]; protocols: string[]; routes?: unknown };
+  meta: { apiVersion: number; key: string; version: string; baseUrl?: string; auth: string; models: string[]; protocols: string[]; routes?: unknown; relay?: Array<{ incoming_path: string; upstream_path: string; converter: string; auth?: { type: string; name?: string; value?: string } }> };
+  convertResponse?: (context: Record<string, unknown>, response: { status: number; body: string }) => { body?: { object: string; data: Array<{ id: string }> }; error?: { status: number; message: string } };
   buildSubmitRequest: (context: Record<string, unknown>) => { url: string; method: string; headers: Record<string, string>; body: Record<string, unknown>; bodyType?: string; parts?: Array<{name:string;value?:unknown;fileRef?:string}> };
   parseSubmitResponse: (context: Record<string, unknown>, response: { body: Record<string, unknown> }) => { taskId: string };
   buildQueryRequest: (context: Record<string, unknown>) => { url: string; method: string; headers: Record<string, string> };
@@ -96,6 +97,21 @@ export function runNewAPIVideoPluginDryRun(plugin: GeneratedVideoPlugin, input: 
   assert(input.options.base_url ? plugin.meta.baseUrl === input.options.base_url : !Object.hasOwn(plugin.meta, "baseUrl"), "插件默认地址与配置不一致");
   const channelBaseURL = "https://dry-run.invalid/channel";
   const checks = ["插件模块可加载", "插件协议与模型声明"];
+  if (input.options.models_path) {
+    const route = plugin.meta.relay?.[0];
+    assert(plugin.meta.relay?.length === 1 && route?.incoming_path === "/v1/models" && route.upstream_path === input.options.models_path && route.converter === "plugin", "上游模型列表路由与配置不一致");
+    if (authMode === "header") assert(route.auth?.type === "header" && route.auth.name === authHeader && route.auth.value === "{api_key}", "模型列表自定义请求头鉴权无效");
+    if (authMode === "none") assert(route.auth?.type === "none", "模型列表不应携带 Key");
+    if (authMode === "bearer") assert(!route.auth, "模型列表应使用默认 Bearer 鉴权");
+    assert(typeof plugin.convertResponse === "function", "模型列表缺少响应转换");
+    const listed = plugin.convertResponse({}, { status: 200, body: JSON.stringify({ data: [{ id: models[0] }, { id: "__unsupported_model__" }] }) });
+    assert(listed.body?.object === "list" && listed.body.data.length === 1 && listed.body.data[0].id === models[0], "模型列表未过滤不受契约支持的模型");
+    const rejected = plugin.convertResponse({}, { status: 401, body: "" });
+    assert(rejected.error?.status === 401, "模型列表未保留上游鉴权错误");
+    checks.push("上游模型发现与契约过滤");
+  } else {
+    assert(!plugin.meta.relay && !plugin.convertResponse, "未配置模型列表路径时不应请求上游模型");
+  }
   const originalFetch = globalThis.fetch;
   const workerGlobal = globalThis as typeof globalThis & { utils?: { fetch: () => { status: number; body: Record<string, unknown> } } };
   globalThis.fetch = (() => { throw new Error("dry-run blocked direct network access"); }) as typeof fetch;

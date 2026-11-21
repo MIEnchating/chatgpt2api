@@ -5,13 +5,14 @@ import ts from "typescript";
 import { createSettingsStore } from "../src/app/settings/store.ts";
 import { ALL_MUTATIONS_SCOPE, ScopedMutationLifecycle } from "../src/lib/scoped-mutation-lifecycle.ts";
 import { selectPersistedAssets, settleAssetOperations } from "../src/app/assets/asset-library.ts";
+import { creationTaskImages, prependWorkflowTask, settleWorkflowTaskUnits } from "../src/app/workflows/workflow-task-runtime.ts";
 
 // Execute actual handlers with controlled state and asynchronous I/O boundaries.
 function handler(file, name, context) {
   const source = ts.createSourceFile(file, readFileSync(new URL(`../src/app/${file}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
   function visit(node) {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === name) expression = node;
+    if ((ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) && node.name?.text === name) expression = node;
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === name) {
       expression = ts.isCallExpression(node.initializer) ? node.initializer.arguments[0] : node.initializer;
     }
@@ -49,14 +50,14 @@ test("document imports enter plugin generation only after preliminary review and
     const context = {
       importSourceType: "url", importFile: null, importURLs: ["https://docs.example.com/video/create", "https://docs.example.com/video/query"], importModel: "test-model", importTokenName: "",
       importGeneratePlugin: enabled, sessionKey: "session-a", isCurrentSession: () => true,
-      importControllerRef: { current: null }, importRunIDRef: { current: "" }, nanoid: () => "isolated-run", importStartedAtRef: { current: 0 },
+      importControllerRef: { current: null }, importRunIDRef: { current: "" }, nanoid: () => "isolated-run",
       importVideoModelContract: async (input) => {
         assert.deepEqual(input.urls, ["https://docs.example.com/video/create", "https://docs.example.com/video/query"]);
         assert.equal(input.file, null);
         return { contracts, dry_run: contracts.map(contract => ({ contract: contract.name, passed: true, evidence_complete: true, review_passed: reviewPassed, review_issues: reviewPassed ? [] : ["Required prompt_expansion_mode cannot be mapped"], models_tested: contract.models.length, modes_tested: contract.models.length, checks: ["dry run passed"], missing_evidence: [] })), warnings: ["Check the provider address"] };
       },
       normalizeVideoModelContractCollections: (value) => structuredClone(value), cloneVideoModelContract: structuredClone,
-      setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportElapsedSeconds: () => {}, setIsImporting: () => {},
+      setImportError: () => {}, setImportStatus: () => {}, setImportDetails: () => {}, setImportStartedAt: () => {}, setImportEndedAt: () => {}, setIsImporting: () => {},
       setImportOpen: () => {}, setEditingItem: () => {}, setReadOnly: () => {}, setGeneratedContracts: () => {},
       setGeneratedWarnings: value => { warnings = value; }, setGeneratedPublishError: () => {}, setGeneratedEditingIndex: () => {},
       setGeneratedDryRun: () => {},
@@ -102,11 +103,35 @@ test("video document import rejects too many entry URLs before starting a task",
   const errors = [];
   const generate = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", {
     importSourceType: "url", importURLs: Array.from({ length: 25 }, (_, index) => `https://docs.example.com/${index}`),
+    sessionKey: "session-a", isCurrentSession: () => true, importControllerRef: { current: null },
     toast: { error: value => errors.push(value) },
   });
   await generate();
   assert.equal(errors.length, 1);
   assert.match(errors[0], /24/);
+});
+
+test("document import suppresses duplicate requests and ignores obsolete failures", async () => {
+  const request = deferred();
+  let active = true;
+  let requests = 0;
+  const feedback = [];
+  const generate = handler("settings/components/video-model-contracts-card.tsx", "generateFromDocument", {
+    importSourceType: "url", importURLs: ["https://docs.example.com/video"], importModel: "mock", importTokenName: "",
+    sessionKey: "session-a", isCurrentSession: () => active, importControllerRef: { current: null },
+    importRunIDRef: { current: "" }, nanoid: () => "run", importGeneratePlugin: false,
+    setImportStartedAt: () => {}, setImportEndedAt: () => {}, setImportDetails: () => {}, setImportStatus: () => {},
+    setIsImporting: (value) => feedback.push(value), setImportError: (value) => feedback.push(value),
+    toast: { error: (value) => feedback.push(value) },
+    importVideoModelContract: () => { requests++; return request.promise; },
+  });
+  const pending = generate();
+  await generate();
+  assert.equal(requests, 1);
+  active = false;
+  request.reject(new Error("obsolete error"));
+  await pending;
+  assert.deepEqual(feedback, ["", true]);
 });
 
 test("asset batches bound concurrency and preserve outcomes in input order", async () => {
@@ -150,6 +175,7 @@ test("profile save responses preserve edits made during persistence", async () =
   const request = deferred();
   const published = [];
   const pending = handler("profile/page.tsx", "save", {
+    isLoading: false, loadError: "", isSaving: false,
     savedWorkbenchAudioRef: { current: false }, preferences, sessionKey: "session-a", saveVersionRef: { current: 0 }, currentSessionKeyRef: { current: "session-a" },
     setIsSaving: () => {}, setMessage: () => {}, relayTokenNames: {}, relayTokenPreferencesFromNames: () => ({}),
     selectedAudioVoice: "alloy", selectedAudioFormat: "mp3", selectedAudioSpeed: 1,
@@ -162,6 +188,39 @@ test("profile save responses preserve edits made during persistence", async () =
   await pending;
   assert.equal(current.stream, true);
   assert.deepEqual(published, [preferences]);
+});
+
+test("account balance shares a pending refresh and keeps the last successful balance after failure", async () => {
+  const pending = deferred();
+  const saved = { has_balance: true, quota: 123 };
+  let reads = 0;
+  const changes = [];
+  const ref = { current: null };
+  const loadBalance = handler("profile/page.tsx", "loadBalance", {
+    balanceRequestRef: ref,
+    session: { key: "account" }, getCachedAuthSession: () => ({ key: "account" }),
+    fetchProfileBalance: () => ++reads === 1 ? Promise.resolve(saved) : pending.promise,
+    setBalance: value => changes.push(["balance", value]), setBalanceError: value => changes.push(["error", value]),
+    setIsLoadingBalance: () => {}, setRelayTokenAvailability: () => {},
+    relayTokenAvailabilityFromBalance: () => ({ authoritative: true, names: [] }),
+  });
+  await loadBalance();
+  assert.equal(loadBalance(), loadBalance());
+  pending.reject(new Error("连接超时"));
+  await ref.current;
+  assert.equal(reads, 2);
+  assert.deepEqual(changes.filter(([kind]) => kind === "balance"), [["balance", saved]]);
+  assert.deepEqual(changes.at(-1), ["error", "连接超时"]);
+  assert.equal(ref.current, null);
+});
+
+test("profile cannot save before preferences and model configuration have loaded", async () => {
+  for (const state of [{ isLoading: true, loadError: "" }, { isLoading: false, loadError: "unavailable" }]) {
+    await handler("profile/page.tsx", "save", {
+      ...state, isSaving: false, saveVersionRef: { current: 0 },
+      setIsSaving: () => assert.fail("A failed or pending read must block saving"),
+    })();
+  }
 });
 
 test("personal storage saves preserve drafts for each provider independently", async () => {
@@ -236,11 +295,11 @@ test("workflow history cleanup stops account writes after either asynchronous de
     let active = true, referenceDeletes = 0, assetDeletes = 0, feedback = 0;
     const completedTask = { id: "local", status: "success", backend_task_ids: ["remote"], references: [{ storageKey: "ref" }], images: [{ url: "/images/result.png" }] };
     const pending = handler("workflows/creative-workflow-workspace.tsx", "clearCompletedTaskHistory", {
-      clearingTaskHistory: false, isCurrentWorkspace: () => active, tasks: [completedTask],
+      clearingTaskHistory: false, isCurrentWorkspace: () => active,
       taskWaitAbortControllerRef: { current: new AbortController() },
-      deleteCreationTasks: () => stage === "tasks" ? request.promise : Promise.resolve({ active_ids: [] }),
-      tasksRef: { current: [completedTask] }, updateTasks: () => {}, selectedTaskID: "", setSelectedTaskID: () => {},
-      workflowReferenceCleanupKeys: () => ["ref"], ownedWorkflowTaskReferences: () => [],
+      clearWorkflowTaskHistory: () => stage === "tasks" ? request.promise : Promise.resolve({ deleted_batch_ids: ["local"], result_urls: ["/images/result.png"] }),
+      tasksRef: { current: [completedTask] }, updateTasks: () => {}, selectedTaskID: "", setSelectedHistoryTask: () => {},
+      workflowReferenceCleanupKeys: () => ["ref"], ownedTaskReferences: () => [], setTaskHistoryPage: () => {},
       inFlightTaskCountsRef: { current: new Map() }, workflowReferencesRef: { current: [] }, agentReferencesRef: { current: [] },
       deleteStoredImages: () => { referenceDeletes++; return stage === "references" ? request.promise : Promise.resolve(); },
       session: {}, hasAPIPermission: () => true, getManagedImagePathFromUrl: (url) => url,
@@ -248,9 +307,9 @@ test("workflow history cleanup stops account writes after either asynchronous de
       setClearingTaskHistory: () => {},
       toast: { success: () => { feedback++; }, error: () => { feedback++; } },
     })(true);
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     active = false;
-    request.resolve({ active_ids: [] });
+    request.resolve({ deleted_batch_ids: ["local"] });
     assert.equal(await pending, false);
     assert.equal(referenceDeletes, stage === "references" ? 1 : 0);
     assert.equal(assetDeletes, 0);
@@ -264,6 +323,7 @@ test("workflow save completion cannot clean references from the next account", a
   const workflow = { id: "draft", name: "Test", scope: "private", config: { prompt_template: "prompt" } };
   const pending = handler("workflows/creative-workflow-workspace.tsx", "persist", {
     isCurrentWorkspace: () => active, referenceUploadCountRef: { current: 0 }, workflowSaveBusyRef: { current: false },
+    workflowEditorGenerationRef: { current: 0 }, setWorkflowSaveError: () => {},
     workspaceActiveRef: { current: true }, setWorkflowSaving: () => {}, agentDraft: workflow,
     normalizeWorkflow: (value) => value, models: {}, preferences: {}, saveWorkflow: () => request.promise,
     setItems: () => { callbacks++; }, replaceEditor: () => { callbacks++; },
@@ -274,6 +334,61 @@ test("workflow save completion cannot clean references from the next account", a
   request.resolve(workflow);
   await pending;
   assert.equal(callbacks, 0);
+});
+
+test("workflow saves update the library without closing or showing errors in a different editor", async () => {
+  for (const succeeded of [true, false]) {
+    const request = deferred();
+    const generation = { current: 1 };
+    const events = [];
+    const workflow = { id: "first", name: "First", scope: "private", config: { prompt_template: "prompt" } };
+    const persist = handler("workflows/creative-workflow-workspace.tsx", "persist", {
+      isCurrentWorkspace: () => true, referenceUploadCountRef: { current: 0 }, workflowSaveBusyRef: { current: false },
+      workflowEditorGenerationRef: generation, setWorkflowSaveError: (value) => events.push(["error", value]),
+      workspaceActiveRef: { current: true }, setWorkflowSaving: () => {}, agentDraft: null,
+      normalizeWorkflow: (value) => value, models: {}, preferences: {}, saveWorkflow: () => request.promise,
+      setItems: (update) => events.push(["library", update([])]), replaceEditor: () => events.push(["close"]),
+      toast: { success: () => events.push(["toast"]) },
+    });
+    const pending = persist(workflow);
+    generation.current += 1;
+    if (succeeded) request.resolve(workflow);
+    else request.reject(new Error("save failed"));
+    await pending;
+    assert.deepEqual(events, succeeded ? [["error", ""], ["library", [workflow]]] : [["error", ""]]);
+  }
+});
+
+test("workflow image batches retain successful results and attribute failures to their own units", async () => {
+  const controller = new AbortController();
+  const submitted = [];
+  const settled = [];
+  let tasks = [];
+  const workflow = { id: "workflow", name: "Workflow", config: {}, template_references: [] };
+  const execute = handler("workflows/creative-workflow-workspace.tsx", "executeImageTask", {
+    workspaceActiveRef: { current: true }, getCachedAuthSession: () => ({ key: "session" }), sessionKey: "session",
+    taskWaitAbortControllerRef: { current: controller }, resolveWorkflowRuntime: () => ({ model: "model", count: 3, timeout: 30 }),
+    models: { image_models: ["model"] }, preferences: {}, isWorkflowModelConfigured: () => true,
+    nextTokenNameForModel: () => "", taskID: () => "batch", workflowReferencesRef: { current: [] },
+    freezeWorkflowReferences: (value) => value, imageReferenceImageLimit: () => 8,
+    composeWorkflowReferencePrompt: (prompt) => prompt, values: {}, beginWorkflowTaskSubmission: () => {},
+    updateTasks: (update) => { tasks = update(tasks); }, prependWorkflowTask, creationTaskImages, settleWorkflowTaskUnits,
+    createImageGenerationTask: async (id) => { submitted.push(id); return { id }; },
+    waitForOwnedTask: async (id) => {
+      if (id === "batch-2") throw new Error("quota reached");
+      return { data: id === "batch-1" ? [{ url: "/images/success.png" }] : [] };
+    },
+    isWorkflowPollAbort: (error) => error instanceof DOMException && error.name === "AbortError",
+    finishWorkflowTaskSubmission: (id) => settled.push(id),
+    markWorkflowRunCompleted: () => assert.fail("partial image batches are not marked complete"),
+  });
+  await assert.rejects(execute(workflow, "Prompt"), /quota reached\n接口没有返回图片/);
+  assert.deepEqual(submitted, ["batch-1", "batch-2", "batch-3"]);
+  assert.deepEqual(settled, ["batch"]);
+  assert.deepEqual(tasks[0].completed_units, [1, 2, 3]);
+  assert.deepEqual(tasks[0].unit_errors, { 2: "quota reached", 3: "接口没有返回图片" });
+  assert.deepEqual(tasks[0].image_urls, ["/images/success.png"]);
+  assert.equal(tasks[0].status, "failed");
 });
 
 function assetContext(onSave) {
@@ -370,7 +485,8 @@ test("video contract bulk mutations stop when their authenticated session is inv
     let calls = 0;
     const mutate = () => { calls++; return request.promise; };
     const context = {
-      isBulkActionBusy: false, selectedItems: [{ id: "one", enabled: false }, { id: "two", enabled: false }],
+      bulkActionBusyRef: { current: false }, setBulkDeleteFailures() {},
+      selectedItems: [{ id: "one", enabled: false }, { id: "two", enabled: false }],
       optimisticEnabledByID: new Map(), ALL_MUTATIONS_SCOPE, mutationTrackerRef: { current: lifecycle },
       beginMutation: (scope) => lifecycle.begin(scope),
       setIsBulkActionBusy: () => {}, setPendingIds: () => {}, setOptimisticEnabledByID: () => {},
@@ -384,6 +500,81 @@ test("video contract bulk mutations stop when their authenticated session is inv
     await pending;
     assert.equal(calls, 1, name);
   }
+});
+
+test("partial video contract deletion keeps the confirmation and retries only failures", async () => {
+  const entries = [{ id: "one", contract: { name: "First" } }, { id: "two", contract: { name: "Second" } }];
+  const firstRequest = deferred();
+  const lifecycle = new ScopedMutationLifecycle("session-a");
+  const calls = [];
+  let items = entries, failures = [], pending = new Set(), open = true;
+  const context = {
+    bulkActionBusyRef: { current: false },
+    setBulkDeleteFailures: (next) => { failures = next; },
+    selectedItems: entries, ALL_MUTATIONS_SCOPE, mutationTrackerRef: { current: lifecycle },
+    beginMutation: (scope) => lifecycle.begin(scope),
+    applyMutationResult: (ticket, next) => { items = next; return lifecycle.complete(ticket, true).current; },
+    rejectMutation: (ticket) => lifecycle.complete(ticket, false).current,
+    setIsBulkActionBusy() {},
+    setPendingIds: (update) => { pending = update(pending); },
+    setSelectedContractIds: (ids) => { context.selectedItems = items.filter(({ id }) => ids.has(id)); },
+    setBulkDeleteOpen: (next) => { open = next; },
+    loadContracts() {}, toast: { success() {} },
+    deleteVideoModelContract: async (id) => {
+      calls.push(id);
+      if (id === "one") return firstRequest.promise;
+      if (calls.length === 2) throw new Error("文件正在使用");
+      return { items: [] };
+    },
+  };
+  const removeSelected = () => handler("settings/components/video-model-contracts-card.tsx", "deleteSelectedContracts", context)();
+  const running = removeSelected();
+  await removeSelected();
+  assert.deepEqual(calls, ["one"]);
+  firstRequest.resolve({ items: [entries[1]] });
+  await running;
+  assert.deepEqual(items, [entries[1]]);
+  assert.deepEqual(failures, [{ id: "two", name: "Second", message: "文件正在使用" }]);
+  assert.equal(open, true);
+  assert.equal(pending.size, 0);
+  await removeSelected();
+  assert.deepEqual(calls, ["one", "two", "two"]);
+  assert.equal(open, false);
+  assert.deepEqual(items, []);
+});
+
+test("video contract publication uses one write request and leaves failed edits ready for retry", async () => {
+  const request = deferred();
+  const draft = { name: "Draft" };
+  const lifecycle = new ScopedMutationLifecycle("session-a");
+  const calls = [];
+  let action, error = "", closed = false;
+  const context = {
+    editorActionRef: { current: false }, readOnly: false, editor: null, editingItem: { id: "contract" },
+    currentSessionKeyRef: { current: "session-a" }, currentDraftRef: { current: draft }, draft,
+    isCurrentSession: () => true, setEditorAction: value => { action = value; }, setEditorError: value => { error = value; },
+    mutationFromDraft: (value) => value, validateVideoModelContract: () => assert.fail("Publish validates in the write endpoint"),
+    beginMutation: (scope) => lifecycle.begin(scope), rejectMutation: (ticket) => lifecycle.complete(ticket, false).current,
+    applyMutationResult: (ticket) => lifecycle.complete(ticket, true).current,
+    publishVideoModelContract: (id, payload) => {
+      calls.push([id, payload]);
+      return calls.length === 1 ? request.promise : Promise.resolve({ item: { id, revision: 3 }, items: [] });
+    },
+    setDialogOpen: (open) => { closed = !open; }, generatedEditingIndex: null, toast: { success() {} },
+  };
+  const submit = handler("settings/components/video-model-contracts-card.tsx", "submitContract", context);
+  const publishing = submit("publish");
+  assert.equal(action, "publish");
+  await submit("publish");
+  assert.deepEqual(calls, [["contract", draft]]);
+  request.reject(new Error("模型冲突"));
+  await publishing;
+  assert.equal(action, null);
+  assert.equal(error, "模型冲突");
+  assert.equal(closed, false);
+  await submit("publish");
+  assert.deepEqual(calls, [["contract", draft], ["contract", draft]]);
+  assert.equal(closed, true);
 });
 
 test("enabling a storage provider never mutates the previous settings snapshot", () => {
@@ -478,7 +669,7 @@ test("account invalidation cancels management work before React cleanup", () => 
       mutationControllerRef: ref, saveControllerRef: ref,
       mountedRef: { current: false }, mutationTrackerRef: { current: lifecycle }, loadContracts: () => {},
       contractLoadVersionRef: { current: 0 }, contractLoadControllerRef: { current: null }, contractLoadResetRef: { current: false }, importControllerRef: { current: null },
-      activateSession: () => {}, initialize: () => {}, deactivateSession: key => deactivated.push(key),
+      activateSession: () => {}, loadConfig: () => {}, deactivateSession: key => deactivated.push(key),
     };
     const code = ts.transpile(`const setup = ${setup};`, { target: ts.ScriptTarget.ES2022 });
     const cleanup = new Function(...Object.keys(context), `${code}\nreturn setup();`)(...Object.values(context));
@@ -496,9 +687,11 @@ test("workflow editors use addressable pages for existing workflows and new temp
   const selected = [];
   const routes = [];
   const resolved = [];
+  const pendingEditorNavigationRef = { current: null };
   const context = {
     items: [{ id: "existing" }], searchParams: new URLSearchParams("filter=brand"),
-    workflowEditorGenerationRef: { current: 0 }, setResolvedEditorRoute: key => resolved.push(key),
+    editorRouteKey: ":single_image", pendingEditorNavigationRef,
+    workflowEditorGenerationRef: { current: 0 }, setResolvedEditorRoute: key => resolved.push(key), setWorkflowSaveError: () => {},
     setEditing: value => selected.push(value),
     setSearchParams: (params, options) => routes.push([new URLSearchParams(params), options]),
   };
@@ -507,16 +700,43 @@ test("workflow editors use addressable pages for existing workflows and new temp
   assert.equal(routes[0][0].get("editor"), "existing");
   assert.equal(routes[0][0].get("filter"), "brand");
   assert.equal(routes[0][1].replace, false);
+  assert.deepEqual(pendingEditorNavigationRef.current, { from: ":single_image", to: "existing:single_image" });
   open({ id: "", mode: "multi_image_series" }, "product_detail");
   assert.equal(routes[1][0].get("editor"), "new");
   assert.equal(routes[1][0].get("template"), "product_detail");
   assert.equal(resolved[1], "new:product_detail");
+  assert.deepEqual(pendingEditorNavigationRef.current, { from: ":single_image", to: "new:product_detail" });
   open(null);
   assert.equal(routes[2][0].has("editor"), false);
   assert.equal(routes[2][0].has("template"), false);
   assert.equal(routes[2][1].replace, true);
   assert.equal(selected[2], null);
   assert.equal(context.workflowEditorGenerationRef.current, 3);
+});
+
+test("workflow editor keeps an applied Agent draft while the URL catches up", () => {
+  const pendingEditorNavigationRef = { current: { from: ":single_image", to: "new:single_image" } };
+  const workflowEditorGenerationRef = { current: 1 };
+  const replacements = [];
+  const context = {
+    pendingEditorNavigationRef, workflowEditorGenerationRef,
+    resolvedEditorRoute: "new:single_image", loading: false,
+    setResolvedEditorRoute: (route) => replacements.push(route),
+    setWorkflowSaveError: (error) => replacements.push(error),
+    setEditing: (draft) => replacements.push(draft),
+  };
+  const resolve = (editorRouteKey, editorRoute) => handler("workflows/creative-workflow-workspace.tsx", "resolveEditorRoute", {
+    ...context, editorRouteKey, editorRoute,
+  })();
+  resolve(":single_image", "");
+  assert.ok(pendingEditorNavigationRef.current);
+  resolve("new:single_image", "new");
+  assert.equal(pendingEditorNavigationRef.current, null);
+  assert.equal(workflowEditorGenerationRef.current, 1);
+  assert.deepEqual(replacements, []);
+  resolve(":single_image", "");
+  assert.deepEqual(replacements, [":single_image", "", null]);
+  assert.equal(workflowEditorGenerationRef.current, 2);
 });
 
 test("asset editor returns to its library only after a successful save in the same session", async () => {

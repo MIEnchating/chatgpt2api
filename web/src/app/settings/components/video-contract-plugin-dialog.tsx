@@ -28,6 +28,7 @@ type PluginDraft = {
   version: string;
   baseURL: string;
   models: string;
+  modelsPath: string;
   authMode: NewAPIVideoPluginOptions["auth_mode"] | "";
   authHeader: string;
   downloadMode: NewAPIVideoPluginOptions["download_mode"] | "";
@@ -68,7 +69,7 @@ function VideoContractPluginView({ targets, selectedIndex, draft, onChange, onSe
 }) {
   const target = targets[selectedIndex];
   const { contract } = target;
-  const { key, version, baseURL, models, authMode, authHeader, downloadMode, resultFields, result, dryRun, error } = draft;
+  const { key, version, baseURL, models, modelsPath, authMode, authHeader, downloadMode, resultFields, result, dryRun, error } = draft;
   const [busy, setBusy] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   const closeRef = useRef(onClose);
@@ -104,6 +105,7 @@ function VideoContractPluginView({ targets, selectedIndex, draft, onChange, onSe
       const pluginOptions: NewAPIVideoPluginOptions = {
         key, version, base_url: baseURL,
         models: models.split(/[\n,，]+/).map(value => value.trim()).filter(Boolean),
+        models_path: modelsPath.trim(),
         auth_mode: authMode, auth_header: authHeader, download_mode: downloadMode,
         result_fields: resultFields.split(/[\n,，]+/).map(value => value.trim()).filter(Boolean),
       };
@@ -191,6 +193,11 @@ function VideoContractPluginView({ targets, selectedIndex, draft, onChange, onSe
               <FieldLabel htmlFor="video-plugin-result-fields">上游视频地址字段</FieldLabel>
               <Textarea id="video-plugin-result-fields" value={resultFields} disabled={downloadMode === "task_content"} onChange={event => change({ resultFields: event.target.value })} placeholder={"video_url\ndata[0].url"} className="min-h-24 font-mono" spellCheck={false} />
               <FieldDescription>{downloadMode === "task_content" ? `使用契约产物路径：${contract.artifact.content_path || "尚未配置，请先编辑契约"}` : "填写供应商查询响应中的真实 JSON 路径，每行一个；占位示例不会自动加入。"}</FieldDescription>
+            </Field>
+            <Field className="sm:col-span-2">
+              <FieldLabel htmlFor="video-plugin-models-path">上游模型列表路径（选填）</FieldLabel>
+              <Input id="video-plugin-models-path" value={modelsPath} onChange={event => change({ modelsPath: event.target.value })} placeholder="/v1/models" autoComplete="off" spellCheck={false} />
+              <FieldDescription>用于 New API 渠道的“获取模型”。按供应商文档填写，例如 /v1/models 或 /models；返回值须为 OpenAI data[].id 格式，仅保留当前插件支持的模型。供应商未提供此接口时清空，仅使用上方模型列表。</FieldDescription>
             </Field>
           </FieldSet>
           {error ? <Alert variant="destructive" role="alert">{error}</Alert> : null}

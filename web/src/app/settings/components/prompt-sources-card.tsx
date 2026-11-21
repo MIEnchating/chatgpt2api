@@ -7,15 +7,15 @@ import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-import { ExternalLink, Eye, Pencil, Plus, RefreshCcw, Save, Trash2, X } from "lucide-react";
+import { ExternalLink, Eye, Pencil, Plus, RefreshCcw, Save, Trash2 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { TooltipHint } from "@/components/ui/tooltip";
 
@@ -251,27 +251,13 @@ export function PromptSourcesCard() {
       />
 
       <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DialogContent
-          showCloseButton={false}
-          className="top-0 right-0 bottom-0 left-auto grid h-dvh max-h-none w-full max-w-[680px] translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:max-w-[680px]"
-        ><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          <div className="flex min-h-16 items-center gap-3 border-b border-border px-4 sm:px-6">
-            <DialogClose className="flex shrink-0 items-center justify-center" aria-label="关闭">
-              <X className="size-5" />
-            </DialogClose>
-            <DialogTitle className="min-w-0 flex-1 truncate">{editingID ? "编辑提示词来源" : "新增提示词来源"}</DialogTitle>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingID ? "编辑提示词来源" : "新增提示词来源"}</DialogTitle>
             <DialogDescription className="sr-only">配置提示词来源的名称、JSON 地址、主页和启用状态。</DialogDescription>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">取消</Button>
-            </DialogClose>
-            <Button type="submit" form="prompt-source-form" disabled={isSavingConfig}>
-              {isSavingConfig ? <Spinner /> : null}
-              保存
-            </Button>
-          </div>
-
-          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
-            <form id="prompt-source-form" onSubmit={submitSource} className="flex flex-col gap-6 px-4 py-6 sm:px-8">
+          </DialogHeader>
+          <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="py-1">
+            <form id="prompt-source-form" onSubmit={submitSource} className="flex flex-col gap-5">
               <div className="flex flex-col gap-5">
                 <Field>
                   <FieldLabel htmlFor="prompt-source-name">来源名称</FieldLabel>
@@ -295,15 +281,18 @@ export function PromptSourcesCard() {
 
               <Field>
                 <FieldLabel>JSON 格式</FieldLabel>
-                <Card className="overflow-hidden gap-0 p-0">
-                  <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-80" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain" style={{maxHeight: 320}}><div className="min-w-0">
-                    <CodeBlock><CodeBlockContent wrap>{PROMPT_SOURCE_EXAMPLE}</CodeBlockContent></CodeBlock>
-                  </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-                </Card>
+                <CodeBlock><CodeBlockContent wrap>{PROMPT_SOURCE_EXAMPLE}</CodeBlockContent></CodeBlock>
               </Field>
             </form>
-          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-        </ScrollArea></DialogContent>
+          </ScrollArea>
+          <DialogFooter className="shrink-0">
+            <Button type="button" variant="outline" onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button type="submit" form="prompt-source-form" disabled={isSavingConfig}>
+              {isSavingConfig ? <Spinner /> : <Save />}
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </>
   );

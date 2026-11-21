@@ -20,7 +20,7 @@ func TestAdminVideoModelContractPluginGeneration(t *testing.T) {
 	admin := adminSessionToken(t, app)
 	_, user := createPasswordUserSession(t, app, "plugin-test-user", "", "Plugin test user")
 	contract := dramayaVideoContract(t)
-	options := videocontract.NewAPIVideoPluginOptions{Key: "contract-video", Version: "1.0.0", BaseURL: "https://video.example.com", AuthMode: "bearer", DownloadMode: "signed_url", ResultFields: []string{"video_url"}}
+	options := videocontract.NewAPIVideoPluginOptions{Key: "contract-video", Version: "1.0.0", BaseURL: "https://video.example.com", ModelsPath: "/v1/models", AuthMode: "bearer", DownloadMode: "signed_url", ResultFields: []string{"video_url"}}
 	input := map[string]any{"contract": contract, "options": options}
 	before, err := app.videoContracts.List()
 	if err != nil {
@@ -61,6 +61,9 @@ func TestAdminVideoModelContractPluginGeneration(t *testing.T) {
 				}
 				if result.Filename != "contract-video-1.0.0.js" || !strings.Contains(result.Source, "export function buildContentRequest") || !strings.Contains(result.Source, "grok-imagine-video-1.5") {
 					t.Fatal("incomplete generated source")
+				}
+				if result.Options.ModelsPath != "/v1/models" || !strings.Contains(result.Source, "export function convertResponse") {
+					t.Fatal("generated plugin is missing upstream model discovery")
 				}
 			}
 		})

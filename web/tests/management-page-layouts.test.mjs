@@ -69,7 +69,7 @@ test("user toolbar leaves totals and empty selection state to pagination and row
 });
 
 test("every page-level pagination stays fixed to the bottom of its full-height panel", () => {
-  assert.match(managementSource, /data-management-pagination[\s\S]*className="mt-auto/);
+  assert.match(managementSource, /data-management-pagination[\s\S]*className=\{cn\("mt-auto/);
   assert.match(assetsSource, /<LibraryWorkspace/);
   assert.match(assetsSource, /<ManagementPagination/);
   for (const source of [usersSource, logsSource]) {
@@ -112,11 +112,8 @@ test("management actions share the same row as their filters", () => {
   for (const source of [assetsSource, usersSource, rbacSource, logsSource]) {
     assert.doesNotMatch(source, /<ManagementPage[\s\S]{0,120}actions=\{/);
   }
-  assert.equal(
-    (logsSource.match(/onClick=\{\(\) => void loadFirstLogPage\(query, pageSize\)\}/g) || [])
-      .length,
-    1
-  );
+  assert.match(logsSource, /<ManagementToolbar>[^]*?onClick=\{retryLogs\}[^]*?刷新[^]*?<\/ManagementToolbar>/);
+  assert.match(logsSource, /title="日志加载失败"[^\n]*onClick=\{retryLogs\}[^\n]*重试/);
 });
 
 test("log queries abort stale loads and only the latest request updates state", () => {

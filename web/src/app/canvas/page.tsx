@@ -12,9 +12,7 @@ import { LabeledField } from "@/components/labeled-field";
 import { Label } from "@/components/ui/label";
 import { mergeCanvasAgentMessageQueues } from "./agent/canvas-agent-message-queue";
 
-import { CodeBlock, CodeBlockContent, CodeBlockCopyButton } from "@/components/ui/code-block";
-
-import { Item, ItemMedia } from "@/components/ui/item";
+import { Item } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
@@ -31,7 +29,7 @@ import { uploadTemporaryMedia } from "@/services/file-storage";
 import { CanvasAgentSessionConflictError, forkCanvasAgentSessionConflicts, mergeCanvasDocuments, mergeCanvasHistory } from "./canvas-document-merge";
 import { canvasDocumentValuesEqual } from "./canvas-document-equality";
 import { fetchCanvasAgentRun } from "./agent/canvas-agent-backend";
-import { canvasAgentHistoryChanges, canvasAgentHistoryReceipt, canvasAgentHistorySummaries } from "./agent/canvas-agent-history";
+import { canvasAgentHistorySummaries } from "./agent/canvas-agent-history";
 
 import { canvasAgentStarterAttachment } from "./agent/canvas-agent-attachments";
 
@@ -41,8 +39,8 @@ import { canvasAgentAttachmentURLs } from "./agent/canvas-agent-reference";
 import { waitForCreationTask, CreationTaskTimeoutError } from "@/lib/creation-task-events";
 import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
-import { Bot, Camera, ChevronDown, CircleDot, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, Menu, Music, Paperclip, Pencil, Plus, Redo2, Settings2, SlidersHorizontal, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Bot, ChevronDown, CircleDot, Clipboard, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, Menu, Paperclip, Pencil, Plus, Redo2, Settings2, SlidersHorizontal, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { useBlocker, useNavigate, useParams, type Blocker, type BlockerFunction } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -64,7 +62,7 @@ import type { CanvasAgentConfig, CanvasAgentState, CanvasAssistantReference, Can
 import { canvasPendingAgentAssetNode, createCanvasPendingAgentAsset, normalizeCanvasAgentConfig } from "@/app/canvas/agent/canvas-agent-starter";
 import { applyCameraPrompt } from "@/app/canvas/canvas-camera";
 import { CanvasCameraControl } from "@/app/canvas/canvas-camera-control";
-import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
+import { CanvasGenerationFooter, type CanvasPromptOptimizationAction } from "@/app/canvas/canvas-generation-footer";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CanvasScriptActions, CanvasScriptPromptPanel } from "@/app/canvas/canvas-script-node";
 import { concatenateScriptPrompts, createScriptProject, parseGeneratedScript, parseScriptPrompts, scriptAssetImage, scriptAssetPosition, scriptAssetConnections, scriptAssetsToGenerate, type ScriptAssetGeneration, scriptGenerationInstruction, scriptCanGenerateMedia, scriptPromptInstruction, scriptMediaPlan, scriptMediaSelection, reconcileScriptMediaDependencies, reconcileScriptProject, scriptMediaIssues, scriptShotImageNodeIDs } from "@/app/canvas/canvas-script";
@@ -73,7 +71,7 @@ import { fitDirectorVideoNodeSize, getNextDirectorOutputY } from "@/app/canvas/c
 import { buildCanvasAudioGenerationRequest, canvasAgentAudioNodeParameters, canvasAudioGenerationReferences, canvasAudioProvider, canvasAudioReferences, canvasAudioResponseFormat, isCanvasAudioFile, resolveCanvasAudioModel, type CanvasAudioReference } from "@/app/canvas/canvas-audio";
 import { detachCanvasBatchRootForReplacement, expandCanvasBatchNodeIDs, reconcileCanvasBatchesAfterRemoval, setCanvasBatchPrimary, syncCanvasBatchRootAfterRetry, visibleCanvasNodes } from "@/app/canvas/canvas-batches";
 import { CanvasConfigComposer } from "@/app/canvas/canvas-config-composer";
-import { canGenerateCanvasConfig, canvasConfigInputLabel, canvasConfigInputs, canvasConfigPromptDisplay, canvasGenerationInputs, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
+import { CANVAS_CONFIG_REFERENCE_PATTERN, canGenerateCanvasConfig, canvasConfigInputLabel, canvasConfigInputs, canvasGenerationInputs, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { canCreateCanvasConnection, resolveCanvasConnection } from "@/app/canvas/canvas-connections";
 import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationModel, canvasGenerationNeedsRecovery, canvasGenerationRecoveryTaskID, canvasGenerationReferenceImageURLs, canvasGenerationRequestSize, canvasVideoGenerationReferences, findCanvasRetryConfigurationNode, markCanvasGenerationRecoveryPending, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
 import { canvasGenerationActiveNodeID, placeCanvasGenerationResultNodes, setCanvasConfigGenerationStatus } from "@/app/canvas/canvas-generation-layout";
@@ -81,7 +79,9 @@ import { canvasTextGenerationPlan, resolveCanvasTextModel } from "@/app/canvas/c
 import { createCanvasHistorySnapshot, type CanvasHistorySnapshot, appendCanvasHistorySnapshot, canvasHistoryKey, canvasHistoryLeaseExpired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "@/app/canvas/canvas-history";
 import { canvasImageAngleLabel, canvasImageAnglePrompt, cropCanvasImage, splitCanvasImage, upscaleCanvasImage, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
 import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasEmptyMediaNodeFrame, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "@/app/canvas/canvas-node-geometry";
-import { canvasGenerationStatusLabel, canvasNodeInfoJSON } from "@/app/canvas/canvas-node-info";
+import { canvasNodeFallbackTitle } from "@/app/canvas/canvas-node-info";
+import { CanvasNodeInfoContent } from "./canvas-node-details";
+import { CanvasMiniMap } from "./canvas-mini-map";
 import { CANVAS_GROUP_PADDING, canvasNodeBounds, expandCanvasRemovalNodeIDs, expandCanvasGroupNodeIDs } from "@/app/canvas/canvas-groups";
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
 import { PANORAMA_IMAGE_SIZE, PANORAMA_NODE_SIZE, buildPanoramaPrompt, isStrictPanoramaSize, panoramaGenerationCount, panoramaGenerationQuality, panoramaRetryPrompt, panoramaRetryReferenceURLs } from "@/app/canvas/canvas-panorama";
@@ -91,7 +91,7 @@ import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "@/app/canvas/canvas-clipboard";
 import { CANVAS_MIN_ZOOM, resetCanvasViewport, setCanvasViewportZoom } from "@/app/canvas/canvas-viewport";
-import { canvasSaveRequired, flushCanvasSaves } from "@/app/canvas/canvas-save";
+import { canvasSaveRequired, flushCanvasSaves, submitCanvasSave } from "@/app/canvas/canvas-save";
 import { canvasRecoveryDraftScope, captureCanvasDraftChanges, clearCanvasRecoveryDraft, listCanvasRecoveryDrafts, readCanvasRecoveryDraft, recoverCanvasDraftDocument, writeCanvasRecoveryDraft, type CanvasRecoveryDraftSummary } from "@/app/canvas/canvas-recovery-draft";
 import { resolveCanvasImageModel } from "@/app/canvas/canvas-image-model";
 import { canvasImageTitle } from "@/app/canvas/canvas-image-title";
@@ -130,7 +130,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CanvasEmptyState } from "./canvas-empty-state";
 import { CANVAS_AGENT_WIDTH, canvasWorkspaceControlsStacked, type CanvasTool } from "./canvas-workspace-layout";
 import { CANVAS_DOCK_BREAKPOINT, CANVAS_DOCK_MIN_WIDTH, CANVAS_DOCK_COMPACT_WIDTH, CANVAS_DOCK_WIDTH, CanvasNodeCreatePalette, CanvasWorkspaceControls, type CanvasCreatableNodeType } from "@/app/canvas/canvas-workspace-controls";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipHint } from "@/components/ui/tooltip";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, recoverVideoTask, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, isManagedImageURL, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
@@ -200,6 +200,7 @@ type PendingPanoramaImport = {
 };
 type CanvasGenerationOptions = { onSubmitted?: (taskID: string) => void; resultTitle?: string; generationModel?: string; referenceImageDataURLs?: string[]; forceImageGeneration?: boolean; resultBounds?: { width: number; height: number }; resultCount?: number; selectResultNode?: boolean; concurrent?: boolean };
 type CanvasActiveGeneration = {
+  kind?: "prompt-optimization";
   controller: AbortController;
   settled: Promise<void>;
   settle: () => void;
@@ -219,6 +220,14 @@ const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用�
 1. 只输出提示词正文，不要解释。
 2. 覆盖主体、构图、风格、光线、色彩、材质、镜头和氛围。
 3. 尽量写成可直接用于生图模型的完整提示词。`;
+const PROMPT_OPTIMIZATION_INSTRUCTION = "按指定用途优化提示词。沿用原文语言，保留创作意图、限制条件、指定对白及素材引用（如“图片1”“视频1”或“@[node:ID]”）。引用标记及其出现次数必须原样保留。只输出优化后的提示词正文。";
+const PROMPT_OPTIMIZATION_GUIDANCE = {
+  image: "梳理主体、构图、光线和风格。编辑图片时明确修改范围和要保留的内容，避免臆测原图细节。",
+  video: "梳理主体动作、镜头运动和时间顺序，保留指定时长、对白、音效和画面连续性要求。",
+  audio: "梳理停顿和朗读语气，保留要读出的内容。直接朗读的文本可调整标点和分句，避免加入会被读出的说明或标记。",
+  panorama: "梳理前后左右、地面和天空的空间关系，保留连续的 360 度环境。",
+  text: "梳理目标、必要背景、限制条件和输出格式。只改写任务说明，不执行原任务。",
+};
 
 
 function storedCanvasSidePanel(): typeof DEFAULT_SIDE_PANEL {
@@ -378,18 +387,6 @@ function normalizeCanvasNodeTitle(node: CanvasNode) {
   return node;
 }
 
-function canvasNodeFallbackTitle(type: CanvasNode["type"]) {
-  if (type === "image") return "图片";
-  if (type === "video") return "视频";
-  if (type === "config") return "生成配置";
-  if (type === "audio") return "音频";
-  if (type === "panorama") return "全景图";
-  if (type === "script") return "脚本";
-  if (type === "director") return "导演台";
-  if (type === "group") return "组";
-  return "文字";
-}
-
 function isCanvasAccessibleReferenceURL(value: string) {
   if (isPublicReferenceURL(value)) return true;
   try {
@@ -488,11 +485,10 @@ function canvasErrorMessage(error: unknown) {
   return message || "画布保存失败";
 }
 
-function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelect, relayTokenName, inputs, running, generationBusy, showPromptEditor = true, showGenerateFooter = true, videoModels, onPromptChange, onParametersChange, onGenerate, onStop }: { node: CanvasNode; mentionReferences?: readonly CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; relayTokenName: string; inputs: readonly CanvasConfigInput[]; running: boolean; generationBusy: boolean; uploading?: boolean; showPromptEditor?: boolean; showGenerateFooter?: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void; onUpload?: () => void }) {
-  const [prompt, setPrompt] = useState(node.prompt || "");
+function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelect, relayTokenName, inputs, running, generationBusy, optimization, showPromptEditor = true, showGenerateFooter = true, videoModels, onPromptChange, onParametersChange, onGenerate, onStop }: { node: CanvasNode; mentionReferences?: readonly CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; relayTokenName: string; inputs: readonly CanvasConfigInput[]; running: boolean; generationBusy: boolean; optimization?: CanvasPromptOptimizationAction; uploading?: boolean; showPromptEditor?: boolean; showGenerateFooter?: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void; onUpload?: () => void }) {
+  const prompt = node.prompt || "";
   const [parameterSection, setParameterSection] = useState<"output" | "references">("output");
   const connectedPromptAvailable = inputs.some((input) => input.type === "text" && Boolean(input.text?.trim()));
-  useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   const params = canvasVideoParameters(node);
   const modelOptions = videoModels;
   const modelAvailable = modelOptions.includes(params.generation_video_model);
@@ -592,10 +588,11 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const workflowFields = <AutoDLWorkflowFields tokenName={relayTokenName} model={params.generation_video_model} value={node.generation_workflow_inputs || {}} onChange={(generation_workflow_inputs) => onParametersChange({ generation_workflow_inputs })} disabled={running} />;
   return <div className="flex h-full min-h-0 flex-col gap-2">
     {showPromptEditor ? <PromptTextareaFrame value={prompt} className="min-h-0 flex-1">
-      <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" containerClassName="min-h-full" className="min-h-full w-full resize-none overflow-hidden" />
+      <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" containerClassName="min-h-full" className="min-h-full w-full resize-none overflow-hidden" />
     </PromptTextareaFrame> : null}
     <CanvasNodeInputToolbar action={showGenerateFooter ? <CanvasGenerationFooter
       running={running}
+      optimization={optimization}
       disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable && videoModelContract(params.generation_video_model)?.capability.prompt?.required !== false) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
       onGenerate={() => onGenerate(prompt.trim())}
       onStop={onStop}
@@ -624,7 +621,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
             ]} />
         </div> : null}
       </CanvasParameterPopover>
-      {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /> : null}
+      {showPromptEditor ? <CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /> : null}
     </CanvasNodeInputToolbar>
   </div>;
 }
@@ -669,7 +666,7 @@ function canvasAudioSettings(node: CanvasNode): Partial<CanvasNode> {
   };
 }
 
-function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, model, models, running, cancelling, canGenerate, onPromptChange, onModelChange, onGenerate, onStop }: {
+function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, model, models, running, cancelling, canGenerate, optimization, onPromptChange, onModelChange, onGenerate, onStop }: {
   node: CanvasNode;
   mentionReferences: readonly CanvasResourceReference[];
   onReferenceSelect: (reference: CanvasResourceReference) => void;
@@ -678,21 +675,13 @@ function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, mod
   running: boolean;
   cancelling: boolean;
   canGenerate: boolean;
+  optimization: CanvasPromptOptimizationAction;
   onPromptChange: (value: string, commit?: boolean) => void;
   onModelChange: (value: string) => void;
   onGenerate: () => void;
   onStop: () => void;
 }) {
-  const [content, setContent] = useState(node.composer_content || "");
-
-  useEffect(() => {
-    setContent(node.composer_content || "");
-  }, [node.id, node.composer_content]);
-
-  function updateContent(value: string, commit = false) {
-    setContent(value);
-    onPromptChange(value, commit);
-  }
+  const content = node.composer_content || "";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -701,8 +690,8 @@ function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, mod
           value={content}
           references={mentionReferences}
           onReferenceSelect={onReferenceSelect}
-          onChange={updateContent}
-          onBlur={(event) => updateContent(event.target.value, true)}
+          onChange={onPromptChange}
+          onBlur={(event) => onPromptChange(event.target.value, true)}
           onSubmit={() => { if (canGenerate && !running) onGenerate(); }}
           aria-label="文本生成要求"
           placeholder="输入生成或修改要求，@ 引用画布节点"
@@ -710,15 +699,15 @@ function CanvasTextPromptPanel({ node, mentionReferences, onReferenceSelect, mod
           className="min-h-full resize-none overflow-hidden"
         />
       </PromptTextareaFrame>
-      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} stopping={cancelling} disabled={running ? cancelling : !canGenerate} onGenerate={onGenerate} onStop={onStop} />}>
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} stopping={cancelling} disabled={running ? cancelling : !canGenerate} optimization={optimization} onGenerate={onGenerate} onStop={onStop} />}>
         <CanvasInlineModelSelect value={model} models={models} label="文本模型" onChange={onModelChange} />
-        <CanvasPromptLibrary onSelect={(value) => updateContent(value, true)} />
+        <CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} />
       </CanvasNodeInputToolbar>
     </div>
   );
 }
 
-function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences, onReferenceSelect, running, generationBusy, imageModel, imageModels, imageModelReady, cancelling, canStop, connectedPromptAvailable, onPromptChange, onParametersChange, onGenerate, onStop }: {
+function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences, onReferenceSelect, running, generationBusy, optimization, imageModel, imageModels, imageModelReady, cancelling, canStop, connectedPromptAvailable, onPromptChange, onParametersChange, onGenerate, onStop }: {
   node: CanvasNode;
   prompt: string;
   onDraftChange: (value: string) => void;
@@ -726,6 +715,7 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
   onReferenceSelect: (reference: CanvasResourceReference) => void;
   running: boolean;
   generationBusy: boolean;
+  optimization: CanvasPromptOptimizationAction;
   imageModel: string;
   imageModels: string[];
   imageModelReady: boolean;
@@ -745,7 +735,7 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
 
   function submit() {
     const value = prompt.trim();
-    if ((!value && !connectedPromptAvailable) || generationBusy) return;
+    if ((!value && !connectedPromptAvailable) || running || generationBusy || !imageModelReady) return;
     onGenerate(value);
     onDraftChange("");
   }
@@ -770,6 +760,7 @@ function CanvasNodePromptPanel({ node, prompt, onDraftChange, mentionReferences,
           running={running}
           stopping={cancelling}
           disabled={running ? !canStop || cancelling : !imageModelReady || (!prompt.trim() && !connectedPromptAvailable) || generationBusy}
+          optimization={optimization}
           onGenerate={submit}
           onStop={onStop}
         />}>
@@ -901,7 +892,8 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
   const [pendingConnection, setPendingConnection] = useState<PendingConnectionCreate | null>(null);
   const [nodeCreateMenu, setNodeCreateMenu] = useState<CanvasNodeCreateMenu | null>(null);
   const [panelNodeID, setPanelNodeID] = useState("");
-  const [imagePromptDrafts, setImagePromptDrafts] = useState<Record<string, string>>({});
+  const imagePromptDraftsRef = useRef<Record<string, string>>({});
+  const [imagePromptDrafts, setImagePromptDraftsState] = useState(imagePromptDraftsRef.current);
   const [referenceReturn, setReferenceReturn] = useState<{ nodeID: string; viewport: CanvasDocument["viewport"]; panelNodeID: string; expiresAt: number } | null>(null);
   useEffect(() => {
     if (!referenceReturn) return;
@@ -921,6 +913,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
   const [activeGenerationNodeIDs, setActiveGenerationNodeIDs] = useState(new Set<string>());
   const [cancellingGenerationNodeIDs, setCancellingGenerationNodeIDs] = useState(new Set<string>());
   const [stopTargetNodeID, setStopTargetNodeID] = useState("");
+  const stoppingPromptOptimization = activeGenerationsRef.current.get(stopTargetNodeID)?.kind === "prompt-optimization";
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false);
   const [pendingPanoramaImport, setPendingPanoramaImport] = useState<PendingPanoramaImport | null>(null);
   const [imageTool, setImageTool] = useState<CanvasImageToolState | null>(null);
@@ -1101,15 +1094,20 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       const after = next.find((node) => node.id === nodeID);
       if (!after || after.url !== before?.url || after.storage_key !== before?.storage_key) controller.abort();
     });
-    nodesRef.current = next;
-    setNodesState(next);
+    updateNodeGeometry(next);
     syncCanvasTaskQueue(session.key, documentRef.current.id, titleRef.current, next);
   }
 
-  function registerActiveGeneration(controller: AbortController, nodeIDs: Iterable<string>, taskIDs: Iterable<string> = []) {
+  function updateNodeGeometry(next: CanvasNode[]) {
+    nodesRef.current = next;
+    setNodesState(next);
+  }
+
+  function registerActiveGeneration(controller: AbortController, nodeIDs: Iterable<string>, taskIDs: Iterable<string> = [], kind?: CanvasActiveGeneration["kind"]) {
     let settle: () => void = () => {};
     const settled = new Promise<void>((resolve) => { settle = resolve; });
     const generation: CanvasActiveGeneration = {
+      kind,
       controller,
       settled,
       settle,
@@ -1418,9 +1416,6 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     const requestVersion = saveRequestVersionRef.current + 1;
     saveRequestVersionRef.current = requestVersion;
     if (mountedRef.current) setSavingCanvas(true);
-    let response: Awaited<ReturnType<typeof saveCanvasDocument>>;
-    let submittedDocument: CanvasDocument;
-    let submittedPayload: CanvasDocument;
     const request = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
@@ -1436,32 +1431,27 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
           base = serverDocumentRef.current;
           changeVersion = saveChangeVersionRef.current;
         }
-        let remote = serverDocumentRef.current.id === payload.id && canvasDocumentEpochRef.current === epoch ? serverDocumentRef.current : base;
-        for (let attempt = 0; ; attempt++) {
-          try {
-            submittedDocument = mergeCanvasDocuments(base, payload, remote);
-            submittedPayload = canvasAgentHistoryChanges(submittedDocument, remote);
-            return await saveCanvasDocument(submittedPayload);
-          }
-          catch (error) {
-            if ((error as { status?: number }).status !== 409 || attempt >= 3) throw error;
-            remote = (await fetchCanvasDocument(payload.id, "active", (payload.agent_sessions || []).filter(isCanvasAgentSession).map(item => item.id))).document;
-          }
-        }
+        const remote = serverDocumentRef.current.id === payload.id && canvasDocumentEpochRef.current === epoch ? serverDocumentRef.current : base;
+        return submitCanvasSave({
+          base,
+          payload,
+          remote,
+          save: saveCanvasDocument,
+          loadRemote: async (projectID, sessionIDs) => (await fetchCanvasDocument(projectID, "active", sessionIDs)).document,
+        });
       });
     saveQueueRef.current = request.then(() => undefined, () => undefined);
     try {
-      response = await request;
-      response = { ...response, document: canvasAgentHistoryReceipt(response.document, { ...submittedDocument!, agent_session_updates: submittedPayload!.agent_session_updates }) };
+      const { document: saved, submitted } = await request;
       if (recoveryWriter) void clearCanvasRecoveryDraft(recoveryScope, recoveryWriter, changeVersion).catch(() => undefined);
       if (documentRef.current.id === payload.id && canvasDocumentEpochRef.current === epoch) {
         const current = captureDocument();
-        const rebased = mergeCanvasDocuments(payload, current, submittedDocument!);
-        applyBackendAgentDocument(response.document, {
-          base: { ...serverDocumentRef.current, agent_sessions: submittedDocument!.agent_sessions },
+        const rebased = mergeCanvasDocuments(payload, current, submitted);
+        applyBackendAgentDocument(saved, {
+          base: { ...serverDocumentRef.current, agent_sessions: submitted.agent_sessions },
           local: { ...current, agent_sessions: rebased.agent_sessions },
         });
-        if (!response.document.retained_storage_objects_until && canvasHistoryLeaseExpired(payload)) {
+        if (!saved.retained_storage_objects_until && canvasHistoryLeaseExpired(payload)) {
           historyRef.current = [createCanvasHistorySnapshot(captureDocument())];
           redoRef.current = [];
           generationHistoryBaseRef.current = null;
@@ -1471,7 +1461,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         if (!canvasSaveRequired(persistedChangeVersionRef.current, saveChangeVersionRef.current)) setCanvasSaveError("");
       }
       if (mountedRef.current) {
-        setProjects((items) => items.map((item) => item.id === payload.id ? { ...item, title: payload.title, node_count: payload.nodes.length, updated_at: response.document.updated_at } : item));
+        setProjects((items) => items.map((item) => item.id === payload.id ? { ...item, title: payload.title, node_count: payload.nodes.length, updated_at: saved.updated_at } : item));
       }
       return true;
     } catch (error) {
@@ -1819,8 +1809,20 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     if (commit) pushHistory();
   }
 
+  function setImagePromptDrafts(update: Record<string, string> | ((drafts: Record<string, string>) => Record<string, string>)) {
+    const next = typeof update === "function" ? update(imagePromptDraftsRef.current) : update;
+    imagePromptDraftsRef.current = next;
+    setImagePromptDraftsState(next);
+  }
+
   function updateNodeComposerContent(nodeID: string, value: string, commit = false) {
     replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, composer_content: value } : node));
+    scheduleSave();
+    if (commit) pushHistory();
+  }
+
+  function updatePanoramaPrompt(nodeID: string, value: string, commit = false) {
+    replaceNodes(nodesRef.current.map((node) => node.id === nodeID ? { ...node, panorama_source_prompt: value, prompt: value } : node));
     scheduleSave();
     if (commit) pushHistory();
   }
@@ -3757,6 +3759,88 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     return waitForCreationTask(taskID, { onProgress, signal, timeoutMs: null });
   }
 
+  function nodePromptDraft(node: CanvasNode) {
+    switch (node.type) {
+      case "image": return imagePromptDraftsRef.current[node.id] ?? (node.url ? "" : node.prompt || "");
+      case "text": return node.composer_content || "";
+      case "config": return node.composer_content ?? node.prompt ?? "";
+      case "panorama": return node.panorama_source_prompt ?? node.prompt ?? "";
+      case "video":
+      case "audio": return node.prompt || "";
+      default: return "";
+    }
+  }
+
+  async function optimizeNodePrompt(nodeID: string) {
+    const source = nodesRef.current.find((node) => node.id === nodeID);
+    if (!source || source.type === "script" || source.type === "director" || source.type === "group"
+      || activeGenerationsRef.current.has(nodeID) || canvasGenerationNeedsRecovery(source)) return;
+    const draft = nodePromptDraft(source);
+    const prompt = draft.trim();
+    if (!prompt) return;
+    const mode = source.type === "config" ? source.generation_mode || "image" : source.type;
+    const purpose = { image: source.type === "image" && source.url ? "编辑图片" : "生成图片", video: "生成视频", text: "生成或修改文本", audio: "合成音频", panorama: "生成全景图" }[mode];
+    const preferredModel = mode === "text" ? source.generation_text_model || textModel : textModel;
+    const model = resolveCanvasTextModel(preferredModel, textModels);
+    if (!model) return toast.error("请在全局模型设置中启用文本模型");
+    const relayTokenName = nextTokenNameForModel("text", model);
+    if (!relayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
+
+    const epoch = canvasOperationEpochRef.current;
+    const controller = new AbortController();
+    const clientTaskID = `canvas-prompt-${randomID()}`;
+    const active = registerActiveGeneration(controller, [nodeID], [clientTaskID], "prompt-optimization");
+    const isCurrent = () => mountedRef.current && canvasOperationEpochRef.current === epoch
+      && getCachedAuthSession()?.key === session.key && !controller.signal.aborted;
+    try {
+      const task = await createChatGenerationTask({
+        clientTaskId: clientTaskID,
+        prompt,
+        model,
+        relayTokenName,
+        messages: [
+          { role: "system", content: `${PROMPT_OPTIMIZATION_INSTRUCTION}\n${PROMPT_OPTIMIZATION_GUIDANCE[mode]}` },
+          { role: "user", content: `用途：${purpose}\n\n${prompt}` },
+        ],
+        stream: true,
+        requestOptions: { signal: controller.signal },
+      });
+      const taskID = task.id || clientTaskID;
+      addActiveGenerationTask(active, taskID, clientTaskID);
+      if (!isCurrent()) return;
+      const completed = await waitForTask(taskID, undefined, controller.signal);
+      if (!isCurrent()) return;
+      if (completed.status !== "success") throw new Error(completed.error || "提示词优化失败");
+      const optimized = (completed.data || []).map((item) => item.text_response || "").join("\n").trim();
+      if (!optimized) throw new Error("文本模型返回了空提示词");
+      const latest = nodesRef.current.find((node) => node.id === nodeID);
+      if (!latest) return;
+      if (latest.type !== source.type || (latest.generation_mode || "image") !== (source.generation_mode || "image")
+        || nodePromptDraft(latest) !== draft || latest.url !== source.url || latest.storage_key !== source.storage_key) {
+        toast.info("节点或提示词已变更，已保留当前输入");
+        return;
+      }
+      const references = (value: string) => (value.match(CANVAS_CONFIG_REFERENCE_PATTERN) || []).sort();
+      if (!canvasDocumentValuesEqual(references(prompt), references(optimized))) {
+        throw new Error("优化结果更改了节点引用，已保留原提示词");
+      }
+      if (latest.type === "image") {
+        setImagePromptDrafts((drafts) => ({ ...drafts, [nodeID]: optimized }));
+        if (!latest.url) updateNodePrompt(nodeID, optimized, true);
+      } else if (latest.type === "text" || latest.type === "config") {
+        updateNodeComposerContent(nodeID, optimized, true);
+      } else if (latest.type === "panorama") {
+        updatePanoramaPrompt(nodeID, optimized, true);
+      } else {
+        updateNodePrompt(nodeID, optimized, true);
+      }
+    } catch (error) {
+      if (isCurrent()) toast.error(error instanceof Error ? error.message : "提示词优化失败");
+    } finally {
+      completeActiveGeneration(active);
+    }
+  }
+
   function isCurrentCanvasRecovery(projectID: string, operationEpoch: number, signal: AbortSignal) {
     return mountedRef.current
       && !signal.aborted
@@ -5469,9 +5553,14 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
 
   function renderNodePanelContent(node: CanvasNode) {
     if (node.type === "script") return <CanvasScriptPromptPanel node={node} models={textModels} defaultModel={textModel} references={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} running={scriptNodeRunning(node.id)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} onGenerate={() => requestScriptGeneration(node.id)} onStop={() => stopScriptGenerations(node.id)} onUploadReference={(file) => void uploadScriptReference(node.id, file)} />;
-    const pendingRecovery = !nodeGenerationRunning(node.id) && canvasGenerationNeedsRecovery(node);
+    const running = nodeGenerationRunning(node.id);
+    const pendingRecovery = !running && canvasGenerationNeedsRecovery(node);
+    const optimization = {
+      loading: running && activeGenerationsRef.current.get(node.id)?.kind === "prompt-optimization",
+      disabled: pendingRecovery || !nodePromptDraft(node).trim(),
+      onClick: () => void optimizeNodePrompt(node.id),
+    };
     if (node.type === "config") {
-      const running = nodeGenerationRunning(node.id);
       const mode = node.generation_mode || "image";
       const inputs = canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current);
       const canGenerate = canGenerateCanvasConfig(node, inputs);
@@ -5490,6 +5579,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       const configModels = mode === "image" ? imageModels : mode === "text" ? textModels : mode === "audio" ? audioModels : videoModels;
       const configPromptTools = <CanvasNodeInputToolbar action={<CanvasGenerationFooter
         running={running}
+        optimization={optimization}
         disabled={!running && (pendingRecovery || !canGenerate || !canGenerateWithModel || !canGenerateWithParameters)}
         onGenerate={mode === "video" ? () => void runVideoGeneration(node.id, (node.composer_content ?? node.prompt ?? "").trim()) : () => void runGeneration(node.id)}
         onStop={() => requestStopGeneration(node.id)}
@@ -5524,7 +5614,8 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
           onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)}
           model={model}
           models={textModels}
-          running={nodeGenerationRunning(node.id)}
+          running={running}
+          optimization={optimization}
           cancelling={cancellingGenerationNodeIDs.has(node.id)}
           canGenerate={textModels.includes(model) && Boolean(context.prompt.trim() || context.referenceImageURLs.length)}
           onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)}
@@ -5537,18 +5628,17 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     if (node.type === "audio") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "");
       const nodeAudioModel = node.generation_audio_model || audioModel;
-      return <CanvasAudioPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} running={nodeGenerationRunning(node.id)} busy={pendingRecovery} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim()) && audioModels.includes(nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
+      return <CanvasAudioPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} running={running} optimization={optimization} busy={pendingRecovery} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim()) && audioModels.includes(nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "panorama") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.panorama_source_prompt || node.prompt || "");
       const nodeImageModel = node.generation_model?.trim() || imageModel;
-      return <CanvasPanoramaPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} node={node} imageModel={nodeImageModel} imageModels={imageModels} running={nodeGenerationRunning(node.id)} busy={pendingRecovery} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url) && imageModels.includes(nodeImageModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => { replaceNodes(nodesRef.current.map((item) => item.id === node.id ? { ...item, panorama_source_prompt: value, prompt: value } : item)); scheduleSave(); if (commit) pushHistory(); }} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
+      return <CanvasPanoramaPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} node={node} imageModel={nodeImageModel} imageModels={imageModels} running={running} optimization={optimization} busy={pendingRecovery} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url) && imageModels.includes(nodeImageModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => updatePanoramaPrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "director") return null;
     if (node.type === "video") {
-      return <CanvasVideoPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} relayTokenName={tokenNameForModel("video", canvasVideoParameters(node).generation_video_model)} node={node} inputs={canvasGenerationInputs(node.id, nodesRef.current, connectionsRef.current)} running={nodeGenerationRunning(node.id)} generationBusy={pendingRecovery} uploading={uploadingNodeID === node.id} videoModels={videoModels} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} onUpload={() => requestNodeMediaUpload(node.id)} />;
+      return <CanvasVideoPromptPanel mentionReferences={canvasNodeReferenceCandidates(node.id, nodesRef.current, connectionsRef.current)} onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)} relayTokenName={tokenNameForModel("video", canvasVideoParameters(node).generation_video_model)} node={node} inputs={canvasGenerationInputs(node.id, nodesRef.current, connectionsRef.current)} running={running} optimization={optimization} generationBusy={pendingRecovery} uploading={uploadingNodeID === node.id} videoModels={videoModels} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} onUpload={() => requestNodeMediaUpload(node.id)} />;
     }
-    const running = nodeGenerationRunning(node.id);
     const connectedPromptAvailable = Boolean(buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "").prompt);
     return (
       <CanvasNodePromptPanel
@@ -5559,6 +5649,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         onReferenceSelect={(reference) => connectNodes(reference.nodeID, node.id)}
         running={running}
         generationBusy={pendingRecovery}
+        optimization={optimization}
         imageModel={imageModel}
         imageModels={imageModels}
         imageModelReady={imageModelReady}
@@ -5900,7 +5991,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         pendingConnectionActive={Boolean(pendingConnection)}
         collapsingBatchRootIDs={collapsingBatchRootIDs}
         openingBatchRootIDs={openingBatchRootIDs}
-        onNodesChange={replaceNodes}
+        onNodeGeometryChange={updateNodeGeometry}
         onNodesCommit={pushHistory}
         onViewportChange={updateViewport}
         onSelectionChange={selectionChanged}
@@ -6019,7 +6110,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       <Dialog open={Boolean(nodeInfo)} onOpenChange={(open) => { if (!open) setNodeInfoID(""); }}>
         {nodeInfo ? <DialogContent className="w-[min(560px,calc(100vw-2rem))] sm:max-w-none">
           <DialogHeader><DialogTitle>节点详情</DialogTitle><DialogDescription>查看节点信息、生成记录和原始数据。</DialogDescription></DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          {nodeInfo ? <CanvasNodeInfoContent key={nodeInfo.id} node={nodeInfo} configInputs={nodeInfo.type === "config" ? canvasConfigInputs(nodeInfo.id, nodes, connections) : []} /> : null}
+          <CanvasNodeInfoContent key={nodeInfo.id} node={nodeInfo} configInputs={nodeInfo.type === "config" ? canvasConfigInputs(nodeInfo.id, nodes, connections) : []} />
         </ScrollArea></DialogContent> : null}
       </Dialog>
       <RelayTokenRequiredDialog
@@ -6075,11 +6166,11 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       <Dialog open={Boolean(stopTargetNodeID)} onOpenChange={(open) => { if (!open) setStopTargetNodeID(""); }}>
         {stopTargetNodeID ? <DialogContent className="w-[min(92vw,420px)] sm:max-w-none">
           <DialogHeader>
-            <DialogTitle>停止生成？</DialogTitle>
-            <DialogDescription>{nodesRef.current.some((node) => node.id === stopTargetNodeID && node.type === "script") ? "将停止此脚本及其素材、分镜和视频的生成任务，已完成的结果会保留。" : "当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。"}</DialogDescription>
+            <DialogTitle>{stoppingPromptOptimization ? "停止优化？" : "停止生成？"}</DialogTitle>
+            <DialogDescription>{stoppingPromptOptimization ? "将停止优化并保留当前提示词。" : nodesRef.current.some((node) => node.id === stopTargetNodeID && node.type === "script") ? "将停止此脚本及其素材、分镜和视频的生成任务，已完成的结果会保留。" : "当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。"}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStopTargetNodeID("")}>继续生成</Button>
+            <Button variant="outline" onClick={() => setStopTargetNodeID("")}>{stoppingPromptOptimization ? "继续优化" : "继续生成"}</Button>
             <Button variant="destructive" onClick={confirmStopGeneration}>停止</Button>
           </DialogFooter>
         </DialogContent> : null}
@@ -6296,45 +6387,6 @@ function CanvasShortcut({ keys, description }: { keys: string[]; description: st
   );
 }
 
-function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange, onClose }: { onClose: () => void; nodes: CanvasNode[]; viewport: CanvasDocument["viewport"]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: CanvasDocument["viewport"]) => void }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const width = Math.min(240, Math.max(80, viewportSize.width - 24));
-  const height = Math.min(160, Math.max(60, viewportSize.height - 244));
-  const map = useMemo(() => {
-    const minX = Math.min(...nodes.map((node) => node.x)) - 500;
-    const minY = Math.min(...nodes.map((node) => node.y)) - 500;
-    const maxX = Math.max(...nodes.map((node) => node.x + node.width)) + 500;
-    const maxY = Math.max(...nodes.map((node) => node.y + node.height)) + 500;
-    const worldWidth = Math.max(1, maxX - minX);
-    const worldHeight = Math.max(1, maxY - minY);
-    const scale = Math.min(width / worldWidth, height / worldHeight);
-    return { minX, minY, scale, offsetX: (width - worldWidth * scale) / 2, offsetY: (height - worldHeight * scale) / 2 };
-  }, [height, nodes, width]);
-
-  const toMap = useCallback((x: number, y: number) => ({ x: (x - map.minX) * map.scale + map.offsetX, y: (y - map.minY) * map.scale + map.offsetY }), [map]);
-  const viewportStart = toMap(-viewport.x / viewport.zoom, -viewport.y / viewport.zoom);
-  const viewportEnd = toMap((-viewport.x + viewportSize.width) / viewport.zoom, (-viewport.y + viewportSize.height) / viewport.zoom);
-
-  function navigate(event: ReactPointerEvent<HTMLDivElement>) {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const worldX = (event.clientX - rect.left - map.offsetX) / map.scale + map.minX;
-    const worldY = (event.clientY - rect.top - map.offsetY) / map.scale + map.minY;
-    onViewportChange({ zoom: viewport.zoom, x: viewportSize.width / 2 - worldX * viewport.zoom, y: viewportSize.height / 2 - worldY * viewport.zoom });
-  }
-
-  return (
-    <Card data-canvas-minimap className="absolute left-3 z-30 overflow-hidden gap-0 p-0" style={{ width, bottom: "var(--canvas-dock-clearance)" }}>
-      <div className="flex h-8 items-center justify-between border-b border-border/70 px-2.5 text-[11px] font-medium">画布导航<Button variant="ghost" size="icon-sm" type="button" className="grid place-items-center" aria-label="关闭小地图" onClick={onClose}><X  /></Button></div>
-      <div ref={containerRef} aria-label="拖动小地图定位画布" className={cn("relative touch-none", dragging ? "cursor-grabbing" : "cursor-grab")} style={{ height }} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)}>
-        {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-primary" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
-        <span className="pointer-events-none absolute border border-primary bg-muted" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
-      </div>
-    </Card>
-  );
-}
-
 function CanvasRightClickMenu({ triggerID, mediaNode, onInfo, onCopyContent, menu, onClose, onDuplicate, onDelete, onAddText, onAddImage, onAddVideo, onAddConfig, onPaste, onExportImage, onExportJSON, onImport, onClear }: {
   triggerID: string;
   mediaNode?: CanvasNode;
@@ -6397,77 +6449,4 @@ function CanvasRightClickMenu({ triggerID, mediaNode, onInfo, onCopyContent, men
       )}
     </ContextMenuContent>
   );
-}
-
-function CanvasNodeInfoContent({ node, configInputs }: { node: CanvasNode; configInputs: ReturnType<typeof canvasConfigInputs> }) {
-  const [view, setView] = useState<"info" | "json">("info");
-  useEffect(() => setView("info"), [node.id]);
-  const json = useMemo(() => canvasNodeInfoJSON(node), [node]);
-  const typeLabel = node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "script" ? "脚本" : node.type === "config" ? "生成配置" : node.type === "group" ? "组" : "文字";
-  const nodeIcon = node.type === "image" ? <ImagePlus /> : node.type === "video" ? <Video /> : node.type === "audio" ? <Music /> : node.type === "panorama" ? <Compass /> : node.type === "director" ? <Camera /> : node.type === "config" ? <Settings2 /> : node.type === "group" ? <Grid2X2 /> : <Type />;
-  const statusLabel = node.generation_status ? canvasGenerationStatusLabel(node.generation_status) : "普通节点";
-  return (
-    <div className="space-y-5 pb-2">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-3">
-        <p className="text-xs font-semibold text-muted-foreground">节点数据</p>
-        <div className="flex p-1">
-          <Button variant="ghost" size="sm"  onClick={() => setView("info")}>信息</Button>
-          <Button variant="ghost" size="sm"  onClick={() => setView("json")}>JSON</Button>
-        </div>
-      </div>
-      {view === "info" ? (
-          <div className="space-y-5 text-sm">
-            <div className="flex min-w-0 items-center gap-3">
-              <ItemMedia variant="icon" className="grid size-10 shrink-0 place-items-center [&>svg]:size-4.5">{nodeIcon}</ItemMedia>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-foreground">{node.title || canvasNodeFallbackTitle(node.type)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{typeLabel} · {statusLabel}</p>
-              </div>
-              {node.generation_status ? <Badge variant="secondary" className="shrink-0">{statusLabel}</Badge> : null}
-            </div>
-            <InfoSection title="基础信息">
-              <InfoRow label="节点 ID" value={node.id} mono copyable />
-              <InfoRow label="画布尺寸" value={`${Math.round(node.width)} × ${Math.round(node.height)}`} />
-              {node.natural_width && node.natural_height ? <InfoRow label="原始尺寸" value={`${node.natural_width} × ${node.natural_height}`} /> : null}
-              {node.bytes ? <InfoRow label="文件大小" value={formatCanvasFileBytes(node.bytes)} /> : null}
-              <InfoRow label="位置" value={`${Math.round(node.x)}, ${Math.round(node.y)}`} />
-              {node.type === "text" ? <InfoRow label="字号" value={`${node.font_size || 14}px`} /> : null}
-              {node.batch_child_ids && node.batch_child_ids.length > 1 ? <InfoRow label="图片组" value={`${node.batch_child_ids.length} 张`} /> : null}
-              {node.created_at ? <InfoRow label="创建时间" value={new Date(node.created_at).toLocaleString("zh-CN")} /> : null}
-            </InfoSection>
-            {node.prompt || node.composer_content ? <InfoSection title="内容">
-              {node.prompt ? <InfoRow label="提示词" value={node.prompt} /> : null}
-              {node.composer_content ? <InfoRow label="组装提示词" value={canvasConfigPromptDisplay(node.composer_content, configInputs)} /> : null}
-            </InfoSection> : null}
-            {node.task_id || node.generation_model || node.generation_type || node.generation_status || node.generation_error ? <InfoSection title="生成信息">
-              {node.generation_model ? <InfoRow label="模型" value={node.generation_model} mono /> : null}
-              {node.generation_type ? <InfoRow label="请求类型" value={node.generation_type === "edit" ? "图片编辑" : "图片生成"} /> : null}
-              {node.generation_status ? <InfoRow label="状态" value={statusLabel} /> : null}
-              {node.task_id ? <InfoRow label="任务 ID" value={node.task_id} mono copyable /> : null}
-              {node.generation_error ? <InfoRow label="失败原因" value={node.generation_error} /> : null}
-            </InfoSection> : null}
-            {node.url ? <InfoSection title="资源">
-              <InfoRow label={node.type === "video" ? "视频地址" : node.type === "audio" ? "音频地址" : node.type === "panorama" ? "全景图地址" : "图片地址"} value={node.url} mono copyable />
-            </InfoSection> : null}
-          </div>
-        ) : (
-          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(60dvh,32rem)]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 text-xs leading-5 p-4"><CodeBlock><CodeBlockContent wrap>{json}</CodeBlockContent></CodeBlock></div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-        )}
-    </div>
-  );
-}
-
-function InfoSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section><h3 className="mb-1.5 text-[11px] font-semibold uppercase text-muted-foreground">{title}</h3><div className="divide-y divide-border/65 border-y border-border/65">{children}</div></section>;
-}
-
-function InfoRow({ label, value, mono = false, copyable = false }: { label: string; value: string; mono?: boolean; copyable?: boolean }) {
-  return <div className="grid min-h-10 grid-cols-[76px_minmax(0,1fr)] items-start gap-3 py-2.5"><span className="text-xs leading-5 text-muted-foreground">{label}</span><span className="flex min-w-0 items-start gap-1.5"><span className={cn("min-w-0 flex-1 break-words leading-5", mono && "font-mono text-xs")}>{value}</span>{copyable ? <Tooltip><TooltipTrigger asChild><CodeBlockCopyButton size="icon-sm" className="shrink-0" aria-label={`复制${label}`} value={value} /></TooltipTrigger><TooltipContent>复制{label}</TooltipContent></Tooltip> : null}</span></div>;
-}
-
-function formatCanvasFileBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "-";
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

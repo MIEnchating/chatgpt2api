@@ -12,12 +12,14 @@ import { toast } from "sonner";
 import { AudioLines, Clapperboard, Image as ImageIcon, CircleHelp, Pencil, Plus, Save, RefreshCw, TextCursorInput, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SettingsWorkspace } from "@/components/settings-workspace";
 import { personalSettingsSections } from "@/lib/settings-navigation";
 import { useLocation } from "react-router-dom";
 import { AppearanceSettings } from "./appearance-settings";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SettingsPanel, SettingsSection } from "@/components/settings-panel";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -477,6 +479,8 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     capabilities: {} as Record<string, ModelCapability>,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const savedWorkbenchAudioRef = useRef(false);
@@ -502,6 +506,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     saveVersionRef.current += 1;
     setIsSaving(false);
     setIsLoading(true);
+    setLoadError("");
     void Promise.allSettled([fetchImageGenerationPreferences(), fetchModelConfig()])
       .then(([preferencesResult, modelConfigResult]) => {
         if (ignore) return;
@@ -530,18 +535,20 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
           });
         }
         if (preferencesResult.status === "fulfilled") {
-          savedWorkbenchAudioRef.current = preferencesResult.value.preferences.workbench.video_generate_audio;
-          setPreferences(reconcileDefaults({ ...DEFAULT_IMAGE_GENERATION_PREFERENCES, ...preferencesResult.value.preferences }));
+          const saved = preferencesResult.value.preferences;
+          savedWorkbenchAudioRef.current = saved.workbench.video_generate_audio;
+          setPreferences(reconcileDefaults({ ...DEFAULT_IMAGE_GENERATION_PREFERENCES, ...saved }));
         } else if (config) {
           setPreferences((current) => reconcileDefaults(current));
         }
 
-        const error = preferencesResult.status === "rejected"
-          ? preferencesResult.reason
-          : modelConfigResult.status === "rejected"
-            ? modelConfigResult.reason
-            : null;
-        if (error) setMessage(error instanceof Error ? error.message : "读取图片生成设置失败");
+        const failed = [preferencesResult, modelConfigResult].find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") {
+          setLoadError(failed.reason instanceof Error ? failed.reason.message : "读取创作偏好失败");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!ignore) setLoadError(error instanceof Error ? error.message : "读取创作偏好失败");
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -550,7 +557,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       ignore = true;
       saveVersionRef.current += 1;
     };
-  }, [sessionKey]);
+  }, [loadAttempt, sessionKey]);
 
   useEffect(() => {
     modelPullVersionRef.current += 1;
@@ -646,6 +653,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   };
 
   const save = async () => {
+    if (isLoading || loadError || isSaving) return;
     const saveVersion = saveVersionRef.current + 1;
     saveVersionRef.current = saveVersion;
     const saveSessionKey = sessionKey;
@@ -682,12 +690,15 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       title="创作偏好"
       description="设置个人默认模型与生成参数，创作时仍可临时调整。"
       contentScrollable={false}
-      action={<Button type="button" onClick={() => void save()} disabled={isLoading || isSaving}>
+      action={<Button type="button" onClick={() => void save()} disabled={isLoading || Boolean(loadError) || isSaving}>
         {isSaving ? <Spinner /> : null}
         保存设置
       </Button>}
     >
-      <Tabs defaultValue="models" className="min-h-0 min-w-0 flex-1 gap-4">
+      {isLoading ? <LoadingState label="正在读取创作偏好" /> : loadError ? (
+        <EmptyState role="alert" title="无法读取创作偏好" description={loadError}
+          action={<Button type="button" variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw />重试</Button>} />
+      ) : <Tabs defaultValue="models" className="min-h-0 min-w-0 flex-1 gap-4">
         <TabsList aria-label="创作偏好分类" className="w-full shrink-0">
           <TabsTrigger value="models">模型</TabsTrigger>
           <TabsTrigger value="canvas">画布</TabsTrigger>
@@ -795,13 +806,13 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
             </SettingsSection>
           </ScrollArea>
         </TabsContent>
-      </Tabs>
+      </Tabs>}
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
     </SettingsPanel>
   );
 }
 
-function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balance: ProfileBalanceStatus | null; isLoading: boolean; onRefresh: () => void; session: StoredAuthSession }) {
+function AccountOverviewCard({ balance, error, isLoading, onRefresh, session }: { balance: ProfileBalanceStatus | null; error: string; isLoading: boolean; onRefresh: () => void; session: StoredAuthSession }) {
   const subjectId = displaySubjectId(session.subjectId, session.provider);
   const showBalance = session.provider === "newapi" || session.provider === "sub2api";
   const name = session.name || "用户";
@@ -856,7 +867,14 @@ function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balan
               </dl>
             </CardContent>
           </Card>
-          {showBalance && isLoading ? <LoadingState label="正在读取账户概览" /> : showBalance && !balance?.has_balance ? <p className="text-sm leading-6 text-muted-foreground">{balance?.database_configured === false || /数据库连接/.test(balance?.message || "") ? session.role === "admin" ? "请先配置数据库连接" : "数据库连接未配置，请联系管理员" : balance?.message || "暂时无法读取账户余额"}</p> : null}
+          {showBalance && error ? <Alert variant="destructive" role="alert">
+            <AlertTitle>账户余额读取失败</AlertTitle>
+            <AlertDescription className="wrap-anywhere">{error}</AlertDescription>
+          </Alert> : null}
+          {showBalance && isLoading && !balance ? <LoadingState label="正在读取账户概览" /> : null}
+          {showBalance && !isLoading && !error && balance && !balance.has_balance ? (
+            <p className="text-sm leading-6 text-muted-foreground">{balance.database_configured === false || /数据库连接/.test(balance.message || "") ? session.role === "admin" ? "请先配置数据库连接" : "数据库连接未配置，请联系管理员" : balance.message || "暂无账户余额数据"}</p>
+          ) : null}
         </section>
       </div>
     </SettingsPanel>
@@ -877,6 +895,8 @@ function profileSectionFromHash(rawHash: string): ProfileSection {
 
 function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
+  const [balanceError, setBalanceError] = useState("");
+  const balanceRequestRef = useRef<Promise<void> | null>(null);
   const [relayTokenAvailability, setRelayTokenAvailability] = useState<RelayTokenAvailability>({
     authoritative: false,
     names: [],
@@ -887,6 +907,16 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const { hash } = useLocation();
   const activeSection = profileSectionFromHash(hash);
+  const [visitedSections, setVisitedSections] = useState(() => new Set<ProfileSection>([activeSection]));
+  useEffect(() => {
+    setVisitedSections((current) => current.has(activeSection) ? current : new Set([...current, activeSection]));
+  }, [activeSection]);
+  const showCreation = activeSection === "creation" || visitedSections.has("creation");
+  const showStorage = activeSection === "storage" || visitedSections.has("storage");
+  const needsAccountBalance = (session.provider === "newapi" || session.provider === "sub2api")
+    && (activeSection === "account" || visitedSections.has("account"));
+  const needsBalance = needsAccountBalance || activeSection === "keys" || visitedSections.has("keys");
+  const needsCustomRelay = activeSection === "keys" || visitedSections.has("keys");
 
   const selectRelayTokenNames = useCallback((kind: RelayTokenKind, values: string[]) => {
     void setTokenNames(kind, values).catch((error) => {
@@ -898,27 +928,29 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     ...relayTokenAvailability.names,
     ...(!relayTokenAvailability.authoritative ? Object.values(selectedTokenNames).flat() : []),
   ]), [relayTokenAvailability, selectedTokenNames]);
-  const loadBalance = useCallback(async () => {
+  const loadBalance = useCallback(() => {
+    if (balanceRequestRef.current) return balanceRequestRef.current;
     setIsLoadingBalance(true);
+    setBalanceError("");
     setRelayTokenAvailability((current) => ({ ...current, authoritative: false }));
-    try {
-      const nextBalance = await fetchProfileBalance();
-      setBalance(nextBalance);
-      const nextAvailability = relayTokenAvailabilityFromBalance(nextBalance);
-      setRelayTokenAvailability((current) => (
-        nextAvailability.authoritative ? nextAvailability : { ...current, authoritative: false }
-      ));
-    } catch (error) {
-      setBalance({
-        has_balance: false,
-        source: "newapi",
-        message: error instanceof Error ? error.message : "读取云棉用户余额失败",
+    const isCurrent = () => getCachedAuthSession()?.key === session.key;
+    const request = fetchProfileBalance()
+      .then((nextBalance) => {
+        if (!isCurrent()) return;
+        setBalance(nextBalance);
+        const nextAvailability = relayTokenAvailabilityFromBalance(nextBalance);
+        if (nextAvailability.authoritative) setRelayTokenAvailability(nextAvailability);
+      })
+      .catch((error) => {
+        if (isCurrent()) setBalanceError(error instanceof Error ? error.message : "读取账户余额失败");
+      })
+      .finally(() => {
+        balanceRequestRef.current = null;
+        if (isCurrent()) setIsLoadingBalance(false);
       });
-      setRelayTokenAvailability((current) => ({ ...current, authoritative: false }));
-    } finally {
-      setIsLoadingBalance(false);
-    }
-  }, []);
+    balanceRequestRef.current = request;
+    return request;
+  }, [session.key]);
 
   const loadCustomRelayConfigs = useCallback(async () => {
     try {
@@ -947,20 +979,23 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   ]);
 
   useEffect(() => {
-    void loadBalance();
-    void loadCustomRelayConfigs();
-  }, [session.key, loadBalance, loadCustomRelayConfigs]);
+    if (needsBalance) void loadBalance();
+  }, [loadBalance, needsBalance]);
+
+  useEffect(() => {
+    if (needsCustomRelay) void loadCustomRelayConfigs();
+  }, [loadCustomRelayConfigs, needsCustomRelay]);
 
   return (
     <>
       <div data-profile-layout className="h-full min-h-0">
         <SettingsWorkspace items={personalSettingsSections} title="个人设置" activeId={activeSection}>
 
-          <div hidden={activeSection !== "account"} className="h-full min-h-0"><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
+          <div hidden={activeSection !== "account"} className="h-full min-h-0"><AccountOverviewCard balance={balance} error={balanceError} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
           <div hidden={activeSection !== "keys"} className="h-full min-h-0"><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
           <div hidden={activeSection !== "appearance"} className="h-full"><AppearanceSettings /></div>
-          <div hidden={activeSection !== "creation"} className="h-full min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
-          <div hidden={activeSection !== "storage"} className="h-full min-h-0"><StorageProviderCard /></div>
+          {showCreation ? <div hidden={activeSection !== "creation"} className="h-full min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div> : null}
+          {showStorage ? <div hidden={activeSection !== "storage"} className="h-full min-h-0"><StorageProviderCard /></div> : null}
         </SettingsWorkspace>
       </div>
       <CustomRelayConfigDialog

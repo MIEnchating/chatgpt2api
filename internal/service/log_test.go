@@ -177,13 +177,22 @@ func TestLogServiceSearchPagePaginatesSparseMatchesWithoutLoss(t *testing.T) {
 		}
 	}
 
-	query := LogQuery{Summary: "needle", View: LogViewAll, Limit: 2}
+	query := LogQuery{Summary: "needle", StartTime: "2026-08-30", EndTime: "2026-08-30", View: LogViewAll, Limit: 2}
 	first, err := logs.SearchPage(query)
 	if err != nil {
 		t.Fatalf("SearchPage(first) error = %v", err)
 	}
 	if got := logSummaries(first.Items); !reflect.DeepEqual(got, []string{"needle-510", "needle-260"}) || !first.HasMore || first.SnapshotCursor == "" || first.NextCursor == "" {
 		t.Fatalf("SearchPage(first) = %#v", first)
+	}
+	scope := normalizeLogQueryScope(query)
+	position, err := decodeLogCursor(first.NextCursor, scope.cursorHash())
+	if err != nil || position == nil || position.ID != 12 {
+		t.Fatalf("next cursor = (%#v, %v), want position immediately before needle-010", position, err)
+	}
+	firstRecords, err := logs.store.(storage.LogPageBackend).QueryLogPage("2026-08-30", "2026-08-30", position, 1)
+	if err != nil || len(firstRecords.Records) != 1 || firstRecords.Records[0].Item["summary"] != "needle-010" {
+		t.Fatalf("first following record = (%#v, %v), want needle-010", firstRecords, err)
 	}
 	if err := logs.store.AppendLog(map[string]any{
 		"time":    "2020-01-01 00:00:00",
@@ -194,6 +203,8 @@ func TestLogServiceSearchPagePaginatesSparseMatchesWithoutLoss(t *testing.T) {
 	}
 
 	query.Summary = " NEEDLE "
+	query.StartTime = " 2026-08-30T00:00 "
+	query.EndTime = " 2026-08-30T23:59 "
 	query.Cursor = first.NextCursor
 	second, err := logs.SearchPage(query)
 	if err != nil {
@@ -224,7 +235,7 @@ func TestLogServiceSearchPageRejectsInvalidAndMismatchedCursors(t *testing.T) {
 		SnapshotID: 2,
 		Day:        "2026-08-30",
 		ID:         -1,
-		QueryHash:  logQueryCursorHash(LogQuery{Summary: "cursor", View: LogViewAll}),
+		QueryHash:  normalizeLogQueryScope(LogQuery{Summary: "cursor", View: LogViewAll}).cursorHash(),
 	})
 	if err != nil {
 		t.Fatalf("Marshal(forged cursor) error = %v", err)

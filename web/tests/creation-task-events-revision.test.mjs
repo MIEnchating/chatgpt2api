@@ -12,13 +12,14 @@ function fixture() {
 }
 
 const event = (items, type = "tasks") => ({ type, items, deleted_ids: [] });
-const task = (revision, text) => ({ id: "one", revision, status: "running", data: [{ text_response: text }] });
+const task = (revision, text) => ({ id: "one", revision, status: "running", workflow_context: { workflow_id: "workflow", batch_task_id: "batch" }, data: [{ text_response: text }] });
 
-test("string revisions are compared numerically so a stale event cannot overwrite a newer task", () => {
+test("string revisions are compared numerically so a stale event cannot overwrite a newer task", async () => {
   const { client, connections } = fixture();
   const snapshots = [];
-  const stop = client.watch({ onUpdate: (value) => snapshots.push(value), onError: assert.fail });
+  const stop = client.watch({ workflowBatchIDs: ["batch"], onUpdate: (value) => snapshots.push(value), onError: assert.fail });
   try {
+    await Promise.resolve();
     connections[0].emit(event([task("10", "latest")], "snapshot"));
     connections[0].emit(event([task("9", "stale")]));
     assert.equal(snapshots.at(-1).items[0].data[0].text_response, "latest");
@@ -30,11 +31,12 @@ test("string revisions are compared numerically so a stale event cannot overwrit
   }
 });
 
-test("mixed numeric and string revisions keep the highest revision", () => {
+test("mixed numeric and string revisions keep the highest revision", async () => {
   const { client, connections } = fixture();
   const snapshots = [];
-  const stop = client.watch({ onUpdate: (value) => snapshots.push(value), onError: assert.fail });
+  const stop = client.watch({ workflowBatchIDs: ["batch"], onUpdate: (value) => snapshots.push(value), onError: assert.fail });
   try {
+    await Promise.resolve();
     connections[0].emit(event([task(12, "latest")], "snapshot"));
     connections[0].emit(event([task("3", "stale")]));
     assert.equal(snapshots.at(-1).items[0].data[0].text_response, "latest");

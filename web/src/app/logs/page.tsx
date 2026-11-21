@@ -11,8 +11,8 @@ import { Card } from "@/components/ui/card";
 
 
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronDown, Eye, ListFilter, RefreshCw, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Eye, ListFilter, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -22,14 +22,15 @@ import { ManagementHeader, ManagementPage, ManagementPagination, ManagementPanel
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { LabeledField } from "@/components/labeled-field";
 import { SearchInput } from "@/components/ui/search-input";
-import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
+import { fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
@@ -56,7 +57,7 @@ function normalizeLogView(value: unknown): LogView {
   return "meaningful";
 }
 
-function createEmptyFilters(view: LogView): SystemLogFilters {
+function createEmptyFilters(): SystemLogFilters {
   return {
     username: "",
     module: "",
@@ -66,7 +67,6 @@ function createEmptyFilters(view: LogView): SystemLogFilters {
     ip_address: "",
     operation_type: "",
     log_level: "all",
-    view,
     start_date: "",
     end_date: "",
   };
@@ -341,7 +341,7 @@ function normalizeFilters(filters: SystemLogFilters): SystemLogFilters {
     ip_address: filters.ip_address?.trim() || "",
     operation_type: filters.operation_type?.trim() || "",
     log_level: filters.log_level || "all",
-    view: normalizeLogView(filters.view),
+    view: filters.view ? normalizeLogView(filters.view) : undefined,
     start_date: filters.start_date || "",
     end_date: filters.end_date || "",
   };
@@ -350,7 +350,7 @@ function normalizeFilters(filters: SystemLogFilters): SystemLogFilters {
 function activeFilterCount(filters: SystemLogFilters, defaultView: LogView) {
   const normalized = normalizeFilters(filters);
   return [
-    normalized.view !== defaultView,
+    Boolean(normalized.view && normalized.view !== defaultView),
     Boolean(normalized.username),
     Boolean(normalized.module),
     Boolean(normalized.summary),
@@ -367,10 +367,10 @@ function LogsContent() {
   const loadLogsAbortRef = useRef<AbortController | null>(null);
   const loadLogsRequestRef = useRef(0);
   const logCursorStackRef = useRef<string[]>(resetLogCursorStack());
-  const initialFilters = createEmptyFilters("meaningful");
+  const initialFilters = createEmptyFilters();
   const [items, setItems] = useState<SystemLog[]>([]);
   const [defaultLogView, setDefaultLogView] = useState<LogView>("meaningful");
-  const [isDefaultLogViewReady, setIsDefaultLogViewReady] = useState(false);
+  const [resolvedLogView, setResolvedLogView] = useState<LogView>("meaningful");
   const [filters, setFilters] = useState<SystemLogFilters>(initialFilters);
   const [query, setQuery] = useState<SystemLogFilters>(initialFilters);
   const [detailLog, setDetailLog] = useState<SystemLog | null>(null);
@@ -381,16 +381,26 @@ function LogsContent() {
   const [pageSize, setPageSize] = useState(15);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [advancedDraft, setAdvancedDraft] = useState<SystemLogFilters | null>(null);
   const detailUrls = getUrls(detailLog);
   const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: url }));
   const detailMethod = detailText(detailLog, "method");
   const detailFieldSections = getDetailFieldSections(detailLog);
   const currentRows = items;
-  const activeFilters = activeFilterCount(filters, defaultLogView);
-  const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "destructive").length;
-  const warningCount = items.filter((item) => logLevel(item) === "warning").length;
-  const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
+  const activeFilters = activeFilterCount(query, defaultLogView);
+  const { errorCount, warningCount, slowRequestCount } = useMemo(() => {
+    let errorCount = 0;
+    let warningCount = 0;
+    let slowRequestCount = 0;
+    for (const item of items) {
+      const level = logLevel(item);
+      if (level === "error" || statusBadgeVariant(item) === "destructive") errorCount++;
+      if (level === "warning") warningCount++;
+      if (durationMs(item) >= 3000) slowRequestCount++;
+    }
+    return { errorCount, warningCount, slowRequestCount };
+  }, [items]);
 
   const loadLogs = useCallback(async (
     nextQuery: SystemLogFilters,
@@ -409,6 +419,7 @@ function LogsContent() {
     const controller = new AbortController();
     loadLogsAbortRef.current = controller;
     setIsLoading(true);
+    setLoadError("");
     try {
       const data = await fetchSystemLogs(nextQuery, {
         signal: controller.signal,
@@ -424,11 +435,15 @@ function LogsContent() {
         data.has_more,
       );
       setItems(data.items);
+      setDefaultLogView(normalizeLogView(data.default_view));
+      setResolvedLogView(normalizeLogView(data.view));
       setHasMore(data.has_more);
       setPage(targetPage);
     } catch (error) {
       if (controller.signal.aborted || requestID !== loadLogsRequestRef.current) return;
-      toast.error(error instanceof Error ? error.message : "加载日志失败");
+      const message = error instanceof Error ? error.message : "加载日志失败";
+      setLoadError(message);
+      if (!options.reset) toast.error(message);
     } finally {
       if (requestID === loadLogsRequestRef.current) {
         setIsLoading(false);
@@ -444,7 +459,7 @@ function LogsContent() {
   const handlePageChange = (targetPage: number) => {
     const cursor = logCursorForPage(logCursorStackRef.current, targetPage);
     if (cursor === null) return;
-    void loadLogs(query, { cursor, pageSize, targetPage });
+    void loadLogs({ ...query, view: resolvedLogView }, { cursor, pageSize, targetPage });
   };
 
   const updateFilter = (key: keyof SystemLogFilters, value: string) => {
@@ -456,10 +471,21 @@ function LogsContent() {
     setQuery(normalizeFilters(filters));
   };
 
+  const retryLogs = () => void loadFirstLogPage(query, pageSize);
+
   const clearFilters = () => {
-    const nextFilters = createEmptyFilters(defaultLogView);
+    const nextFilters = createEmptyFilters();
     setFilters(nextFilters);
     setQuery(nextFilters);
+    setAdvancedDraft(null);
+  };
+
+  const applyAdvancedFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!advancedDraft) return;
+    setFilters(advancedDraft);
+    setQuery(normalizeFilters(advancedDraft));
+    setAdvancedDraft(null);
   };
 
   const openDetail = (item: SystemLog) => {
@@ -469,51 +495,22 @@ function LogsContent() {
 
 
   useEffect(() => {
-    let ignore = false;
-    const loadDefaultLogView = async () => {
-      let view: LogView = "meaningful";
-      try {
-        const data = await fetchSettingsConfig();
-        view = normalizeLogView(data.config.default_log_view);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "加载默认日志视图失败");
-      }
-      if (ignore) {
-        return;
-      }
-      const nextFilters = createEmptyFilters(view);
-      setDefaultLogView(view);
-      setFilters(nextFilters);
-      setQuery(nextFilters);
-      setIsDefaultLogViewReady(true);
-    };
-    void loadDefaultLogView();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isDefaultLogViewReady) {
-      return;
-    }
     void loadFirstLogPage(query, pageSize);
     return () => {
       loadLogsRequestRef.current += 1;
       loadLogsAbortRef.current?.abort();
     };
-  }, [isDefaultLogViewReady, loadFirstLogPage, pageSize, query]);
+  }, [loadFirstLogPage, pageSize, query]);
 
   return (
     <ManagementPage data-logs-layout aria-label="请求日志">
       <ManagementHeader title="请求日志" description="检索请求记录、用量和运行状态。" />
       <ManagementPanel className="flex-1">
-        <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[38dvh] shrink-0" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0"><ManagementToolbar>
-          <form className="space-y-3" onSubmit={handleSearch}>
-            <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:flex-wrap 2xl:items-center">
+        <ManagementToolbar>
+          <form className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center" onSubmit={handleSearch}>
               <SearchInput aria-label="搜索日志摘要或接口" placeholder="搜索摘要或接口" value={filters.summary || ""} onValueChange={(value) => updateFilter("summary", value)} containerClassName="flex-1" />
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
+                <Select value={filters.view || defaultLogView} onValueChange={(value) => updateFilter("view", value)}>
                   <SelectTrigger className="w-full sm:w-[150px]" aria-label="日志视图"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {logViewOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
@@ -543,21 +540,19 @@ function LogsContent() {
                 </Button>
                 <Button
                   type="button"
-                  variant={isFiltersExpanded ? "secondary" : "outline"}
+                  variant="outline"
                   className="flex-1 xl:flex-none"
-                  aria-expanded={isFiltersExpanded}
-                  aria-controls="log-advanced-filters"
-                  onClick={() => setIsFiltersExpanded((expanded) => !expanded)}
+                  aria-haspopup="dialog"
+                  onClick={() => setAdvancedDraft(filters)}
                 >
                   <ListFilter  />
                   更多筛选
                   {activeFilters > 0 ? <Badge variant="secondary" className="min-w-5">{activeFilters}</Badge> : null}
-                  <ChevronDown className={`size-4 transition-transform ${isFiltersExpanded ? "rotate-180" : ""}`} />
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => void loadFirstLogPage(query, pageSize)}
+                  onClick={retryLogs}
                   disabled={isLoading}
                   className="flex-1 xl:flex-none"
                 >
@@ -565,45 +560,8 @@ function LogsContent() {
                   刷新
                 </Button>
               </div>
-            </div>
-
-            <div
-              id="log-advanced-filters"
-              inert={!isFiltersExpanded}
-              aria-hidden={!isFiltersExpanded}
-              className={`grid transition-[grid-template-rows,opacity] duration-200 ${isFiltersExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
-            >
-              <div className="overflow-hidden">
-                <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-                  <Input placeholder="操作人" value={filters.username || ""} onChange={(event) => updateFilter("username", event.target.value)} />
-                  <Input placeholder="模块" value={filters.module || ""} onChange={(event) => updateFilter("module", event.target.value)} />
-                  <Input placeholder="IP 地址" value={filters.ip_address || ""} onChange={(event) => updateFilter("ip_address", event.target.value)} />
-                  <Input placeholder="操作类型" value={filters.operation_type || ""} onChange={(event) => updateFilter("operation_type", event.target.value)} />
-                  <Select value={filters.method || "all"} onValueChange={(value) => updateFilter("method", value)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">全部方法</SelectItem>
-                      {methodOptions.map((method) => <SelectItem key={method} value={method}>{method}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex gap-2">
-                    <Select value={filters.status || "all"} onValueChange={(value) => updateFilter("status", value)}>
-                      <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">全部状态</SelectItem>
-                        {statusOptions.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" variant="ghost" onClick={clearFilters} className="shrink-0">
-                      <X  />
-                      清空
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
           </form>
-        </ManagementToolbar></div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        </ManagementToolbar>
 
         <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
           <div className="flex items-baseline gap-1.5">
@@ -628,6 +586,9 @@ function LogsContent() {
           </div>
         </div>
 
+        {loadError && items.length === 0 ? (
+          <EmptyState role="alert" compact title="日志加载失败" description={loadError} className="flex-1" action={<Button type="button" variant="outline" onClick={retryLogs}>重试</Button>} />
+        ) : (
           <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-h-full min-w-0">
             <div className="hidden min-h-full flex-col lg:flex">
             <Table aria-label="请求日志" aria-busy={isLoading} className="min-w-[1040px] table-fixed">
@@ -732,6 +693,7 @@ function LogsContent() {
             {isLoading && items.length === 0 ? <LoadingState className="min-h-40 flex-1" label="正在加载日志" /> : null}
             </div>
           </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+        )}
           <ManagementPagination
             mode="cursor"
             page={page}
@@ -746,6 +708,49 @@ function LogsContent() {
             }}
           />
       </ManagementPanel>
+
+      <Dialog open={advancedDraft !== null} onOpenChange={(open) => { if (!open) setAdvancedDraft(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>更多筛选</DialogTitle>
+            <DialogDescription>按操作信息和请求状态缩小查询范围。</DialogDescription>
+          </DialogHeader>
+          <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1">
+            <form id="log-advanced-filters" onSubmit={applyAdvancedFilters} className="grid gap-4 py-1 sm:grid-cols-2">
+              {([["username", "操作人"], ["module", "模块"], ["ip_address", "IP 地址"], ["operation_type", "操作类型"]] as const).map(([key, label]) => (
+                <LabeledField key={key} label={label}>
+                  {(id) => <Input id={id} value={advancedDraft?.[key] || ""} onChange={(event) => {
+                    const value = event.target.value;
+                    setAdvancedDraft((current) => current && { ...current, [key]: value });
+                  }} />}
+                </LabeledField>
+              ))}
+              <LabeledField label="请求方法">
+                {(id) => <Select value={advancedDraft?.method || "all"} onValueChange={(method) => setAdvancedDraft((current) => current && { ...current, method })}>
+                  <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部方法</SelectItem>
+                    {methodOptions.map((method) => <SelectItem key={method} value={method}>{method}</SelectItem>)}
+                  </SelectContent>
+                </Select>}
+              </LabeledField>
+              <LabeledField label="请求状态">
+                {(id) => <Select value={advancedDraft?.status || "all"} onValueChange={(status) => setAdvancedDraft((current) => current && { ...current, status })}>
+                  <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    {statusOptions.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>}
+              </LabeledField>
+            </form>
+          </ScrollArea>
+          <DialogFooter className="flex-row flex-wrap justify-end">
+            <Button type="button" variant="ghost" onClick={clearFilters}><X />清空筛选</Button>
+            <Button type="submit" form="log-advanced-filters">应用筛选</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col overflow-hidden sm:max-w-none">

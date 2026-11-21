@@ -70,6 +70,11 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 	resetIntegrationDatabase(t, initial)
 
 	writeIntegrationCoreData(t, initial, wantDriver)
+	observer := openIntegrationBackend(t, wantDriver)
+	exerciseJSONDocumentObservation(t, initial, observer)
+	if err := observer.Close(); err != nil {
+		t.Fatal(err)
+	}
 	exerciseDocumentDeadlineRecovery(t, initial)
 	exerciseStorageObjectIntegration(t, initial, wantDriver)
 	if err := initial.Close(); err != nil {

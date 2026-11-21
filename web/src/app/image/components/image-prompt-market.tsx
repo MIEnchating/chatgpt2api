@@ -21,10 +21,10 @@ import {
   DEFAULT_PROMPT_MARKET_SOURCES,
   fetchPromptMarketPrompts,
   normalizePromptMarketSources,
-  promptMatchesKeyword,
-  sortPromptMarketPrompts,
+  preparePromptMarketEntries,
+  searchPromptMarketEntries,
   type BananaPrompt,
-  type PromptMarketLocalization,
+  type PromptMarketEntry,
   type PromptMarketSourceId,
 } from "@/app/image/banana-prompts";
 import { fetchPromptSourcesConfig } from "@/lib/api";
@@ -38,6 +38,7 @@ import {
   type PromptFavorite,
 } from "@/app/image/prompt-favorites";
 import { PromptFavoriteRequestLifecycle } from "@/app/image/prompt-favorite-request-lifecycle";
+import { PromptMarketSourceAlert } from "./prompt-market-source-alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -68,6 +69,12 @@ type ImagePromptMarketProps = {
 
 const INITIAL_VISIBLE_COUNT = 60;
 const VISIBLE_COUNT_STEP = 60;
+const promptDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function formatPromptDate(value?: string) {
   if (!value) {
     return "";
@@ -76,41 +83,13 @@ function formatPromptDate(value?: string) {
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+  return promptDateFormatter.format(date);
 }
 
-function getPromptLocalization(prompt: BananaPrompt): PromptMarketLocalization | undefined {
-  return prompt.localizations?.["zh-CN"] ?? prompt.localizations?.en;
-}
-
-function getLocalizedPrompt(prompt: BananaPrompt): BananaPrompt {
-  const localization = getPromptLocalization(prompt);
-  if (!localization) {
-    return prompt;
-  }
-
-  return {
-    ...prompt,
-    title: localization.title,
-    prompt: localization.prompt,
-    category: localization.category,
-    subCategory: localization.subCategory,
-  };
-}
-
-function promptFilterTags(prompt: BananaPrompt) {
-  const localizedPrompt = getLocalizedPrompt(prompt);
-  return Array.from(new Set(localizedPrompt.tags.filter((value) => Boolean(value.trim()))));
-}
-
-function PromptPreviewImage({ prompt }: { prompt: BananaPrompt }) {
+function PromptPreviewImage({ prompt, className }: { prompt: BananaPrompt; className: string }) {
   const [failed, setFailed] = useState(false);
 
-  if (failed) {
+  if (failed || !prompt.preview) {
     return (
       <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm font-medium text-muted-foreground">
         {prompt.title}
@@ -123,7 +102,7 @@ function PromptPreviewImage({ prompt }: { prompt: BananaPrompt }) {
       src={prompt.preview}
       alt={prompt.title}
       loading="lazy"
-      className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+      className={className}
       onError={() => setFailed(true)}
     />
   );
@@ -137,6 +116,8 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [error, setError] = useState("");
   const [promptReloadKey, setPromptReloadKey] = useState(0);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
+  const loadedPromptKey = useRef<number | null>(null);
   const [favoriteError, setFavoriteError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [favoriteFilter, setFavoriteFilter] = useState<PromptMarketFavoriteFilter>("all");
@@ -146,7 +127,8 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [favoriteBusyIds, setFavoriteBusyIds] = useState<Set<string>>(() => new Set());
   const [saveBusyIds, setSaveBusyIds] = useState<Set<string>>(() => new Set());
-  const [selectedPrompt, setSelectedPrompt] = useState<BananaPrompt | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<PromptMarketEntry | null>(null);
+  const selectedPrompt = selectedEntry?.localized;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(open);
   const favoriteRequestLifecycleRef = useRef(new PromptFavoriteRequestLifecycle());
@@ -206,7 +188,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   }, [open]);
 
   useEffect(() => {
-    if (!open || prompts.length > 0) {
+    if (!open || loadedPromptKey.current === promptReloadKey) {
       return;
     }
 
@@ -221,9 +203,11 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
         setSourceConfigs(configured);
         return fetchPromptMarketPrompts(controller.signal, configured);
       })
-      .then((items) => {
+      .then(({ prompts: items, failedSources }) => {
         controller.signal.throwIfAborted();
+        loadedPromptKey.current = promptReloadKey;
         setPrompts(items);
+        setFailedSources(failedSources);
       })
       .catch((loadError: unknown) => {
         if (controller.signal.aborted) {
@@ -238,7 +222,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
       });
 
     return () => controller.abort();
-  }, [open, promptReloadKey, prompts.length]);
+  }, [open, promptReloadKey]);
 
   useEffect(() => {
     if (!open || favoriteItems.length > 0) {
@@ -264,11 +248,10 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   }, [open]);
 
   const favoritePrompts = useMemo(
-    () => favoriteItems.map((item) => promptFavoriteToBananaPrompt(item)),
+    () => preparePromptMarketEntries(favoriteItems.map(promptFavoriteToBananaPrompt)),
     [favoriteItems],
   );
-
-  const visibleFavoritePrompts = favoritePrompts;
+  const marketPrompts = useMemo(() => preparePromptMarketEntries(prompts), [prompts]);
 
   const favoriteIds = useMemo(() => new Set(favoriteItems.map((item) => promptFavoriteRecordKey(item))), [favoriteItems]);
 
@@ -280,27 +263,24 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     return items;
   }, [favoriteItems]);
 
-  const promptPool = favoriteFilter === "favorites" ? visibleFavoritePrompts : prompts;
+  const promptPool = favoriteFilter === "favorites" ? favoritePrompts : marketPrompts;
 
   const sourceFilteredPrompts = useMemo(() => {
     if (source === "all") return promptPool;
-    return promptPool.filter((prompt) => prompt.source === source);
+    return promptPool.filter(({ original }) => original.source === source);
   }, [promptPool, source]);
 
   const keywordFilteredPrompts = useMemo(
-    () => sourceFilteredPrompts.filter((prompt) => promptMatchesKeyword(getLocalizedPrompt(prompt), keyword)),
+    () => searchPromptMarketEntries(sourceFilteredPrompts, keyword),
     [keyword, sourceFilteredPrompts],
   );
 
   const tags = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    keywordFilteredPrompts.forEach((prompt) => promptFilterTags(prompt).forEach((tag) => {
-      if (seen.has(tag)) return;
-      seen.add(tag);
-      result.push(tag);
-    }));
-    return result;
+    const availableTags = new Set<string>();
+    for (const entry of keywordFilteredPrompts) {
+      for (const tag of entry.tags) availableTags.add(tag);
+    }
+    return [...availableTags];
   }, [keywordFilteredPrompts]);
 
   useEffect(() => {
@@ -311,12 +291,9 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   }, [tags]);
 
   const filteredPrompts = useMemo(() => {
-    const matchingPrompts = keywordFilteredPrompts.filter((prompt) => {
-      const localizedPrompt = getLocalizedPrompt(prompt);
-      const filterTags = promptFilterTags(localizedPrompt);
-      return tagFilters.length === 0 || tagFilters.some((tag) => filterTags.includes(tag));
-    });
-    return sortPromptMarketPrompts(matchingPrompts);
+    if (!tagFilters.length) return keywordFilteredPrompts;
+    const selectedTags = new Set(tagFilters);
+    return keywordFilteredPrompts.filter((entry) => entry.tags.some((tag) => selectedTags.has(tag)));
   }, [keywordFilteredPrompts, tagFilters]);
 
   const visiblePrompts = filteredPrompts.slice(0, visibleCount);
@@ -418,7 +395,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
         pressed={favoriteFilter === "favorites"}
       >
         <Star className={cn("size-3.5", favoriteFilter === "favorites" && "fill-current")} />
-        {visibleFavoritePrompts.length > 0 ? `收藏 ${visibleFavoritePrompts.length}` : "收藏"}
+        {favoritePrompts.length > 0 ? `收藏 ${favoritePrompts.length}` : "收藏"}
       </Toggle>
     </div>
   );
@@ -546,9 +523,10 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
         </div>
 
         <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1 px-4 py-3 sm:px-6 sm:py-4" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className={cn("scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto", presentation === "page" ? "overscroll-x-contain" : "overscroll-contain")} ref={scrollAreaRef}><div className="min-w-0">
-          {favoriteFilter !== "favorites" && isLoading ? (
+          {favoriteFilter !== "favorites" ? <PromptMarketSourceAlert sources={failedSources} loading={isLoading} onRetry={loadPromptData} /> : null}
+          {favoriteFilter !== "favorites" && isLoading && !prompts.length ? (
             <LoadingState className="min-h-[320px]" label="正在读取远程提示词市场..." />
-          ) : favoriteFilter !== "favorites" && error ? (
+          ) : favoriteFilter !== "favorites" && error && !prompts.length ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-4 text-center">
               <div className="max-w-[420px] text-sm leading-6 text-muted-foreground">{error}</div>
               <Button
@@ -565,30 +543,27 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             <LoadingState className="min-h-[320px]" label="正在读取收藏..." />
           ) : visiblePrompts.length === 0 ? (
             <EmptyState icon={favoriteFilter === "favorites" ? Star : Search} className="min-h-72" title={favoriteFilter === "favorites"
-                  ? visibleFavoritePrompts.length === 0
+                  ? favoritePrompts.length === 0
                     ? "还没有收藏提示词"
                     : "没有匹配的收藏提示词"
-                : "没有找到匹配的提示词"} description={favoriteFilter === "favorites" && visibleFavoritePrompts.length === 0 ? "点击提示词卡片上的星标，将常用提示词保存在这里。" : "试试其他关键词，或调整分类与标签筛选。"} action={keyword || source !== "all" || tagFilters.length ? <Button variant="outline" onClick={() => { setKeyword(""); setSource("all"); setTagFilters([]); }}>清除筛选</Button> : favoriteFilter === "favorites" ? <Button variant="outline" onClick={() => setFavoriteFilter("all")}>浏览全部提示词</Button> : undefined} />
+                : "没有找到匹配的提示词"} description={favoriteFilter === "favorites" && favoritePrompts.length === 0 ? "点击提示词卡片上的星标，将常用提示词保存在这里。" : "试试其他关键词，或调整分类与标签筛选。"} action={keyword || source !== "all" || tagFilters.length ? <Button variant="outline" onClick={() => { setKeyword(""); setSource("all"); setTagFilters([]); }}>清除筛选</Button> : favoriteFilter === "favorites" ? <Button variant="outline" onClick={() => setFavoriteFilter("all")}>浏览全部提示词</Button> : undefined} />
           ) : (
             <div className="flex flex-col gap-4">
               <div data-prompt-library-grid className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {visiblePrompts.map((prompt) => {
-                  const localizedPrompt = getLocalizedPrompt(prompt);
+                {visiblePrompts.map((entry) => {
+                  const { original: prompt, localized: localizedPrompt } = entry;
                   const dateLabel = formatPromptDate(prompt.created);
-                  const promptMetaLabels = [dateLabel].filter(
-                    (label): label is string => Boolean(label),
-                  );
-                  const visibleTags = promptFilterTags(localizedPrompt).slice(0, 3);
+                  const visibleTags = entry.tags.slice(0, 3);
                   const favoriteKey = promptFavoriteKey(prompt);
                   const isFavorite = favoriteIds.has(favoriteKey);
                   const isFavoriteBusy = favoriteBusyIds.has(favoriteKey);
                   return (
                     <Card
-                      key={prompt.id}
+                      key={favoriteKey}
                       className="group flex h-full min-w-0 flex-col overflow-hidden gap-0 p-0"
                     >
-                      <Button variant="ghost" type="button" className="h-auto p-0 relative block aspect-[16/10] w-full overflow-hidden text-left" onClick={() => setSelectedPrompt(localizedPrompt)} aria-label={`查看提示词：${localizedPrompt.title}`}>
-                        <PromptPreviewImage prompt={localizedPrompt} />
+                      <Button variant="ghost" type="button" className="h-auto p-0 relative block aspect-[16/10] w-full overflow-hidden text-left" onClick={() => setSelectedEntry(entry)} aria-label={`查看提示词：${localizedPrompt.title}`}>
+                        <PromptPreviewImage key={localizedPrompt.preview} prompt={localizedPrompt} className="size-full object-cover" />
                       </Button>
                       <div className="flex min-h-[196px] flex-1 flex-col gap-3 p-4">
                         <div className="flex min-w-0 items-start justify-between gap-3">
@@ -596,13 +571,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                             <h3 className="font-display truncate text-base font-semibold text-foreground">
                               {localizedPrompt.title}
                             </h3>
-                            {promptMetaLabels.length > 0 ? (
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                                {promptMetaLabels.map((label) => (
-                                  <span key={label}>{label}</span>
-                                ))}
-                              </div>
-                            ) : null}
+                            {dateLabel ? <p className="mt-1 text-xs text-muted-foreground">{dateLabel}</p> : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             <TooltipButton
@@ -691,18 +660,18 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             </div>
           )}
         </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-        <Dialog open={Boolean(selectedPrompt)} onOpenChange={(nextOpen) => !nextOpen && setSelectedPrompt(null)}>
+        <Dialog open={Boolean(selectedEntry)} onOpenChange={(nextOpen) => !nextOpen && setSelectedEntry(null)}>
           <DialogContent className={cn("sm:max-w-none", cn("h-[min(90dvh,760px)]", "flex w-[min(94vw,920px)] max-w-none flex-col overflow-hidden"))}>
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] md:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] md:grid-rows-1">
-              <div className="flex min-h-0 items-center justify-center overflow-hidden bg-muted">
-                {selectedPrompt ? <img src={selectedPrompt.preview} alt={selectedPrompt.title} className="size-full object-contain" /> : null}
+              <div className="relative flex min-h-0 items-center justify-center overflow-hidden bg-muted">
+                {selectedPrompt ? <PromptPreviewImage key={selectedPrompt.preview} prompt={selectedPrompt} className="size-full object-contain" /> : null}
               </div>
               <div className="flex min-h-0 flex-col p-5 pr-6 sm:p-6 sm:pr-7">
                 <DialogTitle className="shrink-0 break-words">{selectedPrompt?.title}</DialogTitle>
                 <DialogDescription className="mt-1.5">{selectedPrompt?.source}</DialogDescription>
                 <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden mt-5 flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
                   <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>
-                  {selectedPrompt && promptFilterTags(selectedPrompt).length ? <div className="mt-4 flex flex-wrap gap-1.5">{promptFilterTags(selectedPrompt).map((tag) => <Badge variant="secondary" key={tag}>{tag}</Badge>)}</div> : null}
+                  {selectedEntry?.tags.length ? <div className="mt-4 flex flex-wrap gap-1.5">{selectedEntry.tags.map((tag) => <Badge variant="secondary" key={tag}>{tag}</Badge>)}</div> : null}
                   {selectedPrompt?.referenceImageUrls.length ? <p className="mt-4 text-xs text-muted-foreground">包含 {selectedPrompt.referenceImageUrls.length} 张参考图，套用时会一并载入。</p> : null}
                 </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
                 <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4">

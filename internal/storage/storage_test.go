@@ -497,6 +497,50 @@ func TestDatabaseBackendJSONDocumentCASConflictRequiresReload(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackendObserveJSONDocument(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "observe-document.db")
+	first := openSQLiteStorageTestBackend(t, path)
+	second := openSQLiteStorageTestBackend(t, path)
+	exerciseJSONDocumentObservation(t, first, second)
+}
+
+func exerciseJSONDocumentObservation(t *testing.T, writer, observer *DatabaseBackend) {
+	t.Helper()
+	ctx := context.Background()
+	const name = "document-observation.json"
+	if err := writer.SaveJSONDocument(name, map[string]any{"count": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := observer.LoadJSONDocument(name); err != nil {
+		t.Fatal(err)
+	}
+	value, version, changed, err := observer.ObserveJSONDocument(ctx, name, "")
+	if err != nil || version == "" || !changed || !reflect.DeepEqual(value, map[string]any{"count": json.Number("1")}) {
+		t.Fatalf("initial observation = %v, %q, %v, %v", value, version, changed, err)
+	}
+	value, sameVersion, changed, err := observer.ObserveJSONDocument(ctx, name, version)
+	if err != nil || sameVersion != version || changed || value != nil {
+		t.Fatalf("unchanged observation = %v, %q, %v, %v", value, sameVersion, changed, err)
+	}
+	if err := writer.SaveJSONDocument(name, map[string]any{"count": 2}); err != nil {
+		t.Fatal(err)
+	}
+	value, nextVersion, changed, err := observer.ObserveJSONDocument(ctx, name, version)
+	if err != nil || nextVersion == version || !changed || !reflect.DeepEqual(value, map[string]any{"count": json.Number("2")}) {
+		t.Fatalf("changed observation = %v, %q, %v, %v", value, nextVersion, changed, err)
+	}
+	if err := observer.SaveJSONDocument(name, map[string]any{"count": 3}); !errors.Is(err, ErrConcurrentRowUpdate) {
+		t.Fatalf("observer's stale write = %v, want ErrConcurrentRowUpdate", err)
+	}
+	if err := writer.DeleteJSONDocument(name); err != nil {
+		t.Fatal(err)
+	}
+	value, deletedVersion, changed, err := observer.ObserveJSONDocument(ctx, name, nextVersion)
+	if err != nil || deletedVersion != "" || !changed || value != nil {
+		t.Fatalf("deleted observation = %v, %q, %v, %v", value, deletedVersion, changed, err)
+	}
+}
+
 func TestDatabaseBackendJSONDocumentCASRejectsABAUpdate(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "document-cas-aba.db")
 	first := openSQLiteStorageTestBackend(t, databasePath)

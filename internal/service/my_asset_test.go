@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -493,6 +494,13 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 		{ID: "bob-public", Kind: "text", Title: "Bob public", Content: "public", Visibility: MyAssetPublic},
 	})
 	owners := []MyAssetOwner{{ID: "user-a", Name: "Alice"}, {ID: "user-b", Name: "Bob"}}
+	for _, group := range []struct{ id, name string }{{"reviewed", "已审核"}, {"favorites", "收藏"}} {
+		if _, err := assets.MutateGroup("user-b", "create", MyAssetGroupMutation{
+			ID: group.id, Name: &group.name, Add: []string{"user-b:bob-private", "user-a:alice-public", "user-a:alice-private"},
+		}); err != nil {
+			t.Fatalf("MutateGroup() error = %v", err)
+		}
+	}
 
 	countingBackend.loadCalls = 0
 	countingBackend.prefixCalls = 0
@@ -517,6 +525,14 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 	if !byID["bob-private"].Owned || byID["alice-public"].Owned || byID["alice-public"].OwnerName != "Alice" {
 		t.Fatalf("visible ownership metadata = %#v", visible)
 	}
+	for _, id := range []string{"bob-private", "alice-public"} {
+		if tags := byID[id].Tags; !slices.Equal(tags, []string{"已审核", "收藏"}) {
+			t.Fatalf("Tags for %s = %v", id, tags)
+		}
+	}
+	if tags := byID["bob-public"].Tags; tags == nil || len(tags) != 0 {
+		t.Fatalf("Tags for unlabelled asset = %#v", tags)
+	}
 
 	adminVisible, err := assets.ListVisible("admin", true, owners)
 	if err != nil {
@@ -539,6 +555,22 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 	}
 	if adminGovernance.Count != 4 || adminGovernance.Bytes != int64(len("public")*2+len("private")*2) {
 		t.Fatalf("TextGovernance(admin) = %#v", adminGovernance)
+	}
+}
+
+func BenchmarkProjectMyAssetLabels(b *testing.B) {
+	document := myAssetDocument{items: make([]MyAsset, maxMyAssetItems), groups: make([]MyAssetGroup, 48)}
+	keys := make([]string, len(document.items))
+	for i := range document.items {
+		document.items[i].ID = fmt.Sprintf("asset-%04d", i)
+		keys[i] = "self:" + document.items[i].ID
+	}
+	for i := range document.groups {
+		document.groups[i] = MyAssetGroup{Name: fmt.Sprintf("label-%02d", i), AssetKeys: keys[i*20 : i*20+1000]}
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		projectMyAssetLabels(&document)
 	}
 }
 

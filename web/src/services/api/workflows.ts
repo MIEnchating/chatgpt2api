@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { fetchAgentExecution, observeAgentExecution } from "@/lib/agent-executions";
+import type { CreationTask } from "@/lib/api";
 import { httpRequest } from "@/lib/request";
 
 export type WorkflowVariable = {
@@ -99,8 +100,42 @@ export type WorkflowAgentDraftResponse = {
   model: string;
 };
 
-export async function fetchWorkflows() {
-  const response = await httpRequest<{ items?: CreativeWorkflow[] }>("/api/workflows");
+export type WorkflowTaskHistoryFilter = "all" | "running" | "success" | "failed";
+export type WorkflowTaskHistoryQuery = { page: number; pageSize: number; status: WorkflowTaskHistoryFilter };
+
+export type WorkflowTaskHistoryPage = {
+  items: CreationTask[];
+  counts: Record<WorkflowTaskHistoryFilter, number>;
+  total: number;
+  page: number;
+  latest_run_at?: Record<string, number>;
+};
+
+export function fetchWorkflowTaskHistory(signal: AbortSignal, query?: WorkflowTaskHistoryQuery) {
+  const params = new URLSearchParams({ scope: "workflow", view: query ? "history" : "active" });
+  if (query) {
+    params.set("page", String(query.page));
+    params.set("page_size", String(query.pageSize));
+    params.set("status", query.status);
+  }
+  return httpRequest<WorkflowTaskHistoryPage>(`/api/creation-tasks?${params}`, { signal, timeout: 15_000 });
+}
+
+export function clearWorkflowTaskHistory(excludedBatchIDs: string[], includeAssets: boolean, signal: AbortSignal) {
+  return httpRequest<{
+    deleted_batch_ids: string[];
+    references?: { url: string; storageKey: string; temporary: boolean }[];
+    result_urls?: string[];
+  }>("/api/creation-tasks?scope=workflow", {
+    method: "DELETE",
+    body: { confirm: true, exclude_batch_ids: excludedBatchIDs, include_assets: includeAssets },
+    signal,
+    timeout: 20_000,
+  });
+}
+
+export async function fetchWorkflows(signal?: AbortSignal) {
+  const response = await httpRequest<{ items?: CreativeWorkflow[] }>("/api/workflows", { signal });
   return Array.isArray(response.items) ? response.items : [];
 }
 
@@ -128,6 +163,7 @@ export async function touchWorkflowLastRun(id: string, lastRunAt: string) {
       body: { last_run_at: lastRunAt },
     },
   );
+  if (response.item?.id !== id) throw new Error("工作流运行记录响应无效");
   return response.item;
 }
 

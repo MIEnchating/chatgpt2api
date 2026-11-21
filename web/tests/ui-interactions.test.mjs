@@ -26,6 +26,8 @@ const imageResultsSource = await readFile(new URL("../src/app/image/components/i
 const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
 const videoContractsSource = await readFile(new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url), "utf8");
+const videoContractImportSource = await readFile(new URL("../src/app/settings/components/video-contract-import-dialog.tsx", import.meta.url), "utf8");
+const videoContractVersionsSource = await readFile(new URL("../src/app/settings/components/video-contract-versions-dialog.tsx", import.meta.url), "utf8");
 const videoCapabilitiesSource = await readFile(new URL("../src/app/settings/components/video-contract-capabilities.tsx", import.meta.url), "utf8");
 const videoRequestSource = await readFile(new URL("../src/app/settings/components/video-contract-request.tsx", import.meta.url), "utf8");
 const videoRulesSource = await readFile(new URL("../src/app/settings/components/video-contract-rules.tsx", import.meta.url), "utf8");
@@ -37,18 +39,11 @@ const apiSource = await readFile(new URL("../src/lib/api.ts", import.meta.url), 
 const canvasAssetPickerSource = await readFile(new URL("../src/app/canvas/canvas-asset-picker.tsx", import.meta.url), "utf8");
 const promptSourceContentDialogSource = await readFile(new URL("../src/app/settings/components/prompt-source-content-dialog.tsx", import.meta.url), "utf8");
 const assetDisplaySource = await readFile(new URL("../src/app/assets/asset-display.tsx", import.meta.url), "utf8");
-const workflowEditorSource = workflowSource.slice(
-  workflowSource.indexOf("function WorkflowEditor"),
-  workflowSource.indexOf("function VariableEditor"),
-);
-const workflowRunnerSource = workflowSource.slice(
-  workflowSource.indexOf("function WorkflowRunner"),
-  workflowSource.indexOf("function SeriesDraftCard"),
-);
-const workflowTaskDialogSource = workflowSource.slice(
-  workflowSource.indexOf("function WorkflowTaskDialog"),
-  workflowSource.indexOf("function WorkflowEditor"),
-);
+const workflowEditorSource = await readFile(new URL("../src/app/workflows/workflow-editor.tsx", import.meta.url), "utf8");
+const workflowRunnerSource = await readFile(new URL("../src/app/workflows/workflow-runner.tsx", import.meta.url), "utf8");
+const workflowImageSettingsSource = await readFile(new URL("../src/app/workflows/workflow-image-settings.tsx", import.meta.url), "utf8");
+const workflowTaskDialogsSource = await readFile(new URL("../src/app/workflows/workflow-task-dialogs.tsx", import.meta.url), "utf8");
+const workflowTaskDialogSource = workflowTaskDialogsSource.slice(workflowTaskDialogsSource.indexOf("export function WorkflowTaskDialog"));
 
 test("native scroll areas keep wheel input inside the canvas", () => {
   assert.match(imageComposerSource, /onWheel=\{\(event\) => \{ event\.stopPropagation\(\)/);
@@ -170,7 +165,7 @@ test("video contract editor keeps configuration sections and a responsive parame
   assert.match(videoContractsSource, /aria-label="视频配置分区"/);
   assert.match(videoContractsSource, /data-video-contract-layout/);
   assert.match(videoContractsSource, /<nav aria-label="视频配置分区"/);
-  assert.match(videoContractsSource, /<ScrollArea data-video-contract-details aria-label="契约表单"/);
+  assert.match(videoContractsSource, /<ScrollArea[^>]*data-video-contract-details aria-label="契约表单"/);
   assert.match(videoContractsSource, /<ScrollArea data-video-contract-preview aria-label="契约预览"/);
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
   assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
@@ -265,18 +260,19 @@ test("video contracts support reviewed JSON import and ID-free export", () => {
 test("video contract document import keeps failures visible", () => {
   assert.match(videoContractsSource, /const \[importError, setImportError\] = useState\(""\)/);
   assert.match(videoContractsSource, /setImportError\(message\);[\s\S]{0,100}toast\.error\(message\)/);
-  assert.match(videoContractsSource, /role="alert"[\s\S]*?\{importError\}/);
+  assert.match(videoContractImportSource, /role="alert"[\s\S]*?\{error\}/);
   assert.match(apiSource, /video-model-contracts\/import[\s\S]*?timeout: 600_000/);
 });
 
 test("video contract document import streams actual workflow steps and can be stopped", () => {
   assert.match(apiSource, /httpRequestEventStream\("\/api\/admin\/video-model-contracts\/import"/);
   assert.doesNotMatch(apiSource, /application\/x-ndjson|onDownloadProgress/);
-  assert.match(videoContractsSource, /<VideoContractImportProgress activity=\{importStatus\}/);
+  assert.match(videoContractsSource, /<VideoContractImportDialog[\s\S]*?activity=\{importStatus\}/);
+  assert.match(videoContractImportSource, /<VideoContractImportProgress activity=\{activity\}/);
   assert.match(videoContractsSource, /updateVideoContractImportActivity\(current, progress\)/);
   assert.match(videoContractsSource, /importControllerRef\.current\?\.abort\(\)/);
-  assert.match(videoContractsSource, /isImporting \? "分析中"/);
-  assert.doesNotMatch(videoContractsSource, /分析中 · \$\{formatElapsedSeconds/);
+  assert.match(videoContractImportSource, /running \? "分析中"/);
+  assert.doesNotMatch(videoContractImportSource, /分析中 · \$\{formatElapsedSeconds/);
 });
 
 test("video contract document import tolerates null response collections", () => {
@@ -307,9 +303,10 @@ test("video contract loads reject obsolete sessions and version-history requests
   assert.match(settingsPageSource, /<VideoModelContractsCard key=\{session\.key\} sessionKey=\{session\.key\} \/>/);
   assert.match(videoContractsSource, /fetchAdminVideoModelContracts\(\{ signal: controller\.signal \}\)/);
   assert.match(videoContractsSource, /contractLoadVersionRef\.current !== requestVersion/);
-  assert.match(videoContractsSource, /fetchVideoModelContractVersions\(item\.id, \{ signal: controller\.signal \}\)/);
-  assert.match(videoContractsSource, /versionsLoadVersionRef\.current !== requestVersion/);
-  assert.match(videoContractsSource, /const closeVersions = \(\) => \{[\s\S]*versionsLoadVersionRef\.current \+= 1;[\s\S]*versionsLoadControllerRef\.current\?\.abort\(\)/);
+  assert.match(videoContractsSource, /<VideoContractVersionsDialog key=\{versionsItem\.id\}/);
+  assert.match(videoContractVersionsSource, /fetchVideoModelContractVersions\(contractId, \{ signal: controller\.signal \}\)/);
+  assert.match(videoContractVersionsSource, /if \(!controller\.signal\.aborted\) setVersions\(data\.versions\)/);
+  assert.match(videoContractVersionsSource, /return \(\) => controller\.abort\(\)/);
   assert.match(apiSource, /fetchAdminVideoModelContracts\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
   assert.match(apiSource, /fetchVideoModelContractVersions\(id: string, options: \{ signal\?: AbortSignal \} = \{\}\)/);
 });
@@ -336,7 +333,7 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /data-video-contract-rows[\s\S]*<ManagementPagination/);
   assert.match(videoContractsSource, /visibleItems\.map\(\(item\) =>/);
   assert.match(videoContractsSource, /<ManagementPagination[\s\S]*pageSizeOptions=\{\[10, 20, 50\]\}/);
-  assert.match(videoContractsSource, /items\.slice\(\(safeListPage - 1\) \* listPageSize, safeListPage \* listPageSize\)/);
+  assert.match(videoContractsSource, /filteredItems\.slice\(\(safeListPage - 1\) \* listPageSize, safeListPage \* listPageSize\)/);
   assert.match(videoContractsSource, /setOptimisticEnabledByID\(\(current\) => new Map\(current\)\.set\(item\.id, enabled\)\)/);
   assert.match(videoContractsSource, /const displayedEnabled = optimisticEnabledByID\.get\(item\.id\) \?\? item\.enabled/);
   assert.match(videoContractsSource, /decision\.reconcile && \(force \|\| decision\.concurrent\)/);
@@ -388,8 +385,8 @@ test("prompt source content rejects stale source and closed-dialog responses", (
 test("workflow runner keeps its header and actions outside the scrolling form", () => {
   assert.match(workflowRunnerSource, /<DialogContent[\s\S]*?h-\[min\(92dvh,900px\)\]/);
   assert.match(workflowRunnerSource, /<DialogHeader/);
-  assert.match(workflowRunnerSource, /<ScrollAreaRoot[\s\S]*?overscroll-contain/);
-  assert.match(workflowRunnerSource, /<DialogFooter className="[^"]*flex-row">/);
+  assert.match(workflowRunnerSource, /<ScrollArea data-slot="dialog-body"/);
+  assert.match(workflowRunnerSource, /<DialogFooter className="[^"]*flex-row/);
   assert.match(workflowRunnerSource, /<Button variant="outline" onClick=\{onClose\}>取消<\/Button>/);
 });
 
@@ -408,15 +405,15 @@ test("multi-image workflow runner exposes a full-width guided review workspace",
   assert.match(workflowRunnerSource, /data-workflow-series-steps/);
   assert.match(workflowRunnerSource, /\["填写内容", "生成提示词", "审核提示词", "生成图片"\]/);
   assert.match(workflowRunnerSource, /seriesNextStep/);
-  assert.match(workflowRunnerSource, /className="[^"]*grid gap-3 2xl:grid-cols-2"/);
-  assert.match(workflowSource, /data-series-draft-card/);
-  assert.match(workflowSource, /const resultURL = draft\.result_ids\?\.\[0\] \|\| ""/);
-  assert.match(workflowSource, /<AuthenticatedImage src=\{resultURL\}/);
-  assert.match(workflowSource, /<PromptTextareaFrame value=\{draft\.prompt\} className="h-32 min-h-32">/);
-  assert.doesNotMatch(workflowSource, /<ImageLightbox[\s\S]*?src: resultURL/);
-  assert.match(workflowSource, /<LoadingState label="正在生成图片"/);
-  assert.match(workflowSource, />生成结果</);
-  assert.match(workflowSource, /生成此图/);
+  assert.match(workflowRunnerSource, /className="[^"]*grid min-w-0 gap-3 2xl:grid-cols-2"/);
+  assert.match(workflowRunnerSource, /data-series-draft-card/);
+  assert.match(workflowRunnerSource, /const resultURL = draft\.result_ids\?\.\[0\] \|\| ""/);
+  assert.match(workflowRunnerSource, /<AuthenticatedImage src=\{resultURL\}/);
+  assert.match(workflowRunnerSource, /<PromptTextareaFrame value=\{draft\.prompt\} className="h-32 min-h-32">/);
+  assert.doesNotMatch(workflowRunnerSource, /<ImageLightbox[\s\S]*?src: resultURL/);
+  assert.match(workflowRunnerSource, /<LoadingState label="正在生成图片"/);
+  assert.match(workflowRunnerSource, />生成结果</);
+  assert.match(workflowRunnerSource, /生成此图/);
 });
 
 test("workflow completion merges last-run metadata without replacing current content", () => {
@@ -437,17 +434,17 @@ test("workflow editor keeps multi-image planning in the main flow and a stable s
   assert.match(workflowEditorSource, /<Field label="工作流名称">/);
   assert.match(workflowEditorSource, /<Label htmlFor="workflow-prompt-template"[^>]*>\s*用户提示词模板\s*<\/Label>/);
   assert.match(workflowEditorSource, /<InputGroupTextarea\s+id="workflow-prompt-template"/);
-  assert.match(workflowSource, /function VariableEditor\(\{ index,/);
-  assert.match(workflowSource, />变量 \{index \+ 1\}</);
-  assert.match(workflowSource, /sm:grid-cols-2 xl:grid-cols-3/);
+  assert.match(workflowEditorSource, /function VariableEditor\(\{ index,/);
+  assert.match(workflowEditorSource, />变量 \{index \+ 1\}</);
+  assert.match(workflowEditorSource, /sm:grid-cols-2 xl:grid-cols-3/);
 });
 
 test("workflow editor reuses the image workbench settings component", () => {
-  assert.match(workflowSource, /import \{\s*ImageSettingsPanel,/);
+  assert.match(workflowImageSettingsSource, /import \{\s*ImageSettingsPanel,/);
   assert.match(workflowEditorSource, /<WorkflowImageSettings/);
   assert.match(workflowEditorSource, /workflowImageSettings\(workflow\.config\)/);
   assert.match(workflowEditorSource, /patchConfig\(\{ model, image_model: model \}\)/);
-  assert.match(workflowSource, /<ImageSettingsPanel/);
+  assert.match(workflowImageSettingsSource, /<ImageSettingsPanel/);
   assert.doesNotMatch(workflowSource, /function GlobalGenerationSummary/);
 });
 
@@ -455,25 +452,25 @@ test("workflow runner shows the saved template settings as read only", () => {
   assert.match(workflowRunnerSource, /workflowImageSettings\(workflow\.config\)/);
   assert.match(workflowRunnerSource, /<WorkflowImageSettings[\s\S]*?readOnly/);
   assert.doesNotMatch(workflowRunnerSource, /onImageSettingsChange|onImageModelChange/);
-  assert.match(workflowSource, /<ImageSettingsPanel disabled=\{readOnly \|\| !modelAvailable\}/);
+  assert.match(workflowImageSettingsSource, /<ImageSettingsPanel disabled=\{readOnly \|\| !modelAvailable\}/);
 });
 
 test("workflow tasks expose a complete details dialog", () => {
-  assert.match(workflowSource, /function WorkflowTaskDialog/);
+  assert.match(workflowTaskDialogSource, /function WorkflowTaskDialog/);
   assert.match(workflowTaskDialogSource, /const activeImagePrompt = activeImage\?\.prompt \|\| task\.prompt/);
   assert.match(workflowTaskDialogSource, />当前图片提示词</);
   assert.match(workflowTaskDialogSource, /<CodeBlockCopyButton[^>]*value={activeImagePrompt}/);
   assert.match(workflowTaskDialogSource, /<AuthenticatedImage src=\{activeImage\.url\}/);
-  assert.match(workflowSource, />\s*输入变量\s*</);
-  assert.match(workflowSource, />创作参数快照</);
-  assert.match(workflowSource, />执行信息</);
+  assert.match(workflowTaskDialogSource, />\s*输入变量\s*</);
+  assert.match(workflowTaskDialogSource, />创作参数快照</);
+  assert.match(workflowTaskDialogSource, />执行信息</);
   assert.doesNotMatch(workflowTaskDialogSource, />生成结果</);
   assert.match(workflowTaskDialogSource, /<DialogFooter className="[^"]*flex-row justify-end sm:justify-end">[\s\S]*?>关闭<[\s\S]*?<Download \/>下载当前图片/);
 });
 
 test("workflow task history stays out of the template page and opens on demand", () => {
-  assert.match(workflowSource, /function WorkflowTaskHistoryDialog/);
-  assert.match(workflowSource, /<ToggleGroup[\s\S]*?aria-label="任务状态"/);
+  assert.match(workflowTaskDialogsSource, /function WorkflowTaskHistoryDialog/);
+  assert.match(workflowTaskDialogsSource, /<ToggleGroup[\s\S]*?aria-label="任务状态"/);
   assert.match(workflowSource, /<WorkflowTaskHistoryDialog[\s\S]*?onOpenTask=/);
   assert.doesNotMatch(workflowSource, /<section aria-labelledby="workflow-task-title"/);
 });
@@ -481,12 +478,12 @@ test("workflow task history stays out of the template page and opens on demand",
 test("multi-image workflow history uses one durable batch and persistent clearing", () => {
   assert.match(workflowSource, /const seriesRun: WorkflowSeriesRun = \{[\s\S]*?id: taskID\("workflow-series-images"\)/);
   assert.match(workflowSource, /batch_task_id: localTaskID,[\s\S]*?batch_index: batchIndex,[\s\S]*?batch_count: batchCount/);
-  assert.match(workflowSource, /await deleteCreationTasks\(backendTaskIDs, \{ signal: taskWaitAbortControllerRef\.current!\.signal \}\)/);
-  assert.match(workflowSource, />一并删除关联素材</);
-  assert.match(workflowSource, /onClearCompleted: \(includeAssets: boolean\) => Promise<boolean>/);
-  assert.match(workflowSource, /getManagedImagePathFromUrl\(image\.url\)/);
+  assert.match(workflowSource, /await clearWorkflowTaskHistory\(\[\.\.\.excludedBatchIDs\], canDeleteAssets, signal\)/);
+  assert.match(workflowTaskDialogsSource, />一并删除关联素材</);
+  assert.match(workflowTaskDialogsSource, /onClearCompleted: \(includeAssets: boolean\) => Promise<boolean>/);
+  assert.match(workflowSource, /result\.result_urls[\s\S]*\.map\(getManagedImagePathFromUrl\)/);
   assert.match(workflowSource, /await deleteManagedImages\(assetPaths\)/);
-  assert.match(workflowSource, /clearAssets \? "清理记录和素材" : "仅清理记录"/);
+  assert.match(workflowTaskDialogsSource, /clearAssets \? "清理记录和素材" : "仅清理记录"/);
   assert.doesNotMatch(workflowSource, /onClearCompleted=\{\(\) => setTasks/);
 });
 

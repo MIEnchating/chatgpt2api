@@ -13,11 +13,13 @@ import { Card } from "@/components/ui/card";
 import { Item } from "@/components/ui/item";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Edit3, Megaphone, Plus, Trash2 } from "lucide-react";
+import { Edit3, Megaphone, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -56,18 +58,20 @@ const emptyForm: AnnouncementInput = {
   enabled: true,
 };
 
+const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return dateTimeFormatter.format(date);
 }
 
 export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
@@ -86,7 +90,9 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
   }
   const [items, setItems] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState("");
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Announcement | null>(null);
@@ -115,6 +121,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
     loadControllerRef.current?.abort();
     loadControllerRef.current = controller;
     loadResetRef.current = reset;
+    if (isCurrentSession(targetSessionKey)) setLoadError("");
     if (reset && isCurrentSession(targetSessionKey)) {
       itemsRef.current = [];
       setItems([]);
@@ -126,7 +133,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
       commitItems(targetSessionKey, data.items);
     } catch (error) {
       if (controller.signal.aborted || loadVersionRef.current !== requestVersion || !isCurrentSession(targetSessionKey)) return;
-      toast.error(error instanceof Error ? error.message : "加载公告失败");
+      setLoadError(error instanceof Error ? error.message : "加载公告失败");
     } finally {
       if (loadVersionRef.current === requestVersion) {
         loadControllerRef.current = null;
@@ -173,9 +180,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
     mergeConcurrent: (current: Announcement[]) => Announcement[],
   ) => {
     const decision = mutationLifecycleRef.current!.complete(token, true);
-    if (decision.current && decision.applySnapshot) {
-      commitItems(token.sessionKey, decision.concurrent ? mergeConcurrent : responseItems);
-    }
+    if (decision.current && decision.applySnapshot && commitItems(token.sessionKey, decision.concurrent ? mergeConcurrent : responseItems)) setLoadError("");
     reconcileMutation(token, decision);
     return decision.current;
   };
@@ -201,37 +206,41 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
   const openCreate = () => {
     setEditingItem(null);
     setForm(emptyForm);
+    setFormError("");
     setDialogOpen(true);
   };
 
   const openEdit = (item: Announcement) => {
     setEditingItem(item);
     setForm({ title: item.title, content: item.content, enabled: item.enabled });
+    setFormError("");
     setDialogOpen(true);
   };
 
   const save = async () => {
+    if (isSaving) return;
     const payload: AnnouncementInput = {
       title: form.title.trim(),
       content: form.content.trim(),
       enabled: form.enabled,
     };
     if (!payload.content) {
-      toast.error("请输入公告内容");
+      setFormError("请输入公告内容");
       return;
     }
     if (Array.from(payload.title).length > 80) {
-      toast.error("公告标题不能超过 80 个字符");
+      setFormError("公告标题不能超过 80 个字符");
       return;
     }
     if (Array.from(payload.content).length > 2000) {
-      toast.error("公告内容不能超过 2000 个字符");
+      setFormError("公告内容不能超过 2000 个字符");
       return;
     }
 
     const item = editingItem;
     const token = beginMutation(item?.id || "create");
     let current = true;
+    setFormError("");
     setIsSaving(true);
     try {
       const data = item
@@ -246,7 +255,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
       toast.success(item ? "公告已更新" : "公告已发布");
     } catch (error) {
       current = rejectMutation(token);
-      if (current) toast.error(error instanceof Error ? error.message : "保存公告失败");
+      if (current) setFormError(error instanceof Error ? error.message : "保存公告失败");
     } finally {
       if (current) setIsSaving(false);
     }
@@ -305,14 +314,18 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
           </Button>
         }
       >
+        {loadError ? (
+          <EmptyState compact role="alert" icon={Megaphone} title="无法加载公告" description={loadError}
+            action={<Button variant="outline" size="sm" onClick={() => void loadAnnouncements(sessionKey, items.length === 0)}><RefreshCw />重试</Button>} />
+        ) : null}
         {isLoading ? (
           <LoadingState className="h-auto" label="正在加载公告" />
         ) : items.length === 0 ? (
-          <SettingsEmptyState
+          !loadError ? <SettingsEmptyState
             icon={Megaphone}
             title="暂无公告"
             description="添加后会显示在所有已登录用户的导航下方。"
-          />
+          /> : null
         ) : (
           <div className="flex flex-col gap-3">
             {items.map((item) => {
@@ -379,8 +392,8 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
         )}
       </SettingsPanel>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!isSaving) setDialogOpen(open); }}>
+        <DialogContent showCloseButton={!isSaving} aria-busy={isSaving}>
           <DialogHeader>
             <DialogTitle>{editingItem ? "编辑公告" : "添加公告"}</DialogTitle>
             <DialogDescription>公告将显示在所有已登录用户的导航下方。</DialogDescription>
@@ -392,6 +405,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                 id="announcement-title"
                 value={form.title}
                 maxLength={80}
+                disabled={isSaving}
                 placeholder="系统公告"
 
                 onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
@@ -404,6 +418,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                 id="announcement-content"
                 value={form.content}
                 maxLength={2000}
+                disabled={isSaving}
                 placeholder="输入需要通知用户的内容"
                 onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
               />
@@ -414,10 +429,12 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
             <Item variant="outline" asChild><Label className="flex min-h-11 items-center gap-3 px-3 py-2.5">
               <Checkbox
                 checked={form.enabled}
+                disabled={isSaving}
                 onCheckedChange={(checked) => setForm((current) => ({ ...current, enabled: Boolean(checked) }))}
               />
               保存后立即展示
             </Label></Item>
+            {formError ? <Alert variant="destructive" role="alert"><AlertDescription>{formError}</AlertDescription></Alert> : null}
           </div>
           </ScrollArea><DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>

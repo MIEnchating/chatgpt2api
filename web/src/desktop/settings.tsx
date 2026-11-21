@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Monitor, Server } from "lucide-react";
+import { ArrowRight, Monitor, RotateCw, Server } from "lucide-react";
 
 import { LabeledField } from "@/components/labeled-field";
 import { PasswordInput } from "@/components/password-input";
@@ -42,6 +42,7 @@ export function DesktopConnectionSettings() {
   const [remoteURL, setRemoteURL] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -53,6 +54,10 @@ export function DesktopConnectionSettings() {
     const updateTheme = () => document.documentElement.classList.toggle("dark", theme.matches);
     updateTheme();
     theme.addEventListener("change", updateTheme);
+    return () => theme.removeEventListener("change", updateTheme);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     void window.desktopConnection.settings().then((value) => {
       if (!active) return;
@@ -64,8 +69,8 @@ export function DesktopConnectionSettings() {
     }).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : "无法读取连接设置");
     }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; theme.removeEventListener("change", updateTheme); };
-  }, []);
+    return () => { active = false; };
+  }, [settingsAttempt]);
 
   async function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,7 +93,7 @@ export function DesktopConnectionSettings() {
     }
   }
 
-  return <TooltipProvider><ScrollArea className="h-dvh" contentClassName="mx-auto flex min-h-dvh w-full max-w-xl flex-col justify-center gap-5 px-5 py-8 sm:px-8">
+  return <TooltipProvider><ScrollArea className="h-dvh" contentClassName="mx-auto flex min-h-dvh w-full max-w-xl flex-col justify-center-safe gap-5 px-5 py-8 sm:px-8">
     <header className="flex items-center gap-2 text-sm font-medium">chatgpt2api <Badge variant="secondary">桌面版</Badge></header>
     <Card>
       <CardHeader>
@@ -117,7 +122,14 @@ export function DesktopConnectionSettings() {
             <Button id="connect" type="submit" disabled={loading || busy || !settings} aria-busy={busy} className="w-full">{busy ? <Spinner /> : null}{busy ? "正在连接" : attempted ? "重试连接" : "打开创作空间"}{!busy ? <ArrowRight aria-hidden="true" /> : null}</Button>
           </FieldSet>
           {loading ? <LoadingState compact label="正在读取连接设置…" className="mt-4" /> : busy ? <LoadingState compact className="mt-4" label={local && !settings?.development ? "正在启动本地空间，首次启动可能需要一些时间…" : "正在连接服务器…"} /> : null}
-          {error ? <Alert variant="destructive" className="mt-4"><AlertDescription>{error}</AlertDescription></Alert> : null}
+          {error ? <Alert variant="destructive" role="alert" className="mt-4">
+            <AlertDescription>{error}</AlertDescription>
+            {!settings && !loading ? <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => {
+              setError("");
+              setLoading(true);
+              setSettingsAttempt((attempt) => attempt + 1);
+            }}><RotateCw />重试读取</Button> : null}
+          </Alert> : null}
         </form>
       </CardContent>
     </Card>

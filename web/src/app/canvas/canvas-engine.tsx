@@ -85,7 +85,7 @@ type CanvasEngineProps = {
   pendingConnectionActive: boolean;
   collapsingBatchRootIDs: Set<string>;
   openingBatchRootIDs: Set<string>;
-  onNodesChange: (nodes: CanvasNode[]) => void;
+  onNodeGeometryChange: (nodes: CanvasNode[]) => void;
   onNodesCommit: () => void;
   onViewportChange: (viewport: CanvasDocument["viewport"], commit?: boolean) => void;
   onSelectionChange: (nodeIDs: Set<string>, connectionID?: string) => void;
@@ -131,7 +131,7 @@ export function CanvasEngine({
   pendingConnectionActive,
   collapsingBatchRootIDs,
   openingBatchRootIDs,
-  onNodesChange: onNodesChangeProp,
+  onNodeGeometryChange: onNodeGeometryChangeProp,
   onNodesCommit: onNodesCommitProp,
   onViewportChange: onViewportChangeProp,
   onSelectionChange: onSelectionChangeProp,
@@ -158,7 +158,7 @@ export function CanvasEngine({
   onDrop,
 }: CanvasEngineProps) {
   // The page passes inline closures; stabilize them so memoized nodes and window listeners are not rebuilt every frame.
-  const onNodesChange = useStableCallback(onNodesChangeProp);
+  const onNodeGeometryChange = useStableCallback(onNodeGeometryChangeProp);
   const onNodesCommit = useStableCallback(onNodesCommitProp);
   const onViewportChange = useStableCallback(onViewportChangeProp);
   const onSelectionChange = useStableCallback(onSelectionChangeProp);
@@ -283,10 +283,6 @@ export function CanvasEngine({
     });
     return counts;
   }, [contentStableNodes]);
-  const hasTimedLoadingNode = nodes.some((node) => node.generation_status === "loading" && (node.type === "text" || node.type === "image" || node.type === "video" || node.type === "script"));
-
-  const generationNow = useNow(hasTimedLoadingNode);
-
   useEffect(() => {
     if (hoveredNodeID && !renderedNodeIDs.has(hoveredNodeID)) setHoveredNodeID("");
   }, [hoveredNodeID, renderedNodeIDs]);
@@ -580,7 +576,7 @@ export function CanvasEngine({
       const dragged = draggedNodesAt(clientX, clientY);
       setDropTargetGroupID(findCanvasGroupDropTargetForNodes(dragged.movingNodes, dragged.groups, dragRef.current.movingIDs)?.id || "");
       updateDraggedConnectionIndex(dragged.changedGeometry, dragged.nodes);
-      onNodesChange(dragged.nodes);
+      onNodeGeometryChange(dragged.nodes);
     };
     const applyNodeResize = (clientX: number, clientY: number) => {
       const resize = resizeRef.current;
@@ -611,7 +607,7 @@ export function CanvasEngine({
         return resizedNode;
       });
       updateDraggedConnectionIndex(new Map([[start.id, resizedNode]]), next);
-      onNodesChange(next);
+      onNodeGeometryChange(next);
     };
     const applyConnectionDrag = (clientX: number, clientY: number) => {
       const origin = connectionRef.current;
@@ -705,7 +701,7 @@ export function CanvasEngine({
           updateDraggedConnectionIndex(dragged.changedGeometry, dragged.nodes);
           const movedNodes = dragged.nodes;
           const targetGroup = findCanvasGroupDropTargetForNodes(dragged.movingNodes, dragged.groups, movedIDs);
-          onNodesChange(targetGroup
+          onNodeGeometryChange(targetGroup
             ? snapCanvasNodesIntoGroup(movedIDs, movedNodes, targetGroup)
             : movedNodes.map((node) => {
               if (!movedIDs.has(node.id) || node.type === "group") return node;
@@ -803,7 +799,7 @@ export function CanvasEngine({
       window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [connectionFor, connectionTargetAt, connections, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange, snapToGrid, syncToolCursor]);
+  }, [connectionFor, connectionTargetAt, connections, onConnect, onConnectionDropEmpty, onNodeActivate, onNodeGeometryChange, onNodesCommit, onSelectionChange, onViewportChange, snapToGrid, syncToolCursor]);
 
   const nodeHandlers = {
     onPointerDown: useStableCallback(startNodeDrag),
@@ -943,7 +939,6 @@ export function CanvasEngine({
             focusRelated={!exporting && activeNodeID === node.id}
             showPanel={!exporting && panelNodeID === node.id}
             loading={!exporting && (loadingNodeID === node.id || node.generation_status === "loading")}
-            now={node.generation_status === "loading" || loadingNodeID === node.id ? generationNow : 0}
             connecting={!exporting && Boolean(connecting)}
             connectionTarget={!exporting && connectionTargetID === node.id}
             configInputSummary={configInputSummaries.get(node.id) || EMPTY_CONFIG_INPUT_SUMMARY}
@@ -989,7 +984,7 @@ const NODE_TYPE_BADGE: Record<CanvasNode["type"], { label: string; icon: typeof 
   group: { label: "组", icon: Images },
 };
 
-const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, scriptSummary, showImageInfo, exporting, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onPointerDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onScriptOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
+const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, scriptSummary, showImageInfo, exporting, selected, related, focusRelated, showPanel, loading, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onPointerDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onFocusNode, onDirectorOpen, onScriptOpen, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
   node: CanvasNode;
   scriptCompletedSteps?: readonly boolean[];
   scriptSummary?: ReturnType<typeof scriptProductionSummary>;
@@ -1000,7 +995,6 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
   focusRelated: boolean;
   showPanel: boolean;
   loading: boolean;
-  now: number;
   connecting: boolean;
   connectionTarget: boolean;
   configInputSummary: { text: number; image: number; video: number; audio: number };
@@ -1222,7 +1216,7 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
           </div>
         )}
         {showImageInfo && node.type === "image" && node.url ? <div data-canvas-image-info className="pointer-events-none absolute bottom-2 right-2 z-20 flex max-w-[calc(100%-16px)] items-center justify-end gap-1.5 text-[10px] leading-none text-white drop-shadow-[0_1px_3px_rgba(0,0,0,.9)]"><span className="shrink-0 tabular-nums">{node.natural_width && node.natural_height ? `${node.natural_width} × ${node.natural_height}` : `${Math.round(node.width)} × ${Math.round(node.height)}`}</span>{formatImageBytes(node.bytes) ? <span className="shrink-0 tabular-nums">{formatImageBytes(node.bytes)}</span> : null}</div> : null}
-        {loading && node.type !== "config" ? (node.type === "audio" || node.type === "panorama") ? <SpecialNodeLoading /> : !isBatchRoot || !node.url ? <CanvasGenerationLoading node={node} now={now} /> : null : null}
+        {loading && node.type !== "config" ? (node.type === "audio" || node.type === "panorama") ? <SpecialNodeLoading /> : !isBatchRoot || !node.url ? <CanvasGenerationLoading node={node} /> : null : null}
         {isBatchRoot ? <Button variant="outline" data-canvas-no-pan type="button" aria-label={node.batch_expanded ? "收起图片组" : "展开图片组"} className="absolute top-2.5 right-2.5 z-40 flex items-center" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggleBatch(node.id); }}><span className="text-primary">{batchCount}</span><ChevronRight className={cn("size-3.5 transition-transform", node.batch_expanded && "rotate-90")} /></Button> : null}
         {isBatchChild && node.url ? <Button variant="outline" data-canvas-no-pan type="button" className="absolute top-2.5 right-2.5 z-40 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onSetBatchPrimary(node.id); }}><Star className="text-primary" />设为主图</Button> : null}
       </div>
@@ -1233,7 +1227,8 @@ const CanvasDOMNode = memo(function CanvasDOMNode({ node, scriptCompletedSteps, 
   );
 });
 
-function CanvasGenerationLoading({ node, now }: { node: CanvasNode; now: number }) {
+function CanvasGenerationLoading({ node }: { node: CanvasNode }) {
+  const now = useNow();
   const fallbackStartedAt = useRef(Date.now());
   const startedAt = node.generation_started_at || fallbackStartedAt.current;
   const progress = Math.max(0, Math.min(100, Math.round(node.generation_progress || 0)));

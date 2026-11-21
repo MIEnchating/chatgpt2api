@@ -69,12 +69,12 @@ func TestValidStorageLogCursor(t *testing.T) {
 }
 
 func TestLogQueryCursorHashNormalizesCaseAndWhitespace(t *testing.T) {
-	left := logQueryCursorHash(LogQuery{Username: " Alice ", Module: "Auth", Status: " SUCCESS "})
-	right := logQueryCursorHash(LogQuery{Username: "alice", Module: "auth", Status: "success"})
+	left := normalizeLogQueryScope(LogQuery{Username: " Alice ", Module: "Auth", Status: " SUCCESS "}).cursorHash()
+	right := normalizeLogQueryScope(LogQuery{Username: "alice", Module: "auth", Status: "success"}).cursorHash()
 	if left != right {
 		t.Fatal("equivalent queries produced different cursor hashes")
 	}
-	if left == logQueryCursorHash(LogQuery{Username: "alice", Module: "other", Status: "success"}) {
+	if left == normalizeLogQueryScope(LogQuery{Username: "alice", Module: "other", Status: "success"}).cursorHash() {
 		t.Fatal("different queries produced the same cursor hash")
 	}
 }

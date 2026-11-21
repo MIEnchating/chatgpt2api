@@ -2,17 +2,18 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { ItemMedia } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
-import { AudioLines, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Plus, Search, Video } from "lucide-react";
+import { AudioLines, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AssetForm } from "@/app/assets/asset-form";
 import { assetListKey, managedImageAsset } from "@/app/assets/asset-library";
-import { assetLabels, assetMatchesGroup } from "@/app/assets/asset-filters";
+import { indexAssetLabels } from "@/app/assets/asset-filters";
 import { useMyAssets } from "@/lib/use-my-assets";
 import { canvasInsertPayloadFromMyAsset } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-types";
 import { ImagePreview } from "@/components/image-preview";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -40,10 +41,17 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   onInsert: (payload: CanvasInsertAssetPayload) => void;
   onClose: () => void;
 }) {
-  const { assets, upsertAsset, loading } = useMyAssets(session.key, open);
+  const { assets, upsertAsset, loading, loadError, reload } = useMyAssets(session.key, open);
   const [sharedAssets, setSharedAssets] = useState<MyAsset[]>([]);
   const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
-  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [sharedLoading, setSharedLoading] = useState(false);
+  const [managedLoading, setManagedLoading] = useState(false);
+  const [sharedError, setSharedError] = useState("");
+  const [managedError, setManagedError] = useState("");
+  const [groupError, setGroupError] = useState("");
+  const [sharedAttempt, setSharedAttempt] = useState(0);
+  const [managedAttempt, setManagedAttempt] = useState(0);
+  const [groupAttempt, setGroupAttempt] = useState(0);
   const [tab, setTab] = useState<"my-assets" | "library">("my-assets");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | MyAssetKind>("all");
@@ -64,13 +72,43 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
     setGroupsLoaded(false);
     setSharedAssets([]);
     setManagedAssets([]);
+  }, [open, session.key]);
+
+  useEffect(() => {
+    if (!open) return;
     const controller = new AbortController();
+    setGroupError("");
     void fetchAssetGroups(controller.signal).then((items) => {
       if (!controller.signal.aborted) { setGroups(items); setGroupsLoaded(true); }
     }).catch((error) => {
-      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "素材标签读取失败");
+      if (!controller.signal.aborted) setGroupError(error instanceof Error ? error.message : "素材标签读取失败");
     });
-    setRemoteLoading(true);
+    return () => controller.abort();
+  }, [groupAttempt, open, session.key]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setSharedLoading(true);
+    setSharedError("");
+    void fetchVisibleMyAssets(session.key, controller.signal)
+      .then((visible) => {
+        if (!controller.signal.aborted) setSharedAssets(visible.filter((asset) => asset.owned !== true));
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setSharedError(error instanceof Error ? error.message : "共享素材读取失败");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSharedLoading(false);
+      });
+    return () => controller.abort();
+  }, [open, session.key, sharedAttempt]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setManagedLoading(true);
+    setManagedError("");
     const managed = session.role === "admin"
       ? fetchManagedImages({ scope: "all" }, { signal: controller.signal })
       : Promise.all([
@@ -81,40 +119,56 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         mine.items.forEach((item) => records.set(item.path, item));
         return { items: [...records.values()], groups: [] };
       });
-    void Promise.all([fetchVisibleMyAssets(session.key, controller.signal), managed])
-      .then(([visible, images]) => {
+    void managed
+      .then((images) => {
         if (controller.signal.aborted) return;
-        setSharedAssets(visible.filter((asset) => asset.owned !== true));
         setManagedAssets(images.items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
       })
       .catch((error) => {
-        if (!controller.signal.aborted) toast.error(error instanceof Error ? `素材库读取失败：${error.message}` : "素材库读取失败");
+        if (!controller.signal.aborted) setManagedError(error instanceof Error ? error.message : "生成图片读取失败");
       })
       .finally(() => {
-        if (!controller.signal.aborted) setRemoteLoading(false);
+        if (!controller.signal.aborted) setManagedLoading(false);
       });
     return () => controller.abort();
-  }, [open, session.key, session.role, session.subjectId]);
+  }, [managedAttempt, open, session.key, session.role, session.subjectId]);
 
+  const labelsByAsset = useMemo(() => indexAssetLabels(groups), [groups]);
+  const selectedGroupKeys = useMemo(() => {
+    const selected = new Set(groupFilters);
+    return new Set(groups.filter((group) => selected.has(group.id)).flatMap((group) => group.assetKeys));
+  }, [groupFilters, groups]);
   const tabAssets = useMemo(() => {
     const source = tab === "my-assets"
       ? [...assets, ...managedAssets.filter((asset) => asset.owned === true)]
       : [...sharedAssets, ...managedAssets.filter((asset) => asset.owned !== true)];
     const records = new Map<string, MyAsset>();
     source.forEach((asset) => records.set(assetListKey(asset), asset));
-    return [...records.values()].map((asset) => ({ ...asset, tags: assetLabels(asset, groups) }));
-  }, [assets, managedAssets, sharedAssets, tab, groups]);
+    return [...records].map(([key, asset]) => ({ ...asset, tags: labelsByAsset.get(key) || [] }));
+  }, [assets, labelsByAsset, managedAssets, sharedAssets, tab]);
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
+    const includeUntagged = groupFilters.includes("ungrouped");
     return tabAssets.filter((asset) => {
       if (kind !== "all" && asset.kind !== kind) return false;
-      if (groupFilters.length && !groupFilters.some(group => assetMatchesGroup(asset, groups, group))) return false;
+      if (groupFilters.length) {
+        const key = assetListKey(asset);
+        if (!selectedGroupKeys.has(key) && !(includeUntagged && !labelsByAsset.has(key))) return false;
+      }
       return !keyword || [asset.title, asset.content, asset.source, ...(asset.tags || [])]
         .some((value) => String(value || "").toLowerCase().includes(keyword));
     });
-  }, [groupFilters, groups, kind, query, tabAssets]);
+  }, [groupFilters, kind, labelsByAsset, query, selectedGroupKeys, tabAssets]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sourceLoading = managedLoading || (tab === "my-assets" ? loading : sharedLoading);
+  const sourceErrors = [
+    tab === "my-assets"
+      ? { name: "自有素材", error: loadError, retry: reload }
+      : { name: "共享素材", error: sharedError, retry: () => setSharedAttempt((attempt) => attempt + 1) },
+    { name: "生成图片", error: managedError, retry: () => setManagedAttempt((attempt) => attempt + 1) },
+    { name: "素材标签", error: groupError, retry: () => setGroupAttempt((attempt) => attempt + 1) },
+  ];
 
   useEffect(() => setPage(1), [groupFilters, kind, query, tab]);
   useEffect(() => { setGroupFilters([]); }, [tab]);
@@ -153,13 +207,19 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
             </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           </div>
           <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 px-4 sm:px-6 py-4">
-            {(loading || remoteLoading) && !tabAssets.length ? (
+            {sourceErrors.map(({ name, error, retry }) => error ? (
+              <Alert key={name} variant="destructive" role="alert" className="mb-3 flex flex-wrap items-center gap-2">
+                <AlertDescription className="min-w-0 flex-1 break-words">{name}读取失败：{error}</AlertDescription>
+                <Button variant="outline" size="sm" aria-label={`重试读取${name}`} onClick={retry}><RefreshCw />重试</Button>
+              </Alert>
+            ) : null)}
+            {sourceLoading && !tabAssets.length ? (
               <LoadingState className="h-72" label="正在加载素材" />
             ) : visible.length ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {visible.map((asset) => <CanvasAssetCard key={assetListKey(asset)} asset={asset} onInsert={() => insert(asset)} />)}
               </div>
-            ) : (
+            ) : !tabAssets.length && (managedError || (tab === "my-assets" ? loadError : sharedError)) ? null : (
               <EmptyState icon={Search} title={query || kind !== "all" || groupFilters.length > 0 ? "没有匹配的素材" : "暂无可用素材"} description={query || kind !== "all" || groupFilters.length > 0 ? "调整关键词、类型或标签后再试。" : "新增素材后，可以从这里插入画布。"} action={query || kind !== "all" || groupFilters.length > 0 ? <Button variant="outline" size="sm" onClick={() => { setQuery(""); setKind("all"); setGroupFilters([]); }}>清除筛选</Button> : tab === "my-assets" ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : undefined} />
             )}
           </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>

@@ -73,7 +73,7 @@ func TestRecoverVideoTaskRejectsLateWorkerUpdatesAndMonitorSnapshot(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	subscription, err := svc.SubscribeTasks(identity)
+	subscription, err := svc.SubscribeTasks(identity, CreationTaskEventScope{TaskIDs: []string{"same-task"}})
 	if err != nil {
 		t.Fatal(err)
 	}

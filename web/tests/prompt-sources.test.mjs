@@ -6,15 +6,34 @@ import {
   fetchPromptMarketPrompts,
   fetchPromptMarketSourcePrompts,
   normalizePromptMarketSources,
-  promptMatchesKeyword,
-  sortPromptMarketPrompts,
+  preparePromptMarketEntries,
+  searchPromptMarketEntries,
 } from "../src/app/image/banana-prompts.ts";
 
-test("prompt keyword search matches the reference title and prompt fields only", () => {
-  const prompt = { title: "Portrait card", prompt: "Generate a studio portrait", tags: ["工作"] };
-  assert.equal(promptMatchesKeyword(prompt, "port"), true);
-  assert.equal(promptMatchesKeyword(prompt, "工作"), false);
-  assert.equal(promptMatchesKeyword({ title: "工作间手办", prompt: "模型展示" }, "工作"), true);
+test("prompt search uses the displayed localization without changing the original favorite or the supplied references", () => {
+  const original = {
+    id: "portrait",
+    source: "catalog",
+    title: "Portrait card",
+    prompt: "Generate a studio portrait",
+    tags: ["人物", "工作", "人物", "   "],
+    referenceImageUrls: ["https://example.test/reference.jpg"],
+    localizations: {
+      "zh-CN": { title: "工作间手办", prompt: "制作 Cozy 风格的模型", category: "模型" },
+      en: { title: "Workshop figurine", prompt: "Build a model", category: "Models" },
+    },
+  };
+  const entries = preparePromptMarketEntries([original]);
+  assert.equal(entries[0].original, original);
+  assert.equal(entries[0].localized.title, "工作间手办");
+  assert.equal(entries[0].localized.referenceImageUrls, original.referenceImageUrls);
+  assert.deepEqual(entries[0].tags, ["人物", "工作"]);
+  assert.equal(searchPromptMarketEntries(entries, "   "), entries);
+  assert.deepEqual(searchPromptMarketEntries(entries, " COZY "), entries);
+  assert.deepEqual(searchPromptMarketEntries(entries, "工作间"), entries);
+  for (const query of ["人物", "portrait", "figurine", "catalog"]) {
+    assert.deepEqual(searchPromptMarketEntries(entries, query), []);
+  }
 });
 
 test("prompt results follow the reference updated-at descending order", () => {
@@ -23,8 +42,10 @@ test("prompt results follow the reference updated-at descending order", () => {
     { id: "undated" },
     { id: "new-a", created: "2026-07-25T09:30:41.144Z" },
     { id: "new-b", created: "2026-07-25T09:30:41.144Z" },
-  ];
-  assert.deepEqual(sortPromptMarketPrompts(items).map((item) => item.id), ["new-a", "new-b", "old", "undated"]);
+    { id: "invalid", created: "invalid" },
+  ].map((item) => ({ ...item, title: "Sample", prompt: "", tags: [] }));
+  const entries = preparePromptMarketEntries(items);
+  assert.deepEqual(searchPromptMarketEntries(entries, "sample").map(({ original }) => original.id), ["new-a", "new-b", "old", "undated", "invalid"]);
 });
 
 test("prompt source normalization fixes builtin order and appends custom sources", () => {
@@ -120,7 +141,8 @@ test("prompt market reuses one external load for matching source configurations"
     ]);
     const third = await fetchPromptMarketPrompts(undefined, sources);
     assert.equal(calls, 1);
-    assert.equal(first[0].id, "cache-test-source:cached-prompt");
+    assert.equal(first.prompts[0].id, "cache-test-source:cached-prompt");
+    assert.deepEqual(first.failedSources, []);
     assert.deepEqual(second, first);
     assert.deepEqual(third, first);
   } finally {
@@ -134,13 +156,43 @@ test("disabled and successfully empty prompt sources produce an empty market", a
   globalThis.fetch = async () => { calls += 1; return Response.json([]); };
   const disabled = DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source, enabled: false }));
   try {
-    assert.deepEqual(await fetchPromptMarketPrompts(undefined, disabled), []);
+    assert.deepEqual(await fetchPromptMarketPrompts(undefined, disabled), { prompts: [], failedSources: [] });
     assert.equal(calls, 0);
     assert.deepEqual(await fetchPromptMarketPrompts(undefined, [...disabled, {
       id: "empty-source", label: "Empty", url: "https://example.test/empty.json", format: "generic-json", enabled: true,
-    }]), []);
+    }]), { prompts: [], failedSources: [] });
     assert.equal(calls, 1);
   } finally { globalThis.fetch = previousFetch; }
+});
+
+test("prompt market preserves available results and retries a failed source independently", async () => {
+  const previousFetch = globalThis.fetch;
+  const calls = [];
+  let failing = true;
+  globalThis.fetch = async (url) => {
+    const name = new URL(url).pathname.slice(1);
+    calls.push(name);
+    if (failing && name === "offline") return new Response(null, { status: 503 });
+    return Response.json([{ id: "item", title: name, prompt: "Sample" }]);
+  };
+  const sources = [
+    ...DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source, enabled: false })),
+    ...["online", "offline"].map((id) => ({
+      id, label: id.toUpperCase(), url: `https://retry-sources.example.test/${id}`, format: "generic-json", enabled: true,
+    })),
+  ];
+  try {
+    const first = await fetchPromptMarketPrompts(undefined, sources);
+    assert.deepEqual(first.prompts.map(({ title }) => title), ["online"]);
+    assert.deepEqual(first.failedSources, ["OFFLINE"]);
+    failing = false;
+    const second = await fetchPromptMarketPrompts(undefined, sources);
+    assert.deepEqual(second.prompts.map(({ title }) => title), ["online", "offline"]);
+    assert.deepEqual(second.failedSources, []);
+    assert.deepEqual(calls, ["online", "offline", "offline"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test("malformed prompt entries do not discard valid entries from the same source", async () => {

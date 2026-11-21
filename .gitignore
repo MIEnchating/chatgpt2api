@@ -13,6 +13,7 @@ __pycache__/
 jshook/responses/local/
 docs/*
 !docs/architecture.md
+!docs/creation-task-events.md
 !docs/image-generation-api.md
 !docs/grok-gemini-image-api.md
 !docs/video-generation-api.md

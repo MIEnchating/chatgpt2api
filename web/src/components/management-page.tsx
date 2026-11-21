@@ -79,6 +79,7 @@ type ManagementPaginationBaseProps = {
   pageSize: number;
   pageSizeOptions: number[];
   itemLabel?: string;
+  compact?: boolean;
   disabled?: boolean;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
@@ -112,12 +113,15 @@ function ManagementPagination(props: ManagementPaginationProps) {
     <nav
       data-management-pagination
       aria-label="分页导航"
-      className="mt-auto grid min-h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-border px-4 py-4 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:gap-4 sm:px-6"
+      className={cn("mt-auto grid shrink-0 items-center gap-2 border-t border-border text-xs text-muted-foreground",
+        props.compact
+          ? "min-h-12 grid-cols-[1fr_auto] py-1"
+          : "min-h-16 grid-cols-[minmax(0,1fr)_auto_auto] px-4 py-4 sm:grid-cols-[1fr_auto_1fr] sm:gap-4 sm:px-6")}
     >
-      <span className="min-w-0 break-words leading-5 tabular-nums" role="status" aria-live="polite">
+      <span className={cn("min-w-0 break-words leading-5 tabular-nums", props.compact && "sr-only")} role="status" aria-live="polite">
         {cursorMode ? "本页" : "共"} {cursorMode ? props.currentItems : props.totalItems} {itemLabel}
       </span>
-      <div className="flex min-w-0 items-center justify-center gap-1 sm:gap-2">
+      <div className={cn("flex min-w-0 items-center gap-1 sm:gap-2", !props.compact && "justify-center")}>
         <Button
           type="button"
           variant="outline"

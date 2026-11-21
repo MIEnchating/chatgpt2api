@@ -12,6 +12,7 @@ import { LabeledField } from "../src/components/labeled-field.tsx";
 import { IMAGE_ASPECT_RATIO_PRESET_OPTIONS } from "../src/lib/image-options.ts";
 import * as imageOptions from "../src/lib/image-options.ts";
 import { resolveSiteIconSrc } from "../src/lib/app-meta.ts";
+import { generationQualityLabel } from "../src/app/workflows/workflow-image-parameters.ts";
 
 function hooks() {
   const slots = [];
@@ -1291,15 +1292,26 @@ test("desktop connection clears passwords, submits once and unlocks retry after 
   assert.ok(nodes.find(node => node.props?.id === "connect").props.children.includes("重试连接"));
 });
 
-test("desktop settings read failure stays visible and cannot submit a connection", async () => {
-  let calls = 0;
-  const fixture = desktopFixture(async () => { throw new Error("无法读取测试设置"); }, async () => { calls++; return { ok: true }; });
+test("desktop settings read failure blocks connection until the settings retry succeeds", async () => {
+  let calls = 0, reads = 0;
+  const fixture = desktopFixture(async () => {
+    if (++reads === 1) throw new Error("无法读取测试设置");
+    return desktopSettings;
+  }, async () => { calls++; return { ok: true }; });
   fixture.render(); fixture.state.effects.forEach(effect => effect()); await flush();
-  const nodes = fixture.render();
+  let nodes = fixture.render();
   assert.equal(nodes.find(node => node.type === "AlertDescription").props.children, "无法读取测试设置");
   assert.equal(nodes.find(node => node.props?.id === "connect").props.disabled, true);
   nodes.find(node => node.type === "form").props.onSubmit({ preventDefault() {} });
   await flush(); assert.equal(calls, 0);
+  nodes.find(node => node.type === "Button" && node.props.children?.includes("重试读取")).props.onClick();
+  nodes = fixture.render();
+  assert.equal(nodes.find(node => node.props?.id === "connect").props.disabled, true);
+  fixture.state.effects.at(-1)(); await flush();
+  nodes = fixture.render();
+  assert.equal(reads, 2);
+  assert.equal(nodes.find(node => node.props?.id === "connect").props.disabled, false);
+  assert.equal(nodes.some(node => node.type === "AlertDescription"), false);
 });
 
 test("shared confirmations preserve content, busy dismissal and independent confirmation disabling", () => {
@@ -2262,7 +2274,8 @@ test("closed prompt dialogs skip their content and preserve filters when reopene
   const sources = [{ id: "alpha-source", label: "摄影", enabled: true }];
   const { ImagePromptMarket } = loadSource("../src/app/image/components/image-prompt-market.tsx", {
     react: state.react,
-    "@/app/image/banana-prompts": { DEFAULT_PROMPT_MARKET_SOURCES: sources, sortPromptMarketPrompts: items => items },
+    "@/app/image/banana-prompts": { DEFAULT_PROMPT_MARKET_SOURCES: sources, preparePromptMarketEntries: items => items, searchPromptMarketEntries: items => items },
+    "@/app/image/prompt-favorites": { promptFavoriteToBananaPrompt: item => item },
     "@/app/image/prompt-favorite-request-lifecycle": { PromptFavoriteRequestLifecycle: class {} },
   });
   const render = (open, presentation = "dialog") => descendants(state.render(ImagePromptMarket, { open, presentation, onOpenChange() {}, onApplyPrompt() {} }));
@@ -2287,7 +2300,8 @@ test("prompt category selection uses shared list navigation and searches both na
   const sources = [{ id: "alpha-source", label: "摄影", enabled: true }, { id: "beta-source", label: "插画", enabled: true }];
   const { ImagePromptMarket } = loadSource("../src/app/image/components/image-prompt-market.tsx", {
     react: state.react,
-    "@/app/image/banana-prompts": { DEFAULT_PROMPT_MARKET_SOURCES: sources, sortPromptMarketPrompts: items => items },
+    "@/app/image/banana-prompts": { DEFAULT_PROMPT_MARKET_SOURCES: sources, preparePromptMarketEntries: items => items, searchPromptMarketEntries: items => items },
+    "@/app/image/prompt-favorites": { promptFavoriteToBananaPrompt: item => item },
     "@/app/image/prompt-favorite-request-lifecycle": { PromptFavoriteRequestLifecycle: class {} },
   });
   const render = () => descendants(state.render(ImagePromptMarket, { open: true, presentation: "page", onOpenChange() {}, onApplyPrompt() {} }));
@@ -2318,9 +2332,10 @@ test("workflow history opens and copies through separate native button controls"
     "class-variance-authority": { cva: () => () => "" },
     "@/lib/clipboard-text": { copyClipboardText: async value => copied.push(value) },
   });
-  const { WorkflowTaskRow } = loadSource("../src/app/workflows/creative-workflow-workspace.tsx", {
+  const { WorkflowTaskRow } = loadSource("../src/app/workflows/workflow-task-dialogs.tsx", {
     "@/components/ui/code-block": { CodeBlockCopyButton },
-  }, {}, "\nexport { WorkflowTaskRow };\n");
+    "@/lib/use-now": { useNow: () => 1000 },
+  });
   const tree = WorkflowTaskRow({ task: { workflow_name: "样例工作流", prompt: "测试提示词", images: [], status: "success", started_at: 0, ended_at: 1000, count: 1 }, now: 1000, onOpen: () => opened.push(true) });
   const nodes = descendants(tree);
   const open = nodes.find(node => node.type === "Button" && node.props["aria-label"] === "查看任务：样例工作流");
@@ -2931,7 +2946,7 @@ test("tag row menus rename and delete only their own tag while preserving the ac
 });
 
 test("workflow attachments preserve reference order, movement bounds, removal and original links", () => {
-  const { WorkflowReferenceGrid } = loadSource("../src/app/workflows/creative-workflow-workspace.tsx", {}, {}, "\nexport { WorkflowReferenceGrid };\n");
+  const { WorkflowReferenceGrid } = loadSource("../src/app/workflows/workflow-reference-grid.tsx");
   const references = [{ id: "first", name: "first.png", url: "/first.png" }, { id: "last", name: "last.png", url: "/last.png" }];
   const moves = [], removed = [];
   const props = { references, className: "grid-cols-2", onMove: (...args) => moves.push(args), onRemove: id => removed.push(id) };
@@ -3149,12 +3164,49 @@ test("canvas message copies preserve edit, retry and message visibility rules", 
   }
 });
 
+test("workflow history bounds mounted rows and keeps cleanup counts independent of page and filter", () => {
+  const state = hooks();
+  const { WorkflowTaskHistoryDialog } = loadSource("../src/app/workflows/workflow-task-dialogs.tsx", { react: state.react });
+  const tasks = Array.from({ length: 30 }, (_, index) => ({
+    id: `task-${index}`, status: index < 17 ? "success" : index < 25 ? "failed" : "running", images: [],
+  }));
+  let query = { page: 1, pageSize: 12, status: "all" };
+  const render = (open = true) => {
+    const filtered = tasks.filter(task => query.status === "all" || task.status === query.status);
+    return descendants(state.render(WorkflowTaskHistoryDialog, {
+      open, tasks: filtered.slice((query.page - 1) * 12, query.page * 12), localTasks: [], query,
+      counts: { all: 30, running: 5, success: 17, failed: 8 }, page: query.page, total: filtered.length,
+      onQueryChange(next) { query = next; }, onClose() {},
+    }));
+  };
+  const rows = (nodes) => nodes.filter((node) => node.type?.name === "WorkflowTaskRow");
+  const pager = (nodes) => nodes.find((node) => node.type === "ManagementPagination");
+  assert.equal(rows(render(false)).length, 0);
+  let nodes = render();
+  assert.equal(rows(nodes).length, 12);
+  assert.equal(pager(nodes).props.totalItems, 30);
+  pager(nodes).props.onPageChange(3);
+  nodes = render();
+  assert.equal(rows(nodes)[0].props.task.id, "task-24");
+  assert.equal(rows(nodes).length, 6);
+  nodes.find((node) => node.type === "ToggleGroup").props.onValueChange("failed");
+  nodes = render();
+  assert.deepEqual(query, { page: 1, pageSize: 12, status: "failed" });
+  assert.deepEqual(rows(nodes).map((row) => row.props.task.id), tasks.slice(17, 25).map((task) => task.id));
+  assert.ok(descendants(nodes.find((node) => node.type === "ConfirmDialog").props.description).length);
+  const description = nodes.find((node) => node.type === "ConfirmDialog").props.description;
+  assert.ok(description.props.children.includes(25));
+});
+
 test("workflow prompt copies follow image selection and draft edits", () => {
   const state = hooks();
   const changed = [];
-  const { WorkflowTaskDialog, SeriesDraftCard } = loadSource("../src/app/workflows/creative-workflow-workspace.tsx", {
+  const { WorkflowTaskDialog } = loadSource("../src/app/workflows/workflow-task-dialogs.tsx", {
     react: state.react,
-  }, {}, "\nexport { WorkflowTaskDialog, SeriesDraftCard };\n");
+    "@/lib/use-now": { useNow: () => 1000 },
+    "./workflow-image-parameters": { generationQualityLabel },
+  });
+  const { SeriesDraftCard } = loadSource("../src/app/workflows/workflow-runner.tsx");
   const task = {
     id: "task", workflow_name: "隔离工作流", status: "success", started_at: 0, ended_at: 1000,
     prompt: "批次提示词", inputs: {}, references: [], config: {}, execution: {}, backend_task_ids: [], count: 3,
@@ -3378,7 +3430,7 @@ test("prompt source health distinguishes pending, healthy, failed and unchecked 
 });
 
 test("user actions forward the original account and lock every action while pending", () => {
-  const { ManagedUserActions } = loadSource("../src/app/users/page.tsx", {}, {}, "\nexport { ManagedUserActions };");
+  const { ManagedUserActions } = loadSource("../src/app/users/page.tsx", { react: { memo: component => component } }, {}, "\nexport { ManagedUserActions };");
   const user = { id: "account", enabled: true };
   const calls = [];
   const props = { user, isPending: false, onRole: value => calls.push(["role", value]), onToggle: value => calls.push(["toggle", value]), onDelete: value => calls.push(["delete", value]) };
@@ -3400,7 +3452,7 @@ test("canvas closed overlays skip content work and retain reopen and action beha
   let projectReads = 0, nodeReads = 0;
   const calls = [];
   const state = {
-    nodeInfo: null, shortcutsOpen: false, pendingPanoramaImport: null, stopTargetNodeID: "", clearConfirmationOpen: false,
+    nodeInfo: null, shortcutsOpen: false, pendingPanoramaImport: null, stopTargetNodeID: "", stoppingPromptOptimization: false, clearConfirmationOpen: false,
     canvasMenuOpen: false, projectMenuOpen: false, title: "画布", background: "dots", showImageInfo: false,
     documentRef: { current: { id: "current" } }, historyRef: { current: [1] }, redoRef: { current: [] },
     get projects() { projectReads++; return [{ id: "current", title: "画布", node_count: 1 }]; },
@@ -3447,6 +3499,12 @@ test("canvas closed overlays skip content work and retain reopen and action beha
   assert.ok(nodes.some(node => node.type === "DialogDescription" && node.props.children.join("").includes("脚本及其素材")));
   nodes.find(node => node.type === "Button" && node.props.children[0] === "停止").props.onClick();
   nodes.find(node => node.type === "Button" && node.props.children[0] === "继续生成").props.onClick();
+  assert.equal(state.stopTargetNodeID, "");
+  state.stopTargetNodeID = "video";
+  state.stoppingPromptOptimization = true;
+  nodes = descendants(render("Boolean(stopTargetNodeID)"));
+  assert.ok(nodes.some(node => node.type === "DialogTitle" && node.props.children[0] === "停止优化？"));
+  nodes.find(node => node.type === "Button" && node.props.children[0] === "继续优化").props.onClick();
   assert.equal(state.stopTargetNodeID, "");
   state.clearConfirmationOpen = true;
   descendants(render("clearConfirmationOpen")).find(node => node.type === "Button" && node.props.children[0] === "清空").props.onClick();

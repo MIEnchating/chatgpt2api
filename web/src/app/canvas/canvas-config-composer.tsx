@@ -61,9 +61,9 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
   }, [inputs, referenceCandidates, mention]);
 
   useEffect(() => {
-    if (document.activeElement === editorRef.current) return;
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!editor || composingRef.current) return;
+    if (document.activeElement === editor && serializeEditor(editor) === value) return;
     const currentInputs = inputsRef.current;
     const inputByID = new Map(currentInputs.map((input) => [input.nodeID, input]));
     const tokens = parseComposerTokens(value);
@@ -78,7 +78,7 @@ export function CanvasConfigComposer({ node, inputs, referenceCandidates, onRefe
         editor.append(createReferenceChip(input));
       }
     });
-  }, [inputsSignature, value]);
+  }, [inputsSignature, isComposing, value]);
 
   function closeMention() {
     if (mentionFrameRef.current !== null) cancelAnimationFrame(mentionFrameRef.current);

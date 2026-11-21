@@ -21,7 +21,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 
 
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { AlertCircle, Brush, ChevronDown, CircleStop, Clock3, Download, Eye, Globe2, Lock, PencilLine, Plus, RotateCcw, Sparkles } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -47,6 +47,7 @@ import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { formatBase64ImageFileSize, formatImageFileSize } from "@/lib/image-size";
 import { generationFrameAspectRatio, videoFrameMaxWidth } from "@/lib/generation-frame-aspect";
 import { cn, formatElapsedClock } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import {
   getEffectiveImageTurnStatus,
   getStoredImageLoadingPhase,
@@ -81,10 +82,11 @@ type ImageResultsProps = {
   conversationId: string | null;
   selectedConversation: ImageConversation | null;
   isLoadingHistory: boolean;
+  historyError: string;
+  onRetryHistory: () => void;
   conversationDetailError: string;
   onRetryConversationDetail: () => void;
   progressByTurnKey: Record<string, ImageTurnProgress>;
-  progressNow: number;
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
   onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
   onMaskEdit: (conversationId: string, turnId: string, sourceURL: string) => void;
@@ -287,19 +289,38 @@ async function fetchImageSizeLabel(src: string) {
 }
 
 function GeneratedVideoPlayer({ src, aspectRatio, title }: { src: string; aspectRatio: string; title: string }) {
-  // Saving a durable copy must not reset playback of this result.
-  const [playbackSrc] = useState(src);
-  return <MediaVideoPlayer src={playbackSrc} aspectRatio={aspectRatio} title={title} embedded />;
+  const placeholder = useRef<HTMLDivElement>(null);
+  const [playbackSrc, setPlaybackSrc] = useState(() => typeof IntersectionObserver === "undefined" ? src : "");
+  useEffect(() => {
+    if (playbackSrc || !placeholder.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setPlaybackSrc(src);
+      observer.disconnect();
+    }, { rootMargin: "200px" });
+    observer.observe(placeholder.current);
+    return () => observer.disconnect();
+  }, [playbackSrc, src]);
+  // Saving a durable copy must not reset playback once it starts loading.
+  if (playbackSrc) return <MediaVideoPlayer src={playbackSrc} aspectRatio={aspectRatio} title={title} embedded />;
+  return <Skeleton ref={placeholder} className="w-full" style={{ aspectRatio }} />;
 }
 
-export function ImageResults({
+function TurnElapsedTime({ turn }: { turn: ImageTurn }) {
+  const now = useNow();
+  const startedAt = imageTurnStartedAtTimestamp(turn.processingStartedAt, turn.createdAt);
+  return <span className="tabular-nums">{formatElapsedClock(Math.max(0, Math.floor((now - startedAt) / 1000)))}</span>;
+}
+
+export const ImageResults = memo(function ImageResults({
   conversationId,
   selectedConversation,
   isLoadingHistory,
+  historyError,
+  onRetryHistory,
   conversationDetailError,
   onRetryConversationDetail,
   progressByTurnKey,
-  progressNow,
   onOpenLightbox,
   onContinueEdit,
   onMaskEdit,
@@ -406,6 +427,10 @@ export function ImageResults({
     return (
       <LoadingState className="min-h-0 flex-1" label="正在读取历史记录" />
     );
+  }
+
+  if (historyError && !selectedConversation && !conversationId) {
+    return <EmptyState role="alert" icon={AlertCircle} title="无法读取创作历史" description={historyError} className="flex-1" action={<Button type="button" variant="outline" onClick={onRetryHistory}>重试读取</Button>} />;
   }
 
   if (conversationDetailError && !hasConversationDetail) {
@@ -550,13 +575,6 @@ export function ImageResults({
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
         const isQueued = effectiveStatus === "queued";
         const isRunning = effectiveStatus === "generating";
-        const elapsedSeconds = isRunning
-          ? Math.max(
-              0,
-              Math.floor((progressNow - imageTurnStartedAtTimestamp(turn.processingStartedAt, turn.createdAt)) / 1000),
-            )
-          : 0;
-        const elapsedClock = isRunning ? formatElapsedClock(elapsedSeconds) : "";
         const progressMessage =
           isQueued
             ? progress?.message || "等待任务开始"
@@ -626,7 +644,7 @@ export function ImageResults({
                           {displayedReferenceImages.map((image, index) => (
                             <Attachment key={`${turn.id}-${image.name}-${index}`} orientation="vertical" size="xs" className="w-10">
                               <AttachmentMedia variant="image">
-                                <AuthenticatedImage src={image.dataUrl} alt={image.name || `参考图 ${index + 1}`} className="size-full object-cover" placeholderClassName="min-h-0" />
+                                <AuthenticatedImage src={image.dataUrl} alt={image.name || `参考图 ${index + 1}`} className="size-full object-cover" placeholderClassName="min-h-0" loading="lazy" decoding="async" />
                               </AttachmentMedia>
                               <AttachmentTrigger onClick={() => onOpenLightbox(referenceLightboxImages, index)} aria-label={`预览参考图 ${image.name || index + 1}`} />
                             </Attachment>
@@ -711,7 +729,7 @@ export function ImageResults({
                     <TooltipHint content={turn.model}><span className="min-w-0 max-w-full break-all sm:max-w-48 sm:truncate">{turn.model}</span></TooltipHint>
                     <Badge variant={effectiveStatus === "error" ? "destructive" : "secondary"}>{getTurnStatusLabel(effectiveStatus)}</Badge>
                     {showResultSummary ? <span>{resultCount}{turnBusy || turn.count !== resultCount ? ` / ${turn.count}` : ""} {isVideoTurn ? "个视频" : "张"}</span> : null}
-                    {isRunning ? <span className="tabular-nums">{elapsedClock}</span> : null}
+                    {isRunning ? <TurnElapsedTime turn={turn} /> : null}
                     {mismatchedImages.length > 0 ? <Badge variant="destructive">{resultQualityCheckLabel}</Badge> : null}
                     <div className="flex flex-wrap items-center gap-1">
                       {downloadActions}
@@ -930,9 +948,11 @@ export function ImageResults({
                               loading="lazy"
                               decoding="async"
                               className="absolute inset-0 size-full min-h-0 object-contain"
-                              onMetadata={(width, height) => {
+                              onMetadata={(width, height, bytes) => {
                                 updateImageDimensions(image.id, width, height);
-                                if (!image.b64_json) {
+                                if (bytes > 0) {
+                                  updateImageSizeLabel(image.id, formatImageFileSize(bytes));
+                                } else if (!image.b64_json) {
                                   ensureImageSizeLabel(image.id, imageSrc);
                                 }
                               }}
@@ -1135,7 +1155,7 @@ export function ImageResults({
       })}
     </>
   );
-}
+});
 
 function getTurnStatusLabel(status: ImageTurnStatus) {
   if (status === "queued") {

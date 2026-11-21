@@ -17,6 +17,7 @@ export function videoPluginDefaults(contract: VideoModelContract) {
     version: "1.0.0",
     baseURL: contract.provider?.base_url || "",
     models: contract.models.join("\n"),
+    modelsPath: "/v1/models",
     authMode: contract.provider?.auth_mode || "" as const,
     authHeader: contract.provider?.auth_header || "",
     downloadMode,

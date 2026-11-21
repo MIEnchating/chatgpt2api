@@ -182,6 +182,9 @@ func MatchAPIPermissionKey(method, path string) (string, bool) {
 	if method == "DELETE" && path == "/api/creation-tasks" {
 		method = "POST"
 	}
+	if method == "POST" && path == "/api/creation-tasks/events" {
+		return APIPermissionKey("GET", "/api/creation-tasks"), true
+	}
 	// Reference-asset upload belongs to the authenticated creation workflow.
 	if method == "POST" && path == "/api/profile/image-conversation-assets" {
 		path = "/api/creation-tasks"

@@ -10,6 +10,8 @@ type AssetListMutation = (assets: MyAsset[]) => MyAsset[];
 export function useMyAssets(scope: string, enabled: boolean) {
   const [assets, setAssets] = useState<MyAsset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const activeScopeRef = useRef("");
   const mutationQueuesRef = useRef(new Map<string, Promise<unknown>>());
   const mutationScopeRef = useRef<{ scope: string; controller: AbortController } | null>(null);
@@ -31,8 +33,12 @@ export function useMyAssets(scope: string, enabled: boolean) {
   }, [enabled, scope]);
 
   useEffect(() => {
-    activeScopeRef.current = enabled ? scope : "";
-    setAssets([]);
+    const activeScope = enabled ? scope : "";
+    if (activeScopeRef.current !== activeScope) {
+      activeScopeRef.current = activeScope;
+      setAssets([]);
+    }
+    setLoadError("");
     if (!enabled) {
       setLoading(false);
       return;
@@ -51,7 +57,9 @@ export function useMyAssets(scope: string, enabled: boolean) {
       })
       .catch((error) => {
         if (!active || controller.signal.aborted || activeScopeRef.current !== scope) return;
-        toast.error(error instanceof Error ? `云端素材读取失败：${error.message}` : "云端素材读取失败");
+        const message = error instanceof Error ? error.message : "云端素材读取失败";
+        setLoadError(message);
+        toast.error(`云端素材读取失败：${message}`);
       })
       .finally(() => {
         if (pendingLoadMutationsRef.current === loadMutations) pendingLoadMutationsRef.current = null;
@@ -62,7 +70,7 @@ export function useMyAssets(scope: string, enabled: boolean) {
       if (pendingLoadMutationsRef.current === loadMutations) pendingLoadMutationsRef.current = null;
       controller.abort();
     };
-  }, [enabled, scope]);
+  }, [enabled, loadAttempt, scope]);
 
   const enqueueMutation = useCallback(<T,>(requestScope: string, id: string, mutation: (signal: AbortSignal) => Promise<T>) => {
     const mutationScope = mutationScopeRef.current;
@@ -110,5 +118,5 @@ export function useMyAssets(scope: string, enabled: boolean) {
     return deleted;
   }), [enqueueMutation, scope]);
 
-  return { assets, upsertAsset, deleteAsset, loading };
+  return { assets, upsertAsset, deleteAsset, loading, loadError, reload: () => setLoadAttempt((attempt) => attempt + 1) };
 }

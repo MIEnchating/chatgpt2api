@@ -35,7 +35,7 @@ export function AppShell() {
               <ScrollAreaRoot id="page-content" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 outline-none" data-slot="scroll-area">
                 <ScrollAreaViewport data-slot="scroll-area-viewport" className="size-full overscroll-contain [&>div]:block! [&>div]:h-full">
                   {/* Keep a usable workspace when toolbars exceed the available screen height. */}
-                  <div className="h-full min-h-[40rem] lg:min-h-[32rem]">
+                  <div className="h-full min-h-[40rem] lg:min-h-[32rem] [&:has([data-editor-workspace])]:min-h-0">
                     <AnimatedRoutes />
                   </div>
                 </ScrollAreaViewport>

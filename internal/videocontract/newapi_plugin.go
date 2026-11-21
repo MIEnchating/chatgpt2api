@@ -16,11 +16,15 @@ import (
 //go:embed newapi_plugin.js
 var newAPIVideoPluginRuntime string
 
+//go:embed newapi_plugin_models.js
+var newAPIVideoModelDiscoveryRuntime string
+
 type NewAPIVideoPluginOptions struct {
 	Key          string   `json:"key"`
 	Version      string   `json:"version"`
 	BaseURL      string   `json:"base_url"`
 	Models       []string `json:"models"`
+	ModelsPath   string   `json:"models_path,omitempty"`
 	AuthMode     string   `json:"auth_mode"`
 	AuthHeader   string   `json:"auth_header"`
 	DownloadMode string   `json:"download_mode"`
@@ -37,11 +41,12 @@ type NewAPIVideoPluginResult struct {
 }
 
 var (
-	newAPIPluginKeyPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,29}$`)
-	newAPIPluginVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
-	newAPIPluginHeaderPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
-	newAPIPluginPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\]){0,15}$`)
-	newAPIPluginModelPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$`)
+	newAPIPluginKeyPattern        = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,29}$`)
+	newAPIPluginVersionPattern    = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
+	newAPIPluginHeaderPattern     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
+	newAPIPluginPathPattern       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\]){0,15}$`)
+	newAPIPluginModelPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$`)
+	newAPIPluginModelsPathPattern = regexp.MustCompile(`^/([A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+$`)
 )
 
 // GenerateNewAPIVideoPlugin compiles a validated contract into a self-contained
@@ -55,6 +60,7 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 	options.Key = strings.TrimSpace(options.Key)
 	options.Version = strings.TrimSpace(options.Version)
 	options.BaseURL = strings.TrimSpace(options.BaseURL)
+	options.ModelsPath = strings.TrimSpace(options.ModelsPath)
 	options.Models = append([]string(nil), options.Models...)
 	options.ResultFields = append([]string{}, options.ResultFields...)
 	if !newAPIPluginKeyPattern.MatchString(options.Key) {
@@ -82,6 +88,16 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 		options.BaseURL = strings.TrimRight(u.String(), "/")
 		if len(options.BaseURL) > 191 {
 			return result, fmt.Errorf("上游 Base URL 规范化后不能超过 191 个字符")
+		}
+	}
+	if options.ModelsPath != "" {
+		if len(options.ModelsPath) > 512 || !newAPIPluginModelsPathPattern.MatchString(options.ModelsPath) {
+			return result, fmt.Errorf("模型列表路径必须是以 / 开头的静态路径，最多 512 字符，不能包含域名、查询参数或占位符")
+		}
+		for _, segment := range strings.Split(options.ModelsPath, "/") {
+			if segment == "." || segment == ".." {
+				return result, fmt.Errorf("模型列表路径不能包含 . 或 .. 路径段")
+			}
 		}
 	}
 	switch contract.Driver {
@@ -231,6 +247,9 @@ func GenerateNewAPIVideoPlugin(input protocol.VideoModelContract, options NewAPI
 	result.Contract, result.Options = contract, options
 	result.Filename = options.Key + "-" + options.Version + ".js"
 	result.Source = "// Generated from a video contract without API keys. Configure credentials in the New API channel.\nconst CONFIG = " + string(encoded) + ";\n\n" + newAPIVideoPluginRuntime
+	if options.ModelsPath != "" {
+		result.Source += "\n" + newAPIVideoModelDiscoveryRuntime
+	}
 	result.Warnings = []string{
 		"生成过程不请求上游，也不验证供应商权限或计费。上传前核对 Base URL、请求路径和鉴权方式。",
 		"插件按当前契约字段接收 JSON 或已声明的 multipart；openai_video 只声明视频路由，不自动把 seconds/size 等字段转换为其他别名。",

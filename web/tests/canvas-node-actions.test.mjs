@@ -6,6 +6,7 @@ const actionsSource = readFileSync(new URL("../src/app/canvas/canvas-node-action
 const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const controlsSource = readFileSync(new URL("../src/app/canvas/canvas-workspace-controls.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const detailsSource = readFileSync(new URL("../src/app/canvas/canvas-node-details.tsx", import.meta.url), "utf8");
 const specialNodesSource = readFileSync(new URL("../src/app/canvas/canvas-special-nodes.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const generationFooterSource = readFileSync(new URL("../src/app/canvas/canvas-generation-footer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const imageComposerSource = readFileSync(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
@@ -15,6 +16,7 @@ const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-sid
 const configComposerSource = readFileSync(new URL("../src/app/canvas/canvas-config-composer.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const promptScrollFrameSource = readFileSync(new URL("../src/components/generation/prompt-textarea-frame.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const workflowSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const workflowAgentSource = readFileSync(new URL("../src/app/workflows/workflow-agent-dialog.tsx", import.meta.url), "utf8");
 const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
@@ -96,9 +98,9 @@ test("optional canvas image information only shows dimensions and file size", ()
 });
 
 test("canvas node chrome supports compact details and overflow marquee titles", () => {
-  assert.match(pageSource, /<InfoSection title="基础信息">/);
-  assert.match(pageSource, /<InfoSection title="生成信息">/);
-  assert.match(pageSource, /copyable/);
+  assert.match(detailsSource, /<InfoSection title="基础信息">/);
+  assert.match(detailsSource, /<InfoSection title="生成信息">/);
+  assert.match(detailsSource, /copyable/);
   assert.match(engineSource, /<OverflowMarqueeText text=\{node.title/);
   assert.match(globalStylesSource, /@keyframes overflow-marquee/);
 });
@@ -122,8 +124,8 @@ test("the canvas side panel resize target stays outside its internal scrollbar",
 });
 
 test("the canvas prompt library shares chronological ordering and limits every category", () => {
-  assert.match(canvasSidePanelSource, /sortPromptMarketPrompts/);
-  assert.match(canvasSidePanelSource, /promptMatchesKeyword\(prompt, query\)/);
+  assert.match(canvasSidePanelSource, /preparePromptMarketEntries\(prompts\)/);
+  assert.match(canvasSidePanelSource, /searchPromptMarketEntries\(prompts, query\)/);
   assert.match(canvasSidePanelSource, /SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE = 12/);
   assert.doesNotMatch(canvasSidePanelSource, /SYSTEM_PROMPT_SOURCE_ID|系统提示词|暂无系统提示词/);
   assert.match(canvasSidePanelSource, /const promptGroups = useMemo/);
@@ -242,7 +244,8 @@ test("config prompt references use a stable standalone picker and reliable delet
 test("every canvas parameter panel uses the shared generation footer", () => {
   assert.ok((pageSource.match(/<CanvasGenerationFooter/g) || []).length >= 3);
   assert.ok((specialNodesSource.match(/<CanvasGenerationFooter/g) || []).length >= 2);
-  assert.match(generationFooterSource, /aria-label=\{running \? "停止生成" : "开始生成"\}/);
+  assert.match(generationFooterSource, /aria-label=\{actionLabel\}/);
+  assert.match(generationFooterSource, /const actionLabel = optimization\?\.loading \? "停止优化" : running \? "停止生成" : "开始生成"/);
   assert.match(generationFooterSource, /variant=\{running \? "destructive" : "default"\}/);
 });
 
@@ -259,13 +262,13 @@ test("both Agent entries let the request determine media instead of exposing fix
 });
 
 test("Agent entry names are consistent across canvas and workflows", () => {
-  for (const source of [pageSource, agentPanelSource, canvasLibrarySource, workflowSource]) {
+  for (const source of [pageSource, agentPanelSource, canvasLibrarySource, workflowSource, workflowAgentSource]) {
     assert.doesNotMatch(source, /创作 Agent|画布 Agent|AI 创建|Agent 创建画布|Agent 创建工作流/);
   }
   assert.match(agentPanelSource, /"history" \? "历史对话" : activeSession.title \|\| "Agent"/);
   assert.match(canvasLibrarySource, /<Bot \/>Agent<\/Button>/);
   assert.match(workflowSource, /on(?:Click|Select)=\{\(\) => setAgentOpen\(true\)\}/);
-  assert.match(workflowSource, /<DialogTitle>Agent<\/DialogTitle>/);
+  assert.match(workflowAgentSource, /<DialogTitle>Agent<\/DialogTitle>/);
 });
 
 test("Agent allows node settings while preserving references and idle new chat", () => {

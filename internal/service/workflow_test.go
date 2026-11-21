@@ -756,6 +756,39 @@ func TestWorkflowServiceSkipsInvalidPersistedWorkflow(t *testing.T) {
 	}
 }
 
+func TestWorkflowListNormalizesVisibleLegacyItemsOnly(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	if err := store.SaveJSONDocument(workflowDocumentName, workflowDocument{Items: []CreativeWorkflow{
+		{ID: "other-private", OwnerID: "bob", Name: "Bob", UpdatedAt: "2026-10-30"},
+		{ID: "broken-public", OwnerID: "bob", Scope: "public", UpdatedAt: "2026-10-29"},
+		{ID: "legacy-public", OwnerID: "bob", Scope: " PUBLIC ", Name: " Shared ", UpdatedAt: "2026-10-28"},
+		{ID: "own-private", OwnerID: "alice", Name: "Alice", UpdatedAt: "2026-10-27"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	workflows := NewWorkflowService(backend)
+	items, err := workflows.List("alice")
+	if err != nil || len(items) != 2 {
+		t.Fatalf("List(alice) = (%#v, %v)", items, err)
+	}
+	if items[0].ID != "legacy-public" || items[0].Scope != "public" || items[0].Name != "Shared" || items[0].Editable || items[0].Revision != 1 {
+		t.Fatalf("public item = %#v", items[0])
+	}
+	if items[1].ID != "own-private" || !items[1].Editable {
+		t.Fatalf("owned item = %#v", items[1])
+	}
+	items[0].Name = "Changed by caller"
+	items[0].Config.PromptTemplate = "Changed by caller"
+	items, err = workflows.List("bob")
+	if err != nil || len(items) != 2 || items[0].ID != "other-private" || !items[0].Editable {
+		t.Fatalf("List(bob) = (%#v, %v)", items, err)
+	}
+	if items[1].Name != "Shared" || items[1].Config.PromptTemplate != "" {
+		t.Fatalf("list result shared a mutable snapshot: %#v", items[1])
+	}
+}
+
 func TestWorkflowServiceIgnoresRemovedDAGFields(t *testing.T) {
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	created, err := workflows.Save("alice", CreativeWorkflow{

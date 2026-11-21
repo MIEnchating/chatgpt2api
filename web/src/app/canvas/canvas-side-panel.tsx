@@ -13,10 +13,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import {
   fetchPromptMarketPrompts,
   normalizePromptMarketSources,
-  promptMatchesKeyword,
-  sortPromptMarketPrompts,
+  preparePromptMarketEntries,
+  searchPromptMarketEntries,
   type BananaPrompt,
+  type PromptMarketEntry,
 } from "@/app/image/banana-prompts";
+import { PromptMarketSourceAlert } from "@/app/image/components/prompt-market-source-alert";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { canvasNodeTreeRows } from "@/app/canvas/canvas-node-tree";
 import { Button } from "@/components/ui/button";
@@ -85,7 +87,8 @@ const STATUS_LABEL: Record<NonNullable<CanvasNode["generation_status"]>, string>
 };
 
 type SidePanelPromptData = {
-  prompts: BananaPrompt[];
+  prompts: PromptMarketEntry[];
+  failedSources: string[];
   categories: Array<{ id: string; label: string; builtin?: boolean }>;
 };
 
@@ -99,17 +102,6 @@ const sidePanelPromptRequests = new Map<string, Promise<SidePanelPromptData>>();
 const SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE = 12;
 const SIDE_PANEL_PROMPT_CACHE_TTL_MS = 5 * 60_000;
 const SIDE_PANEL_PROMPT_CACHE_LIMIT = 8;
-
-function localizedPrompt(prompt: BananaPrompt): BananaPrompt {
-  const localization = prompt.localizations?.["zh-CN"] ?? prompt.localizations?.en;
-  return localization ? {
-    ...prompt,
-    title: localization.title,
-    prompt: localization.prompt,
-    category: localization.category,
-    subCategory: localization.subCategory,
-  } : prompt;
-}
 
 function cachedSidePanelPrompts(sessionKey: string) {
   const key = sessionKey.trim();
@@ -143,16 +135,17 @@ function loadSidePanelPrompts(sessionKey: string, force = false) {
   const pending = fetchPromptSourcesConfig()
     .then(async ({ sources: configuredSources }) => {
       const sources = normalizePromptMarketSources(configuredSources);
-      const prompts = await fetchPromptMarketPrompts(undefined, sources);
+      const { prompts, failedSources } = await fetchPromptMarketPrompts(undefined, sources);
       return {
-        prompts: sortPromptMarketPrompts(prompts.map(localizedPrompt)),
+        prompts: preparePromptMarketEntries(prompts),
+        failedSources,
         categories: sources.filter((source) => source.enabled).map(({ id, label, builtin }) => ({ id, label, builtin })),
       };
     });
   let tracked: Promise<SidePanelPromptData>;
   tracked = pending
     .then((data) => {
-      if (sidePanelPromptRequests.get(key) === tracked) {
+      if (sidePanelPromptRequests.get(key) === tracked && !data.failedSources.length) {
         cacheSidePanelPrompts(key, data);
       }
       return data;
@@ -487,7 +480,8 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
 
 const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }: { sessionKey: string; onInsert: (prompt: string, title: string) => void }) {
   const initialData = cachedSidePanelPrompts(sessionKey);
-  const [prompts, setPrompts] = useState<BananaPrompt[]>(() => initialData?.prompts || []);
+  const [prompts, setPrompts] = useState<PromptMarketEntry[]>(() => initialData?.prompts || []);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
   const [categories, setCategories] = useState<Array<{ id: string; label: string; builtin?: boolean }>>(() => initialData?.categories || []);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(!initialData);
@@ -505,6 +499,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
       .then((data) => {
         if (requestVersionRef.current !== requestVersion) return;
         setPrompts(data.prompts);
+        setFailedSources(data.failedSources);
         setCategories(data.categories);
       })
       .catch((loadError: unknown) => {
@@ -520,6 +515,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
   useEffect(() => {
     const cached = cachedSidePanelPrompts(sessionKey);
     setPrompts(cached?.prompts || []);
+    setFailedSources([]);
     setCategories(cached?.categories || []);
     setDetail(null);
     setExpandedCategoryID(null);
@@ -530,14 +526,11 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
     };
   }, [load, sessionKey]);
 
-  const filteredPrompts = useMemo(() => {
-    const matching = prompts.filter((prompt) => promptMatchesKeyword(prompt, query));
-    return sortPromptMarketPrompts(matching);
-  }, [prompts, query]);
+  const filteredPrompts = useMemo(() => searchPromptMarketEntries(prompts, query), [prompts, query]);
 
   const promptGroups = useMemo(() => {
     const promptsByCategory = new Map<string, BananaPrompt[]>();
-    filteredPrompts.forEach((prompt) => {
+    filteredPrompts.forEach(({ localized: prompt }) => {
       const categoryID = prompt.source.trim() || "unknown";
       const items = promptsByCategory.get(categoryID);
       if (items) items.push(prompt);
@@ -578,6 +571,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }
       </div>
 
       <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0 p-2">
+        <PromptMarketSourceAlert sources={failedSources} loading={loading} onRetry={() => load(true)} />
         {loading && !prompts.length ? (
           <LoadingState className="min-h-48" label="正在加载提示词" />
         ) : error && !prompts.length ? (

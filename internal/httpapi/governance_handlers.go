@@ -19,10 +19,8 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if query.View == "" {
-		query.View = a.config.DefaultLogView()
-	}
-	query.View = service.NormalizeLogView(query.View, a.config.DefaultLogView())
+	defaultView := a.config.DefaultLogView()
+	query.View = service.NormalizeLogView(query.View, defaultView)
 	page, err := a.logs.SearchPage(query)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidLogCursor) {
@@ -37,6 +35,7 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"total":           nil,
 		"page_size":       normalizedHTTPLogPageSize(query.Limit),
 		"view":            query.View,
+		"default_view":    defaultView,
 		"has_more":        page.HasMore,
 		"snapshot_cursor": page.SnapshotCursor,
 		"next_cursor":     page.NextCursor,

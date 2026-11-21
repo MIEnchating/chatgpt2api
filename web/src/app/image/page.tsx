@@ -40,7 +40,6 @@ import { createMaskEditTurn } from "@/lib/image-mask-edit";
 import { CanvasMaskDialog as WorkbenchMaskDialog, type CanvasMaskEditPayload } from "@/app/canvas/canvas-mask-dialog";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
-import { videoTaskContractReferencesEqual } from "@/lib/video-task-contract";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Switch } from "@/components/ui/switch";
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
@@ -81,9 +80,26 @@ import {
 } from "@/lib/image-options";
 import { IMAGE_PROMPT_PRESETS, type ImagePromptPreset } from "@/app/image/image-presets";
 import { useStudioSidebar } from "@/app/image/use-studio-sidebar";
+import { recoverConversationHistory } from "@/app/image/studio-history-recovery";
+import { writeStudioConversation } from "@/app/image/studio-conversation-writes";
+import {
+  createStudioTaskSubmitter,
+  ImageTaskDispatchAbortedError,
+  type StudioTaskSubmissionFailure,
+} from "@/app/image/studio-task-submission";
+import {
+  deriveTurnStatus,
+  deriveTurnStatusFromTaskMap,
+  imageDataIndexForTask,
+  imageMimeTypeForOutputFormat,
+  imageTaskBatchId,
+  imageTaskIdForImage,
+  isTurnInProgress,
+  storedImageVisibilityPath,
+  taskDataToStoredImage,
+} from "@/app/image/studio-task-results";
 import { Input } from "@/components/ui/input";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
-import { useVideoTaskQueue } from "@/app/image/use-video-task-queue";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import {
@@ -93,22 +109,17 @@ import {
   canStartImageConversationQueueRunner,
   canDispatchImageTurn,
   effectiveTaskSlotStatus,
-  effectiveTaskOutputStatus,
-  hasFinalTaskOutput,
   imageConversationDisplaySnapshot,
   imageConversationHasActiveTurn,
   isTaskActive,
   mergeCreationTaskList,
   mergeCreationTaskSnapshot,
-  mergeImageConversationSnapshot,
-  nextImageConversationRevision,
-  taskImageHasPreview,
   deriveGenerationTaskStatus,
 } from "@/lib/image-task-state";
-import { isRetryableTaskPollError, normalizeGenerationProgress } from "@/lib/generation-task-contract";
+import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
-import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoDefaultSize, videoDefaultResolution, videoAudioControl, videoModelRequiresHTTPSReferences, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoDefaultSize, videoDefaultResolution, videoAudioControl, videoModelRequiresHTTPSReferences, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchDisplaySeconds, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
 import {
   Dialog,
   DialogContent,
@@ -122,8 +133,6 @@ import { NumberInput } from "@/components/ui/number-input";
 
 import {
   cancelCreationTask,
-  createImageEditTask,
-  createImageGenerationTask,
   uploadAudioReference,
   uploadVideoImageReference,
   uploadVideoReference,
@@ -150,7 +159,6 @@ import {
   type ImageRequestQuality,
   type CreationTask,
   type CreationTaskRequestOptions,
-  type ImageQualityCheck,
   type ImageVisibility,
 } from "@/lib/api";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
@@ -171,17 +179,16 @@ import {
   normalizedImagePartialImages,
   normalizedImageWorkbenchCount,
 } from "@/lib/image-api-contract";
-import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
+import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { isPublicHTTPSReferenceURL, isPublicReferenceURL } from "@/lib/public-reference-url";
 import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
-import { useNow } from "@/lib/use-now";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { ensureGeneratedMediaAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
+import { persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
 import { normalizeVideoRequest, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { audioReferenceMetadataError, type AudioReferenceFileMetadata } from "@/lib/video-reference-validation";
 import {
@@ -205,7 +212,6 @@ import {
   loadImageConversationHistoryWindow,
   mergeImageConversationItems,
   saveImageConversation,
-  saveImageConversationCoalesced,
   flushImageConversationSaves,
   type ImageConversation,
   type ImageConversationMode,
@@ -227,7 +233,6 @@ import {
 type CreationRelayTokenKind = Extract<RelayTokenKind, "image" | "video">;
 
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
-const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
 const IMAGE_HISTORY_PAGE_SIZE = 24;
 const CREATION_TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
 const CREATION_TASK_POLL_MAX_ERROR_RETRIES = 8;
@@ -249,37 +254,6 @@ function writeImageWorkbenchStorage(key: string, value: string | null) {
     else window.localStorage.setItem(key, value);
   } catch {
     // Browser storage is an optional preference and may be unavailable.
-  }
-}
-
-class ImageTaskDispatchAbortedError extends Error {
-  constructor() {
-    super("图片任务提交已取消");
-    this.name = "ImageTaskDispatchAbortedError";
-  }
-}
-
-async function runExclusiveImageConversationMutation<T>(
-  mutations: Map<string, Promise<void>>,
-  conversationId: string,
-  operation: () => Promise<T>,
-) {
-  const previous = mutations.get(conversationId);
-  let releaseMutation: () => void = () => {};
-  const mutation = new Promise<void>((resolve) => {
-    releaseMutation = resolve;
-  });
-  mutations.set(conversationId, mutation);
-  if (previous) {
-    await previous;
-  }
-  try {
-    return await operation();
-  } finally {
-    releaseMutation();
-    if (mutations.get(conversationId) === mutation) {
-      mutations.delete(conversationId);
-    }
   }
 }
 
@@ -364,7 +338,7 @@ function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
   };
 }
 
-type CreationTaskDataItem = NonNullable<CreationTask["data"]>[number];
+
 
 function buildConversationTitle(prompt: string) {
   const trimmed = prompt.trim();
@@ -374,17 +348,19 @@ function buildConversationTitle(prompt: string) {
   return `${trimmed.slice(0, 12)}...`;
 }
 
+const conversationTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 function formatConversationTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return conversationTimeFormatter.format(date);
 }
 
 function createId() {
@@ -402,10 +378,6 @@ async function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: strin
 
 function imageFileExtensionForOutputFormat(format?: ImageOutputFormat) {
   return format === "jpeg" ? "jpg" : format || "png";
-}
-
-function imageMimeTypeForOutputFormat(format?: ImageOutputFormat) {
-  return format === "svg" ? "image/svg+xml" : `image/${format || "png"}`;
 }
 
 async function fetchImageAsFile(url: string, fileName: string) {
@@ -579,11 +551,6 @@ function imageOutputCompressionForModel(model: ImageModel, format: ImageOutputFo
   return imageOutputCompressionForFormat(format, value);
 }
 
-function positiveDimension(value: unknown) {
-  const dimension = Number(value);
-  return Number.isFinite(dimension) && dimension > 0 ? Math.round(dimension) : undefined;
-}
-
 function normalizeOutputCompressionValue(value: unknown): number | undefined {
   if (value === undefined || value === null || String(value).trim() === "") {
     return undefined;
@@ -647,425 +614,6 @@ function imageTaskLoadingDetail(turn: ImageTurn, fallbackDetail: string) {
   return `${turn.mode === "video" ? "视频" : "图片"}结果已返回，正在确认任务状态`;
 }
 
-function imageTaskBatchId(turnId: string, imageIndex: number) {
-	return `${turnId}-task-${imageIndex}`;
-}
-
-function imageTaskIdForImage(turnId: string, images: StoredImage[], imageIndex: number) {
-  return images[imageIndex]?.taskId || imageTaskBatchId(turnId, imageIndex);
-}
-
-function imageDataIndexForTask(images: StoredImage[], imageIndex: number) {
-  const taskId = images[imageIndex]?.taskId || images[imageIndex]?.id;
-  if (!taskId) {
-    return 0;
-  }
-  return images.slice(0, imageIndex + 1).filter((image) => (image.taskId || image.id) === taskId).length - 1;
-}
-
-const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
-  "id",
-  "taskId",
-  "storageKey",
-  "taskRevision",
-  "taskStatus",
-  "taskProgress",
-  "canRecoverVideo",
-  "videoContract",
-  "status",
-  "path",
-  "visibility",
-  "b64_json",
-  "url",
-  "mediaType",
-  "videoUrl",
-  "mimeType",
-  "width",
-  "height",
-  "resolution",
-  "outputFormat",
-  "qualityCheck",
-  "taskCreatedAt",
-  "taskUpdatedAt",
-  "generationDurationMs",
-  "revised_prompt",
-  "error",
-  "text_response",
-];
-
-function updateStoredImage(image: StoredImage, updates: Partial<StoredImage>): StoredImage {
-  const next = { ...image, ...updates };
-  return STORED_IMAGE_FIELDS.every((field) => field === "videoContract"
-    ? videoTaskContractReferencesEqual(image.videoContract, next.videoContract)
-    : image[field] === next[field]) ? image : next;
-}
-
-function normalizeImageQualityCheck(value: unknown): ImageQualityCheck | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const source = value as Record<string, unknown>;
-  const warnings = Array.isArray(source.warnings)
-    ? source.warnings.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-  const normalized = {
-    requested_size: typeof source.requested_size === "string" ? source.requested_size : undefined,
-    actual_size: typeof source.actual_size === "string" ? source.actual_size : undefined,
-    size_matched: typeof source.size_matched === "boolean" ? source.size_matched : undefined,
-    requested_output_format: typeof source.requested_output_format === "string" ? source.requested_output_format : undefined,
-    actual_output_format: typeof source.actual_output_format === "string" ? source.actual_output_format : undefined,
-    output_format_matched: typeof source.output_format_matched === "boolean" ? source.output_format_matched : undefined,
-    warnings,
-  };
-  if (
-    !normalized.requested_size &&
-    !normalized.actual_size &&
-    normalized.size_matched === undefined &&
-    !normalized.requested_output_format &&
-    !normalized.actual_output_format &&
-    normalized.output_format_matched === undefined &&
-    warnings.length === 0
-  ) {
-    return undefined;
-  }
-  return normalized;
-}
-
-function storedImageVisibilityPath(image: StoredImage) {
-  if (image.path?.trim()) {
-    return image.path.trim();
-  }
-  if (image.url?.trim()) {
-    const managedPath = getManagedImagePathFromUrl(image.url);
-    if (managedPath) {
-      return managedPath;
-    }
-    const url = image.url.trim();
-    if (/^https?:\/\//i.test(url) || /^data:image\/[^,]+;base64,/i.test(url)) {
-      return url;
-    }
-  }
-  if (image.b64_json?.trim()) {
-    const format = image.outputFormat || "png";
-    return `data:${imageMimeTypeForOutputFormat(format)};base64,${image.b64_json.trim()}`;
-  }
-  return "";
-}
-
-function creationTaskImageStatus(task: CreationTask, dataIndex = 0): "queued" | "running" | "success" | "error" | "cancelled" | undefined {
-  const outputStatus = task.output_statuses?.[dataIndex];
-  if (task.status === "queued" || task.status === "running" || task.status === "success" || task.status === "error" || task.status === "cancelled") {
-    return effectiveTaskOutputStatus(task.status, outputStatus);
-  }
-  return undefined;
-}
-
-function parseCreationTaskTime(value: string | undefined) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return Number.NaN;
-  }
-  const direct = Date.parse(text);
-  if (Number.isFinite(direct)) {
-    return direct;
-  }
-  return Date.parse(text.replace(" ", "T"));
-}
-
-function creationTaskMetadataUpdates(task: CreationTask, completed: boolean): Partial<StoredImage> {
-  const updates: Partial<StoredImage> = {
-    videoContract: task.video_contract,
-    taskCreatedAt: task.created_at,
-    taskUpdatedAt: task.updated_at,
-    taskProgress: task.mode === "video" ? task.status === "success" ? 100 : normalizeGenerationProgress(task.progress) : undefined,
-    canRecoverVideo: task.mode === "video" ? task.can_recover_video : undefined,
-  };
-  if (!completed) {
-    updates.generationDurationMs = undefined;
-    return updates;
-  }
-  const started = parseCreationTaskTime(task.created_at);
-  const ended = parseCreationTaskTime(task.updated_at);
-  updates.generationDurationMs =
-    Number.isFinite(started) && Number.isFinite(ended) && ended >= started
-      ? ended - started
-      : undefined;
-  return updates;
-}
-
-function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex = 0, fallbackVisibility?: ImageVisibility): StoredImage {
-  const taskVisibility = task.visibility || fallbackVisibility || image.visibility || "private";
-  const activeMetadata = creationTaskMetadataUpdates(task, false);
-  const finalMetadata = creationTaskMetadataUpdates(task, true);
-  const taskRevision = Number(task.revision);
-  const normalizedTaskRevision = Number.isSafeInteger(taskRevision) && taskRevision > 0 ? taskRevision : image.taskRevision;
-  const sameTask = image.taskId === task.id;
-  const imageIsTerminal = image.status === "success" || image.status === "error" || image.status === "cancelled" || image.status === "message";
-  if (
-    sameTask &&
-    isTaskActive(task.status) &&
-    imageIsTerminal &&
-    !(task.mode === "video" && image.canRecoverVideo === true && Number(task.revision) > Number(image.taskRevision || 0))
-  ) {
-    return image;
-  }
-  if (
-    sameTask &&
-    isTaskActive(task.status) &&
-    image.taskRevision !== undefined &&
-    normalizedTaskRevision !== undefined &&
-    image.taskRevision > normalizedTaskRevision
-  ) {
-    return image;
-  }
-  const successUpdates = (item: CreationTaskDataItem) => {
-    const width = positiveDimension(item.width);
-    const height = positiveDimension(item.height);
-    const videoUrl = String(item.video_url || (item.type === "video" ? item.url || "" : "")).trim() || undefined;
-    const isVideo = task.mode === "video" || item.type === "video" || Boolean(videoUrl) || item.mime_type?.startsWith("video/");
-    return {
-      taskId: task.id,
-      taskRevision: normalizedTaskRevision,
-      ...finalMetadata,
-      taskStatus: "success" as const,
-      status: "success" as const,
-      b64_json: item.b64_json,
-      url: isVideo ? videoUrl || item.url : item.url,
-      mediaType: isVideo ? "video" as const : "image" as const,
-      videoUrl: isVideo ? videoUrl || item.url : undefined,
-      mimeType: isVideo ? item.mime_type || "video/mp4" : undefined,
-      path: !isVideo && item.url ? getManagedImagePathFromUrl(item.url) || image.path : image.path,
-      visibility: taskVisibility,
-      storageKey: item.storageKey || item.storage_key || image.storageKey,
-      width,
-      height,
-      resolution: item.resolution || (width && height ? `${width}x${height}` : image.resolution),
-      outputFormat: item.output_format || task.output_format || image.outputFormat,
-      qualityCheck: normalizeImageQualityCheck(item.quality_check),
-      revised_prompt: item.revised_prompt,
-      text_response: undefined,
-      error: undefined,
-    };
-  };
-  if (task.status === "success") {
-    if (task.output_type === "text") {
-      return updateStoredImage(image, {
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: "success",
-        status: "message",
-        text_response: task.data?.[dataIndex]?.text_response || task.error || "",
-        b64_json: undefined,
-        url: undefined,
-        path: undefined,
-        visibility: undefined,
-        revised_prompt: undefined,
-        error: undefined,
-      });
-    }
-    const item = task.data?.[dataIndex];
-    if (!hasFinalTaskOutput(item)) {
-      const slotStatus = creationTaskImageStatus(task, dataIndex);
-      if (slotStatus === "error" || slotStatus === "cancelled") {
-        return updateStoredImage(image, {
-          taskId: task.id,
-          taskRevision: normalizedTaskRevision,
-          ...finalMetadata,
-          taskStatus: slotStatus,
-          status: slotStatus === "cancelled" ? "cancelled" : "error",
-          error: slotStatus === "cancelled" ? task.error || "任务已终止" : task.error || "生成失败",
-        });
-      }
-      return updateStoredImage(image, {
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: "success",
-        status: "error",
-        error: `未返回第 ${dataIndex + 1} 张图片数据`,
-      });
-    }
-    return updateStoredImage(image, successUpdates(item));
-  }
-
-  if (task.status === "queued" || task.status === "running") {
-    const item = task.data?.[dataIndex];
-    const slotStatus = effectiveTaskSlotStatus(
-      task.status,
-      task.output_statuses?.[dataIndex],
-      item,
-    );
-    if (slotStatus === "error" || slotStatus === "cancelled") {
-      const error = slotStatus === "cancelled"
-        ? task.error || "任务已终止"
-        : task.error || "生成失败";
-      return updateStoredImage(image, {
-        ...(item && (item.b64_json || item.url || item.video_url) ? successUpdates(item) : {}),
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: slotStatus,
-        status: slotStatus,
-        text_response: undefined,
-        error,
-      });
-    }
-    if (slotStatus === "success" && hasFinalTaskOutput(item)) {
-      if (task.output_type === "text") {
-        return updateStoredImage(image, {
-          taskId: task.id,
-          taskRevision: normalizedTaskRevision,
-          ...finalMetadata,
-          taskStatus: "success",
-          status: "message",
-          text_response: item?.text_response || "",
-          b64_json: undefined,
-          url: undefined,
-          path: undefined,
-          visibility: undefined,
-          revised_prompt: undefined,
-          error: undefined,
-        });
-      }
-      return updateStoredImage(image, successUpdates(item));
-    }
-    const activeTaskStatus = slotStatus === "queued" ? "queued" : "running";
-    if (task.output_type === "text" && item?.text_response) {
-      return updateStoredImage(image, {
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...activeMetadata,
-        taskStatus: activeTaskStatus,
-        status: "loading",
-        text_response: item.text_response,
-        b64_json: undefined,
-        url: undefined,
-        path: undefined,
-        visibility: undefined,
-        revised_prompt: undefined,
-        error: undefined,
-      });
-    }
-    if (item?.b64_json || item?.url || item?.video_url) {
-      return updateStoredImage(image, {
-        ...successUpdates(item),
-        ...activeMetadata,
-        taskRevision: normalizedTaskRevision,
-        taskStatus: activeTaskStatus,
-        status: "loading",
-      });
-    }
-    const preview = taskImageHasPreview(image);
-    return updateStoredImage(image, {
-      taskId: task.id,
-      taskRevision: normalizedTaskRevision,
-      ...activeMetadata,
-      taskStatus: activeTaskStatus,
-      status: "loading",
-      ...(preview ? {} : { b64_json: undefined, url: undefined, path: undefined }),
-      text_response: undefined,
-      error: undefined,
-    });
-  }
-
-  if (task.status === "error") {
-    if (task.output_type === "text") {
-      return updateStoredImage(image, {
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: "success",
-        status: "message",
-        text_response: task.error || "",
-        b64_json: undefined,
-        url: undefined,
-        path: undefined,
-        visibility: undefined,
-        revised_prompt: undefined,
-        error: undefined,
-      });
-    }
-    const item = task.data?.[dataIndex];
-    const slotStatus = creationTaskImageStatus(task, dataIndex);
-    const error = task.error || "生成失败";
-    if (hasFinalTaskOutput(item)) {
-      return updateStoredImage(image, {
-        ...successUpdates(item),
-        ...(slotStatus === "success"
-          ? {}
-          : { taskStatus: "error" as const, status: "error" as const, error }),
-      });
-    }
-    if (taskImageHasPreview(image)) {
-      return updateStoredImage(image, {
-        ...image,
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: "error",
-        status: "error",
-        error,
-      });
-    }
-    return updateStoredImage(image, {
-      taskId: task.id,
-      taskRevision: normalizedTaskRevision,
-      ...finalMetadata,
-      taskStatus: "error",
-      status: "error",
-      text_response: undefined,
-      error,
-    });
-  }
-
-  if (task.status === "cancelled") {
-    const item = task.data?.[dataIndex];
-    const slotStatus = creationTaskImageStatus(task, dataIndex);
-    if (hasFinalTaskOutput(item)) {
-      return updateStoredImage(image, {
-        ...successUpdates(item),
-        ...(slotStatus === "success"
-          ? {}
-          : {
-              taskStatus: "cancelled" as const,
-              status: "cancelled" as const,
-              error: task.error || "任务已终止",
-            }),
-      });
-    }
-    if (taskImageHasPreview(image)) {
-      return updateStoredImage(image, {
-        ...image,
-        taskId: task.id,
-        taskRevision: normalizedTaskRevision,
-        ...finalMetadata,
-        taskStatus: "cancelled",
-        status: "cancelled",
-        error: task.error || "任务已终止",
-      });
-    }
-    return updateStoredImage(image, {
-      taskId: task.id,
-      taskRevision: normalizedTaskRevision,
-      ...finalMetadata,
-      taskStatus: "cancelled",
-      status: "cancelled",
-      error: task.error || "任务已终止",
-    });
-  }
-
-  return updateStoredImage(image, {
-    taskId: task.id,
-    taskRevision: normalizedTaskRevision,
-    ...activeMetadata,
-    taskStatus: creationTaskImageStatus(task, dataIndex) || "queued",
-    status: "loading",
-    text_response: undefined,
-    error: undefined,
-  });
-}
-
 function isActiveCreationTask(task: CreationTask) {
   return task.status === "queued" || task.status === "running";
 }
@@ -1080,13 +628,6 @@ function pickFallbackConversationId(conversations: ImageConversation[]) {
     return stats.queued > 0 || stats.running > 0;
   });
   return activeConversation?.id ?? conversations[0]?.id ?? null;
-}
-
-function sortImageConversations(conversations: ImageConversation[]) {
-  return [...conversations].sort((a, b) => {
-    const updated = b.updatedAt.localeCompare(a.updatedAt);
-    return updated !== 0 ? updated : b.id.localeCompare(a.id);
-  });
 }
 
 function serializeImageSizeSelection(selection: ImageSizeSelection): StoredImageSizeSelection {
@@ -1119,30 +660,6 @@ function formatCreationTaskError(error: unknown, fallback = "生成图片失败"
   return error instanceof Error ? error.message : String(error || fallback);
 }
 
-function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
-  return deriveGenerationTaskStatus(turn.images);
-}
-
-function deriveTurnStatusFromTaskMap(turn: ImageTurn, images: StoredImage[]): Pick<ImageTurn, "status" | "error"> {
-  return deriveTurnStatus({ ...turn, images });
-}
-
-function isTurnInProgress(turn: ImageTurn) {
-  return (
-    turn.status === "queued" ||
-    turn.status === "generating" ||
-    turn.images.some((image) => image.status === "loading")
-  );
-}
-
-function isMissingBatchImageDataError(error?: string) {
-  return typeof error === "string" && error.startsWith("未返回第 ") && error.endsWith(" 张图片数据");
-}
-
-function isMissingRecoverableTaskIdError(error?: string) {
-  return error === MISSING_RECOVERABLE_TASK_ID_ERROR;
-}
-
 function getComposerConversationMode(composerMode: ComposerMode, referenceImages: StoredReferenceImage[]): ImageConversationMode {
   if (composerMode === "video") {
     return "video";
@@ -1151,312 +668,6 @@ function getComposerConversationMode(composerMode: ComposerMode, referenceImages
     return "generate";
   }
   return referenceImages.some((image) => image.source === "conversation") ? "edit" : "image";
-}
-
-async function syncConversationCreationTasks(
-  items: ImageConversation[],
-  requestOptions: CreationTaskRequestOptions,
-  expectedSessionKey: string,
-) {
-  requestOptions.signal?.throwIfAborted();
-  await backfillConversationVideoAssets(items, expectedSessionKey, requestOptions.signal);
-  requestOptions.signal?.throwIfAborted();
-  const assetContextByTaskID = new Map<string, { prompt: string; source: string; metadata?: Record<string, unknown> }>();
-  items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image) => {
-    if (!image.taskId) return;
-    assetContextByTaskID.set(image.taskId, {
-      prompt: turn.prompt,
-      source: turn.source === "workflow" ? "工作流" : "生成视频",
-      ...(turn.source === "workflow" ? { metadata: { workflowId: turn.workflowId, workflowName: turn.workflowName } } : {}),
-    });
-  })));
-  const taskIds = Array.from(
-    new Set(
-      items.flatMap((conversation) =>
-        conversation.turns.flatMap((turn) =>
-          turn.images.flatMap((image) => (image.status === "loading" && image.taskId ? [image.taskId] : [])),
-        ),
-      ),
-    ),
-  );
-  if (taskIds.length === 0) {
-    return items;
-  }
-
-  let taskList: Awaited<ReturnType<typeof fetchCreationTasks>>;
-  try {
-    taskList = await fetchCreationTasks(taskIds, requestOptions);
-  } catch (error) {
-    requestOptions.signal?.throwIfAborted();
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    return items;
-  }
-  const persistedTasks = await Promise.all(taskList.items.map((task) => persistCreationTaskOutputs(task, {
-    assetContext: assetContextByTaskID.get(task.id),
-    expectedSessionKey,
-    signal: requestOptions.signal,
-  })));
-  const taskMap = new Map(mergeCreationTaskList(persistedTasks).map((task) => [task.id, task]));
-  const normalized = items.map((conversation) => {
-    // Cursor pages can contain metadata-only rows. They are completed by the
-    // selected-conversation detail request and must not enter task recovery.
-    if (isImageConversationHistorySummaryOnly(conversation)) {
-      return conversation;
-    }
-    let completedActiveTurn = false;
-    const turns = conversation.turns.map((turn) => {
-      if (turn.studioAgent) return turn;
-      let turnChanged = false;
-      const images = turn.images.map((image, imageIndex) => {
-        if (image.status !== "loading" || !image.taskId) {
-          return image;
-        }
-        const task = taskMap.get(image.taskId);
-        if (!task) {
-          return image;
-        }
-        const nextImage = taskDataToStoredImage(image, task, imageDataIndexForTask(turn.images, imageIndex), turn.visibility);
-        if (nextImage !== image) {
-          turnChanged = true;
-        }
-        return nextImage;
-      });
-      if (!turnChanged) {
-        return turn;
-      }
-      const derived = deriveTurnStatusFromTaskMap(turn, images);
-      const nextTurn = {
-        ...turn,
-        ...derived,
-        images,
-      };
-      if (isTurnInProgress(turn) && !isTurnInProgress(nextTurn)) {
-        completedActiveTurn = true;
-      }
-      return nextTurn;
-    });
-    if (turns === conversation.turns || !turns.some((turn, index) => turn !== conversation.turns[index])) {
-      return conversation;
-    }
-    const nextConversation = {
-      ...conversation,
-      turns,
-    };
-    return completedActiveTurn
-      ? {
-          ...nextConversation,
-          updatedAt: new Date().toISOString(),
-        }
-      : nextConversation;
-  });
-
-  return normalized;
-}
-
-async function backfillConversationVideoAssets(
-  items: ImageConversation[],
-  expectedSessionKey: string,
-  signal?: AbortSignal,
-) {
-  const requests: Promise<void>[] = [];
-  items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image, imageIndex) => {
-    const url = String(image.videoUrl || image.url || "").trim();
-    const isVideo = image.mediaType === "video" || Boolean(image.videoUrl) || String(image.mimeType || "").startsWith("video/");
-    if (!isVideo || image.status !== "success" || !image.taskId || !image.storageKey || !url) return;
-    requests.push(ensureGeneratedMediaAsset({
-      id: image.taskId,
-      status: "success",
-      mode: "video",
-      model: turn.model,
-      visibility: turn.visibility,
-      created_at: image.taskCreatedAt || turn.createdAt,
-      updated_at: image.taskUpdatedAt || conversation.updatedAt,
-    }, {
-      type: "video",
-      video_url: url,
-      url,
-      storageKey: image.storageKey,
-      storage_key: image.storageKey,
-      mime_type: image.mimeType || "video/mp4",
-      width: image.width,
-      height: image.height,
-    }, imageDataIndexForTask(turn.images, imageIndex), {
-      assetContext: {
-        prompt: turn.prompt,
-        source: turn.source === "workflow" ? "工作流" : "生成视频",
-        metadata: {
-          conversationId: conversation.id,
-          turnId: turn.id,
-          ...(turn.source === "workflow" ? { workflowId: turn.workflowId, workflowName: turn.workflowName } : {}),
-        },
-      },
-      expectedSessionKey,
-      signal,
-    }));
-  })));
-  const results = await Promise.allSettled(requests);
-  signal?.throwIfAborted();
-  const aborted = results.find((result): result is PromiseRejectedResult => (
-    result.status === "rejected" && result.reason instanceof DOMException && result.reason.name === "AbortError"
-  ));
-  if (aborted) throw aborted.reason;
-}
-
-async function recoverConversationHistory(
-  items: ImageConversation[],
-  requestOptions: CreationTaskRequestOptions,
-  expectedSessionKey: string,
-) {
-  const changedConversationIds = new Set<string>();
-  const normalized = items.map((conversation) => {
-    if (isImageConversationHistorySummaryOnly(conversation)) {
-      return conversation;
-    }
-    const turns = conversation.turns.map((turn) => {
-      if (turn.studioAgent) return turn;
-      let turnChanged = false;
-      const recoveredImages = turn.images.map((image, imageIndex) => {
-        if (
-          image.status === "error" &&
-          image.taskId &&
-          (image.taskStatus === "queued" || image.taskStatus === "running")
-        ) {
-          turnChanged = true;
-          return {
-            ...image,
-            status: "loading" as const,
-            error: undefined,
-          };
-        }
-        if (image.status === "error" && isMissingBatchImageDataError(image.error)) {
-          turnChanged = true;
-          return {
-            ...image,
-            taskId: image.id,
-            taskRevision: undefined,
-            videoContract: undefined,
-            taskStatus: "queued" as const,
-            taskProgress: undefined,
-            taskCreatedAt: undefined,
-            taskUpdatedAt: undefined,
-            generationDurationMs: undefined,
-            status: "loading" as const,
-            error: undefined,
-          };
-        }
-        if (turn.mode === "chat" && image.status === "error" && isMissingRecoverableTaskIdError(image.error)) {
-          turnChanged = true;
-          return {
-            ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
-            taskRevision: undefined,
-            videoContract: undefined,
-            taskStatus: "queued" as const,
-            taskProgress: undefined,
-            taskCreatedAt: undefined,
-            taskUpdatedAt: undefined,
-            generationDurationMs: undefined,
-            status: "loading" as const,
-            error: undefined,
-          };
-        }
-        if (turn.mode === "chat" && image.status === "loading" && !image.taskId) {
-          turnChanged = true;
-          return {
-            ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
-          };
-        }
-        return image;
-      });
-
-      if (turn.status !== "queued" && turn.status !== "generating") {
-        if (!turnChanged) {
-          return turn;
-        }
-        const derived = deriveTurnStatus({ ...turn, status: "queued", images: recoveredImages });
-        return {
-          ...turn,
-          ...derived,
-          images: recoveredImages,
-        };
-      }
-
-      const images = recoveredImages.map((image) => {
-        if (image.status !== "loading" || image.taskId) {
-          return image;
-        }
-        turnChanged = true;
-        return {
-          ...image,
-          status: "error" as const,
-          error: MISSING_RECOVERABLE_TASK_ID_ERROR,
-        };
-      });
-      const derived = deriveTurnStatus({ ...turn, images });
-      if (!turnChanged && derived.status === turn.status && derived.error === turn.error) {
-        return turn;
-      }
-      return {
-        ...turn,
-        ...derived,
-        images,
-      };
-    });
-
-    if (!turns.some((turn, index) => turn !== conversation.turns[index])) {
-      return conversation;
-    }
-
-    changedConversationIds.add(conversation.id);
-
-    return {
-      ...conversation,
-      turns,
-      updatedAt: new Date().toISOString(),
-    };
-  });
-
-  const synced = await syncConversationCreationTasks(normalized, requestOptions, expectedSessionKey);
-  const originalById = new Map(items.map((conversation) => [conversation.id, conversation]));
-  for (const conversation of synced) {
-    const original = originalById.get(conversation.id);
-    if (!original) {
-      continue;
-    }
-    const originalTurns = new Map(original.turns.map((turn) => [turn.id, turn]));
-    if (conversation.turns.some((turn) => {
-      const previous = originalTurns.get(turn.id);
-      return previous && getEffectiveImageTurnStatus(previous) !== getEffectiveImageTurnStatus(turn);
-    })) {
-      changedConversationIds.add(conversation.id);
-    }
-  }
-
-  const saves: ImageConversation[] = [];
-  const recovered = synced.map((conversation) => {
-    if (!changedConversationIds.has(conversation.id)) {
-      return conversation;
-    }
-    const next = {
-      ...conversation,
-      revision: Number(conversation.revision || 0) + 1,
-      updatedAt: new Date().toISOString(),
-    };
-    saves.push({
-      ...next,
-      turns: next.turns.map((turn) => ({
-        ...turn,
-        images: turn.images.map((image) =>
-          image.status === "loading"
-            ? { ...image, b64_json: undefined, url: undefined, path: undefined }
-            : image,
-        ),
-      })),
-    });
-    return next;
-  });
-  return { items: recovered, saves };
 }
 
 function ImagePageContent({ session }: { session: StoredAuthSession }) {
@@ -1506,10 +717,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const creationTaskRequestOptions = useMemo<CreationTaskRequestOptions>(() => ({
     redirectOnUnauthorized: false,
   }), []);
-  const { submitVideoTaskGroups } = useVideoTaskQueue({
-    requestOptions: creationTaskRequestOptions,
-    isRetryableError: isRetryableTaskPollError,
-  });
 
   const [maskEdit, setMaskEdit] = useState<{ conversationId: string; turnId: string; sourceURL: string; model: string } | null>(null);
   const [maskEditBusy, setMaskEditBusy] = useState(false);
@@ -1723,10 +930,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     composerSubmissionStateRef.current = composerSubmissionState;
   });
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoadAttempt, setHistoryLoadAttempt] = useState(0);
+  const retryHistory = useCallback(() => setHistoryLoadAttempt((attempt) => attempt + 1), []);
   const sidebar = useStudioSidebar(session.key, conversations, selectedConversationId, !isLoadingHistory);
   const [conversationDetailId, setConversationDetailId] = useState<string | null>(null);
   const [conversationDetailError, setConversationDetailError] = useState("");
   const [conversationDetailRetryVersion, setConversationDetailRetryVersion] = useState(0);
+  const retryConversationDetail = useCallback(() => setConversationDetailRetryVersion((version) => version + 1), []);
   const [isSubmitDispatching, setIsSubmitDispatching] = useState(false);
   const [isLoadingMoreHistory, setIsLoadingMoreHistory] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
@@ -1922,8 +1133,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const selectedConversationNeedsDetail = Boolean(
     selectedConversationId && (!selectedConversation || isImageConversationHistorySummaryOnly(selectedConversation)),
   );
-  const selectedConversationHasActiveTurn = Boolean(
-    selectedConversation && imageConversationHasActiveTurn(selectedConversation),
+  const selectedConversationHasActiveTurn = useMemo(
+    () => Boolean(selectedConversation && imageConversationHasActiveTurn(selectedConversation)),
+    [selectedConversation],
   );
   const displayedConversation = imageConversationDisplaySnapshot(
     selectedConversation,
@@ -1952,6 +1164,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const activeModelRoute = routeForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
   const submitDisabledReason = isSubmitDispatching
     ? "正在提交任务，请稍候"
+    : historyError
+      ? "请先重试读取创作历史"
     : isLoadingHistory
       ? "正在读取历史记录，请稍候"
       : selectedConversationNeedsDetail
@@ -1986,14 +1200,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setRelayTokenDialogKind(kind);
     return false;
   }, [refreshTokenModels, routeForModel]);
-  const activeTaskCount = useMemo(
-    () =>
-      conversations.reduce((sum, conversation) => {
-        const stats = getImageConversationStats(conversation);
-        return sum + stats.queued + stats.running;
-      }, 0),
-    [conversations],
-  );
   const deleteConfirmTitle = deleteConfirm?.type === "all" ? "清空历史记录" : deleteConfirm?.type === "one" ? "删除记录" : "";
   const deleteConfirmDescription =
     deleteConfirm?.type === "all"
@@ -2133,12 +1339,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [],
   );
 
-  const progressNow = useNow(activeTaskCount > 0 || Object.keys(progressByTurnKey).length > 0);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadHistory = async () => {
+      setIsLoadingHistory(true);
+      setHistoryError("");
+      let historyReadFailed = false;
       const mutationRevision = conversationMutationRevisionRef.current;
       const applyLoadedItems = (items: ImageConversation[]) => {
         conversationsRef.current = items;
@@ -2238,17 +1446,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
         recoverLoadedItems(items);
       } catch (error) {
+        if (cancelled || !pageActiveRef.current || getCachedAuthSession()?.key !== session.key) return;
         if (mutationRevision !== conversationMutationRevisionRef.current) {
           conversationRefreshNeededRef.current = true;
         } else {
           const message = error instanceof Error ? error.message : "读取会话记录失败";
-          toast.error(message);
+          historyReadFailed = true;
+          setHistoryError(message);
         }
       } finally {
         if (!cancelled && pageActiveRef.current) {
-          conversationHistoryReadyRef.current = true;
+          conversationHistoryReadyRef.current = !historyReadFailed;
           setIsLoadingHistory(false);
-          if (conversationPendingWritesRef.current === 0 && conversationRefreshNeededRef.current) {
+          if (!historyReadFailed && conversationPendingWritesRef.current === 0 && conversationRefreshNeededRef.current) {
             conversationRefreshNeededRef.current = false;
             window.dispatchEvent(new Event(IMAGE_CONVERSATIONS_CHANGED_EVENT));
           }
@@ -2260,17 +1470,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       cancelled = true;
     };
-  }, [creationTaskRequestOptions, session.key]);
+  }, [creationTaskRequestOptions, historyLoadAttempt, session.key]);
 
 
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || isLoadingHistory || historyError) {
       return;
     }
 
     writeImageWorkbenchStorage(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY, selectedConversationId);
-  }, [selectedConversationId]);
+  }, [historyError, isLoadingHistory, selectedConversationId]);
 
   useEffect(() => {
     const handleOpenConversation = (event: Event) => {
@@ -2634,117 +1844,42 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [isLoadingHistory]);
 
   const updateConversation = useCallback(
-    async (
+    (
       conversationId: string,
       updater: (current: ImageConversation | null) => ImageConversation,
-      options: { persist?: boolean | "coalesced" | "durable" } = {},
-    ) => runExclusiveImageConversationMutation(
-      conversationMutationChainsRef.current,
-      conversationId,
-      async () => {
-        if (!pageActiveRef.current) {
-          return null;
-        }
-        const current = conversationsRef.current.find((item) => item.id === conversationId) ?? null;
-        if (!current && deletedConversationIdsRef.current.has(conversationId)) {
-          return null;
-        }
-        const candidate = updater(current);
-        if (current && candidate === current) {
-          return current;
-        }
-        const persistence = options.persist ?? true;
-        const baseRevision = Math.max(Number(current?.revision || 0), Number(candidate.revision || 0)) || 0;
-        const nextRevision = persistence === false
-          ? baseRevision
-          : nextImageConversationRevision(
-              current?.revision,
-              candidate.revision,
-              conversationRevisionReservationsRef.current.get(conversationId),
-            );
-        if (persistence !== false) {
-          conversationRevisionReservationsRef.current.set(conversationId, nextRevision);
-        }
-        const nextConversation = {
-          ...candidate,
-          revision: nextRevision,
-          updatedAt: new Date().toISOString(),
-        };
-        const nextConversations = sortImageConversations([
-          nextConversation,
-          ...conversationsRef.current.filter((item) => item.id !== conversationId),
-        ]);
-
-        if (persistence === "durable") {
-          const destructiveEpoch = conversationDestructiveEpochRef.current;
-          conversationPendingWritesRef.current += 1;
-          try {
-            const persistedConversation = await saveImageConversation(nextConversation);
-            if (
-              !pageActiveRef.current ||
-              destructiveEpoch !== conversationDestructiveEpochRef.current
-            ) {
-              return null;
-            }
-            if (deletedConversationIdsRef.current.has(conversationId)) {
-              return null;
-            }
-            const latestConversation = conversationsRef.current.find((item) => item.id === conversationId);
-            const committedConversation = latestConversation
-              ? mergeImageConversationSnapshot(latestConversation, persistedConversation)
-              : persistedConversation;
-            conversationRevisionReservationsRef.current.set(
-              conversationId,
-              Math.max(
-                Number(conversationRevisionReservationsRef.current.get(conversationId) || 0),
-                Number(committedConversation.revision || 0),
-              ),
-            );
-            const durableConversations = sortImageConversations([
-              committedConversation,
-              ...conversationsRef.current.filter((item) => item.id !== conversationId),
-            ]);
-            conversationMutationRevisionRef.current += 1;
-            conversationsRef.current = durableConversations;
-            setConversations(durableConversations);
-            return committedConversation;
-          } catch (error) {
-            discardFailedImageConversationSave(conversationId, error);
-            if (pageActiveRef.current && !deletedConversationIdsRef.current.has(conversationId)) {
-              reportHistorySyncError();
-            }
-            throw error;
-          } finally {
-            finishConversationWrite();
-          }
-        }
-
-        if (persistence !== false) {
-          conversationPendingWritesRef.current += 1;
-        }
+      options?: { persist?: boolean | "coalesced" | "durable" },
+    ) => writeStudioConversation({
+      conversations: conversationsRef,
+      active: pageActiveRef,
+      pending: conversationPendingWritesRef,
+      destructiveEpoch: conversationDestructiveEpochRef,
+      deletedIDs: deletedConversationIdsRef,
+      chains: conversationMutationChainsRef.current,
+      reservations: conversationRevisionReservationsRef.current,
+      onCommit: (items) => {
         conversationMutationRevisionRef.current += 1;
-        conversationsRef.current = nextConversations;
-        setConversations(nextConversations);
-        if (persistence === "coalesced") {
-          try {
-            await saveImageConversationCoalesced(nextConversation);
-          } catch {
-            reportHistorySyncError();
-          } finally {
-            finishConversationWrite();
-          }
-        } else if (persistence) {
-          try {
-            await saveImageConversation(nextConversation);
-          } finally {
-            finishConversationWrite();
-          }
-        }
-        return nextConversation;
+        conversationsRef.current = items;
+        setConversations(items);
       },
-    ),
+      onFinish: finishConversationWrite,
+      onSaveError: reportHistorySyncError,
+    }, conversationId, updater, options),
     [finishConversationWrite, reportHistorySyncError],
   );
+
+  const handleResumeAgent = useCallback((conversationId: string, turnId: string) => {
+    cancelledTurnIdsRef.current.delete(imageTurnProgressKey(conversationId, turnId));
+    void updateConversation(conversationId, (current) => {
+      if (!current) throw new Error("对话不存在");
+      const turns = current.turns.map((turn) => {
+        if (turn.id !== turnId || isTurnInProgress(turn)) return turn;
+        const images = turn.images.filter((image) => image.status === "success" || image.status === "message");
+        images.push({ id: `${turn.id}-agent-observer`, status: "loading", taskStatus: "queued" });
+        return { ...turn, status: "queued" as const, error: undefined, images };
+      });
+      return { ...current, turns };
+    });
+  }, [updateConversation]);
 
   function openRenameConversation(id: string) {
     const conversation = conversationsRef.current.find((item) => item.id === id);
@@ -3212,7 +2347,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   useEffect(() => { setMaskEdit(null); }, [session.key]);
 
-  const handleOpenMaskEdit = (conversationId: string, turnId: string, sourceURL: string) => {
+  const handleOpenMaskEdit = useCallback((conversationId: string, turnId: string, sourceURL: string) => {
     if (maskOperationRef.current) return;
     try {
       assertPageSessionCurrent();
@@ -3226,7 +2361,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "打开局部重绘失败");
     }
-  };
+  }, [assertPageSessionCurrent, imageCreationModelOptions]);
 
   const handleContinueEdit = useCallback(
     async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
@@ -3550,15 +2685,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       if (!snapshot || !queuedTurn) {
         return;
       }
-      let activeTurn: ImageTurn = queuedTurn;
+      const activeTurn = queuedTurn;
 
       activeConversationQueueIdsRef.current.add(conversationId);
       const observedTaskIds = new Set<string>();
       const activeTurnKey = imageTurnProgressKey(conversationId, activeTurn.id);
       const activeTurnStartedAt = imageTurnStartedAtTimestamp(activeTurn.processingStartedAt, activeTurn.createdAt);
+      const isSessionCurrent = () => pageActiveRef.current
+        && runnerSessionEpoch === pageSessionEpochRef.current
+        && getCachedAuthSession()?.key === expectedSessionKey;
       const taskDispatchIsAllowed = (taskIds: string[] = []) => canDispatchImageTurn({
         pageActive: pageActiveRef.current,
-        sessionCurrent: runnerSessionEpoch === pageSessionEpochRef.current && getCachedAuthSession()?.key === expectedSessionKey,
+        sessionCurrent: isSessionCurrent(),
         conversationDeleted: deletedConversationIdsRef.current.has(conversationId),
         turnCancelled: cancelledTurnIdsRef.current.has(activeTurnKey),
         conversation: conversationsRef.current.find((conversation) => conversation.id === conversationId),
@@ -3747,7 +2885,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       let pollingUnavailable = false;
       try {
         if (activeTurn.images.some((image) => image.status === "loading" && !image.taskId)) {
-          await updateConversation(conversationId, (current) => {
+          const persisted = await updateConversation(conversationId, (current) => {
             const conversation = current ?? snapshot;
             return {
               ...conversation,
@@ -3768,7 +2906,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   : turn,
               ),
             };
-          });
+          }, { persist: "durable" });
+          if (!persisted) throw new ImageTaskDispatchAbortedError();
         }
 
         if (activeTurn.studioAgent) {
@@ -3862,8 +3001,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (usesReferenceImages(activeTurn.mode) && referenceFiles.length === 0) {
           throw new Error("未找到可用的参考图");
         }
-        const activeTurnRelayTokenGroup = activeTurn.tokenGroup?.trim() || undefined;
-        const activeTurnRelayTokenName = activeTurn.tokenName?.trim() || undefined;
         const uploadedVideoReferenceURLs = activeTurn.mode === "video"
           ? await Promise.all(activeTurn.referenceImages.map(async (image, index) => {
               const existingURL = absoluteReferenceURL(image.dataUrl);
@@ -3927,150 +3064,36 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               : [],
           ),
         );
-        const submitTaskGroup = (group: { taskId: string; count: number }) => {
-          if (usesReferenceImages(activeTurn.mode)) {
-            return createImageEditTask(
-              group.taskId,
-              referenceFiles,
-              activeTurn.promptContext?.preparedPrompt || activeTurn.prompt,
-              activeTurn.model,
-              activeTurnSizeRequest.upstreamSize,
-              activeTurnSizeRequest.size,
-              taskQuality,
-              group.count,
-              activeTurn.visibility || "private",
-              taskImageResolution,
-              taskOutputFormat,
-              taskOutputCompression,
-              taskStream,
-              taskPartialImages,
-              {
-                imageOptions: activeTurn.imageOptions,
-              apiMode: activeTurn.apiMode,
-                responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
-                codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
-                systemPrompt: activeTurn.imageSystemPrompt ?? imageGenerationPreferences.system_prompt,
-              },
-              activeTurnRelayTokenGroup,
-              activeTurnRelayTokenName,
-              undefined,
-              undefined,
-              creationTaskRequestOptions,
-            );
-          }
-          return createImageGenerationTask(
-            group.taskId,
-            activeTurn.promptContext?.preparedPrompt || activeTurn.prompt,
-            activeTurn.model,
-            activeTurnSizeRequest.upstreamSize,
-            activeTurnSizeRequest.size,
-            taskQuality,
-            group.count,
-            activeTurn.visibility || "private",
-            taskImageResolution,
-            taskOutputFormat,
-            taskOutputCompression,
-            taskStream,
-            taskPartialImages,
-            {
-              imageOptions: activeTurn.imageOptions,
-              apiMode: activeTurn.apiMode,
-              responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
-              codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
-              systemPrompt: activeTurn.imageSystemPrompt ?? imageGenerationPreferences.system_prompt,
-            },
-            activeTurnRelayTokenGroup,
-            activeTurnRelayTokenName,
-            undefined,
-            undefined,
-            creationTaskRequestOptions,
-          );
-        };
-        const submitTaskGroupWithRetry = async (group: { taskId: string; count: number }) => {
-          assertTaskDispatchAllowed([group.taskId]);
-          try {
-            return await submitTaskGroup(group);
-          } catch (error) {
-            if (!isRetryableTaskPollError(error)) {
-              throw error;
-            }
-            await sleep(750);
-            assertTaskDispatchAllowed([group.taskId]);
-            return submitTaskGroup(group);
-          }
-        };
-        const cancelTaskGroupsAfterSameSessionAbort = async (taskIds: string[]) => {
-          const uniqueTaskIds = Array.from(new Set(taskIds));
-          const cancelAll = () => {
-            if (!pageActiveRef.current || runnerSessionEpoch !== pageSessionEpochRef.current
-              || getCachedAuthSession()?.key !== expectedSessionKey) return Promise.resolve([]);
-            return Promise.allSettled(uniqueTaskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)));
-          };
-          await cancelAll();
-          await sleep(500);
-          await cancelAll();
-        };
-        const submitTaskGroups = async <T extends { taskId: string; count: number }>(groups: T[]) => {
-          assertTaskDispatchAllowed(groups.map((group) => group.taskId));
-          let submission: { submitted: CreationTask[]; failed: Array<{ group: { taskId: string; count: number }; error: unknown }> };
-          if (activeTurn.mode === "video") {
-            const trackedIDs = new Set(activeTurn.images.filter((image) => image.taskId && (Number(image.taskRevision) > 0 || image.taskCreatedAt)).map((image) => image.taskId));
-            const trackedGroups = groups.filter((group) => trackedIDs.has(group.taskId));
-            const observed = trackedGroups.length
-              ? await fetchCreationTasks(trackedGroups.map((group) => group.taskId), creationTaskRequestOptions)
-              : { items: [], missing_ids: [] };
-            submission = await submitVideoTaskGroups(groups.filter((group) => !trackedIDs.has(group.taskId)), {
-              prompt: activeTurn.prompt,
-              model: activeTurn.model,
-              size: activeTurn.size || undefined,
-              seconds: activeTurn.videoSeconds ?? 4,
-              parameters: activeTurn.videoParameters,
-              resolution: activeTurn.videoResolution || undefined,
-              generateAudio: activeTurn.videoGenerateAudio ?? false,
-              watermark: activeTurn.videoWatermark ?? false,
-              referenceImageURLs: videoReferenceUrls,
-              firstFrameURL: activeTurn.videoFirstFrameURL,
-              lastFrameURL: activeTurn.videoLastFrameURL,
-              referenceVideoURLs: activeTurn.videoReferenceVideoURLs,
-              referenceAudioURLs: activeTurn.videoReferenceAudioURLs,
-              referenceMode: activeTurn.videoReferenceMode || "first-frame",
-              systemPrompt: activeTurn.videoSystemPrompt,
-              relayTokenName: activeTurnRelayTokenName,
-              assertDispatchAllowed: (taskIds) => assertTaskDispatchAllowed(taskIds),
-            });
-            submission.submitted.push(...observed.items);
-            for (const group of trackedGroups) {
-              if (!observed.items.some((task) => task.id === group.taskId)) {
-                submission.failed.push({ group, error: new Error("原视频任务记录暂时不可用，未重新生成，请稍后同步") });
-              }
-            }
-          } else {
-            const results = await Promise.allSettled(groups.map(submitTaskGroupWithRetry));
-            submission = {
-              submitted: results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
-              failed: results.flatMap((result, index) =>
-                result.status === "rejected" ? [{ group: groups[index], error: result.reason }] : [],
-              ),
-            };
-          }
-          const { submitted, failed } = submission;
-          const dispatchAborted = failed.find(({ error }) => error instanceof ImageTaskDispatchAbortedError);
-          if (dispatchAborted || !taskDispatchIsAllowed(groups.map((group) => group.taskId))) {
-            if (pageActiveRef.current && runnerSessionEpoch === pageSessionEpochRef.current) {
-              await cancelTaskGroupsAfterSameSessionAbort(groups.map((group) => group.taskId));
-            }
-            throw dispatchAborted?.error || new ImageTaskDispatchAbortedError();
-          }
-          return { submitted, failed };
-        };
+        const submitTaskGroups = createStudioTaskSubmitter({
+          turn: activeTurn,
+          image: {
+            referenceFiles,
+            size: activeTurnSizeRequest.upstreamSize,
+            requestedSize: activeTurnSizeRequest.size,
+            quality: taskQuality,
+            imageResolution: taskImageResolution,
+            outputFormat: taskOutputFormat,
+            outputCompression: taskOutputCompression,
+            stream: taskStream,
+            partialImages: taskPartialImages,
+            responseFormatB64JSON: imageResponseFormatB64JSON,
+            codexCLICompatibility: imageCodexCLICompatibility,
+            systemPrompt: imageGenerationPreferences.system_prompt,
+          },
+          videoReferenceURLs: videoReferenceUrls,
+          requestOptions: creationTaskRequestOptions,
+          assertDispatchAllowed: assertTaskDispatchAllowed,
+          isSessionCurrent,
+        });
         const applyTaskSubmissionFailures = async (
-          failures: Array<{ group: { taskId: string; count: number }; error: unknown }>,
+          failures: StudioTaskSubmissionFailure[],
         ) => {
-          if (failures.length === 0) {
+          if (failures.length === 0 || !isSessionCurrent()) {
             return;
           }
+          const mediaType = activeTurn.mode === "video" ? "视频" : "图片";
           const errorsByTaskId = new Map(
-            failures.map(({ group, error }) => [group.taskId, formatCreationTaskError(error, activeTurn.mode === "video" ? "提交视频任务失败" : "提交图片任务失败")]),
+            failures.map(({ group, error }) => [group.taskId, formatCreationTaskError(error, `提交${mediaType}任务失败`)]),
           );
           await updateConversation(conversationId, (current) => {
             const conversation = current ?? snapshot;
@@ -4095,13 +3118,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               }),
             };
           }, { persist: "coalesced" });
-          toast.error(`${failures.length} 个图片批次提交失败`);
+          if (isSessionCurrent()) toast.error(`${failures.length} 个${mediaType}任务提交失败`);
         };
         updateTurnProgress(conversationId, activeTurn.id, {
           message: "正在提交生成请求",
           detail: `${pendingTaskGroups.length} 个${activeTurn.mode === "video" ? "视频" : "图片"}任务正在入队`,
         });
-        assertTaskDispatchAllowed(pendingTaskGroups.map((group) => group.taskId));
         const initialSubmission = await submitTaskGroups(pendingTaskGroups);
         const submitted = initialSubmission.submitted;
         let activeTaskIds = new Set(submitted.filter(isActiveCreationTask).map((task) => task.id));
@@ -4263,7 +3285,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 throw new ImageTaskDispatchAbortedError();
               }
             }
-            assertTaskDispatchAllowed(missingTaskGroups.map((group) => group.taskId));
             const recoverySubmission = await submitTaskGroups(missingTaskGroups);
             if (recoverySubmission.submitted.length > 0) {
               await applyTasks(recoverySubmission.submitted);
@@ -4291,7 +3312,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (error instanceof ImageTaskDispatchAbortedError || error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-        if (!pageActiveRef.current) {
+        if (!isSessionCurrent()) {
           return;
         }
         if (cancelledTurnIdsRef.current.has(activeTurnKey)) {
@@ -4381,7 +3402,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       session.key,
       updateConversation,
       updateTurnProgress,
-      submitVideoTaskGroups,
     ],
   );
   useEffect(() => {
@@ -5115,6 +4135,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (isSubmitDispatchingRef.current) {
       return;
     }
+    if (historyError) {
+      toast.error("请先重试读取创作历史");
+      return;
+    }
     const targetConversation = selectedConversationId
       ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
       : null;
@@ -5163,10 +4187,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       if (!requireRelayToken("text", contextTextModel)) return;
     }
-    const selectedVideoSeconds = Number(videoSeconds);
-    // The shared request normalizer applies the video model contract at submit
-    // time. This keeps manual quality input working while snapping fixed
-    // model values to the nearest documented duration/size/resolution.
+    const selectedVideoSeconds = videoMode ? Number(videoWorkbenchDisplaySeconds(effectiveModel, videoSeconds)) : undefined;
     if (videoMode && !smartContextEnabled && videoRequiresReferenceImage(effectiveModel) && !hasVideoReferenceImage) {
       toast.error(`模型 ${effectiveModel} 仅支持参考图生成，请上传一张参考图`);
       return;
@@ -5215,24 +4236,34 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(referenceLimitError);
       return;
     }
-    const videoReferenceError = videoMode && !smartContextEnabled ? videoReferenceCombinationError({
-      model: effectiveModel,
-      size: videoSize,
-      seconds: selectedVideoSeconds,
+    let normalizedVideoParameters: ReturnType<typeof normalizeVideoRequest> | undefined;
+    try {
+      if (videoMode && !smartContextEnabled) {
+        const videoInput = {
+          model: effectiveModel,
+          size: videoSize,
+          seconds: selectedVideoSeconds,
           parameters: videoParameters,
-      resolution: videoResolution,
-      generateAudio: videoGenerateAudio,
-      watermark: videoWatermark,
-      referenceMode: effectiveVideoReferenceMode,
-      firstFrameURL: normalizedFirstFrameURL,
-      lastFrameURL: normalizedLastFrameURL,
-      referenceImageURLs: normalizedVideoReferenceImages,
-      referenceVideoURLs: normalizedVideoReferenceVideos,
-      referenceAudioURLs: normalizedVideoReferenceAudios,
-      ordinaryReferenceImageCount: ordinaryVideoReferenceCount,
-    }) : "";
-    if (videoReferenceError) {
-      toast.error(videoReferenceError);
+          resolution: videoResolution,
+          generateAudio: videoGenerateAudio,
+          watermark: videoWatermark,
+          referenceMode: effectiveVideoReferenceMode,
+          firstFrameURL: normalizedFirstFrameURL,
+          lastFrameURL: normalizedLastFrameURL,
+          referenceImageURLs: normalizedVideoReferenceImages,
+          referenceVideoURLs: normalizedVideoReferenceVideos,
+          referenceAudioURLs: normalizedVideoReferenceAudios,
+          ordinaryReferenceImageCount: ordinaryVideoReferenceCount,
+        };
+        const videoReferenceError = videoReferenceCombinationError(videoInput);
+        if (videoReferenceError) {
+          toast.error(videoReferenceError);
+          return;
+        }
+        normalizedVideoParameters = normalizeVideoRequest(videoInput);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "视频参数无效");
       return;
     }
     if (videoMode && !smartContextEnabled && effectiveVideoReferenceMode === "reference") {
@@ -5258,28 +4289,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     );
     if (referenceLimitMessage) {
       toast.error(referenceLimitMessage);
-      return;
-    }
-    let normalizedVideoParameters: ReturnType<typeof normalizeVideoRequest> | undefined;
-    try {
-      normalizedVideoParameters = videoMode && !smartContextEnabled ? normalizeVideoRequest({
-          model: effectiveModel,
-          size: videoSize,
-          seconds: selectedVideoSeconds,
-          parameters: videoParameters,
-          resolution: videoResolution,
-          generateAudio: videoGenerateAudio,
-          watermark: videoWatermark,
-          referenceMode: effectiveVideoReferenceMode,
-          firstFrameURL: normalizedFirstFrameURL || undefined,
-          lastFrameURL: normalizedLastFrameURL || undefined,
-          referenceImageURLs: normalizedVideoReferenceImages,
-          ordinaryReferenceImageCount: ordinaryVideoReferenceCount,
-          referenceVideoURLs: normalizedVideoReferenceVideos,
-          referenceAudioURLs: normalizedVideoReferenceAudios,
-        }) : undefined;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "视频参数无效");
       return;
     }
     const normalizedVideoTurnFields = videoMode && smartContextEnabled ? {
@@ -5465,7 +4474,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
   };
 
-  const isEmptyWorkspace = !displayedConversation && !isLoadingHistory && !selectedConversationNeedsDetail;
+  const isEmptyWorkspace = !displayedConversation && !isLoadingHistory && !historyError && !selectedConversationNeedsDetail;
 
   return (
     <>
@@ -5476,6 +4485,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
+            historyError={historyError}
+            onRetryHistory={retryHistory}
             isLoadingMoreHistory={isLoadingMoreHistory}
             hasMoreHistory={hasMoreHistory}
             selectedConversationId={selectedConversationId}
@@ -5525,6 +4536,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               <ImageSidebar
                 conversations={conversations}
                 isLoadingHistory={isLoadingHistory}
+                historyError={historyError}
+                onRetryHistory={retryHistory}
                 isLoadingMoreHistory={isLoadingMoreHistory}
                 hasMoreHistory={hasMoreHistory}
                 selectedConversationId={selectedConversationId}
@@ -5885,19 +4898,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   conversationId={selectedConversationId}
                   selectedConversation={displayedConversation}
                   isLoadingHistory={isLoadingHistory}
+                  historyError={historyError}
+                  onRetryHistory={retryHistory}
                   conversationDetailError={conversationDetailId === selectedConversationId ? conversationDetailError : ""}
-                  onRetryConversationDetail={() => setConversationDetailRetryVersion((version) => version + 1)}
+                  onRetryConversationDetail={retryConversationDetail}
                   progressByTurnKey={progressByTurnKey}
-                  progressNow={progressNow}
                   onOpenLightbox={openLightbox}
                   onContinueEdit={handleContinueEdit}
                   onMaskEdit={handleOpenMaskEdit}
                   onEditTurn={openEditTurnDialog}
                   onCancelTurn={handleCancelTurn}
-                  onResumeAgent={(conversationId, turnId) => {
-                    cancelledTurnIdsRef.current.delete(imageTurnProgressKey(conversationId, turnId));
-                    void updateConversation(conversationId, current => { if (!current) throw new Error("对话不存在"); return { ...current, turns: current.turns.map(turn => turn.id === turnId && !isTurnInProgress(turn) ? { ...turn, status: "queued", error: undefined, images: [...turn.images.filter(image => image.status === "success" || image.status === "message"), { id: `${turn.id}-agent-observer`, status: "loading", taskStatus: "queued" }] } : turn) }; });
-                  }}
+                  onResumeAgent={handleResumeAgent}
                   onRegenerateTurn={handleRegenerateTurn}
                   onRetryImage={handleRetryImage}
                   onImageVisibilityChange={handleImageVisibilityChange}
@@ -5914,7 +4925,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             className={cn("relative z-30 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-5", !isEmptyWorkspace && "pr-6 sm:pr-9")}
           >
             <div className="relative mx-auto w-full max-w-4xl">
-              {submitDisabledReason && !isLoadingHistory && !selectedConversationNeedsDetail && !selectedConversationHasActiveTurn ? (
+              {submitDisabledReason && !historyError && !isLoadingHistory && !selectedConversationNeedsDetail && !selectedConversationHasActiveTurn ? (
                 <Alert role="status" className="flex flex-wrap items-center gap-2">
                   {isSubmitDispatching || isLoadingHistory ? <Spinner className="size-3.5 shrink-0 animate-spin text-primary" /> : <CircleAlert className="size-3.5 shrink-0" />}
                   <span className="min-w-0 flex-1 leading-5">{submitDisabledReason}</span>

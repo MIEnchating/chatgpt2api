@@ -1,5 +1,5 @@
 "use client";
-import { VideoContractDocumentUpload } from "./video-contract-document-upload";
+import { VideoContractImportDialog } from "./video-contract-import-dialog";
 import { TestResults } from "@/components/ai-elements/test-results";
 import { ModelPicker } from "@/components/model-picker";
 
@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 
 
 import { LoadingState } from "@/components/ui/loading-state";
+import { SearchInput } from "@/components/ui/search-input";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -15,7 +16,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { nanoid } from "nanoid";
 
 import { stopAgentExecution } from "@/lib/agent-executions";
-import { AgentExecutionRecovery } from "@/components/agent/agent-execution-recovery";
 
 import { Alert } from "@/components/ui/alert";
 import { CodeBlock, CodeBlockContent, CodeBlockCopyButton } from "@/components/ui/code-block";
@@ -24,7 +24,6 @@ import { ItemMedia, Item } from "@/components/ui/item";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
@@ -35,14 +34,14 @@ import { ContractParametersEditor } from "./video-contract-parameters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ContractRequestEditor } from "./video-contract-request";
 import { VideoContractAgentDetails } from "./video-contract-agent-details";
-import { VideoContractImportProgress } from "./video-contract-import-progress";
 import { updateVideoContractAgentDetails, updateVideoContractImportActivity, type VideoContractImportActivity } from "@/lib/video-contract-agent-progress";
 import { ContractMaterialsEditor } from "./video-contract-capabilities";
 import { ContractRuleEditor } from "./video-contract-rules";
 import { VIDEO_RULE_SCENARIOS } from "./video-contract-rule-scenarios";
 import { AutoDLContractImport } from "./autodl-contract-import";
 import { VideoContractPluginDialog, type VideoContractPluginTarget } from "./video-contract-plugin-dialog";
-import { AudioLines, Braces, CheckCircle2, CheckCheck, ChevronDown, CircleAlert, CircleHelp, Code2, Copy, Download, Eye, FileText, Film, FlaskConical, History, ImagePlus, LayoutGrid, Link2, MoreHorizontal, Pencil, Plus, Power, PowerOff, ShieldCheck, SlidersHorizontal, Square, Table2, Trash2, Upload, Video, WandSparkles, X } from "lucide-react";
+import { VideoContractVersionsDialog } from "./video-contract-versions-dialog";
+import { AudioLines, Braces, CheckCircle2, CheckCheck, ChevronDown, CircleAlert, CircleHelp, Code2, Copy, Download, Eye, FileText, Film, FlaskConical, History, ImagePlus, LayoutGrid, MoreHorizontal, Pencil, Plus, Power, PowerOff, ShieldCheck, SlidersHorizontal, Table2, Trash2, Upload, Video, WandSparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
@@ -61,7 +60,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldSet } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel, FieldSet } from "@/components/ui/field";
 import { ReferenceFileUpload } from "@/components/generation/reference-file-upload";
 import { Input } from "@/components/ui/input";
 import { InputTag } from "@/components/ui/input-tag";
@@ -83,7 +82,6 @@ import {
   fetchAdminVideoModelContracts,
   fetchImageGenerationPreferences,
   fetchModelConfig,
-  fetchVideoModelContractVersions,
   importVideoModelContract,
   importVideoModelContractJSON,
   previewVideoModelContract,
@@ -98,7 +96,6 @@ import {
   type VideoModelContractPreviewResult,
   type VideoModelContractMutation,
   type VideoModelContractTransferDocument,
-  type VideoModelContractVersion,
 } from "@/lib/api";
 import {
   installVideoModelContracts,
@@ -150,12 +147,6 @@ const VIDEO_CONTRACT_EDITOR_SECTIONS = [
   { id: "request", label: "上游接口", description: "请求映射与结果读取", icon: Upload },
   { id: "preview", label: "效果预览", description: "查看创作参数面板", icon: Eye },
 ];
-
-function formatElapsedSeconds(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return minutes > 0 ? `${minutes}分${String(remainingSeconds).padStart(2, "0")}秒` : `${remainingSeconds}秒`;
-}
 
 const VIDEO_CONTRACT_DRIVERS: Array<{
   value: VideoModelContract["driver"];
@@ -802,7 +793,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   editorRef.current = editor;
   const importControllerRef = useRef<AbortController | null>(null);
   const importRunIDRef = useRef("");
-  const importStartedAtRef = useRef(0);
   const jsonImportInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
   const currentSessionKeyRef = useRef(sessionKey);
@@ -810,8 +800,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const contractLoadControllerRef = useRef<AbortController | null>(null);
   const contractLoadVersionRef = useRef(0);
   const contractLoadResetRef = useRef(false);
-  const versionsLoadControllerRef = useRef<AbortController | null>(null);
-  const versionsLoadVersionRef = useRef(0);
   const mutationTrackerRef = useRef<ScopedMutationLifecycle | null>(null);
   currentSessionKeyRef.current = sessionKey;
   if (!mutationTrackerRef.current) {
@@ -824,14 +812,22 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [listPageSize, setListPageSize] = useState(10);
   const [listView, setListView] = useState<"table" | "cards">("table");
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [listError, setListError] = useState("");
+  const [listSearch, setListSearch] = useState("");
+  const [editorAction, setEditorAction] = useState<"validate" | "draft" | "publish" | null>(null);
+  const editorActionRef = useRef(false);
+  const isSaving = editorAction !== null;
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [optimisticEnabledByID, setOptimisticEnabledByID] = useState<Map<string, boolean>>(() => new Map());
   const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(() => new Set());
   const [isBulkActionBusy, setIsBulkActionBusy] = useState(false);
+  const bulkActionBusyRef = useRef(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteFailures, setBulkDeleteFailures] = useState<{ id: string; name: string; message: string }[]>([]);
   const [editorSection, setEditorSection] = useState("basic");
   const [dialogOpen, setDialogOpen] = useState(Boolean(editor));
+  const [editorError, setEditorError] = useState("");
+  const detailsRef = useRef<HTMLDivElement>(null);
   const [editingItem, setEditingItem] = useState<ManagedVideoModelContract | null>(editor?.item ?? null);
   const [readOnly, setReadOnly] = useState(false);
   const [draft, setDraft] = useState<ContractDraft>(() => editor ? draftFromContract(editor.item.draft || editor.item.contract, editor.item.draft_enabled ?? editor.item.enabled) : newDraft());
@@ -849,7 +845,8 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [importError, setImportError] = useState("");
   const [importStatus, setImportStatus] = useState<VideoContractImportActivity | null>(null);
   const [importDetails, setImportDetails] = useState<VideoContractAgentDetail[]>([]);
-  const [importElapsedSeconds, setImportElapsedSeconds] = useState(0);
+  const [importStartedAt, setImportStartedAt] = useState(0);
+  const [importEndedAt, setImportEndedAt] = useState(0);
   const [generatedContracts, setGeneratedContracts] = useState<VideoModelContract[]>([]);
   const [generatedDryRun, setGeneratedDryRun] = useState<VideoModelContractImportResult["dry_run"]>([]);
   const [generatedWarnings, setGeneratedWarnings] = useState<string[]>([]);
@@ -857,8 +854,10 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   const [generatedReviewOpen, setGeneratedReviewOpen] = useState(false);
   const [generatedEditingIndex, setGeneratedEditingIndex] = useState<number | null>(null);
   const [isPublishingGeneratedContracts, setIsPublishingGeneratedContracts] = useState(false);
+  const publishGeneratedBusyRef = useRef(false);
   const [textModels, setTextModels] = useState<string[]>([]);
   const [isLoadingImportOptions, setIsLoadingImportOptions] = useState(false);
+  const [importOptionsError, setImportOptionsError] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isJSONImporting, setIsJSONImporting] = useState(false);
   const [pendingJSONImport, setPendingJSONImport] = useState<{
@@ -866,9 +865,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     bundle: VideoModelContractTransferDocument;
   } | null>(null);
   const [versionsItem, setVersionsItem] = useState<ManagedVideoModelContract | null>(null);
-  const [versions, setVersions] = useState<VideoModelContractVersion[]>([]);
-  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
-  const [isRollingBack, setIsRollingBack] = useState(false);
   const [previewInput, setPreviewInput] = useState(() => editor ? previewInputJSON(editor.item.draft || editor.item.contract) : "{}");
   const [previewSubmitResponse, setPreviewSubmitResponse] = useState("{}");
   const [previewQueryResponse, setPreviewQueryResponse] = useState("{}");
@@ -900,6 +896,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     contractLoadControllerRef.current?.abort();
     contractLoadControllerRef.current = controller;
     contractLoadResetRef.current = reset;
+    setListError("");
     if (reset && isCurrentSession(targetSessionKey)) {
       itemsRef.current = [];
       setItems([]);
@@ -923,8 +920,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       }
     } catch (error) {
       if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion || !isCurrentSession(targetSessionKey)) return;
-      toast.error(error instanceof Error ? error.message : "加载视频模型契约失败");
-      if (reset) editorRef.current?.onClose();
+      setListError(error instanceof Error ? error.message : "加载视频模型契约失败");
     } finally {
       if (contractLoadVersionRef.current === requestVersion) {
         contractLoadControllerRef.current = null;
@@ -954,20 +950,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       importControllerRef.current = null;
     };
   }, [loadContracts, sessionKey]);
-
-  useEffect(() => {
-    if (!isImporting) return;
-    const updateElapsed = () => setImportElapsedSeconds(Math.max(0, Math.floor((Date.now() - importStartedAtRef.current) / 1000)));
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timer);
-  }, [isImporting]);
-
-  useEffect(() => () => {
-    versionsLoadVersionRef.current += 1;
-    versionsLoadControllerRef.current?.abort();
-    versionsLoadControllerRef.current = null;
-  }, []);
 
   const beginMutation = (scope: string) => {
     const interruptedResetLoad = contractLoadResetRef.current;
@@ -1054,7 +1036,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setImportError("");
     setImportStatus(null);
     setImportDetails([]);
-    setImportElapsedSeconds(0);
   };
 
   const openCreate = () => {
@@ -1073,15 +1054,10 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setDialogOpen(true);
   };
 
-  const openImport = () => {
-    setImportGeneratePlugin(false);
-    setImportSourceType("file");
-    setImportFile(null);
-    setImportURL("");
-    clearImportFeedback();
-    setImportOpen(true);
+  const loadImportOptions = () => {
     if (isLoadingImportOptions) return;
     setIsLoadingImportOptions(true);
+    setImportOptionsError("");
     void Promise.all([fetchModelConfig(), fetchImageGenerationPreferences()])
       .then(([{ config }, { preferences }]) => {
         if (!isCurrentSession(sessionKey)) return;
@@ -1091,8 +1067,25 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         setImportModel(preferred);
         setImportTokenName(preferences.default_text_relay_token_names[0] || "");
       })
-      .catch((error) => toast.error(error instanceof Error ? error.message : "读取文本模型设置失败"))
-      .finally(() => setIsLoadingImportOptions(false));
+      .catch((error) => {
+        if (isCurrentSession(sessionKey)) {
+          setImportOptionsError(error instanceof Error ? error.message : "读取文本模型设置失败");
+        }
+      })
+      .finally(() => {
+        if (isCurrentSession(sessionKey)) setIsLoadingImportOptions(false);
+      });
+  };
+
+  const openImport = () => {
+    setImportGeneratePlugin(false);
+    setImportSourceType("file");
+    setImportFile(null);
+    setImportURL("");
+    setImportModel("");
+    clearImportFeedback();
+    setImportOpen(true);
+    loadImportOptions();
   };
 
   function acceptImportedContracts(data: Awaited<ReturnType<typeof importVideoModelContract>>) {
@@ -1123,6 +1116,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   }
 
   const generateFromDocument = async () => {
+    if (!isCurrentSession(sessionKey) || importControllerRef.current) return;
     if (importSourceType === "file" && !importFile) {
       toast.error("请选择要分析的文档");
       return;
@@ -1136,9 +1130,9 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       return;
     }
     const controller = new AbortController();
-    importControllerRef.current?.abort();
     importControllerRef.current = controller;
-    importStartedAtRef.current = Date.now();
+    setImportStartedAt(Date.now());
+    setImportEndedAt(0);
     importRunIDRef.current = nanoid();
     setImportDetails([]);
     setImportError("");
@@ -1149,7 +1143,6 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
       completedSteps: [],
       connected: false,
     });
-    setImportElapsedSeconds(0);
     setIsImporting(true);
     try {
       const data = await importVideoModelContract({
@@ -1167,16 +1160,20 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
           if (progress.detail) setImportDetails((current) => updateVideoContractAgentDetails(current, progress.detail!));
         },
       });
-      if (controller.signal.aborted || !isCurrentSession(sessionKey)) return;
+      if (controller.signal.aborted || importControllerRef.current !== controller || !isCurrentSession(sessionKey)) return;
       acceptImportedContracts(data);
     } catch (error) {
+      if (importControllerRef.current !== controller || !isCurrentSession(sessionKey)) return;
       const message = controller.signal.aborted ? "已停止分析" : error instanceof Error ? error.message : "分析文档失败";
       setImportError(message);
       if (!controller.signal.aborted) toast.error(message);
     } finally {
       if (importControllerRef.current === controller) {
         importControllerRef.current = null;
-        setIsImporting(false);
+        if (isCurrentSession(sessionKey)) {
+          setImportEndedAt(Date.now());
+          setIsImporting(false);
+        }
       }
     }
   };
@@ -1199,7 +1196,8 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const closeContractDialog = () => {
-    if (isSaving) return;
+    if (editorActionRef.current) return;
+    setEditorError("");
     setDialogOpen(false);
     editor?.onClose();
     if (generatedEditingIndex === null) return;
@@ -1225,10 +1223,11 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const publishAllGeneratedContracts = async () => {
-    if (generatedContracts.length === 0) return;
+    if (publishGeneratedBusyRef.current || generatedContracts.length === 0) return;
     const contracts = generatedContracts;
     const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
     let current = true;
+    publishGeneratedBusyRef.current = true;
     setIsPublishingGeneratedContracts(true);
     setGeneratedPublishError("");
     try {
@@ -1246,6 +1245,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         setGeneratedPublishError(message);
       }
     } finally {
+      publishGeneratedBusyRef.current = false;
       if (current) setIsPublishingGeneratedContracts(false);
     }
   };
@@ -1293,136 +1293,71 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     setDialogOpen(true);
   };
 
-  const validate = async (
-    showSuccess = true,
-    mutationTicket?: ScopedMutationToken,
-  ) => {
+  const submitContract = async (action: "validate" | "draft" | "publish") => {
+    if (editorActionRef.current || readOnly || (editor && (isLoading || listError))) return;
+    const item = editingItem;
+    if (action === "draft" && !item) return;
     const targetSessionKey = currentSessionKeyRef.current;
-    const payload = mutationFromDraft(draft, editingItem?.id || "");
-    const data = await validateVideoModelContract(payload);
-    if (!isCurrentSession(targetSessionKey) || currentDraftRef.current !== draft) return null;
-    if (mutationTicket && !mutationTrackerRef.current!.canApply(mutationTicket)) return null;
-    setDraft((current) => current === draft ? draftFromContract(data.contract, draft.enabled) : current);
-    if (showSuccess) toast.success("契约校验通过");
-    return { ...payload, contract: data.contract };
-  };
-
-  const saveDraft = async () => {
-    if (!editingItem) return;
-    const item = editingItem;
-    const ticket = beginMutation(item.id);
-    let current = true;
-    setIsSaving(true);
+    if (!isCurrentSession(targetSessionKey)) return;
+    editorActionRef.current = true;
+    setEditorAction(action);
+    setEditorError("");
+    let ticket: ScopedMutationToken | undefined;
     try {
-      const payload = await validate(false, ticket);
-      if (!payload) {
-        current = rejectMutation(ticket);
+      const payload = mutationFromDraft(draft, item?.id || "");
+      if (action === "validate") {
+        const data = await validateVideoModelContract(payload);
+        if (!isCurrentSession(targetSessionKey) || currentDraftRef.current !== draft) return;
+        setDraft((current) => current === draft ? draftFromContract(data.contract, draft.enabled) : current);
+        toast.success("契约校验通过");
         return;
       }
-      const data = await saveVideoModelContractDraft(item.id, payload);
-      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
-      if (!current) return;
-      setDialogOpen(false);
-      toast.success("草稿已保存，当前已发布版本不受影响");
-      editor?.onDraftSaved(data.items);
-      editor?.onClose();
-    } catch (error) {
-      current = rejectMutation(ticket);
-      if (current) toast.error(error instanceof Error ? error.message : "保存视频模型契约草稿失败");
-    } finally {
-      if (current) setIsSaving(false);
-    }
-  };
-
-  const publish = async () => {
-    const item = editingItem;
-    const ticket = beginMutation(item?.id || "create");
-    let current = true;
-    setIsSaving(true);
-    try {
-      const payload = await validate(false, ticket);
-      if (!payload) {
-        current = rejectMutation(ticket);
-        return;
-      }
+      ticket = beginMutation(item?.id || "create");
       const data = item
-        ? await publishVideoModelContract(item.id, payload)
+        ? await (action === "draft" ? saveVideoModelContractDraft : publishVideoModelContract)(item.id, payload)
         : await createVideoModelContract(payload);
-      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
-      if (!current) return;
+      if (!applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items))) return;
+      setDialogOpen(false);
+      if (action === "draft") {
+        toast.success("草稿已保存，当前已发布版本不受影响");
+        editor?.onDraftSaved(data.items);
+        editor?.onClose();
+        return;
+      }
       if (generatedEditingIndex !== null) {
         const remaining = generatedContracts.filter((_, index) => index !== generatedEditingIndex);
         setGeneratedContracts(remaining);
         setGeneratedDryRun((current) => current.filter((_, index) => index !== generatedEditingIndex));
         setGeneratedPublishError("");
         setGeneratedEditingIndex(null);
-        setDialogOpen(false);
         setGeneratedReviewOpen(remaining.length > 0);
         toast.success(remaining.length > 0 ? `契约已发布，剩余 ${remaining.length} 份待审核` : "全部生成契约均已审核并发布");
         return;
       }
-      setDialogOpen(false);
       toast.success(item ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
       editor?.onPublished(data.items);
       editor?.onClose();
     } catch (error) {
-      current = rejectMutation(ticket);
-      if (current) toast.error(error instanceof Error ? error.message : "发布视频模型契约失败");
+      if (ticket ? !rejectMutation(ticket) : !isCurrentSession(targetSessionKey) || currentDraftRef.current !== draft) return;
+      const fallback = { validate: "契约校验失败", draft: "保存视频模型契约草稿失败", publish: "发布视频模型契约失败" };
+      setEditorError(error instanceof Error ? error.message : fallback[action]);
     } finally {
-      if (current) setIsSaving(false);
+      editorActionRef.current = false;
+      if (isCurrentSession(targetSessionKey)) setEditorAction(null);
     }
   };
 
-  const openVersions = async (item: ManagedVideoModelContract) => {
-    versionsLoadControllerRef.current?.abort();
-    const controller = new AbortController();
-    const requestVersion = versionsLoadVersionRef.current + 1;
-    versionsLoadVersionRef.current = requestVersion;
-    versionsLoadControllerRef.current = controller;
-    setVersionsItem(item);
-    setVersions([]);
-    setIsLoadingVersions(true);
-    try {
-      const data = await fetchVideoModelContractVersions(item.id, { signal: controller.signal });
-      if (controller.signal.aborted || versionsLoadVersionRef.current !== requestVersion) return;
-      setVersions(data.versions);
-    } catch (error) {
-      if (controller.signal.aborted || versionsLoadVersionRef.current !== requestVersion) return;
-      toast.error(error instanceof Error ? error.message : "加载契约版本失败");
-    } finally {
-      if (versionsLoadVersionRef.current === requestVersion) {
-        versionsLoadControllerRef.current = null;
-        setIsLoadingVersions(false);
-      }
-    }
-  };
-
-  const closeVersions = () => {
-    versionsLoadVersionRef.current += 1;
-    versionsLoadControllerRef.current?.abort();
-    versionsLoadControllerRef.current = null;
-    setVersionsItem(null);
-    setVersions([]);
-    setIsLoadingVersions(false);
-  };
-
-  const rollback = async (revision: number) => {
-    if (!versionsItem) return;
-    const item = versionsItem;
+  const rollback = async (item: ManagedVideoModelContract, revision: number) => {
     const ticket = beginMutation(item.id);
-    let current = true;
-    setIsRollingBack(true);
     try {
       const data = await rollbackVideoModelContract(item.id, revision);
-      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
-      if (!current) return;
-      closeVersions();
+      const current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
+      if (!current) return false;
       toast.success(`已基于第 ${revision} 版发布新版本`);
+      return true;
     } catch (error) {
-      current = rejectMutation(ticket);
-      if (current) toast.error(error instanceof Error ? error.message : "回滚契约失败");
-    } finally {
-      if (current) setIsRollingBack(false);
+      if (rejectMutation(ticket)) throw error;
+      return false;
     }
   };
 
@@ -1540,11 +1475,15 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     const updated = pendingJSONImport.bundle.contracts.filter((item) => existingNames.has(item.contract.name.trim().toLowerCase())).length;
     return { created: pendingJSONImport.bundle.contracts.length - updated, updated };
   }, [items, pendingJSONImport]);
-  const listTotalPages = Math.max(1, Math.ceil(items.length / listPageSize));
+  const filteredItems = useMemo(() => {
+    const query = listSearch.trim().toLocaleLowerCase();
+    return query ? items.filter(({ contract }) => [contract.name, ...contract.models].some((value) => value.toLocaleLowerCase().includes(query))) : items;
+  }, [items, listSearch]);
+  const listTotalPages = Math.max(1, Math.ceil(filteredItems.length / listPageSize));
   const safeListPage = Math.min(listPage, listTotalPages);
   const visibleItems = useMemo(
-    () => items.slice((safeListPage - 1) * listPageSize, safeListPage * listPageSize),
-    [items, listPageSize, safeListPage],
+    () => filteredItems.slice((safeListPage - 1) * listPageSize, safeListPage * listPageSize),
+    [filteredItems, listPageSize, safeListPage],
   );
   const selectedItems = useMemo(
     () => items.filter((item) => selectedContractIds.has(item.id)),
@@ -1594,7 +1533,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const updateSelectedContractsEnabled = async (enabled: boolean) => {
-    if (isBulkActionBusy) return;
+    if (bulkActionBusyRef.current) return;
     const targets = selectedItems.filter((item) => (optimisticEnabledByID.get(item.id) ?? item.enabled) !== enabled);
     if (targets.length === 0) {
       toast.info(enabled ? "选中的契约均已启用" : "选中的契约均已停用");
@@ -1605,6 +1544,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
     let latestItems: ManagedVideoModelContract[] | null = null;
     const failedIds = new Set<string>();
     let current = true;
+    bulkActionBusyRef.current = true;
     setIsBulkActionBusy(true);
     setPendingIds((pending) => new Set([...pending, ...targetIds]));
     setOptimisticEnabledByID((values) => {
@@ -1646,19 +1586,22 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         for (const id of targetIds) next.delete(id);
         return next;
       });
+      bulkActionBusyRef.current = false;
       if (current) setIsBulkActionBusy(false);
     }
   };
 
   const deleteSelectedContracts = async () => {
-    if (isBulkActionBusy || selectedItems.length === 0) return;
+    if (bulkActionBusyRef.current || selectedItems.length === 0) return;
     const targets = [...selectedItems];
     const targetIds = new Set(targets.map((item) => item.id));
     const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
     let latestItems: ManagedVideoModelContract[] | null = null;
-    const failedIds = new Set<string>();
+    const failures: typeof bulkDeleteFailures = [];
     let current = true;
+    bulkActionBusyRef.current = true;
     setIsBulkActionBusy(true);
+    setBulkDeleteFailures([]);
     setPendingIds((pending) => new Set([...pending, ...targetIds]));
     try {
       for (const item of targets) {
@@ -1669,20 +1612,20 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         try {
           const data = await deleteVideoModelContract(item.id);
           latestItems = data.items;
-        } catch {
-          failedIds.add(item.id);
+        } catch (error) {
+          failures.push({ id: item.id, name: item.contract.name, message: error instanceof Error ? error.message : "删除失败" });
         }
       }
       current = latestItems
         ? applyMutationResult(ticket, latestItems, () => latestItems!)
         : rejectMutation(ticket);
       if (!current) return;
-      setSelectedContractIds(failedIds);
-      setBulkDeleteOpen(false);
-      if (failedIds.size > 0) {
-        void loadContracts(ticket.sessionKey, false);
-        toast.warning(`删除完成：成功 ${targets.length - failedIds.size} 个，失败 ${failedIds.size} 个`);
+      setSelectedContractIds(new Set(failures.map(({ id }) => id)));
+      if (failures.length > 0) {
+        setBulkDeleteFailures(failures);
+        if (latestItems) void loadContracts(ticket.sessionKey, false);
       } else {
+        setBulkDeleteOpen(false);
         toast.success(`已删除 ${targets.length} 个契约`);
       }
     } finally {
@@ -1691,6 +1634,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         for (const id of targetIds) next.delete(id);
         return next;
       });
+      bulkActionBusyRef.current = false;
       if (current) setIsBulkActionBusy(false);
     }
   };
@@ -1716,10 +1660,16 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
   };
 
   const editorLoading = Boolean(editor) && isLoading;
+  const updateEditorSection = (section: string) => {
+    setEditorSection(section);
+    detailsRef.current?.querySelector("[data-radix-scroll-area-viewport]")?.scrollTo({ top: 0 });
+  };
   const contractDialog = (
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeContractDialog())}>
         <DialogContent
           data-video-contract-dialog
+          showCloseButton={!isSaving}
+          aria-busy={isSaving || editorLoading}
           className="h-[min(94dvh,940px)] w-[min(96vw,1360px)] max-w-none sm:max-w-none"
         >
           <DialogHeader >
@@ -1736,7 +1686,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
             </div>
           </DialogHeader>
           <div className="shrink-0 lg:hidden">
-            <Select value={editorSection} onValueChange={setEditorSection}>
+            <Select value={editorSection} onValueChange={updateEditorSection} disabled={isSaving || editorLoading}>
               <SelectTrigger aria-label="视频配置分区" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>{VIDEO_CONTRACT_EDITOR_SECTIONS.map((section) => <SelectItem key={section.id} value={section.id}>{section.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -1749,14 +1699,14 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </div>
               <nav aria-label="视频配置分区" className="grid gap-1">
                 {VIDEO_CONTRACT_EDITOR_SECTIONS.map(({ id, label, description, icon: Icon }) => (
-                  <Button key={id} type="button" variant={editorSection === id ? "secondary" : "ghost"} aria-current={editorSection === id ? "step" : undefined} aria-label={label} onClick={() => setEditorSection(id)} className={cn("h-auto min-h-16 w-full items-start justify-start gap-2 py-3 text-left", id === "preview" && "xl:hidden")}>
+                  <Button key={id} type="button" variant={editorSection === id ? "secondary" : "ghost"} aria-current={editorSection === id ? "step" : undefined} aria-label={label} onClick={() => updateEditorSection(id)} className={cn("h-auto min-h-16 w-full items-start justify-start gap-2 py-3 text-left", id === "preview" && "xl:hidden")}>
                     <Icon className="mt-0.5 shrink-0" />
                     <span className="min-w-0"><span className="block font-medium">{label}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{description}</span></span>
                   </Button>
                 ))}
               </nav>
             </ScrollArea>
-            <ScrollArea data-video-contract-details aria-label="契约表单" className={cn("min-h-0 min-w-0", editorSection === "preview" && "hidden xl:flex")} contentClassName="grid gap-5 p-1 pr-3 pb-4 lg:p-5" onWheel={(event) => event.stopPropagation()}>
+            <ScrollArea ref={detailsRef} data-video-contract-details aria-label="契约表单" className={cn("min-h-0 min-w-0", editorSection === "preview" && "hidden xl:flex")} contentClassName="grid gap-5 p-1 pr-3 pb-4 lg:p-5" onWheel={(event) => event.stopPropagation()}>
               <Card className={cn("gap-5 p-4 sm:p-5", editorSection !== "basic" && editorSection !== "preview" && "hidden")}>
                 <SectionTitle>基本信息</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -1949,14 +1899,16 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
             </ScrollArea>
           </FieldSet>
           <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            {editorError ? <Alert variant="destructive" role="alert" className="max-h-24 w-full overflow-auto [overflow-wrap:anywhere]"><CircleAlert /><span>{editorError}</span></Alert> : null}
+            {editor && listError ? <Alert variant="destructive" role="alert" className="w-full [overflow-wrap:anywhere]"><CircleAlert /><span>{listError}</span><Button type="button" variant="outline" size="sm" onClick={() => void loadContracts(sessionKey, true)}>重试</Button></Alert> : null}
             <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" disabled={isSaving || editorLoading} onClick={() => setPluginTargets([{ id: editingItem?.id || "draft", contract: cloneVideoModelContract(normalizedContract), label: readOnly ? "当前查看版本" : "当前编辑快照", reviewPending: !readOnly, warnings: generatedEditingIndex !== null ? [...(generatedDryRun[generatedEditingIndex]?.review_issues || []), ...(generatedDryRun[generatedEditingIndex]?.missing_evidence || [])] : [] }])}><Code2 />生成插件</Button>
-            {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving || editorLoading}><ShieldCheck  />校验配置</Button> : null}
+            {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={() => void submitContract("validate")} disabled={isSaving || editorLoading || Boolean(editor && listError)}>{editorAction === "validate" ? <Spinner /> : <ShieldCheck />}校验配置</Button> : null}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
-            {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving || editorLoading}><FileText  />保存草稿</Button> : null}
-            {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving || editorLoading}>{isSaving ? <Spinner /> : <CheckCircle2  />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
+            {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void submitContract("draft")} disabled={isSaving || editorLoading || Boolean(editor && listError)}>{editorAction === "draft" ? <Spinner /> : <FileText />}保存草稿</Button> : null}
+            {!readOnly ? <Button type="button" onClick={() => void submitContract("publish")} disabled={isSaving || editorLoading || Boolean(editor && listError)}>{editorAction === "publish" ? <Spinner /> : <CheckCircle2 />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
             </div>
           </DialogFooter>
         </DialogContent>
@@ -1987,7 +1939,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={`更多操作：${item.contract.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onSelect={() => openView(item)}><Eye />查看契约</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void openVersions(item)}><History />版本历史</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setVersionsItem(item)}><History />版本历史</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))}><Download />导出契约</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setPluginTargets([{ id: item.id, contract: cloneVideoModelContract(item.contract), label: `已发布版本 v${item.revision}` }])}><Code2 />生成 New API 插件</DropdownMenuItem>
@@ -2148,11 +2100,15 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         </div>
         {isLoading ? (
           <LoadingState className="h-auto" label="正在加载视频契约" />
+        ) : listError && !items.length ? (
+          <EmptyState role="alert" icon={Film} title="无法加载视频契约" description={listError} action={<Button variant="outline" onClick={() => void loadContracts(sessionKey, true)}>重试</Button>} />
         ) : items.length === 0 ? (
           <div className="p-5 sm:p-6"><SettingsEmptyState icon={Film} title="暂无视频模型契约" description="添加后可为模型设置中的视频模型提供参数和请求转换规则。" /></div>
         ) : (
           <div data-video-contract-list className="@container/video-contract-list flex min-h-0 flex-1 flex-col">
+            {listError ? <Alert role="alert" className="mb-3"><CircleAlert /><span>{listError}</span><Button type="button" size="sm" variant="outline" onClick={() => void loadContracts(sessionKey, false)}>重试</Button></Alert> : null}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-4 text-xs text-muted-foreground">
+              <SearchInput aria-label="搜索视频契约" placeholder="搜索契约名称或匹配模型" value={listSearch} onValueChange={(value) => { setListSearch(value); setListPage(1); }} containerClassName="w-full sm:max-w-xs" />
               <Label className="flex items-center gap-2">
                 <Checkbox
                   checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
@@ -2171,7 +2127,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
               </div>
             </div>
             <ScrollArea data-video-contract-rows className="-mx-1 min-h-0 flex-1" contentClassName={cn("px-1 pt-1 pb-4", listView === "cards" && "grid items-stretch gap-4 @3xl/video-contract-list:grid-cols-2")} onWheel={(event) => event.stopPropagation()}>
-              {listView === "table" ? (
+              {!visibleItems.length ? <EmptyState compact title="没有匹配的契约" action={<Button variant="outline" onClick={() => setListSearch("")}>清除搜索</Button>} /> : listView === "table" ? (
                 <Card className="gap-0 py-0">
                   <Table aria-label="视频契约表格" className="min-w-[940px] table-fixed">
                     <TableHeader>
@@ -2192,7 +2148,7 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
             <ManagementPagination
               page={safeListPage}
               totalPages={listTotalPages}
-              totalItems={items.length}
+              totalItems={filteredItems.length}
               pageSize={listPageSize}
               pageSizeOptions={[10, 20, 50]}
               itemLabel="个"
@@ -2206,86 +2162,38 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         )}
       </SettingsPanel>
 
-      <Dialog open={importOpen} onOpenChange={(open) => !isImporting && setImportOpen(open)}>
-        <DialogContent className="w-[min(calc(100%-2rem),60rem)] sm:max-w-none" showCloseButton={!isImporting}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 leading-6"><WandSparkles className="size-5 shrink-0" />从文档生成契约</DialogTitle>
-            <DialogDescription>{isImporting ? "按步骤读取文档、匹配协议并校验配置，执行记录实时更新。" : importStatus ? "本次执行已结束。查看执行记录，或调整文档与模型后重试。" : "提供 API 文档，由 Agent 提取视频能力与接口配置，生成可审核的契约草稿。"}</DialogDescription>
-          </DialogHeader>
-          <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 px-1 py-1">
-            <AgentExecutionRecovery domain="video_contract" busy={isImporting} onResult={(data: Awaited<ReturnType<typeof importVideoModelContract>>) => { acceptImportedContracts(data); setImportOpen(false); }} />
-            <div className="grid gap-4">
-              <div className={cn("grid min-w-0 items-stretch gap-4 md:grid-cols-[minmax(0,1fr)_18rem]", importStatus && "hidden")}>
-                <Card className="min-w-0">
-                  <CardHeader>
-                    <CardTitle>文档来源</CardTitle>
-                    <CardDescription>上传本地文件，或提供多份在线文档。</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Tabs value={importSourceType} onValueChange={(value) => { setImportSourceType(value as "file" | "url"); clearImportFeedback(); }} className="min-w-0 gap-4">
-                      <TabsList className="w-full" aria-label="文档来源">
-                        <TabsTrigger value="file" disabled={isImporting}><FileText />上传文档</TabsTrigger>
-                        <TabsTrigger value="url" disabled={isImporting}><Link2 />文档链接</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="file">
-                        <VideoContractDocumentUpload file={importFile} disabled={isImporting} onChange={file => { setImportFile(file); clearImportFeedback(); }} />
-                      </TabsContent>
-                      <TabsContent value="url" className="min-h-52 py-3">
-                        <Field>
-                          <FieldLabel htmlFor="video-contract-import-url">文档地址</FieldLabel>
-                          <Textarea id="video-contract-import-url" value={importURL} disabled={isImporting} rows={5} className="min-h-32 resize-y" placeholder={"https://docs.example.com/video/create\nhttps://docs.example.com/video/query"} aria-describedby="video-contract-import-url-help" onChange={(event) => { setImportURL(event.target.value); clearImportFeedback(); }} />
-                          <FieldDescription id="video-contract-import-url-help">每行一个公开的 HTTP 或 HTTPS 链接，最多 24 个。重复地址会去重，Agent 将合并分析所有文档及相关接口页面。</FieldDescription>
-                          <span className="text-xs text-muted-foreground" aria-live="polite">已填写 {importURLs.length} 个地址</span>
-                        </Field>
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-                <Card className="min-w-0">
-                  <CardHeader>
-                    <CardTitle>生成设置</CardTitle>
-                    <CardDescription>选择分析模型和草稿生成后的操作。</CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid gap-5">
-                    <Field>
-                      <FieldLabel htmlFor="video-contract-analysis-model">分析模型</FieldLabel>
-                      <ModelPicker id="video-contract-analysis-model" label="契约分析模型" value={importModel} options={textModels} disabled={isImporting || isLoadingImportOptions} onValueChange={setImportModel} placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} />
-                      <FieldDescription>需支持工具调用，使用个人默认文本 Key。</FieldDescription>
-                    </Field>
-                    <Separator />
-                    <Field orientation="horizontal" className="items-start">
-                      <FieldContent>
-                        <FieldLabel htmlFor="video-contract-import-plugin">生成 New API 插件</FieldLabel>
-                        <FieldDescription id="video-contract-import-plugin-help">开启后，草稿生成完成时进入插件配置，可逐份生成和下载。</FieldDescription>
-                      </FieldContent>
-                      <Switch id="video-contract-import-plugin" aria-describedby="video-contract-import-plugin-help" checked={importGeneratePlugin} disabled={isImporting} onCheckedChange={setImportGeneratePlugin} />
-                    </Field>
-                  </CardContent>
-                </Card>
-              </div>
-            {importStatus ? <VideoContractImportProgress activity={importStatus} running={isImporting} error={importError} elapsed={formatElapsedSeconds(importElapsedSeconds)} /> : null}
-            <VideoContractAgentDetails entries={importDetails} running={isImporting} />
-            {importError && !importStatus ? (
-              <Alert variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="min-w-0 break-words leading-relaxed">{importError}</span>
-              </Alert>
-            ) : null}
-          </div>
-          </ScrollArea>
-          <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0" />生成后先审核草稿，再发布生效。</p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {!isImporting && importStatus ? <Button type="button" variant="ghost" onClick={clearImportFeedback}>调整文档或模型</Button> : null}
-              <Button type="button" variant="outline" onClick={() => { if (isImporting) { importControllerRef.current?.abort(); void stopAgentExecution(importRunIDRef.current).catch((error: Error) => toast.error(error.message)); } else setImportOpen(false); }}>
-                {isImporting ? <Square className="fill-current" /> : null}{isImporting ? "停止分析" : "取消"}
-              </Button>
-              <Button type="button" disabled={isImporting || isLoadingImportOptions || !importModel || (importSourceType === "file" ? !importFile : importURLs.length === 0)} onClick={() => void generateFromDocument()}>
-                {isImporting ? <Spinner /> : <WandSparkles />}{isImporting ? "分析中" : importStatus ? "重新分析" : importGeneratePlugin ? "生成草稿并配置插件" : "生成契约草稿"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <VideoContractImportDialog
+        open={importOpen}
+        sourceType={importSourceType}
+        file={importFile}
+        url={importURL}
+        urlCount={importURLs.length}
+        model={importModel}
+        models={textModels}
+        generatePlugin={importGeneratePlugin}
+        activity={importStatus}
+        details={importDetails}
+        error={importError}
+        startedAt={importStartedAt}
+        endedAt={importEndedAt}
+        loadingModels={isLoadingImportOptions}
+        modelsError={importOptionsError}
+        running={isImporting}
+        onSourceTypeChange={(value) => { setImportSourceType(value); clearImportFeedback(); }}
+        onFileChange={(file) => { setImportFile(file); clearImportFeedback(); }}
+        onURLChange={(value) => { setImportURL(value); clearImportFeedback(); }}
+        onModelChange={setImportModel}
+        onRetryModels={loadImportOptions}
+        onGeneratePluginChange={setImportGeneratePlugin}
+        onEdit={clearImportFeedback}
+        onGenerate={() => void generateFromDocument()}
+        onRecovered={acceptImportedContracts}
+        onStop={() => {
+          importControllerRef.current?.abort();
+          void stopAgentExecution(importRunIDRef.current).catch((error: Error) => toast.error(error.message));
+        }}
+        onClose={() => setImportOpen(false)}
+      />
 
       <Dialog open={generatedReviewOpen} onOpenChange={(open) => (open ? setGeneratedReviewOpen(true) : !isPublishingGeneratedContracts && abandonGeneratedContracts())}>
         <DialogContent className="w-[min(calc(100%-2rem),48rem)] sm:max-w-none" showCloseButton={!isPublishingGeneratedContracts}>
@@ -2385,42 +2293,10 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(versionsItem)} onOpenChange={(open) => (!open && !isRollingBack ? closeVersions() : undefined)}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>契约版本历史</DialogTitle>
-            <DialogDescription>{versionsItem?.contract.name} · 当前第 {versionsItem?.revision} 版</DialogDescription>
-          </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden max-h-[min(60dvh,520px)]" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
-            {isLoadingVersions ? (
-              <LoadingState className="h-auto min-h-32" label="正在加载版本记录" />
-            ) : versions.length === 0 ? (
-              <EmptyState compact title="暂无历史版本" className="min-h-0 p-6" />
-            ) : (
-              <div className="divide-y divide-border/70">
-                {versions.map((version) => {
-                  const current = version.revision === versionsItem?.revision;
-                  return (
-                    <div key={version.revision} className="flex min-w-0 items-center gap-3 px-4 py-3">
-                      <ItemMedia variant="icon" className="flex size-9 shrink-0 items-center justify-center font-mono">v{version.revision}</ItemMedia>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{version.contract.name}</p>
-                        <time dateTime={version.published_at} className="text-xs text-muted-foreground">{formatDateTime(version.published_at)}</time>
-                      </div>
-                      {current ? <Badge variant="default">当前版本</Badge> : (
-                        <Button type="button" size="sm" variant="outline" disabled={isRollingBack} onClick={() => void rollback(version.revision)}>
-                          {isRollingBack ? <Spinner /> : <History  />}回滚到此版本
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
-          </ScrollArea><DialogFooter><Button type="button" variant="outline" disabled={isRollingBack} onClick={closeVersions}>关闭</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {versionsItem ? (
+        <VideoContractVersionsDialog key={versionsItem.id} item={versionsItem} formatDateTime={formatDateTime}
+          onClose={() => setVersionsItem(null)} onRollback={(revision) => rollback(versionsItem, revision)} />
+      ) : null}
 
       <ConfirmDialog
         open={Boolean(deletingItem)}
@@ -2435,15 +2311,31 @@ function VideoModelContractsWorkspace({ sessionKey, editor }: { sessionKey: stri
 
       <ConfirmDialog
         open={bulkDeleteOpen}
-        onOpenChange={(open) => !isBulkActionBusy && setBulkDeleteOpen(open)}
+        onOpenChange={(open) => {
+          if (bulkActionBusyRef.current) return;
+          setBulkDeleteOpen(open);
+          if (!open) setBulkDeleteFailures([]);
+        }}
         title="批量删除视频模型契约？"
         description={<>将永久删除选中的 {selectedItems.length} 个契约，使用这些契约的模型会立即失去对应参数和请求映射。</>}
-        confirmLabel={`删除 ${selectedItems.length} 个契约`}
+        confirmLabel={bulkDeleteFailures.length ? `重试删除 ${selectedItems.length} 个契约` : `删除 ${selectedItems.length} 个契约`}
         busy={isBulkActionBusy}
         confirmDisabled={selectedItems.length === 0}
         destructive
         onConfirm={() => void deleteSelectedContracts()}
-      />
+      >
+        {bulkDeleteFailures.length ? (
+          <Alert variant="destructive" role="alert">
+            <CircleAlert />
+            <div className="min-w-0 space-y-1">
+              <p className="font-medium">{bulkDeleteFailures.length} 个契约删除失败</p>
+              <ul className="space-y-1">
+                {bulkDeleteFailures.map(({ id, name, message }) => <li key={id}>{name}：{message}</li>)}
+              </ul>
+            </div>
+          </Alert>
+        ) : null}
+      </ConfirmDialog>
     </>
   );
 }

@@ -4,12 +4,75 @@ import test, { after } from 'node:test';
 
 const source = readFileSync(new URL('./xzapi-video-1.1.0.js', import.meta.url));
 const plugin = await import(`data:text/javascript;base64,${source.toString('base64')}`);
+const discoveryBundle = readFileSync(new URL('./xzapi-video-1.4.0.js', import.meta.url));
+const discoveryPlugin = await import(`data:text/javascript;base64,${discoveryBundle.toString('base64')}`);
 const models = JSON.parse(readFileSync(new URL('./source-models.json', import.meta.url))).models;
 const document = JSON.parse(readFileSync(new URL('./contract.json', import.meta.url)));
 const profiles = document.contracts.flatMap(item => item.contract.model_profiles);
 const cases = [];
 const context = body => ({ requestBody: body, model: body.model, upstreamModel: body.model, baseUrl: 'https://provider.example.com', apiKey: 'fixture-key', publicTaskId: 'task_fixture-order.1', files: [] });
 const expected = body => ({ url: 'https://provider.example.com/v1/videos', method: 'POST', headers: { Authorization: 'Bearer fixture-key', 'Content-Type': 'application/json' }, body: { ...body, mode: 'references', client_task_id: 'task_fixture-order.1' } });
+
+test('model discovery only lists models the current video plugin can serve', () => {
+  const supported = { id: 'ch0101-sd-2.0-480p', object: 'model' };
+  const added = { id: '0122-seedance-2-5-720p' };
+  const data = [supported, { id: 'ch5-gpt-image-2' }, added];
+  assert.deepEqual(discoveryPlugin.convertResponse({}, { status: 200, body: JSON.stringify({ data }) }), {
+    body: { object: 'list', data: [supported, added] },
+  });
+  assert.equal(discoveryPlugin.convertResponse({}, { status: 401 }).error.status, 401);
+  assert.throws(() => discoveryPlugin.convertResponse({}, { status: 200, body: '{}' }), /data array/);
+});
+
+test('new XZAPI models use their own limits and bill the sent duration', () => {
+  for (const [model, resolution, maxSeconds, maxVideos] of [
+    ['0121-seedance-2-0-480p', '480p', 15, 0],
+    ['0121-seedance-2-0-720p', '720p', 15, 0],
+    ['0122-seedance-2-5-480p', '480p', 30, 0],
+    ['0122-seedance-2-5-720p', '720p', 30, 0],
+    ['0122-seedance-2-5-1080p', '1080p', 30, 0],
+    ['ch0105-sd-2.0-480p-fast', '480p', 15, 3],
+    ['ch0105-sd-2.0-720p-fast', '720p', 15, 3],
+    ['ch0108-sd-2.5-1080p', '1080p', 30, 10],
+  ]) {
+    const body = { model, prompt: 'Cloud', duration: maxSeconds };
+    const ctx = context(body);
+    const request = discoveryPlugin.buildSubmitRequest(ctx);
+    assert.deepEqual(request, expected({ ...body, resolution, aspect_ratio: '16:9' }));
+    assert.deepEqual(discoveryPlugin.extractUsage({ ...ctx, usagePurpose: 'facts' }), { seconds: request.body.duration, resolution });
+    assert.throws(() => discoveryPlugin.buildSubmitRequest(context({ ...body, duration: maxSeconds + 1 })));
+    const videos = Array.from({ length: maxVideos + 1 }, (_, index) => `https://media.example.com/${index}.mp4`);
+    assert.throws(() => discoveryPlugin.buildSubmitRequest(context({ ...body, references: { videos } })));
+    const aliasBody = { ...body, model: 'video-alias' };
+    const decoded = discoveryPlugin.protocols.openai_video.decodeRequest({
+      model: aliasBody.model, upstreamModel: model, body: { kind: 'json', value: aliasBody },
+    });
+    assert.equal(decoded.model, aliasBody.model);
+    assert.equal(discoveryPlugin.buildSubmitRequest({ ...context(aliasBody), upstreamModel: model }).body.model, model);
+  }
+});
+
+test('CH1306 bills one generation regardless of duration or model alias', () => {
+  for (const resolution of ['480p', '720p']) {
+    const model = `ch1306-sd-2.0-${resolution}`;
+    const schema = discoveryPlugin.meta.usageProfiles.find(profile => profile.models.includes(model)).schema;
+    assert.deepEqual(Object.keys(schema), ['count']);
+    assert.equal(schema.count.unit, 'count');
+    for (const duration of [4, 15]) {
+      const ctx = context({ model: 'video-alias', prompt: 'Cloud', duration });
+      ctx.upstreamModel = model;
+      const args = [{ ...ctx, usagePurpose: 'facts' }];
+      assert.deepEqual(discoveryPlugin.extractUsage(...args), { count: 1 });
+      assert.deepEqual(discoveryPlugin.extractUsage({ ...ctx, usagePurpose: 'billing_ratios' }), {});
+      assert.throws(() => discoveryPlugin.extractUsage({ ...ctx, requestBody: { ...ctx.requestBody, duration: 16 } }));
+    }
+  }
+  const model = 'ch1308-sd-2.0-720p';
+  assert.deepEqual(discoveryPlugin.extractUsage({ ...context({ model, prompt: 'Cloud', duration: 10 }), usagePurpose: 'facts' }), {
+    seconds: 10, resolution: '720p',
+  });
+});
+
 function checkSubmit(name, input, output) {
   const args = [context(input)];
   const want = expected(output);

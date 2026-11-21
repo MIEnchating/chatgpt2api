@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { imageConversationHasActiveTurn, mergeImageConversationSnapshot } from "../src/lib/image-task-state.ts";
+import { imageConversationHasActiveTurn, mergeImageConversationSnapshot, nextImageConversationRevision } from "../src/lib/image-task-state.ts";
 import { isGPTImage26 } from "../src/lib/image-model-capabilities.ts";
+import { videoWorkbenchDisplaySeconds } from "../src/lib/video-model-capabilities.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const store = ts.createSourceFile("store.ts", readFileSync(new URL("../src/store/image-conversations.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const writes = ts.createSourceFile("writes.ts", readFileSync(new URL("../src/app/image/studio-conversation-writes.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 const isSummary = item => item?.historySummaryOnly === true;
 function findNode(file, predicate) {
   let found;
@@ -24,7 +26,7 @@ function compile(expression, context) {
 }
 function submit(context) {
   const node = findNode(source, node => ts.isVariableDeclaration(node) && node.name.getText(source) === "handleSubmit");
-  return compile(node.initializer.getText(source), context);
+  return compile(node.initializer.getText(source), { videoWorkbenchDisplaySeconds, ...context });
 }
 function deferred() {
   let resolve, reject;
@@ -33,13 +35,50 @@ function deferred() {
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
+test("durable conversation writes serialize per conversation and discard queued writes after clearing", async () => {
+  const a = { id: "a", title: "initial", revision: 1, updatedAt: "2026-01-01T00:00:00Z", turns: [] };
+  const b = { ...a, id: "b" };
+  const receipt = deferred();
+  const requests = [];
+  const state = {
+    conversations: { current: [b, a] }, active: { current: true }, pending: { current: 0 }, destructiveEpoch: { current: 0 },
+    deletedIDs: { current: new Set() }, chains: new Map(), reservations: new Map(),
+    onCommit: (items) => { state.conversations.current = items; },
+    onFinish: () => { state.pending.current--; }, onSaveError: () => assert.fail("No save failed"),
+  };
+  const declaration = findNode(writes, (node) => ts.isFunctionDeclaration(node) && node.name?.text === "writeStudioConversation");
+  const compareDeclaration = findNode(store, (node) => ts.isFunctionDeclaration(node) && node.name?.text === "compareImageConversations");
+  const write = compile(declaration.getText(writes).replace(/^export\s+/, ""), {
+    nextImageConversationRevision, mergeImageConversationSnapshot,
+    compareImageConversations: compile(compareDeclaration.getText(store).replace(/^export\s+/, ""), {}),
+    saveImageConversation: async (item) => {
+      requests.push(item);
+      if (item.id === "a") await receipt.promise;
+      return item;
+    },
+  });
+  const pending = write(state, "a", current => ({ ...current, title: "waiting" }), { persist: "durable" });
+  const queued = write(state, "a", () => assert.fail("Old mutation must not run"), { persist: "durable" });
+  await write(state, "b", current => ({ ...current, title: "other" }), { persist: "durable" });
+  assert.deepEqual(requests.map(({ id, revision }) => [id, revision]), [["a", 2], ["b", 2]]);
+  assert.equal(state.conversations.current.find(item => item.id === "a").title, "initial");
+  state.destructiveEpoch.current++;
+  state.conversations.current = [];
+  receipt.resolve();
+  assert.equal(await pending, null);
+  assert.equal(await queued, null);
+  assert.deepEqual(state.conversations.current, []);
+  assert.equal(state.chains.size, 0);
+  assert.equal(state.pending.current, 0);
+});
+
 function submissionFixture(conversation) {
   const errors = [], queued = [], selected = [];
   let cleared = 0, id = 0;
   const snapshot = { selectedConversationId: conversation?.id ?? null, imagePrompt: "next request" };
   const context = {
     isGPTImage26,
-    selectedConversationId: snapshot.selectedConversationId, isLoadingHistory: false,
+    selectedConversationId: snapshot.selectedConversationId, isLoadingHistory: false, historyError: "",
     conversationsRef: { current: conversation ? [conversation] : [] },
     imageConversationHasActiveTurn, isImageConversationHistorySummaryOnly: isSummary,
     isSubmitDispatchingRef: { current: false }, setIsSubmitDispatching: () => {},
@@ -136,6 +175,13 @@ for (const state of ["missing", "summary", "history-loading"]) {
     assert.deepEqual(fixture.queued, []);
   });
 }
+test("a failed initial history read does not queue a generation", async () => {
+  const fixture = submissionFixture();
+  fixture.context.historyError = "读取历史失败";
+  await submit(fixture.context)();
+  assert.deepEqual(fixture.errors, ["请先重试读取创作历史"]);
+  assert.deepEqual(fixture.queued, []);
+});
 test("after completion, switching model appends a new turn and keeps the first result", async () => {
   const fixture = submissionFixture(complete());
   await submit(fixture.context)();

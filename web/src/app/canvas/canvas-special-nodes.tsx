@@ -21,7 +21,7 @@ import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
-import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
+import { CanvasGenerationFooter, type CanvasPromptOptimizationAction } from "@/app/canvas/canvas-generation-footer";
 import { canvasGenerationNeedsRecovery } from "@/app/canvas/canvas-generation-context";
 import { CanvasParameterPopover } from "@/app/canvas/canvas-parameter-popover";
 import { CanvasNodeInputToolbar } from "@/app/canvas/canvas-node-input-toolbar";
@@ -63,19 +63,18 @@ export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveS
   return null;
 }
 
-export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSelect, models, audioReferences, relayTokenName, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
-  const [prompt, setPrompt] = useState(node.prompt || "");
+export function CanvasAudioPromptPanel({ node, mentionReferences, onReferenceSelect, models, audioReferences, relayTokenName, running, optimization, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; running: boolean; optimization: CanvasPromptOptimizationAction; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
+  const prompt = node.prompt || "";
   const model = node.generation_audio_model || models[0] || "";
-  useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <PromptTextareaFrame value={prompt} className="min-h-0 flex-1">
-        <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={(value) => { setPrompt(value); onPromptChange(value); }} onBlur={() => onPromptChange(prompt, true)} placeholder="输入需要合成的旁白、对白或音频内容" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden" />
+        <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="输入需要合成的旁白、对白或音频内容" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden" />
       </PromptTextareaFrame>
-      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} onGenerate={onGenerate} onStop={onStop} />}>
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} optimization={optimization} disabled={!running && (busy || !canGenerate)} onGenerate={onGenerate} onStop={onStop} />}>
         <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
         <CanvasParameterPopover icon={<SlidersHorizontal />} label="音频参数"><div className="space-y-3"><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div></CanvasParameterPopover>
-        <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
+        <CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} />
         <Button variant="ghost" size="icon-sm" type="button" aria-label={node.url ? "替换音频" : "上传音频"} title={node.url ? "替换音频" : "上传音频"} disabled={uploading || running} onClick={onUpload} className="grid shrink-0 place-items-center disabled:opacity-50">{uploading ? <Spinner /> : <Upload  />}</Button>
       </CanvasNodeInputToolbar>
     </div>
@@ -132,7 +131,7 @@ function AudioSpeedInput({ label, value, min, max, onChange }: { label: string; 
   return <LabeledField className="grid gap-1 text-xs" label={<span className="text-muted-foreground">{label}</span>}>{(fieldId) => <><Input id={fieldId} type="number" min={min} max={max} step={0.05} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { const number = Number(draft); const normalized = Number.isFinite(number) ? Math.max(min, Math.min(max, Number(number.toFixed(2)))) : 1; setDraft(String(normalized)); onChange(normalized); }} /></>}</LabeledField>;
 }
 
-export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReferenceSelect, imageModel, imageModels, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; imageModel: string; imageModels: string[]; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
+export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReferenceSelect, imageModel, imageModels, running, optimization, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; mentionReferences: readonly CanvasResourceReference[]; onReferenceSelect: (reference: CanvasResourceReference) => void; imageModel: string; imageModels: string[]; running: boolean; optimization: CanvasPromptOptimizationAction; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
   const prompt = node.panorama_source_prompt ?? node.prompt ?? "";
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
@@ -140,7 +139,7 @@ export function CanvasPanoramaPromptPanel({ node, mentionReferences, onReference
       <PromptTextareaFrame value={prompt} className="min-h-0 flex-1">
         <CanvasResourceMentionTextarea references={mentionReferences} onReferenceSelect={onReferenceSelect} value={prompt} onChange={onPromptChange} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" containerClassName="min-h-full" className="min-h-full resize-none overflow-hidden" />
       </PromptTextareaFrame>
-      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} onGenerate={onGenerate} onStop={onStop} />}>
+      <CanvasNodeInputToolbar action={<CanvasGenerationFooter running={running} optimization={optimization} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} onGenerate={onGenerate} onStop={onStop} />}>
         <CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} />
         <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} showModel={false} showSize={false} />
         <CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} />

@@ -11,7 +11,7 @@ import { TooltipHint } from "@/components/ui/tooltip";
 import { CanvasAgentAssetMenu } from "./canvas-agent-composer";
 import { CanvasAgentSkillPicker } from "@/app/canvas/canvas-agent-skill-picker";
 import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -29,7 +29,7 @@ import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAg
 import type { CanvasAgentConfig, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "@/app/canvas/agent/canvas-agent-types";
 import { fetchModelConfig } from "@/lib/api";
 import { resolveConfiguredModel } from "@/lib/model-config-selection";
-import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
+import { loadImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import {
@@ -50,14 +50,14 @@ function projectDate(value?: string) {
 
 export default function CanvasLibraryPage({ session }: { session: StoredAuthSession }) {
   const navigate = useNavigate();
-  const { preferences: imageGenerationPreferences, isReady: imageGenerationPreferencesReady } = useImageGenerationPreferences(session.key);
   const [projects, setProjects] = useState<CanvasProjectSummary[]>([]);
   const [activeProjectID, setActiveProjectID] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [query, setQuery] = useState("");
-  const visibleProjects = projects.filter((project) => (project.title || "未命名画布").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const search = query.trim().toLocaleLowerCase();
+  const visibleProjects = useMemo(() => search ? projects.filter((project) => (project.title || "未命名画布").toLocaleLowerCase().includes(search)) : projects, [projects, search]);
   const [busy, setBusy] = useState(false);
   const [selectedProjectIDs, setSelectedProjectIDs] = useState<Set<string>>(new Set());
   const allVisibleSelected = visibleProjects.length > 0 && visibleProjects.every((project) => selectedProjectIDs.has(project.id));
@@ -71,6 +71,9 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const agentUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [agentTextModel, setAgentTextModel] = useState("");
+  const [agentModelLoading, setAgentModelLoading] = useState(false);
+  const [agentModelError, setAgentModelError] = useState("");
+  const [agentModelAttempt, setAgentModelAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,23 +94,29 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }, [session.key, reloadKey]);
 
   useEffect(() => {
-    if (!imageGenerationPreferencesReady) return;
+    if (!agentStarterOpen) return;
     let active = true;
-    void fetchModelConfig()
-      .then(({ config }) => {
+    setAgentTextModel("");
+    setAgentModelLoading(true);
+    setAgentModelError("");
+    void Promise.all([fetchModelConfig(), loadImageGenerationPreferences()])
+      .then(([{ config }, result]) => {
         if (!active) return;
+        if (result.status === "error") throw result.error;
         const textModel = resolveConfiguredModel(
           config.text_models,
-          imageGenerationPreferences.default_text_model,
+          result.preferences.default_text_model,
           config.default_text_model,
         );
+        if (!textModel) setAgentModelError("暂无可用的文本模型");
         setAgentTextModel(textModel);
       })
-      .catch(() => undefined);
+      .catch((error) => { if (active) setAgentModelError(error instanceof Error ? error.message : "加载文本模型失败"); })
+      .finally(() => { if (active) setAgentModelLoading(false); });
     return () => {
       active = false;
     };
-  }, [imageGenerationPreferences.default_text_model, imageGenerationPreferencesReady]);
+  }, [agentStarterOpen, agentModelAttempt, session.key]);
 
   async function createAndOpen() {
     if (busy) return;
@@ -357,7 +366,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               <Button type="button" variant="outline"  disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
               <TooltipHint content={"取消选择"}><Button type="button" variant="ghost" size="icon"  aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button></TooltipHint>
             </> : null}
-            <Button type="button" variant="outline" disabled={busy} onClick={() => setAgentStarterOpen(true)}><Bot />Agent</Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => { setAgentTextModel(""); setAgentModelError(""); setAgentStarterOpen(true); }}><Bot />Agent</Button>
             <Button type="button" disabled={busy} onClick={() => void createAndOpen()}>{busy ? <Spinner /> : <Plus />}新建画布</Button>
           </div>
         </ManagementToolbar>
@@ -415,6 +424,12 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             <DialogTitle className="flex items-center"><Bot className="size-5 text-primary" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
+          {agentModelLoading ? <LoadingState compact label="正在加载文本模型" /> : agentModelError ? (
+            <div className="flex flex-wrap items-center justify-between gap-2" role="alert">
+              <p className="min-w-0 text-sm text-destructive [overflow-wrap:anywhere]">{agentModelError}</p>
+              <Button type="button" size="sm" variant="outline" onClick={() => setAgentModelAttempt((n) => n + 1)}>重试</Button>
+            </div>
+          ) : null}
           <PromptInput data-canvas-agent-starter className="flex-1">
             <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
               <CanvasAgentAttachments attachments={pendingAssets.map((asset) => asset.reference)} onRemove={(id) => setPendingAssets((current) => current.filter((item) => item.reference.id !== id))} />

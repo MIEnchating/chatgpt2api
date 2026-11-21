@@ -8,7 +8,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 import { PasswordInput } from "@/components/password-input";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Ban, CheckCircle2, KeyRound, Plus, RefreshCw, ShieldCheck, TriangleAlert, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -47,6 +47,14 @@ import {
 } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
+const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return "—";
@@ -55,13 +63,7 @@ function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return dateTimeFormatter.format(date);
 }
 
 function normalizeManagedUsers(items: ManagedUser[] | null | undefined) {
@@ -224,17 +226,18 @@ function normalizeUsageCurve(points?: ManagedUser["usage_curve"]): NormalizedUsa
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
-function latestUsagePoint(points?: ManagedUser["usage_curve"]) {
-  const safePoints = normalizeUsageCurve(points);
-  return safePoints[safePoints.length - 1];
-}
-
 function todayCallCount(user: ManagedUser) {
-  return latestUsagePoint(user.usage_curve)?.calls ?? 0;
+  const points = user.usage_curve;
+  if (!Array.isArray(points)) return 0;
+  let latest: (typeof points)[number] | undefined;
+  for (const point of points) {
+    if (point.date && (!latest || point.date.localeCompare(latest.date) >= 0)) latest = point;
+  }
+  return numeric(latest?.calls);
 }
 
-function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
-  const safePoints = useMemo(() => normalizeUsageCurve(points), [points]);
+const UsageSparkline = memo(function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
+  const safePoints = normalizeUsageCurve(points);
 
   if (safePoints.length === 0) {
     return (
@@ -311,12 +314,13 @@ function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
       </div>
     </div>
   );
-}
+});
 
 function roleLabel(user: ManagedUser, roles: ManagedRole[]) {
+  if (user.role_name) return user.role_name;
   const roleID = String(user.role_id || "").trim();
   const role = roles.find((item) => item.id === roleID);
-  return user.role_name || role?.name || "普通用户";
+  return role?.name || "普通用户";
 }
 
 function ManagedUserActions({ user, isPending, onRole, onToggle, onDelete }: {
@@ -376,10 +380,13 @@ function UsersContent() {
   const creatingUserRef = useRef(false);
   const pendingUserIdsRef = useRef(new Set<string>());
   const rolesLoadedRef = useRef(false);
+  const loadRolesAbortRef = useRef<AbortController | null>(null);
   const loadUsersAbortRef = useRef<AbortController | null>(null);
   const loadUsersRequestRef = useRef(0);
   const [items, setItems] = useState<ManagedUser[]>([]);
   const [roles, setRoles] = useState<ManagedRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [searchText, setSearchText] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
@@ -392,6 +399,7 @@ function UsersContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [usageStatsAvailable, setUsageStatsAvailable] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -405,20 +413,19 @@ function UsersContent() {
   const usersQueryRef = useRef({ page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder });
   usersQueryRef.current = { page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder };
 
-  const loadUsers = useCallback(async (overrides: { page?: number; includeRoles?: boolean } = {}) => {
+  const loadUsers = useCallback(async () => {
     if (!pageActiveRef.current) return;
     const { page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder } = usersQueryRef.current;
-    const requestedPage = overrides.page ?? page;
-    const includeRoles = overrides.includeRoles ?? !rolesLoadedRef.current;
     const requestID = loadUsersRequestRef.current + 1;
     loadUsersRequestRef.current = requestID;
     loadUsersAbortRef.current?.abort();
     const controller = new AbortController();
     loadUsersAbortRef.current = controller;
     setIsLoading(true);
+    setLoadError("");
     try {
-      const usersPromise = fetchManagedUsers({
-        page: requestedPage,
+      const usersData = await fetchManagedUsers({
+        page,
         page_size: pageSize,
         search: searchText,
         provider: providerFilter,
@@ -427,10 +434,6 @@ function UsersContent() {
         sort_order: sortOrder,
         signal: controller.signal,
       });
-      const [usersData, rolesData] = await Promise.all([
-        usersPromise,
-        includeRoles ? fetchManagedRoles() : Promise.resolve(null),
-      ]);
       if (requestID !== loadUsersRequestRef.current) {
         return;
       }
@@ -441,20 +444,11 @@ function UsersContent() {
       if (usersData.page && usersData.page !== page) {
         setPage(usersData.page);
       }
-      if (rolesData) {
-        rolesLoadedRef.current = true;
-        const nextRoles = normalizeManagedRoles(rolesData.items);
-        setRoles(nextRoles);
-        setCreateForm((current) => ({
-          ...current,
-          role_id: current.role_id || nextRoles[0]?.id || "",
-        }));
-      }
     } catch (error) {
       if (controller.signal.aborted || requestID !== loadUsersRequestRef.current) {
         return;
       }
-      toast.error(error instanceof Error ? error.message : "加载用户失败");
+      setLoadError(error instanceof Error ? error.message : "加载用户失败");
     } finally {
       if (requestID === loadUsersRequestRef.current) {
         setIsLoading(false);
@@ -465,9 +459,44 @@ function UsersContent() {
     }
   }, []);
 
+  const loadRoles = async () => {
+    if (!pageActiveRef.current || rolesLoadedRef.current || loadRolesAbortRef.current) return;
+    const controller = new AbortController();
+    loadRolesAbortRef.current = controller;
+    setRolesLoading(true);
+    setRolesError("");
+    try {
+      const { items: roleItems } = await fetchManagedRoles({ signal: controller.signal });
+      if (controller.signal.aborted) return;
+      const nextRoles = normalizeManagedRoles(roleItems);
+      setRoles(nextRoles);
+      if (!nextRoles.length) {
+        setRolesError("暂无可用角色");
+        return;
+      }
+      rolesLoadedRef.current = true;
+      setCreateForm((current) => ({
+        ...current,
+        role_id: nextRoles.some((role) => role.id === current.role_id) ? current.role_id : nextRoles[0].id,
+      }));
+      setSelectedRoleId((current) => nextRoles.some((role) => role.id === current) ? current : "");
+    } catch (error) {
+      if (!controller.signal.aborted) setRolesError(error instanceof Error ? error.message : "加载角色失败");
+    } finally {
+      if (loadRolesAbortRef.current === controller) {
+        loadRolesAbortRef.current = null;
+        if (!controller.signal.aborted) setRolesLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     pageActiveRef.current = true;
-    return () => { pageActiveRef.current = false; };
+    return () => {
+      pageActiveRef.current = false;
+      loadRolesAbortRef.current?.abort();
+      loadRolesAbortRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -599,6 +628,7 @@ function UsersContent() {
     setCreateForm(createEmptyUserForm(roleId));
     setCreateErrors({});
     setIsCreateDialogOpen(true);
+    void loadRoles();
   };
 
   const closeCreateDialog = (open: boolean) => {
@@ -611,7 +641,7 @@ function UsersContent() {
   };
 
   const handleCreate = async () => {
-    if (!pageActiveRef.current || creatingUserRef.current) return;
+    if (!pageActiveRef.current || creatingUserRef.current || !rolesLoadedRef.current || !createForm.role_id) return;
     const nextErrors = validateCreateUserForm(createForm);
     if (Object.keys(nextErrors).length > 0) {
       setCreateErrors(nextErrors);
@@ -626,7 +656,7 @@ function UsersContent() {
       setCreateForm(createEmptyUserForm(createForm.role_id));
       setCreateErrors({});
       setIsCreateDialogOpen(false);
-      await loadUsers({ includeRoles: false });
+      await loadUsers();
       if (!pageActiveRef.current) return;
       toast.success("用户已创建");
     } catch (error) {
@@ -644,7 +674,7 @@ function UsersContent() {
     try {
       await updateManagedUser(user.id, { enabled: !user.enabled });
       if (!pageActiveRef.current) return;
-      await loadUsers({ includeRoles: false });
+      await loadUsers();
       if (!pageActiveRef.current) return;
       toast.success(user.enabled ? "用户已禁用" : "用户已启用");
     } catch (error) {
@@ -657,11 +687,12 @@ function UsersContent() {
 
   const openRoleDialog = (user: ManagedUser) => {
     setRoleUser(user);
-    setSelectedRoleId(user.role_id || roles[0]?.id || "");
+    setSelectedRoleId(user.role_id || "");
+    void loadRoles();
   };
 
   const handleSaveRole = async () => {
-    if (!pageActiveRef.current || !roleUser || !selectedRoleId || pendingUserIdsRef.current.has(roleUser.id)) {
+    if (!pageActiveRef.current || !rolesLoadedRef.current || !roleUser || !selectedRoleId || pendingUserIdsRef.current.has(roleUser.id)) {
       return;
     }
     const user = roleUser;
@@ -672,7 +703,7 @@ function UsersContent() {
         role_id: selectedRoleId,
       });
       if (!pageActiveRef.current) return;
-      await loadUsers({ includeRoles: false });
+      await loadUsers();
       if (!pageActiveRef.current) return;
       setRoleUser(null);
       toast.success("角色已保存");
@@ -697,7 +728,7 @@ function UsersContent() {
       await deleteManagedUser(user.id);
       if (!pageActiveRef.current) return;
       setDeletingUser(null);
-      await loadUsers({ includeRoles: false });
+      await loadUsers();
       if (!pageActiveRef.current) return;
       toast.success("用户已删除");
     } catch (error) {
@@ -707,6 +738,15 @@ function UsersContent() {
       if (pageActiveRef.current) setItemPending(user.id, false);
     }
   };
+
+  const roleLoadFeedback = rolesLoading ? (
+    <LoadingState label="正在读取角色" className="min-h-12" />
+  ) : rolesError ? (
+    <Alert variant="destructive" role="alert" className="flex flex-wrap items-center gap-2">
+      <AlertDescription className="min-w-0 flex-1 break-words">{rolesError}</AlertDescription>
+      <Button type="button" variant="outline" size="sm" onClick={() => void loadRoles()}>重试读取角色</Button>
+    </Alert>
+  ) : null;
 
   return (
     <ManagementPage data-users-layout aria-label="用户管理">
@@ -787,6 +827,7 @@ function UsersContent() {
             </div>
           </ManagementToolbar>
           <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-x-contain"><div className="min-w-0">
+            {loadError ? <EmptyState role="alert" icon={TriangleAlert} title="无法加载用户" description={loadError} action={<Button variant="outline" onClick={() => void loadUsers()}>重试</Button>} /> : null}
             <div className="lg:hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
                 <Label className="flex items-center gap-2 text-xs">
@@ -941,7 +982,7 @@ function UsersContent() {
             </Table>
             </div>
             {isLoading && items.length === 0 ? <LoadingState label="正在加载用户" /> : null}
-            {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
+            {!isLoading && !loadError && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
           </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
           <ManagementPagination
             page={safePage}
@@ -959,7 +1000,7 @@ function UsersContent() {
       </ManagementPanel>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={closeCreateDialog}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl" showCloseButton={!isCreating}>
           <DialogHeader >
             <DialogTitle>创建用户</DialogTitle>
             <DialogDescription >创建本地登录用户并绑定角色。</DialogDescription>
@@ -1023,7 +1064,7 @@ function UsersContent() {
                 {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}</>}</LabeledField>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)} disabled={isCreating}>
+              <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)} disabled={isCreating || !roles.length}>
                   <SelectTrigger id={fieldId} >
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
@@ -1045,12 +1086,13 @@ function UsersContent() {
                   </SelectContent>
                 </Select></>}</LabeledField>
             </div>
+            {roleLoadFeedback}
           </form>
           </ScrollArea><DialogFooter>
             <Button type="button" variant="secondary" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
               取消
             </Button>
-            <Button type="submit" form="create-managed-user-form" disabled={isCreating}>
+            <Button type="submit" form="create-managed-user-form" disabled={isCreating || !roles.length || !createForm.role_id}>
               {isCreating ? <Spinner /> : <Plus  />}
               创建
             </Button>
@@ -1059,7 +1101,7 @@ function UsersContent() {
       </Dialog>
 
       <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(roleUser?.id || "") ? setRoleUser(null) : null)}>
-        <DialogContent>
+        <DialogContent showCloseButton={!isSavingRole}>
           <DialogHeader >
             <DialogTitle className="flex items-center">
               <ShieldCheck className="size-5 text-primary" />
@@ -1069,7 +1111,7 @@ function UsersContent() {
               {roleUser?.name || "普通用户"} · {roleUser?.id}
             </DialogDescription>
           </DialogHeader><ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-          <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={selectedRoleId} onValueChange={setSelectedRoleId} disabled={isSavingRole}>
+          <LabeledField className="gap-2" label="角色">{(fieldId) => <><Select value={selectedRoleId} onValueChange={setSelectedRoleId} disabled={isSavingRole || !roles.length}>
               <SelectTrigger id={fieldId} >
                 <SelectValue placeholder="选择角色" />
               </SelectTrigger>
@@ -1081,6 +1123,7 @@ function UsersContent() {
                 ))}
               </SelectContent>
             </Select></>}</LabeledField>
+          {roleLoadFeedback}
           </ScrollArea><DialogFooter>
             <Button
               type="button"
@@ -1095,7 +1138,7 @@ function UsersContent() {
               type="button"
 
               onClick={() => void handleSaveRole()}
-              disabled={isSavingRole || !roleUser || !selectedRoleId}
+              disabled={isSavingRole || !roles.length || !roleUser || !selectedRoleId}
             >
               {isSavingRole ? <Spinner /> : <ShieldCheck  />}
               保存

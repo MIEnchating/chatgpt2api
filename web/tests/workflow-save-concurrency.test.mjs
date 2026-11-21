@@ -10,6 +10,10 @@ const apiSource = readFileSync(
   new URL("../src/services/api/workflows.ts", import.meta.url),
   "utf8",
 );
+const editorSource = readFileSync(
+  new URL("../src/app/workflows/workflow-editor.tsx", import.meta.url),
+  "utf8",
+);
 
 test("workflow completion uses the dedicated last-run resource", () => {
   assert.match(
@@ -39,7 +43,7 @@ test("workflow saves use a synchronous gate and keep the editor locked while pen
     /finally \{\s*workflowSaveBusyRef\.current = false;\s*if \(workspaceActiveRef\.current\) setWorkflowSaving\(false\)/,
   );
   assert.match(workspaceSource, /saving=\{workflowSaving\}/);
-  assert.match(workspaceSource, /busy=\{saving\}/);
-  assert.match(workspaceSource, /<FieldSet disabled=\{saving\}/);
-  assert.match(workspaceSource, /disabled=\{saving \|\| referenceBusy \|\| !workflow\.name\.trim\(\)/);
+  assert.match(editorSource, /busy=\{saving\}/);
+  assert.match(editorSource, /<FieldSet disabled=\{saving\}/);
+  assert.match(editorSource, /disabled=\{saving \|\| referenceBusy \|\| !workflow\.name\.trim\(\)/);
 });

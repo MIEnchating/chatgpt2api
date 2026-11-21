@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"chatgpt2api/internal/service"
@@ -11,7 +12,13 @@ import (
 )
 
 func (a *App) handleCreationTaskEvents(w http.ResponseWriter, r *http.Request, identity service.Identity) {
-	subscription, err := a.tasks.SubscribeTasks(identity)
+	var scope service.CreationTaskEventScope
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := decodeStrictJSON(r.Body, &scope); err != nil || !validCreationTaskEventScope(scope) {
+		util.WriteError(w, http.StatusBadRequest, "任务订阅范围无效")
+		return
+	}
+	subscription, err := a.tasks.SubscribeTasks(identity, scope)
 	if err != nil {
 		if !a.writeCreationTaskStorageError(w, err) {
 			util.WriteError(w, http.StatusServiceUnavailable, "任务事件服务暂时不可用")
@@ -82,4 +89,19 @@ func (a *App) handleCreationTaskEvents(w http.ResponseWriter, r *http.Request, i
 			}
 		}
 	}
+}
+
+func validCreationTaskEventScope(scope service.CreationTaskEventScope) bool {
+	size := len(scope.TaskIDs) + len(scope.WorkflowBatchIDs)
+	if size == 0 {
+		return false
+	}
+	for _, ids := range [][]string{scope.TaskIDs, scope.WorkflowBatchIDs} {
+		for _, id := range ids {
+			if id == "" || id != strings.TrimSpace(id) || strings.ContainsRune(id, 0) {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -91,6 +91,43 @@ func TestXZAPIVideoContractsImportAndMapReferenceInputs(t *testing.T) {
 	}
 }
 
+func TestAIGASAPIVideoContractImportsAndMapsFrames(t *testing.T) {
+	data, err := os.ReadFile("../../integrations/newapi/aigasapi/contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newTestApp(t)
+	defer app.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import-json", strings.NewReader(string(data)))
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"created":1`) {
+		t.Fatalf("import status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	const model = "video-sd-2.5-flash-720p-per-request"
+	contract, ok := protocol.VideoContractForModel(model)
+	if !ok || len(contract.Models) != 42 || contract.Capability.UsageUnit != "count" {
+		t.Fatalf("model or model-specific capability missing for %s", model)
+	}
+	const first = "https://media.example.com/first.png"
+	const last = "https://media.example.com/last.png"
+	input := map[string]any{
+		"model": model, "prompt": "A moving cloud", "seconds": 8,
+		"reference_mode": "image", "reference_image_urls": []string{first, last},
+	}
+	if err := normalizeVideoContractInput(input, contract); err != nil {
+		t.Fatal(err)
+	}
+	request := declaredCanonicalVideoContractRequestPayload(input, contract)
+	if request["model"] != model || request["duration"] != 8 || request["first_frame"] != first ||
+		request["last_frame"] != last || request["references"] != nil {
+		t.Fatalf("incorrect New API frame request: %#v", request)
+	}
+}
+
 func TestNewAPIVideoContractRequestsMatchPluginFixtures(t *testing.T) {
 	contracts := newAPIExampleVideoContracts(t)
 	data, err := os.ReadFile("testdata/newapi-video-contract-cases.json")

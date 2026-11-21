@@ -87,12 +87,16 @@ func (a *App) managedUsersResponseAfterMutation(query managedUsersQuery) map[str
 	return response
 }
 
-func (a *App) managedUser(id string) map[string]any {
-	item := findManagedUser(a.auth.ListUsers(), id)
-	if item == nil {
-		return nil
+func (a *App) attachManagedUserMutationItem(response map[string]any, item map[string]any) {
+	pageItems, _ := response["items"].([]map[string]any)
+	if projected := findManagedUser(pageItems, util.Clean(item["id"])); projected != nil {
+		response["item"] = projected
+		return
 	}
-	return item
+	if err := a.attachManagedUserUsage([]map[string]any{item}); err != nil {
+		response["usage_stats_available"] = false
+	}
+	response["item"] = item
 }
 
 func (a *App) attachManagedUserUsage(items []map[string]any) error {

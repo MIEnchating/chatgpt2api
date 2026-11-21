@@ -7,7 +7,8 @@ const source = readFileSync(new URL("../src/app/workflows/creative-workflow-work
 test("workflow task streaming has one owner and stops with the workspace", () => {
   assert.match(source, /waitForCreationTask\(id, \{ signal, timeoutMs:/);
   assert.match(source, /watchCreationTasks\(/);
-  assert.match(source, /filter\(\(id\) => !directTaskPollIDSet\.has\(id\)\)/);
+  assert.match(source, /backend_task_ids\.some\(id => !directTaskPollIDSet\.has\(id\)\)/);
+  assert.match(source, /watchCreationTasks\(\{\s*workflowBatchIDs/);
   assert.match(source, /return waitForOwnedTask\(submitted\.id, runtime\.timeout\)/);
   assert.match(source, /workflowImageFiles\(taskReferences, taskController\.signal\)/);
   assert.match(source, /requestOptions: \{ signal: taskController\.signal \}/);

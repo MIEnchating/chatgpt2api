@@ -11,7 +11,7 @@ import { PasswordInput } from "@/components/password-input";
 
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, KeyRound, ShieldCheck, UserRound } from "lucide-react";
+import { ArrowRight, KeyRound, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -105,8 +105,8 @@ export default function LoginPage() {
       </div>
 
       <Card className="relative z-10 mx-auto grid w-full max-w-[58rem] overflow-hidden transition-[min-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:min-h-[39rem] lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)] gap-0 p-0">
-        <section className="flex min-h-[460px] flex-col justify-center px-6 py-8 sm:px-10 sm:py-10 lg:px-12">
-          <div className="flex flex-col gap-7 transition-[gap] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:gap-9">
+        <section className="flex min-w-0 flex-col justify-center px-6 py-6 sm:px-10 sm:py-10 lg:px-12">
+          <div className="flex flex-col gap-6 sm:gap-8">
             <div className="flex items-center gap-3">
               <img
                 src={resolveSiteIconSrc(appMeta.site_icon_url)}
@@ -115,7 +115,7 @@ export default function LoginPage() {
                 className="size-11 shrink-0 rounded-xl"
               />
               <div className="grid min-w-0 leading-none">
-                <div className="truncate text-sm font-semibold tracking-[-0.02em] text-foreground">
+                <div className="truncate text-sm font-semibold text-foreground">
                   {appMeta.app_title || "云棉"}
                 </div>
                 <div className="truncate text-[10px] font-medium tracking-[0.28em] text-muted-foreground uppercase">
@@ -124,19 +124,8 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-4">
-              <Card className="inline-flex w-fit items-center gap-2 px-3 py-1 uppercase flex-row">
-                <ShieldCheck className="size-3.5 text-primary" />
-                安全访问
-              </Card>
-              <div className="flex flex-col gap-2 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none">
-                <h1 className="text-[2.1rem] leading-[1.12] font-semibold tracking-[-0.04em] text-foreground sm:text-[2.5rem]">
-                  欢迎回来
-                </h1>
-                <p className="max-w-[340px] text-sm leading-6 text-muted-foreground">
-                  使用账号和密码进入 {appMeta.app_title || "云棉"} 控制台。
-                </p>
-              </div>
+            <div className="flex flex-col gap-2">
+              <h1 className="text-2xl font-semibold text-foreground">登录</h1>
             </div>
 
             <form

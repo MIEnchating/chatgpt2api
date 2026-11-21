@@ -53,7 +53,7 @@ function setup() {
   };
   const exports = {};
   vm.runInNewContext(compiled, {
-    exports, AbortController, DOMException,
+    exports, AbortController, DOMException, Error,
     require(name) {
       if (name === "react") return react;
       if (name === "sonner") return { toast: { error() {} } };
@@ -78,6 +78,29 @@ function setup() {
 }
 
 const asset = (id, title = id) => ({ id, kind: "text", title, content: title, tags: [] });
+
+test("asset list retries keep the current snapshot and clear failures after recovery", async () => {
+  const state = setup();
+  state.render();
+  state.loads[0].resolve([asset("old")]);
+  await settle();
+
+  state.render().reload();
+  state.render();
+  assert.deepEqual(Array.from(state.render().assets, (item) => item.id), ["old"]);
+  state.loads[1].reject(new Error("storage unavailable"));
+  await settle();
+  assert.equal(state.render().loadError, "storage unavailable");
+
+  state.render().reload();
+  state.render();
+  state.loads[2].resolve([asset("fresh")]);
+  await settle();
+  const loaded = state.render();
+  assert.equal(loaded.loadError, "");
+  assert.deepEqual(Array.from(loaded.assets, (item) => item.id), ["fresh"]);
+  state.unmount();
+});
 
 test("a delayed initial asset snapshot preserves successful creations and updates", async () => {
   const state = setup();

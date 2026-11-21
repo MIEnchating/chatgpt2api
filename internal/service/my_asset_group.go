@@ -157,9 +157,27 @@ func myAssetLabelNames(groups []MyAssetGroup, key string) []string {
 	return names
 }
 
+func indexMyAssetLabelNames(groups []MyAssetGroup) map[string][]string {
+	names := make(map[string][]string)
+	for _, group := range groups {
+		for _, key := range group.AssetKeys {
+			names[key] = append(names[key], group.Name)
+		}
+	}
+	return names
+}
+
 func projectMyAssetLabels(document *myAssetDocument) {
+	if len(document.items) == 0 {
+		return
+	}
+	labelsByKey := indexMyAssetLabelNames(document.groups)
 	for index := range document.items {
-		document.items[index].Tags = myAssetLabelNames(document.groups, "self:"+document.items[index].ID)
+		tags := labelsByKey["self:"+document.items[index].ID]
+		if tags == nil {
+			tags = []string{}
+		}
+		document.items[index].Tags = tags
 	}
 }
 

@@ -19,11 +19,12 @@ import { canvasAgentAttachmentURLs } from "../src/app/canvas/agent/canvas-agent-
 import { canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
 import { applyCanvasVideoTaskProgressNodes, reconcilePersistedCanvasTaskNodes } from "../src/app/canvas/canvas-task-results.ts";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
+import { CANVAS_CONFIG_REFERENCE_PATTERN } from "../src/app/canvas/canvas-config-inputs.ts";
 import { canvasGenerationRecoveryTaskID, buildCanvasGenerationContext, canvasGenerationReferenceImageURLs, canvasGenerationNeedsRecovery, canvasVideoGenerationReferences, markCanvasGenerationRecoveryPending, PENDING_CANVAS_GENERATION_RECOVERY_ERROR } from "../src/app/canvas/canvas-generation-context.ts";
 import { prepareImageEditReferences } from "../src/lib/image-edit-references.ts";
 import { videoModelRequiresHTTPSReferences } from "../src/lib/video-model-capabilities.ts";
 import { canvasHistoryKey, createCanvasHistorySnapshot, appendCanvasHistorySnapshot, canvasHistoryLeaseExpired, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, commitCanvasGenerationHistory } from "../src/app/canvas/canvas-history.ts";
-import { canvasSaveRequired, flushCanvasSaves } from "../src/app/canvas/canvas-save.ts";
+import { canvasSaveRequired, flushCanvasSaves, submitCanvasSave } from "../src/app/canvas/canvas-save.ts";
 import { canCreateCanvasConnection } from "../src/app/canvas/canvas-connections.ts";
 import { isPublicReferenceURL } from "../src/lib/public-reference-url.ts";
 import { normalizeCanvasClipboard } from "../src/app/canvas/canvas-clipboard.ts";
@@ -39,7 +40,7 @@ function pageHandler(file, name, dependencies) {
   dependencies = {
     setCanvasSaveError() {}, setSavingCanvas() {}, checkpointCanvasDraft() {}, refreshCanvasDrafts() {},
     setRecoveryDrafts() {}, setRecoveryDialogOpen() {}, setDiscardRecoveryDraft() {}, setProcessingRecoveryDraft() {}, setRecoveryDraftError() {},
-    recoveryDraftTimerRef: { current: null }, recoveryDraftWriterRef: { current: "" }, session: {}, canvasRecoveryDraftScope,
+    recoveryDraftTimerRef: { current: null }, recoveryDraftWriterRef: { current: "" }, session: {}, canvasRecoveryDraftScope, submitCanvasSave,
     ...dependencies,
   };
   dependencies = { canvasDocumentValuesEqual, canvasGenerationRecoveryTaskID, createCanvasHistorySnapshot, agentHistoryConflictRef: {current: null}, isCanvasAgentSession, CanvasAgentSessionConflictError, forkCanvasAgentSessionConflicts, setAgentHistoryConflict() {}, setAgentSyncError() {}, parseCanvasAgentSessions, canvasScriptShotPosition, canvasGenerationNeedsRecovery, canvasAgentHistoryChanges, canvasAgentHistoryReceipt, canvasAgentHistorySummaries, setAgentSessionSummaries() {}, persistGenerationCheckpoint: async () => {}, imageGenerationPreferences: { node_regenerate_behavior: "new-node", workbench: { video_generate_audio: false } }, ...dependencies };
@@ -56,6 +57,96 @@ function pageHandler(file, name, dependencies) {
   const code = ts.transpileModule(`const handler = ${declaration.getText(source).replace(/^export\s+/, "")};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   return new Function(...Object.keys(dependencies), `${code}\nreturn handler;`)(...Object.values(dependencies));
 }
+
+test("canvas prompt optimization uses each node's draft and only applies a valid, current result", async () => {
+  const draft = "保留图片1，调整光线";
+  const optimized = "保持图片1的主体，改用柔和侧光。";
+  async function optimize({ type = "image", values = {}, change, result } = {}) {
+    const node = { id: "node", type, prompt: draft, ...values };
+    const nodesRef = { current: [node] };
+    const drafts = { current: type === "image" ? { node: draft } : {} };
+    const nodePromptDraft = pageHandler("page.tsx", "nodePromptDraft", { imagePromptDraftsRef: drafts });
+    const epoch = { current: 1 };
+    const commits = [];
+    const errors = [];
+    const requests = [];
+    const active = new Map();
+    const handler = pageHandler("page.tsx", "optimizeNodePrompt", {
+      nodesRef, activeGenerationsRef: { current: active }, nodePromptDraft,
+      canvasOperationEpochRef: epoch, mountedRef: { current: true }, session: { key: "session" },
+      getCachedAuthSession: () => ({ key: "session" }),
+      textModel: "text-model", textModels: ["text-model", "node-text-model"],
+      resolveCanvasTextModel: (model, models) => models.includes(model) ? model : "",
+      nextTokenNameForModel: () => "text-token", randomID: () => "test",
+      PROMPT_OPTIMIZATION_INSTRUCTION: "Rewrite only the prompt",
+      PROMPT_OPTIMIZATION_GUIDANCE: { image: "image", video: "video", text: "text", audio: "audio", panorama: "panorama" },
+      CANVAS_CONFIG_REFERENCE_PATTERN,
+      registerActiveGeneration(controller, [nodeID], ids, kind) {
+        const job = { controller, ids, kind };
+        active.set(nodeID, job);
+        return job;
+      },
+      createChatGenerationTask: async (request) => { requests.push(request); return { id: "server-task" }; },
+      addActiveGenerationTask: () => {},
+      async waitForTask(taskID) {
+        assert.equal(taskID, "server-task");
+        assert.equal(active.get(node.id).kind, "prompt-optimization");
+        change?.({ drafts, epoch, replaceNode: (patch) => { nodesRef.current = [{ ...node, ...patch }]; } });
+        return result || { status: "success", data: [{ text_response: `  ${optimized}  ` }] };
+      },
+      setImagePromptDrafts: (update) => { drafts.current = update(drafts.current); },
+      updateNodePrompt: (...args) => commits.push(["prompt", ...args]),
+      updateNodeComposerContent: (...args) => commits.push(["composer", ...args]),
+      updatePanoramaPrompt: (...args) => commits.push(["panorama", ...args]),
+      completeActiveGeneration: () => active.delete(node.id),
+      toast: { error: (message) => errors.push(message), info: () => {} },
+    });
+    await handler(node.id);
+    assert.equal(active.size, 0);
+    const [request] = requests;
+    if (request) {
+      assert.equal(request.relayTokenName, "text-token");
+      assert.deepEqual(request.messages.map((message) => message.role), ["system", "user"]);
+    }
+    return { draft: drafts.current.node, commits, errors, request };
+  }
+
+  const image = await optimize({ values: { url: "/reference.png", prompt: "原图提示词" } });
+  assert.equal(image.draft, optimized);
+  assert.match(image.request.messages[1].content, /编辑图片/);
+  assert.deepEqual(image.commits, []);
+  for (const [type, values, field, purpose] of [
+    ["image", {}, "prompt", "生成图片"],
+    ["video", {}, "prompt", "生成视频"],
+    ["audio", {}, "prompt", "合成音频"],
+    ["panorama", { prompt: "渲染提示词", panorama_source_prompt: draft }, "panorama", "生成全景图"],
+    ["text", { prompt: "文本结果", composer_content: draft, generation_text_model: "node-text-model" }, "composer", "生成或修改文本"],
+    ["config", { generation_mode: "video", composer_content: draft }, "composer", "生成视频"],
+    ["config", {}, "composer", "生成图片"],
+  ]) {
+    const { request, commits, errors } = await optimize({ type, values });
+    assert.equal(request.prompt, draft);
+    assert.equal(request.model, values.generation_text_model || "text-model");
+    assert.ok(request.messages[1].content.includes(purpose));
+    assert.deepEqual(commits, [[field, "node", optimized, true]]);
+    assert.deepEqual(errors, []);
+  }
+  for (const type of ["script", "director", "group", "text"]) {
+    assert.equal((await optimize({ type })).request, undefined);
+  }
+  assert.equal((await optimize({ change: ({ drafts }) => { drafts.current.node = "新的修改要求"; } })).draft, "新的修改要求");
+  assert.deepEqual((await optimize({ type: "video", change: ({ replaceNode }) => replaceNode({ prompt: "新的镜头" }) })).commits, []);
+  assert.deepEqual((await optimize({ change: ({ epoch }) => { epoch.current += 1; } })).commits, []);
+  assert.deepEqual((await optimize({ type: "config", change: ({ replaceNode }) => replaceNode({ generation_mode: "audio" }) })).commits, []);
+  assert.deepEqual((await optimize({ result: { status: "error", error: "上游失败" } })).errors, ["上游失败"]);
+  assert.deepEqual((await optimize({ result: { status: "success", data: [{ text_response: " " }] } })).errors, ["文本模型返回了空提示词"]);
+  const tokens = { composer_content: "使用 @[node:ref]，保留 @[node:ref]" };
+  const preserved = { status: "success", data: [{ text_response: "参考 @[node:ref]，并保留 @[node:ref] 的动作" }] };
+  assert.deepEqual((await optimize({ type: "config", values: tokens, result: preserved })).commits, [["composer", "node", preserved.data[0].text_response, true]]);
+  const dropped = await optimize({ type: "config", values: tokens });
+  assert.deepEqual(dropped.commits, []);
+  assert.deepEqual(dropped.errors, ["优化结果更改了节点引用，已保留原提示词"]);
+});
 
 test("canvas recovery stores only edited conversation bodies and preserves other server history", () => {
   const makeSession = id => ({
@@ -1555,7 +1646,7 @@ function canvasNodeDragHarness(initial, current, movingIDs = new Set(["a"]), vis
     calculateCanvasAlignment, createCanvasAlignmentContext: (...args) => { alignmentBuilds++; return createCanvasAlignmentContext(...args); },
     updateCanvasConnectionGeometry, findCanvasGroupDropTargetForNodes, findContainingCanvasGroupID, snapCanvasNodesIntoGroup,
     setAlignmentGuides: value => guides.push(value), setDropTargetGroupID: id => targets.push(id),
-    onNodesChange: nodes => { nodesRef.current = nodes; },
+    onNodeGeometryChange: nodes => { nodesRef.current = nodes; },
     interactionPointerRef: { current: 7 }, panRef: { current: { active: false } },
     resizeRef: { current: { active: false } }, connectionRef: { current: null }, selectionRef: { current: null },
     cancelPendingFrame() {}, onNodesCommit() {}, syncToolCursor() {},
@@ -1680,7 +1771,7 @@ test("resizing never restores a deleted node in the connection index", () => {
     resizeRef: { current: { active: true, corner: "bottom-right", node: start } }, nodesRef: { current: remaining },
     screenToWorld: (x, y) => ({ x, y }),
     updateDraggedConnectionIndex: (geometry, snapshot) => updateCanvasConnectionGeometry(index, geometry, snapshot),
-    onNodesChange: nodes => { result = nodes; },
+    onNodeGeometryChange: nodes => { result = nodes; },
   });
   resize(500, 500);
   assert.equal(index.geometryByNode.has("a"), false);

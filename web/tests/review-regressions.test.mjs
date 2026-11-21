@@ -30,7 +30,10 @@ describe("review regressions", () => {
   test("managed assets expose loading, persistent error, and retry states", () => {
     expect(assetsSource).toContain("managedLoading");
     expect(assetsSource).toContain("managedError");
-    expect(assetsSource).toContain("setManagedReloadKey((value) => value + 1)");
+    expect(assetsSource).toContain('name: "自有素材", error: loadError, retry: reload');
+    expect(assetsSource).toContain('name: "生成图片", error: managedError, retry:');
+    expect(assetsSource).toContain('name: "共享素材", error: visibleError, retry:');
+    expect(assetsSource).toContain("onClick={retry}");
     expect(assetsSource).toContain("loading || visibleLoading || managedLoading");
   });
 });

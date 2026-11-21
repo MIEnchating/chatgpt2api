@@ -525,7 +525,7 @@ func (s *CanvasDocumentService) saveAgent(owner string, doc CanvasDocument) (Can
 // WaitCanvasAgentTask waits independently of the requesting browser connection.
 // It is driven by task change notifications instead of polling.
 func WaitCanvasAgentTask(ctx context.Context, tasks *ImageTaskService, identity Identity, id string, onText func(string) error, onProgress func(int) error) (map[string]any, error) {
-	subscription, err := tasks.SubscribeTasks(identity)
+	subscription, err := tasks.SubscribeTasks(identity, CreationTaskEventScope{TaskIDs: []string{id}})
 	if err != nil {
 		return nil, err
 	}

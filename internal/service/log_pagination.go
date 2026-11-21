@@ -59,23 +59,24 @@ func (s *LogService) SearchPage(query LogQuery) (LogSearchPage, error) {
 	if !ok {
 		return LogSearchPage{}, fmt.Errorf("log page storage backend is required")
 	}
-	queryHash := logQueryCursorHash(query)
+	scope := normalizeLogQueryScope(query)
+	queryHash := scope.cursorHash()
 	cursor, err := decodeLogCursor(query.Cursor, queryHash)
 	if err != nil {
 		return LogSearchPage{}, err
 	}
-	startDate, endDate := logQueryDateBounds(query)
-	return searchFilteredLogPage(pager, query, startDate, endDate, cursor, queryHash, limit)
+	startDate, endDate := scope.dateBounds()
+	return searchFilteredLogPage(pager, scope, startDate, endDate, cursor, queryHash, limit)
 }
 
-func searchFilteredLogPage(pager storage.LogPageBackend, query LogQuery, startDate, endDate string, cursor *storage.LogCursor, queryHash string, limit int) (LogSearchPage, error) {
+func searchFilteredLogPage(pager storage.LogPageBackend, scope logCursorQueryScope, startDate, endDate string, cursor *storage.LogCursor, queryHash string, limit int) (LogSearchPage, error) {
 	batchSize := min(max(256, limit*2), 1000)
 	out := make([]map[string]any, 0, limit)
 	snapshotID := int64(0)
 	if cursor != nil {
 		snapshotID = cursor.SnapshotID
 	}
-	var lastMatchCursor *storage.LogCursor
+	var previousRecord storage.LogCursor
 	for {
 		page, err := pager.QueryLogPage(startDate, endDate, cursor, batchSize)
 		if err != nil {
@@ -85,15 +86,14 @@ func searchFilteredLogPage(pager storage.LogPageBackend, query LogQuery, startDa
 			snapshotID = page.SnapshotID
 		}
 		for _, record := range page.Records {
-			if !matchLogQuery(record.Item, query) {
-				continue
+			if scope.matches(record.Item) {
+				if len(out) == limit {
+					// Resume immediately before the next match, skipping records already rejected by this query.
+					return newLogSearchPage(out, &previousRecord, true, snapshotID, queryHash)
+				}
+				out = append(out, publicLogItem(record.Item))
 			}
-			if len(out) == limit {
-				return newLogSearchPage(out, lastMatchCursor, true, snapshotID, queryHash)
-			}
-			out = append(out, publicLogItem(record.Item))
-			matchCursor := record.Cursor
-			lastMatchCursor = &matchCursor
+			previousRecord = record.Cursor
 		}
 		if page.NextCursor == nil {
 			return newLogSearchPage(out, nil, false, snapshotID, queryHash)
@@ -173,12 +173,12 @@ func validStorageLogCursor(cursor storage.LogCursor) bool {
 	return err == nil && parsed.Format("2006-01-02") == cursor.Day
 }
 
-func logQueryCursorHash(query LogQuery) string {
+func normalizeLogQueryScope(query LogQuery) logCursorQueryScope {
 	status := strings.TrimSpace(query.Status)
 	if strings.EqualFold(status, "success") || strings.EqualFold(status, "failed") {
 		status = strings.ToLower(status)
 	}
-	scope := logCursorQueryScope{
+	return logCursorQueryScope{
 		Username:      strings.ToLower(strings.TrimSpace(query.Username)),
 		Module:        strings.ToLower(strings.TrimSpace(query.Module)),
 		Method:        strings.ToLower(strings.TrimSpace(query.Method)),
@@ -193,6 +193,9 @@ func logQueryCursorHash(query LogQuery) string {
 		EndTime:       normalizeLogTimeFilter(query.EndTime, true),
 		View:          NormalizeLogView(query.View, LogViewAll),
 	}
+}
+
+func (scope logCursorQueryScope) cursorHash() string {
 	payload, _ := json.Marshal(scope)
 	digest := sha256.Sum256(payload)
 	return base64.RawURLEncoding.EncodeToString(digest[:])

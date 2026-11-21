@@ -113,3 +113,11 @@ func TestDefaultUserPermissionsIncludeCreatorFlows(t *testing.T) {
 		}
 	}
 }
+
+func TestCreationTaskEventSubscriptionUsesReadPermission(t *testing.T) {
+	read := PermissionSet{APIPermissions: []string{APIPermissionKey("GET", "/api/creation-tasks")}}
+	write := PermissionSet{APIPermissions: []string{APIPermissionKey("POST", "/api/creation-tasks")}}
+	if !HasAPIPermission(read, "POST", "/api/creation-tasks/events") || HasAPIPermission(write, "POST", "/api/creation-tasks/events") {
+		t.Fatal("task observation must require the creation task read permission")
+	}
+}

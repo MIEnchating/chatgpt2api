@@ -16,21 +16,44 @@ export type {
   PromptMarketSourceId,
 } from "@/lib/prompt-market-types";
 
-export function promptMatchesKeyword(prompt: Pick<BananaPrompt, "title" | "prompt">, keyword: string) {
-  const normalizedKeyword = keyword.trim().toLowerCase();
-  if (!normalizedKeyword) return true;
-  return prompt.title.toLowerCase().includes(normalizedKeyword) || prompt.prompt.toLowerCase().includes(normalizedKeyword);
+export type PromptMarketEntry = {
+  original: BananaPrompt;
+  localized: BananaPrompt;
+  tags: string[];
+  searchTitle: string;
+  searchPrompt: string;
+};
+
+export function preparePromptMarketEntries(prompts: readonly BananaPrompt[]): PromptMarketEntry[] {
+  return prompts
+    .map((original) => {
+      const timestamp = Date.parse(original.created || "");
+      return { original, timestamp: Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY };
+    })
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .map(({ original }) => {
+      const translation = original.localizations?.["zh-CN"] ?? original.localizations?.en;
+      const localized = translation ? {
+        ...original,
+        title: translation.title,
+        prompt: translation.prompt,
+        category: translation.category,
+        subCategory: translation.subCategory,
+      } : original;
+      return {
+        original,
+        localized,
+        tags: [...new Set(original.tags.filter((tag) => tag.trim()))],
+        searchTitle: localized.title.toLowerCase(),
+        searchPrompt: localized.prompt.toLowerCase(),
+      };
+    });
 }
 
-export function sortPromptMarketPrompts(prompts: BananaPrompt[]) {
-  return prompts
-    .map((prompt, index) => ({ prompt, index, timestamp: Date.parse(prompt.created || "") }))
-    .sort((left, right) => {
-      const leftTimestamp = Number.isFinite(left.timestamp) ? left.timestamp : Number.NEGATIVE_INFINITY;
-      const rightTimestamp = Number.isFinite(right.timestamp) ? right.timestamp : Number.NEGATIVE_INFINITY;
-      return rightTimestamp - leftTimestamp || left.index - right.index;
-    })
-    .map(({ prompt }) => prompt);
+export function searchPromptMarketEntries(entries: PromptMarketEntry[], keyword: string) {
+  const query = keyword.trim().toLowerCase();
+  if (!query) return entries;
+  return entries.filter(({ searchTitle, searchPrompt }) => searchTitle.includes(query) || searchPrompt.includes(query));
 }
 
 const BANANA_PROMPTS_URL =
@@ -106,18 +129,9 @@ export const DEFAULT_PROMPT_MARKET_SOURCES: PromptMarketSourceConfig[] = [
 
 const PROMPT_MARKET_CACHE_TTL_MS = 5 * 60 * 1000;
 const PROMPT_MARKET_CACHE_LIMIT = 8;
-const promptMarketCaches = new Map<string, ExpiringRequestCache<BananaPrompt[]>>();
+const promptMarketCaches = new Map<string, Map<string, ExpiringRequestCache<BananaPrompt[]>>>();
 
-function promptMarketSourceCacheKey(sources: PromptMarketSourceConfig[]) {
-  return JSON.stringify(sources.map(({ id, label, url, homepage, format, enabled }) => ({
-    id,
-    label,
-    url,
-    homepage: homepage || "",
-    format,
-    enabled,
-  })));
-}
+type PromptMarketResult = { prompts: BananaPrompt[]; failedSources: string[] };
 
 function abortError() {
   const error = new Error("请求已取消");
@@ -125,10 +139,10 @@ function abortError() {
   return error;
 }
 
-function waitForPromptMarketRequest(request: Promise<BananaPrompt[]>, signal?: AbortSignal) {
+function waitForPromptMarketRequest(request: Promise<PromptMarketResult>, signal?: AbortSignal) {
   if (!signal) return request;
   if (signal.aborted) return Promise.reject(abortError());
-  return new Promise<BananaPrompt[]>((resolve, reject) => {
+  return new Promise<PromptMarketResult>((resolve, reject) => {
     const abort = () => reject(abortError());
     signal.addEventListener("abort", abort, { once: true });
     request.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
@@ -507,12 +521,9 @@ export async function fetchPromptMarketSourcePrompts(source: PromptMarketSourceC
 export async function fetchPromptMarketPrompts(signal?: AbortSignal, configuredSources: PromptMarketSourceConfig[] = DEFAULT_PROMPT_MARKET_SOURCES) {
   if (signal?.aborted) throw abortError();
   const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
-  if (!sources.length) return [];
-  const cacheKey = promptMarketSourceCacheKey(sources);
-  let cache = promptMarketCaches.get(cacheKey);
-  if (!cache) {
-    cache = createExpiringRequestCache<BananaPrompt[]>(PROMPT_MARKET_CACHE_TTL_MS);
-  }
+  if (!sources.length) return { prompts: [], failedSources: [] };
+  const cacheKey = JSON.stringify(sources);
+  const cache = promptMarketCaches.get(cacheKey) ?? new Map<string, ExpiringRequestCache<BananaPrompt[]>>();
   promptMarketCaches.delete(cacheKey);
   promptMarketCaches.set(cacheKey, cache);
   while (promptMarketCaches.size > PROMPT_MARKET_CACHE_LIMIT) {
@@ -520,13 +531,22 @@ export async function fetchPromptMarketPrompts(signal?: AbortSignal, configuredS
     if (oldestKey === undefined) break;
     promptMarketCaches.delete(oldestKey);
   }
-  const request = cache.get(async () => {
-    const results = await Promise.allSettled(sources.map((source) => fetchPromptMarketSourcePrompts(source)));
-    const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-    if (prompts.length > 0 || results.some((result) => result.status === "fulfilled")) return prompts;
-
-    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    throw failure?.reason instanceof Error ? failure.reason : new Error("读取提示词市场失败");
+  const requests = sources.map((source) => {
+    const entry = cache.get(source.id) ?? createExpiringRequestCache<BananaPrompt[]>(PROMPT_MARKET_CACHE_TTL_MS);
+    cache.set(source.id, entry);
+    return entry.get(() => fetchPromptMarketSourcePrompts(source));
+  });
+  const request = Promise.allSettled(requests).then((results) => {
+    const prompts: BananaPrompt[] = [];
+    const failedSources: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        for (const prompt of result.value) prompts.push(prompt);
+      } else {
+        failedSources.push(sources[index].label);
+      }
+    });
+    return { prompts, failedSources };
   });
   return waitForPromptMarketRequest(request, signal);
 }

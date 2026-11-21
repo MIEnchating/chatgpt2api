@@ -7,12 +7,13 @@ async function source(path) {
 }
 
 test("account creation preferences do not use browser storage", async () => {
-  const [imagePage, workflowRuntime, canvasDefaults, canvasPage, workflowWorkspace] = await Promise.all([
+  const [imagePage, workflowRuntime, canvasDefaults, canvasPage, workflowWorkspace, workflowEditor] = await Promise.all([
     source("../src/app/image/page.tsx"),
     source("../src/app/workflows/workflow-runtime.ts"),
     source("../src/app/canvas/canvas-image-parameter-defaults.ts"),
     source("../src/app/canvas/page.tsx"),
     source("../src/app/workflows/creative-workflow-workspace.tsx"),
+    source("../src/app/workflows/workflow-editor.tsx"),
   ]);
   assert.doesNotMatch(imagePage, /image_last_|image_generation_snap_to_multiple_16/);
   assert.doesNotMatch(imagePage, /similar-image-intent|image_similar_intent|consumeSimilarImageIntent/);
@@ -24,7 +25,8 @@ test("account creation preferences do not use browser storage", async () => {
   assert.match(imagePage, /resolveConfiguredModel\([\s\S]*?image_models,[\s\S]*?workbench\.image_model,[\s\S]*?default_image_model,[\s\S]*?config\.default_image_model/);
   assert.match(imagePage, /resolveConfiguredVideoModel\([\s\S]*?workbench\.video_model,[\s\S]*?default_video_model,[\s\S]*?config\.default_video_model/);
   assert.match(canvasPage, /function updateNodeGenerationParameters[\s\S]*?pushHistory\(\);/);
-  assert.match(workflowWorkspace, /onModelChange=\{\(model\) => patchConfig\(\{ model, image_model: model \}\)\}/);
+  assert.doesNotMatch(workflowEditor, /localStorage|sessionStorage/);
+  assert.match(workflowEditor, /onModelChange=\{\(model\) => patchConfig\(\{ model, image_model: model \}\)\}/);
   assert.match(workflowWorkspace, /saveWorkflow\(normalizeWorkflow\(workflow, models, preferences\)\)/);
 });
 
