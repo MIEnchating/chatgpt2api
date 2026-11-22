@@ -1,6 +1,6 @@
 # 画布 Codex 与 MCP 本地服务
 
-此目录为独立的 Node.js 本地服务，无 npm 依赖。画布页面通过本机 HTTP 连接服务，再使用 Codex 官方 app-server 的 stdio 协议。当前实现按 Codex CLI 0.167.0 的 schema 校验；动态工具接口属于官方 experimental API，升级 CLI 后应先执行下面的验证。
+此目录为独立的 Node.js 本地服务，无 npm 依赖。画布页面通过本机 HTTP 连接服务，再使用 Codex 官方 app-server 的 stdio 协议。当前实现按 Codex CLI 0.171.0 的 schema 校验；动态工具接口属于官方 experimental API，升级 CLI 后应先执行下面的验证。
 
 ## 运行
 
@@ -35,6 +35,10 @@ node canvas-agent/server.mjs --origin http://127.0.0.1:8002 --codex-bin "C:\Tool
 关闭页面、退出账号或断开连接会停止对应的 Codex 子进程及待确认工具；已提交的媒体生成任务仍由现有后端处理。结束使用后在运行服务的终端按 Ctrl+C。
 
 ## 外部 MCP 连接
+
+`analyze_video` 工具可以读取当前账号可访问的画布视频，并返回带真实时间戳的图片内容，供 Codex 或 MCP 客户端分析。传入 `nodeId` 和 `question`；可用 `startMs`、`endMs` 指定区间，`detailed: true` 将默认每秒一帧改为每半秒一帧。每批最多 90 帧，返回 `nextStartMs` 时按该位置续读。检查快速动作时可指定不超过 250 毫秒的区间读取全部原始帧，`original: true` 显式启用此模式。抽帧不包含音频。FFmpeg/ffprobe 在 Go 后端所在机器运行，复用服务端已有安装；客户端需要支持 MCP 图片输入。升级本地连接服务后重新启动服务和连接，加载新的媒体消息上限与公开推理摘要参数。
+
+Codex 每轮请求公开推理摘要，界面实时显示已发布摘要。上下文指示器使用当前模型、线程和连接服务的 `thread/tokenUsage/updated` 上报数据并随会话保存；未上报窗口时不根据模型名称推算。批量问答保留所有答案供修改，点击确认后才继续执行。
 
 连接后点击“复制 MCP 连接 ID”。将以下服务添加到支持 stdio MCP 的客户端，路径须替换为此仓库的绝对路径，环境变量值须替换为当前本地服务及画布连接的信息：
 

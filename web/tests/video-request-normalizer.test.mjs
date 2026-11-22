@@ -280,3 +280,18 @@ test("uses one visibility snapshot for validation and the submitted request", ()
     installVideoModelContracts(previous);
   }
 });
+
+test("Seedance draft completion sends only the owned local sample task ID", () => {
+  const previous = activeVideoModelContracts();
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.name = "Seedance draft test";
+  contract.capability.resolutions = ["480p", "720p", "1080p"];
+  contract.models = ["seedance-2.5"];
+  contract.driver = "ark-seedance";
+  installVideoModelContracts([contract]);
+  try {
+    const body = videoGenerationTaskRequestBody({ clientTaskId: "final", model: "seedance-2.5", prompt: "do not resend", draftSourceTaskId: "local-sample", referenceImageURLs: ["https://example.test/old.jpg"] });
+    assert.deepEqual(body, { client_task_id: "final", model: "seedance-2.5", draft_source_task_id: "local-sample" });
+    assert.throws(() => videoGenerationTaskRequestBody({ clientTaskId: "wrong", model: "unconfigured", prompt: "test", draft: true }));
+  } finally { installVideoModelContracts(previous); }
+});

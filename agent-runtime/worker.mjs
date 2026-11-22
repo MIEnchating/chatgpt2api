@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { createExecutionGraph } from './graph.mjs';
 import { migrateOpenAIState } from './migrate-state.mjs';
-import { createInputFilter, visualWindow } from './memory.mjs';
+import { createInputFilter, estimateTokens, isContextLimitError, visualWindow } from './memory.mjs';
 import { GatewaySession, importProtocol, modelMessages, modelOutput, protocolMessages } from './history.mjs';
 
 const lines = createInterface({ input: process.stdin });
@@ -103,6 +103,7 @@ async function execute(config) {
         await checkpoint(state);
       }
       const latest = await rpc('context');
+      const budgetInstructions = [latest.instructions, correction].filter(Boolean).join('\n\n');
       let input = state.modelContext
         ? visualWindow([...state.modelContext.input, ...state.history.slice(state.modelContext.through)], 8)
         : [...visualWindow(state.history.slice(0, state.currentStart), 0), ...visualWindow(state.history.slice(state.currentStart), 8)];
@@ -114,7 +115,6 @@ async function execute(config) {
         if (latest.snapshot && input.findLast(item => item.contextSnapshot)?.content !== latest.snapshot) {
           input.push({ role: 'user', content: latest.snapshot, contextSnapshot: true });
         }
-        const budgetInstructions = [latest.instructions, correction].filter(Boolean).join('\n\n');
         let filtered;
         try {
           filtered = await filter({ modelData: { input, instructions: budgetInstructions } });
@@ -127,14 +127,28 @@ async function execute(config) {
         state = { ...state, modelContext: { through: state.history.length, input } };
         await checkpoint(state);
       }
-      const messages = modelMessages(input, latest.instructions);
+      let messages = modelMessages(input, latest.instructions);
       const transient = correction;
       if (transient) messages.push({ role: 'user', content: transient });
       const tools = config.tools.map(({ function: item }) => ({ type: 'function', ...item }));
       let turn;
       let invalid = 0;
+      let compactions = 0;
       for (;;) {
-        turn = bootstrap || await modelRPC('model', { contextUsage, input, messages, tools, modelSettings: { parallelToolCalls: false, ...(config.tools.some(item => item.function.name === config.completionTool) ? { toolChoice: 'required' } : {}) } });
+        try {
+          turn = bootstrap || await modelRPC('model', { contextUsage, input, messages, tools, modelSettings: { parallelToolCalls: false, ...(config.tools.some(item => item.function.name === config.completionTool) ? { toolChoice: 'required' } : {}) } });
+        } catch (error) {
+          if (config.conversation || !isContextLimitError(error) || compactions >= 3) throw error;
+          const filtered = await filter({ modelData: { input, instructions: budgetInstructions }, force: true });
+          if (!filtered.compacted || estimateTokens(filtered.input) >= estimateTokens(input)) throw error;
+          input = filtered.input;
+          state = { ...state, modelContext: { through: state.history.length, input } };
+          await checkpoint(state);
+          messages = modelMessages(input, latest.instructions);
+          if (correction) messages.push({ role: 'user', content: correction });
+          compactions++;
+          continue;
+        }
         bootstrap = undefined;
         const ids = new Set(state.history.filter(item => item.type === 'function_call').map(item => item.callId.trim()));
         const malformed = !Array.isArray(turn.tool_calls || []) || (turn.tool_calls || []).some(call => {

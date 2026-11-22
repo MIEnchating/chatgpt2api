@@ -1135,26 +1135,18 @@ test("canvas zoom shortcuts preserve keyboard input in node editors", () => {
   }
 });
 
-test("canvas copy shortcuts preserve selected chat text even when keyboard focus is on the page", () => {
-  for (const modifier of ["ctrlKey", "metaKey"]) {
-    let copiedNodes = 0;
-    let selectedText = "Agent 中选中的文字";
-    const keydown = pageHandler("page.tsx", "keydown", {
-      window: { getSelection: () => ({ toString: () => selectedText }) },
-      documentRef: { current: {} },
-      copySelected: () => { copiedNodes++; },
-    });
-    const event = () => ({ key: "c", [modifier]: true, target: { tagName: "BODY", closest: () => null }, prevented: false, preventDefault() { this.prevented = true; } });
-    const textCopy = event();
-    keydown(textCopy);
-    assert.equal(textCopy.prevented, false, "browser must copy the selected text");
-    assert.equal(copiedNodes, 0, "selected canvas nodes must not override chat text");
-    selectedText = "";
-    const nodeCopy = event();
-    keydown(nodeCopy);
-    assert.equal(nodeCopy.prevented, true);
-    assert.equal(copiedNodes, 1, "node copying must still work without a text selection");
-  }
+test("canvas native copy preserves selected chat text without stealing keyboard shortcuts", () => {
+  let copiedNodes = 0, selectedText = "Agent 中选中的文字";
+  const copy = pageHandler("page.tsx", "clipboard", {
+    Element: class {}, window: { getSelection: () => ({ toString: () => selectedText }) }, documentRef: { current: {} },
+    copySelected: () => { copiedNodes++; },
+  });
+  const event = { type: "copy", target: null };
+  copy(event);
+  assert.equal(copiedNodes, 0);
+  selectedText = "";
+  copy(event);
+  assert.equal(copiedNodes, 1);
 });
 
 function textGenerationHarness(prompt = "", overrides = {}) {
@@ -1841,16 +1833,17 @@ test("canvas project dialog ignores resubmission while a mutation is pending", (
 
 test("copying one child of a group produces a pasteable detached node", async () => {
   const child = { id: "child", type: "text", group_id: "group", x: 10, y: 10, width: 340, height: 240, scale_x: 1, scale_y: 1 };
-  const clipboardRef = { current: null };
+  let serialized;
   await pageHandler("page.tsx", "copySelected", {
     nodesRef: { current: [{ ...child, id: "group", type: "group", group_id: undefined }, child] },
-    connectionsRef: { current: [] }, selectedNodeIDs: new Set(["child"]), clipboardRef,
+    connectionsRef: { current: [] }, selectedNodeIDs: new Set(["child"]),
     expandCanvasBatchNodeIDs, expandCanvasGroupNodeIDs,
-    copyClipboardText: async () => {}, toast: { success: () => {} },
+    copyClipboardText: async value => { serialized = value; }, toast: { success: () => {} },
   })();
-  assert.equal(clipboardRef.current.nodes.length, 1);
-  assert.equal(clipboardRef.current.nodes[0].group_id, undefined);
-  assert.ok(normalizeCanvasClipboard(clipboardRef.current));
+  const payload = JSON.parse(serialized);
+  assert.equal(payload.nodes.length, 1);
+  assert.equal(payload.nodes[0].group_id, undefined);
+  assert.ok(normalizeCanvasClipboard(payload));
   assert.equal(child.group_id, "group");
 });
 

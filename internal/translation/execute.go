@@ -89,7 +89,7 @@ func New(channel Channel, model, key string, variables map[string]any, client *h
 	e := &Engine{vm: goja.New(), channel: channel, key: key, client: &clientCopy, interval: 3 * time.Second}
 	e.vm.SetMaxCallStackSize(128)
 	err = limited(e.vm, func() error {
-		for _, name := range []string{"model", "prompt", "size", "aspectRatio", "quality", "count", "resolution", "seconds", "mode", "negativePrompt", "generateAudio", "watermark", "voice", "audioFormat", "speed", "instructions", "firstFrame", "lastFrame"} {
+		for _, name := range []string{"model", "prompt", "size", "aspectRatio", "quality", "count", "resolution", "seconds", "mode", "draft", "draft_task_id", "negativePrompt", "generateAudio", "watermark", "voice", "audioFormat", "speed", "instructions", "firstFrame", "lastFrame"} {
 			e.vm.Set(name, goja.Undefined())
 		}
 		for _, name := range []string{"images", "videos", "audios"} {

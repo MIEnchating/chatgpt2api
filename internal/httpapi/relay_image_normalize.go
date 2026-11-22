@@ -1184,7 +1184,7 @@ func ceilToRelayImageMultiple(value float64) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
-		relayTranslationSourceKey, relayTaskCredentialKey, "relay_base_url", "relay_protocol", "workflow_inputs", relayCustomEndpointPayloadKey,
+		relayTranslationSourceKey, relayTaskCredentialKey, "video_draft_origin", "draft_source_base_url", "relay_base_url", "relay_protocol", "workflow_inputs", relayCustomEndpointPayloadKey,
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
@@ -1193,7 +1193,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 		relayImageTaskSlotManagedPayloadKey,
 		service.ImageOutputCompletionReleasePayloadKey,
 		protocol.ImageOutputSlotAcquirerPayloadKey,
-		"image_output_callback", "text_output_callback", service.VideoTaskProgressCallbackPayloadKey,
+		"image_output_callback", "text_output_callback", service.ReasoningSummaryCallbackPayloadKey, service.VideoTaskProgressCallbackPayloadKey,
 		service.MediaTaskProgressCallbackPayloadKey:
 		return true
 	default:

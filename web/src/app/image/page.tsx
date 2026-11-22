@@ -1,4 +1,6 @@
 "use client";
+
+import { videoSupportsDraft } from "@/lib/video-model-capabilities";
 import { Conversation } from "@/components/ai-elements/conversation";
 import { Suggestion } from "@/components/ai-elements/suggestion";
 import { ModelPicker } from "@/components/model-picker";
@@ -312,6 +314,7 @@ type PublishRecipeOptions = {
 };
 
 function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
+  if (turn.videoDraftSourceTaskId) return { videoResolution: "1080p", videoSeconds: turn.videoSeconds, videoGenerateAudio: turn.videoGenerateAudio };
   const fields = videoTurnFieldsFromNormalizedRequest(normalizeVideoRequest({
     model,
     size: turn.size,
@@ -761,6 +764,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoSize, setVideoSize] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_size);
   const [videoParameters, setVideoParameters] = useState<import("@/lib/video-model-contracts").VideoParameterValues>({});
   const [videoSeconds, setVideoSeconds] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_seconds);
+  const [videoDraft, setVideoDraft] = useState(false);
   const [videoResolution, setVideoResolution] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_resolution);
   const [videoGenerateAudio, setVideoGenerateAudio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_generate_audio);
   const [videoWatermark, setVideoWatermark] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_watermark);
@@ -2543,6 +2547,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     if (targetTurn.mode === "video") {
+      setVideoDraft(targetTurn.videoDraft === true);
       setSelectedConversationId(conversationId);
       setComposerMode("video");
       setImagePrompt(targetTurn.prompt);
@@ -2972,7 +2977,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             throw new Error(referenceLimitMessage);
           }
         }
-        if (activeTurn.mode === "video") {
+        if (activeTurn.mode === "video" && !activeTurn.videoDraftSourceTaskId) {
           const referenceError = videoReferenceCombinationError({
             model: activeTurn.model,
             size: activeTurn.size,
@@ -3648,7 +3653,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("只有失败或仅返回文本的结果可以单独重试");
         return;
       }
-      const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
+      const retryModel = targetTurn.videoDraftSourceTaskId ? targetTurn.model : targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
       if (!isConfiguredCreationModel(targetTurn.mode, retryModel)) {
         toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
         return;
@@ -3765,6 +3770,24 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     ],
   );
 
+  const handleConvertVideoDraft = useCallback(async (conversationId: string, turnId: string, imageIndex: number) => {
+    const conversation = conversationsRef.current.find(item => item.id === conversationId);
+    const source = conversation?.turns.find(turn => turn.id === turnId);
+    const image = source?.images[imageIndex];
+    if (!conversation || !source?.videoDraft || image?.status !== "success" || !image.taskId) return;
+    if (imageConversationHasActiveTurn(conversation)) { toast.error("当前会话正在生成，请等待完成"); return; }
+    const id = createId();
+    const now = new Date().toISOString();
+    const turn: ImageTurn = { ...source, id, count: 1, videoDraft: false, videoDraftSourceTaskId: image.taskId, videoResolution: "1080p", referenceImages: [], videoFirstFrameURL: undefined, videoLastFrameURL: undefined, videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [], videoParameters: undefined, studioAgent: undefined, promptContext: undefined, createdAt: now, status: "queued", images: [{ id: `${id}-0`, taskId: `${id}-video-0`, taskStatus: "queued", status: "loading", mediaType: "video", visibility: source.visibility || "private" }] };
+    try {
+      await updateConversation(conversationId, current => {
+        if (!current || isImageConversationHistorySummaryOnly(current) || imageConversationHasActiveTurn(current)) throw new Error("会话正在同步或生成，请稍后重试");
+        return { ...current, updatedAt: now, turns: [...current.turns, turn] };
+      });
+      void runConversationQueue(conversationId);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "正片生成未提交"); }
+  }, [updateConversation, runConversationQueue]);
+
   const handleRegenerateTurn = useCallback(
     async (conversationId: string, turnId: string) => {
       const targetConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
@@ -3785,7 +3808,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前会话正在生成，请等待完成后再重新生成");
         return;
       }
-      const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
+      const retryModel = targetTurn.videoDraftSourceTaskId ? targetTurn.model : targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
       if (!isConfiguredCreationModel(targetTurn.mode, retryModel)) {
         toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
         return;
@@ -4293,7 +4316,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     const normalizedVideoTurnFields = videoMode && smartContextEnabled ? {
       size: videoSize, videoSeconds: selectedVideoSeconds, videoParameters,
-      videoResolution, videoGenerateAudio, videoWatermark,
+      videoDraft, videoResolution, videoGenerateAudio, videoWatermark,
       videoReferenceMode: effectiveVideoReferenceMode,
       videoFirstFrameURL: normalizedFirstFrameURL || undefined,
       videoLastFrameURL: normalizedLastFrameURL || undefined,
@@ -4382,6 +4405,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         partialImages: effectiveImageStream ? normalizedImagePartialImages(Number(imagePartialImages)) : 0,
         responseFormatB64JSON: videoMode ? undefined : imageResponseFormatB64JSON,
         codexCLICompatibility: videoMode ? undefined : imageCodexCLICompatibility,
+        videoDraft: videoMode && videoDraft && videoSupportsDraft(effectiveModel) || undefined,
         videoParameters: videoMode ? normalizedVideoTurnFields?.videoParameters : undefined,
         videoSeconds: videoMode ? normalizedVideoTurnFields?.videoSeconds ?? selectedVideoSeconds : undefined,
         videoResolution: videoMode ? normalizedVideoTurnFields?.videoResolution : undefined,
@@ -4909,6 +4933,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   onEditTurn={openEditTurnDialog}
                   onCancelTurn={handleCancelTurn}
                   onResumeAgent={handleResumeAgent}
+                  onConvertVideoDraft={handleConvertVideoDraft}
                   onRegenerateTurn={handleRegenerateTurn}
                   onRetryImage={handleRetryImage}
                   onImageVisibilityChange={handleImageVisibilityChange}
@@ -4969,6 +4994,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 videoParameters={videoParameters}
                 onVideoParametersChange={setVideoParameters}
                 videoSeconds={videoSeconds}
+                videoDraft={videoDraft}
+                onVideoDraftChange={setVideoDraft}
                 videoResolution={videoResolution}
                 videoGenerateAudio={videoGenerateAudio}
                 videoWatermark={videoWatermark}

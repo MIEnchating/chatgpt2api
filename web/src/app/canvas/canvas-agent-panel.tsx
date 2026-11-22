@@ -248,7 +248,8 @@ function CanvasAgentPanelContent({ backendRun, syncError, historyConflict, resol
   const needsMediaChoice = !conversationReply && !busy && !activeSession.agentState.pendingQuestion && !activeSession.agentState.mediaGenerationDeferred && mediaWaitingReason.startsWith("待手动生成");
   const statusNeedsReview = canvasAgentResultStatusUnknown(latestAssistantMessage);
   const resumable = !statusNeedsReview && !needsMediaChoice && canvasAgentCanResume(activeSession, backendRun);
-  const hasDraft = Boolean(input.trim() || draftAttachments.attachments.length);
+  const selectedSkillIDs = activeSession.activeSkillIds ?? agentConfig.activeSkillIds ?? [];
+  const hasDraft = Boolean(input.trim() || draftAttachments.attachments.length || !busy && selectedSkillIDs.length && !activeSession.agentState.pendingQuestion);
   const composerAction = canvasAgentComposerAction({ busy, hasDraft, resumable, queued: Boolean(activeSession.messageQueue?.messages.length), waitingForAnswer: Boolean(activeSession.agentState.pendingQuestion) || needsMediaChoice });
   const composerActionLabel = { send: "发送", enqueue: "加入消息队列", pause: "暂停执行", resume: resumable ? "继续未完成任务" : "继续消息队列" }[composerAction];
   const queueDispatchRef = useRef<() => void>(() => {});
@@ -265,20 +266,21 @@ function CanvasAgentPanelContent({ backendRun, syncError, historyConflict, resol
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession.agentState, activeSession.protocolMessages, activeSession.contextCheckpoint, getAgentContext, nodes, selectedNodeIDs, model, mediaModels.image.value, mediaModels.video.value, agentConfig]);
   const contextUsage = agentMode === "native" && activeSession.contextUsage?.model === model ? activeSession.contextUsage : undefined;
-  const tokenEstimate = useCanvasAgentTokenEstimate(open && !contextUsage ? contextEstimate.input : undefined);
+  const codexUsage = agentMode === "codex" && activeSession.codexContextUsage?.model === codex.model && activeSession.codexContextUsage.threadId === activeSession.codexThreadId && activeSession.codexContextUsage.serviceId === activeSession.codexServiceId ? activeSession.codexContextUsage : undefined;
+  const tokenEstimate = useCanvasAgentTokenEstimate(open && agentMode === "native" && !contextUsage ? contextEstimate.input : undefined);
   const contextInfo = useMemo(() => {
     const usage = contextUsage;
     const estimate = tokenEstimate.tokens === undefined ? undefined : tokenEstimate.tokens + (input ? estimateCanvasAgentTokens(input) : 0);
-    const limit = agentConfig.contextWindowTokens && Number.isSafeInteger(agentConfig.contextWindowTokens) && agentConfig.contextWindowTokens > 1 ? agentConfig.contextWindowTokens : DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS;
-    return { tokens: usage?.inputTokens ?? usage?.usedTokens ?? estimate, error: usage ? undefined : tokenEstimate.error, measured: usage?.inputTokens !== undefined, limit, compacting: Boolean(usage?.compacting && busy), reported: Boolean(usage), rows: [
-      { label: "统计来源", value: usage?.inputTokens !== undefined ? "上游实际用量" : usage ? "上游输入估算" : tokenEstimate.error ? "估算失败" : estimate === undefined ? "正在估算" : "本地输入估算" },
-      { label: "上限来源", value: "配置值" },
-      ...(agentMode === "native" ? [{ label: "自动压缩阈值", value: `${CONTEXT_COMPACTION_RATIO * 100}% · ${contextTokenBudget(limit).toLocaleString()} tokens` }, { label: "压缩状态", value: usage?.compacting && busy ? "正在压缩" : activeSession.contextCheckpoint ? "已有摘要" : "尚未压缩" }] : []),
+    const limit = agentMode === "codex" ? codexUsage?.contextWindow : agentConfig.contextWindowTokens && Number.isSafeInteger(agentConfig.contextWindowTokens) && agentConfig.contextWindowTokens > 1 ? agentConfig.contextWindowTokens : DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS;
+    return { tokens: codexUsage?.tokens ?? usage?.inputTokens ?? usage?.usedTokens ?? estimate, error: usage ? undefined : tokenEstimate.error, measured: Boolean(codexUsage) || usage?.inputTokens !== undefined, limit, compacting: Boolean(usage?.compacting && busy), reported: Boolean(usage || codexUsage), rows: [
+      { label: "统计来源", value: agentMode === "codex" ? codexUsage ? "Codex 上报" : "等待 Codex 上报" : usage?.inputTokens !== undefined ? "上游实际用量" : usage ? "上游输入估算" : tokenEstimate.error ? "估算失败" : estimate === undefined ? "正在估算" : "本地输入估算" },
+      { label: "上限来源", value: agentMode === "codex" ? codexUsage?.contextWindow ? "Codex 上报" : "尚未上报" : "配置值" },
+      ...(agentMode === "native" ? [{ label: "自动压缩阈值", value: `${CONTEXT_COMPACTION_RATIO * 100}% · ${contextTokenBudget(limit ?? DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS).toLocaleString()} tokens` }, { label: "压缩状态", value: usage?.compacting && busy ? "正在压缩" : activeSession.contextCheckpoint ? "已有摘要" : "尚未压缩" }] : []),
       { label: "模型", value: (agentMode === "codex" ? codex.model : model) || "未选择" }, { label: "对话记录", value: `${activeSession.messages.length} 条` },
       { label: "画布节点", value: `${contextEstimate.nodeCount} 个` }, { label: "引用素材", value: `${composerReferenceNodeIDs.length + draftAttachments.attachments.length} 个` },
       { label: "上下文摘要", value: activeSession.contextCheckpoint ? "已保留" : "暂无" },
     ] };
-  }, [contextEstimate, contextUsage, tokenEstimate.tokens, tokenEstimate.error, activeSession.contextCheckpoint, activeSession.messages.length, agentConfig.contextWindowTokens, busy, input, model, agentMode, codex.model, composerReferenceNodeIDs.length, draftAttachments.attachments.length]);
+  }, [contextEstimate, contextUsage, codexUsage, tokenEstimate.tokens, tokenEstimate.error, activeSession.contextCheckpoint, activeSession.messages.length, agentConfig.contextWindowTokens, busy, input, model, agentMode, codex.model, composerReferenceNodeIDs.length, draftAttachments.attachments.length]);
   const historySessions = useMemo(() => canvasAgentHistorySummaries({ agent_session_summaries: sessionSummaries, agent_sessions: sessions }).filter(item => item.message_count > 0), [sessionSummaries, sessions]);
   const selectedNodeKey = useMemo(() => [...selectedNodeIDs].sort().join(","), [selectedNodeIDs]);
   const resourceReferences = useMemo(() => buildAllCanvasResourceReferences(nodes), [nodes]);
@@ -478,7 +480,7 @@ function CanvasAgentPanelContent({ backendRun, syncError, historyConflict, resol
   function submit(nextText = input, savedReferences?: CanvasAssistantReference[], referenceNodeIDs = composerReferenceNodeIDs, options: CanvasAgentSubmitOptions = {}): CanvasAgentSubmitResult {
     if (draftAttachments.uploading || busy || abortRef.current) return "busy";
     const attached = savedReferences ? [] : draftAttachments.attachments;
-    const text = nextText.trim() || (attached.length ? "请查看这些附件" : "");
+    const text = nextText.trim() || (attached.length ? "请查看这些附件" : selectedSkillIDs.length && !activeSession.agentState.pendingQuestion && !options.retryAssistantID && !options.editUserMessageID ? "请加载本轮所选 Skill，简短确认即可，等待我提供具体需求。" : "");
     if (!text || !activeSession) return "empty";
     const editedUserMessage = options.editUserMessageID
       ? activeSession.messages.find((message) => message.id === options.editUserMessageID && message.role === "user" && !message.questionAnswerFor)
@@ -660,6 +662,7 @@ function CanvasAgentPanelContent({ backendRun, syncError, historyConflict, resol
           signal: controller.signal,
           onEvent: (event) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, messages: current.messages.map((message) => message.id === assistantID ? { ...setCanvasAgentProcessing(message, event.status === "thinking" || event.status === "running"), status: event.status, activity: event.label } : message), updatedAt: new Date().toISOString() })),
           onTrace: (entry) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, messages: current.messages.map((message) => message.id === assistantID ? { ...message, trace: entry.type === "operation" ? upsertCanvasAgentOperationTrace(message.trace, entry) : upsertCanvasAgentTrace(message.trace, entry) } : message), updatedAt: new Date().toISOString() })),
+          onContextUsage: (codexContextUsage) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, codexContextUsage, updatedAt: new Date().toISOString() })),
           onCheckpoint: (checkpoint) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, agentState: checkpoint.state, protocolMessages: checkpoint.protocolMessages, contextCheckpoint: checkpoint.contextCheckpoint, activeSkillIds: selectedSkillIDs, updatedAt: new Date().toISOString() })),
         };
         const result = await codex.run({ ...runInput, codexThreadId: options.editUserMessageID ? undefined : activeSession.codexThreadId, codexServiceId: options.editUserMessageID ? undefined : activeSession.codexServiceId, onThread: (codexThreadId, codexServiceId) => updateSessionForRun(sessionID, runEpoch, (current) => ({ ...current, codexThreadId, codexServiceId })) });
@@ -962,7 +965,7 @@ function CanvasAgentPanelContent({ backendRun, syncError, historyConflict, resol
           <CanvasAgentModelPicker model={agentMode === "codex" ? codex.model : model} models={agentMode === "codex" ? (codex.connected ? codex.models.map((item) => ({ value: item.model, label: item.displayName })) : []) : models.map((value) => ({ value, label: value }))} codex={agentMode === "codex"} disabled={busy || Boolean(activeSession.agentState.pendingQuestion)} onChange={agentMode === "codex" ? codex.setModel : onModelChange} />
           <CanvasAgentMediaModelPicker models={mediaModels} disabled={busy || Boolean(activeSession.agentState.pendingQuestion)} />
           <CanvasAgentSkillPicker compact selectedIds={activeSession.activeSkillIds ?? agentConfig.activeSkillIds ?? []} onChange={(activeSkillIds) => commit(sessionsRef.current.map((item) => item.id === activeSessionID ? { ...item, activeSkillIds, updatedAt: new Date().toISOString() } : item))} disabled={busy} />
-          <Context tokens={contextInfo.tokens} error={contextInfo.error} limit={contextInfo.limit} compacting={contextInfo.compacting} reported={contextInfo.reported} measured={contextInfo.measured} rows={contextInfo.rows} />
+          <Context pendingLabel={agentMode === "codex" ? "等待 Codex 上报" : undefined} description={agentMode === "codex" ? codexUsage ? "最近一次 Codex 上报的上下文用量与窗口，属于当前模型和对话。" : "开始对话后显示 Codex 实际上报的上下文用量与窗口。" : undefined} tokens={contextInfo.tokens} error={contextInfo.error} limit={contextInfo.limit} compacting={contextInfo.compacting} reported={contextInfo.reported} measured={contextInfo.measured} rows={contextInfo.rows} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
           {busy && hasDraft ? <TooltipHint content="暂停执行"><Button type="button" size="icon-sm" variant="ghost" aria-label="暂停执行" disabled={pausing} onClick={() => pauseExecution()}><Pause /></Button></TooltipHint> : null}

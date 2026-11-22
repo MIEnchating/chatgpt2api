@@ -141,6 +141,9 @@ func arkVideoRequest(payload map[string]any, contract protocol.VideoModelContrac
 }
 
 func arkVideoRequestFromCanonical(payload, request map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
+	if id := util.Clean(payload["draft_task_id"]); id != "" {
+		return map[string]any{"model": payload["model"], "content": []map[string]any{{"type": "draft_task", "draft_task": map[string]any{"id": id}}}, "resolution": "1080p", "watermark": util.ToBool(payload["watermark"])}, nil
+	}
 	kind, _ := videoContractGenerationKind(payload, contract)
 	refs := videoContractArkReferences(request, contract, kind)
 	if contract.Transport.LocalMaterial == "base64" {
@@ -151,7 +154,7 @@ func arkVideoRequestFromCanonical(payload, request map[string]any, contract prot
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 	result := map[string]any{"model": payload["model"], "content": content}
-	for source, target := range map[string]string{"seconds": "duration", "size": "ratio", "resolution": "resolution", "generate_audio": "generate_audio", "watermark": "watermark"} {
+	for source, target := range map[string]string{"draft": "draft", "seconds": "duration", "size": "ratio", "resolution": "resolution", "generate_audio": "generate_audio", "watermark": "watermark"} {
 		if value, ok := payload[source]; ok {
 			result[target] = value
 		}

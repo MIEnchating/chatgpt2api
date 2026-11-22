@@ -41,5 +41,6 @@
   "list_video_models": "正在查询视频模型",
   "set_video_model": "正在切换视频模型",
   "merge_script_videos": "正在合并分镜视频",
-  "confirm_script_node": "确认已核对脚本"
+  "confirm_script_node": "确认已核对脚本",
+  "analyze_video": "正在分析视频画面"
 }

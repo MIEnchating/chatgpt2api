@@ -19,7 +19,7 @@ export function CanvasAgentAnswerInput({ options, value, onChange, onSelect, onI
     {/* Disabled questionnaire items become inactive and hidden; disable their controls instead. */}
     <QuestionnaireItem name={id} aria-disabled={disabled}>
       {options.length ? <QuestionnaireChoices aria-label="回答选项">
-        {options.map(option => <QuestionnaireChoice key={option.label} value={option.label} disabled={disabled} onClick={event => {
+        {options.map(option => <QuestionnaireChoice key={option.label} value={option.label} checked={value === option.label} disabled={disabled} onClick={event => {
           // A label forwards a second click to its input; submit only that activation.
           if ((event.target as HTMLElement).tagName === "INPUT") choose(option.label);
         }} onKeyDown={event => {
@@ -40,7 +40,7 @@ export function CanvasAgentAnswerInput({ options, value, onChange, onSelect, onI
           event.preventDefault();
           choose(value);
         }} className="min-h-9 max-h-36 resize-none" />
-        {actions ? <PromptInputFooter className="justify-end gap-2">{actions}</PromptInputFooter> : null}
+        {actions ? <PromptInputFooter className="flex-wrap justify-end gap-2">{actions}</PromptInputFooter> : null}
       </PromptInput>
     </QuestionnaireItem>
   </Questionnaire>;

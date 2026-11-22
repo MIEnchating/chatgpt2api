@@ -18,6 +18,8 @@ export function Context({
   compacting = false,
   reported = false,
   measured = false,
+  pendingLabel = "正在估算",
+  description,
 }: {
   tokens?: number;
   error?: string;
@@ -26,9 +28,11 @@ export function Context({
   compacting?: boolean;
   reported?: boolean;
   measured?: boolean;
+  pendingLabel?: string;
+  description?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const status = error ? "用量估算失败" : tokens === undefined ? "正在估算" : undefined;
+  const status = error ? "用量估算失败" : tokens === undefined ? pendingLabel : undefined;
   const percent =
     tokens !== undefined && limit && limit > 0 ? Math.round((tokens / limit) * 1000) / 10 : undefined;
   const progress =
@@ -117,9 +121,9 @@ export function Context({
           </div>)}
         </div>
         <p className="border-t pt-3 text-xs leading-5 text-muted-foreground">
-          {error ? `${error}，请重新打开面板重试。` : tokens === undefined ? "正在估算当前对话和画布的上下文用量。" : measured ? "最近一次上游返回的实际输入 token，包含系统指令和工具定义。配置上限与执行记录存储上限分别计算。" : reported
+          {description || (error ? `${error}，请重新打开面板重试。` : tokens === undefined ? "正在估算当前对话和画布的上下文用量。" : measured ? "最近一次上游返回的实际输入 token，包含系统指令和工具定义。配置上限与执行记录存储上限分别计算。" : reported
             ? "最近一次模型输入的估算，包含系统指令和工具定义。"
-            : "可见对话和画布内容的估算；运行后更新模型输入统计。"}
+            : "可见对话和画布内容的估算；运行后更新模型输入统计。")}
         </p>
       </HoverCardContent> : null}
     </HoverCard>

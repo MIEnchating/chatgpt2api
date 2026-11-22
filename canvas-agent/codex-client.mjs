@@ -27,7 +27,7 @@ export class CodexClient {
           if (message.error) waiting.reject(new Error(message.error.message || "Codex 请求失败"));
           else waiting.resolve(message.result);
         }
-    }, (error) => this.close(error));
+    }, (error) => this.close(error), 20 * 1024 * 1024);
     this.child.stderr.resume();
     this.child.on("error", () => this.close(new Error("无法启动 Codex，请安装当前 Codex CLI 并先登录")));
     this.child.on("exit", () => this.close(new Error("Codex 进程已退出")));

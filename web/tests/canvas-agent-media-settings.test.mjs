@@ -150,7 +150,7 @@ test("static advertising avoids film planning while promotional video and drama 
 
 test("missing delivery parameters cannot fall through to model defaults", () => {
   for (const name of ["generate_image", "edit_image", "generate_video"]) {
-    const required = name === "generate_video" ? ["size", "seconds", "generateAudio"] : ["size", "count"];
+    const required = name === "generate_video" ? ["size", "seconds"] : ["size", "count"];
     for (const field of required) {
       const args = { prompt: "生成", sourceNodeIds: ["image"], size: "1:1", ...(name === "generate_video" ? { seconds: 10, generateAudio: false } : { count: 1 }) };
       delete args[field];

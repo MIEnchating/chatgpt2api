@@ -91,6 +91,8 @@ export type ImageTurn = {
   codexCLICompatibility?: boolean;
   videoParameters?: import("./video-model-contracts").VideoParameterValues;
   videoSeconds?: number;
+  videoDraft?: boolean;
+  videoDraftSourceTaskId?: string;
   videoResolution?: string;
   videoGenerateAudio?: boolean;
   videoWatermark?: boolean;

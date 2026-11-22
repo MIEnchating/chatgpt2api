@@ -78,6 +78,8 @@ export type CanvasNode = {
   generation_error?: string;
   generation_type?: "generation" | "edit";
   generation_reference_urls?: string[];
+  generation_video_draft?: boolean;
+  generation_video_draft_source_task_id?: string;
   generation_video_model?: string;
   generation_video_size?: string;
   generation_video_seconds?: number;

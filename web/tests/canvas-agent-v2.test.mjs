@@ -618,6 +618,16 @@ test("SDK context estimates survive session reload and reject malformed counters
   ]) assert.equal(isCanvasAgentSession({ ...session, contextUsage: { ...session.contextUsage, ...patch } }), false);
 });
 
+test("Codex context usage survives reload separately from server-owned SDK counters", () => {
+  const session = { id: "s", title: "Codex", createdAt: "now", updatedAt: "now", messages: [], agentState: createCanvasAgentState(), protocolMessages: [], codexThreadId: "thread", codexServiceId: "bridge", codexContextUsage: { model: "codex-model", tokens: 1000, contextWindow: 128000, threadId: "thread", serviceId: "bridge" } };
+  const restored = JSON.parse(JSON.stringify(session));
+  assert.ok(isCanvasAgentSession(restored));
+  assert.deepEqual(syncCanvasAgentSessions([restored], [])[0].codexContextUsage, session.codexContextUsage);
+  for (const patch of [{ tokens: -1 }, { tokens: 1.5 }, { tokens: Number.MAX_SAFE_INTEGER + 1 }, { contextWindow: 0 }, { contextWindow: "128000" }, { threadId: null }, { serviceId: null }]) {
+    assert.equal(isCanvasAgentSession({ ...session, codexContextUsage: { ...session.codexContextUsage, ...patch } }), false);
+  }
+});
+
 test("persisted sessions reject malformed nested values before rendering", () => {
   const session = { id: "s", title: "对话", createdAt: "now", updatedAt: "now", messages: [{ id: "u", role: "user", text: "创作" }], agentState: createCanvasAgentState(), protocolMessages: [{ role: "user", content: "创作" }] };
   assert.equal(isCanvasAgentSession(session), true);

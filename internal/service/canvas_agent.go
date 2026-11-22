@@ -56,30 +56,32 @@ type CanvasAgentRequest struct {
 }
 
 type AgentModelRequest struct {
-	OnText   func(string) error
-	Model    string
-	Prompt   string
-	Messages []map[string]any
-	Metadata map[string]any
+	OnText             func(string) error
+	OnReasoningSummary func(string, string, bool) error
+	Model              string
+	Prompt             string
+	Messages           []map[string]any
+	Metadata           map[string]any
 }
 type AgentModel func(context.Context, Identity, AgentModelRequest) (map[string]any, error)
 type CanvasAgentMedia func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error)
 
 type CanvasAgentService struct {
-	mu          sync.Mutex
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	canvas      *CanvasDocumentService
-	execution   *AgentExecutionService
-	workflows   *WorkflowService
-	skills      *AgentSkillService
-	model       AgentModel
-	media       CanvasAgentMedia
-	videoModels func() []CanvasAgentVideoModel
-	videoMerger func(context.Context, Identity, []CanvasNode, CanvasVideoMergeOptions) (CanvasMergedVideo, error)
-	active      map[string]context.CancelFunc
-	closed      bool
+	mu            sync.Mutex
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	canvas        *CanvasDocumentService
+	execution     *AgentExecutionService
+	workflows     *WorkflowService
+	skills        *AgentSkillService
+	model         AgentModel
+	media         CanvasAgentMedia
+	videoModels   func() []CanvasAgentVideoModel
+	videoMerger   func(context.Context, Identity, []CanvasNode, CanvasVideoMergeOptions) (CanvasMergedVideo, error)
+	videoAnalyzer func(context.Context, Identity, CanvasNode, CanvasVideoAnalysisOptions) (CanvasVideoAnalysis, error)
+	active        map[string]context.CancelFunc
+	closed        bool
 }
 
 func NewCanvasAgentService(ctx context.Context, execution *AgentExecutionService, canvas *CanvasDocumentService, skills *AgentSkillService, model AgentModel, media CanvasAgentMedia) *CanvasAgentService {

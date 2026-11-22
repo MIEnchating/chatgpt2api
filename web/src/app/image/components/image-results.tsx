@@ -93,6 +93,7 @@ type ImageResultsProps = {
   onEditTurn: (conversationId: string, turnId: string) => void;
   onCancelTurn: (conversationId: string, turnId: string) => void | Promise<void>;
   onResumeAgent: (conversationId: string, turnId: string) => void;
+  onConvertVideoDraft?: (conversationId: string, turnId: string, imageIndex: number) => void | Promise<void>;
   onRegenerateTurn: (conversationId: string, turnId: string) => void | Promise<void>;
   onRetryImage: (conversationId: string, turnId: string, imageIndex: number) => void | Promise<void>;
   onImageVisibilityChange: (
@@ -327,6 +328,7 @@ export const ImageResults = memo(function ImageResults({
   onEditTurn,
   onCancelTurn,
   onResumeAgent,
+  onConvertVideoDraft,
   onRegenerateTurn,
   onRetryImage,
   onImageVisibilityChange,
@@ -847,6 +849,7 @@ export const ImageResults = memo(function ImageResults({
                             src={imageSrc}
                             title={`生成视频 ${index + 1}`}
                           />
+                          {turn.videoDraft && image.taskId && onConvertVideoDraft ? <div className="p-3"><Button type="button" size="sm" disabled={turnBusy} onClick={() => void onConvertVideoDraft(selectedConversation.id, turn.id, index)}>生成正片（1080p）</Button></div> : null}
                           <Checkbox
                             checked={selected}
                             onCheckedChange={() => toggleImageSelection(selectionKey)}

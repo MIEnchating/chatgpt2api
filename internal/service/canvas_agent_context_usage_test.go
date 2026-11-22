@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"math"
 	"testing"
+
+	"chatgpt2api/internal/util"
 )
 
 func TestCanvasAgentSDKContextUsageSurvivesReloadAndBrowserSaves(t *testing.T) {
@@ -158,5 +160,46 @@ func TestCanvasAgentSDKPersistsUpstreamInputTokens(t *testing.T) {
 	usage := agentMap(session["contextUsage"])
 	if done.AgentRun.Status != "success" || usage["inputTokens"] != float64(41234) || usage["usedTokens"] == usage["inputTokens"] {
 		t.Fatalf("upstream usage lost across model response and final checkpoint: run=%+v usage=%v", done.AgentRun, usage)
+	}
+}
+
+func TestCanvasAgentSDKPersistsPublicReasoningSummaryDuringModelCall(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.req.APIMode, w.req.Stream, w.req.Reasoning = "responses", true, true
+	w.service.model = func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if request.OnReasoningSummary == nil {
+			t.Fatal("missing public summary callback")
+		}
+		if err := request.OnReasoningSummary("r1", "正在检查画布", true); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, session, _ := agentSession(doc, w.req.SessionID)
+		messages := util.AsMapSlice(session["messages"])
+		var found bool
+		for _, message := range messages {
+			for _, entry := range util.AsMapSlice(message["trace"]) {
+				if entry["text"] == "正在检查画布" && entry["isStreaming"] == true {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatal("summary was unavailable until model completion")
+		}
+		if err := request.OnReasoningSummary("r1", "已检查画布", false); err != nil {
+			t.Fatal(err)
+		}
+		return agentTurn(), nil
+	}
+	if _, err := w.sdkForwardModel(map[string]any{"messages": []map[string]any{{"role": "user", "content": "检查画布"}}}); err != nil {
+		t.Fatal(err)
+	}
+	trace := util.AsMapSlice(w.assistant()["trace"])
+	if len(trace) != 1 || trace[0]["text"] != "已检查画布" || trace[0]["isStreaming"] != false {
+		t.Fatalf("summary duplicated or never finalized: %v", trace)
 	}
 }

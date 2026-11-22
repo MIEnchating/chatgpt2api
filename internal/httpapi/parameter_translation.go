@@ -93,6 +93,11 @@ func (a *App) relayTranslatedMedia(ctx context.Context, payload map[string]any, 
 	if err != nil {
 		return nil, true, protocol.HTTPError{Status: http.StatusBadGateway, Message: err.Error()}
 	}
+	if kind == "video" && payload["draft"] == true && len(result.TaskIDs) == 1 {
+		if callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate)); ok {
+			callback(service.VideoTaskProgressUpdate{Status: service.TaskStatusRunning, UpstreamTaskID: result.TaskIDs[0]})
+		}
+	}
 	data := make([]map[string]any, 0, len(result.URLs))
 	for _, value := range result.URLs {
 		if kind == "video" && strings.HasPrefix(value, "data:") {
@@ -139,7 +144,7 @@ func (a *App) relayTranslatedMedia(ctx context.Context, payload map[string]any, 
 
 func translationVariables(p map[string]any, images []protocol.UploadedImage, kind string) map[string]any {
 	out := map[string]any{}
-	for key, field := range map[string]string{"model": "model", "prompt": "prompt", "size": "size", "quality": "quality", "count": "n", "resolution": "resolution", "seconds": "seconds", "mode": "generation_mode", "negativePrompt": "negative_prompt", "generateAudio": "generate_audio", "watermark": "watermark", "firstFrame": "first_frame_url", "lastFrame": "last_frame_url", "voice": "voice", "audioFormat": "response_format", "speed": "speed", "instructions": "instructions"} {
+	for key, field := range map[string]string{"model": "model", "prompt": "prompt", "size": "size", "quality": "quality", "count": "n", "resolution": "resolution", "seconds": "seconds", "draft_task_id": "draft_task_id", "draft": "draft", "mode": "generation_mode", "negativePrompt": "negative_prompt", "generateAudio": "generate_audio", "watermark": "watermark", "firstFrame": "first_frame_url", "lastFrame": "last_frame_url", "voice": "voice", "audioFormat": "response_format", "speed": "speed", "instructions": "instructions"} {
 		if value, ok := p[field]; ok {
 			out[key] = value
 		}
@@ -148,6 +153,9 @@ func translationVariables(p map[string]any, images []protocol.UploadedImage, kin
 	out["images"] = util.AsStringSlice(p["reference_image_urls"])
 	if len(images) > 0 {
 		out["images"] = imageReferenceURLs(images)
+	}
+	if p["draft"] == true {
+		out["mode"] = "draft"
 	}
 	out["videos"] = util.AsStringSlice(p["reference_video_urls"])
 	out["audios"] = util.AsStringSlice(p["reference_audio_urls"])

@@ -48,6 +48,9 @@ func ChatTaskRequest(payload map[string]any) (string, map[string]any, error) {
 	body["include"] = []string{"reasoning.encrypted_content"}
 	if _, set := payload["reasoning_enabled"]; set {
 		body["reasoning"] = map[string]any{"effort": effort}
+		if payload["reasoning_enabled"] == true {
+			util.StringMap(body["reasoning"])["summary"] = "auto"
+		}
 	}
 	if limit, set := payload["max_output_tokens"]; set {
 		body["max_output_tokens"] = limit

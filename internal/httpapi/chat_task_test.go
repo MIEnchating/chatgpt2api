@@ -11,9 +11,39 @@ import (
 	"strings"
 	"testing"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
+
+func TestResponsesTaskStreamsOnlyPublicReasoningSummaries(t *testing.T) {
+	items := make(chan map[string]any, 8)
+	errors := make(chan error, 1)
+	for _, item := range []map[string]any{
+		{"type": "response.reasoning_text.delta", "item_id": "r", "delta": "private reasoning"},
+		{"type": "response.reasoning_summary_text.delta", "item_id": "r", "summary_index": 0, "delta": "检查"},
+		{"type": "response.reasoning_summary_text.delta", "item_id": "r", "summary_index": 0, "delta": "画布"},
+		{"type": "response.reasoning_summary_text.delta", "item_id": "r", "summary_index": 1, "delta": "核对任务"},
+		{"type": "response.completed", "response": map[string]any{"status": "completed"}},
+	} {
+		items <- item
+	}
+	close(items)
+	errors <- nil
+	close(errors)
+	var texts []string
+	var streaming []bool
+	_, err := collectResponseChatTaskStream(map[string]any{service.ReasoningSummaryCallbackPayloadKey: func(id, text string, active bool) {
+		if id != "r" {
+			t.Errorf("unexpected item: %s", id)
+		}
+		texts = append(texts, text)
+		streaming = append(streaming, active)
+	}}, &protocol.StreamResult{Items: items, Err: errors})
+	if err != nil || !reflect.DeepEqual(texts, []string{"检查", "检查画布", "检查画布\n\n核对任务", "检查画布\n\n核对任务"}) || !reflect.DeepEqual(streaming, []bool{true, true, true, false}) {
+		t.Fatalf("public summary stream: %v %v %v", texts, streaming, err)
+	}
+}
 
 func TestChatTaskSelectedAPIReachesUpstream(t *testing.T) {
 	for _, mode := range []string{"chat", "responses"} {
@@ -68,7 +98,7 @@ func TestChatTaskSelectedAPIReachesUpstream(t *testing.T) {
 				if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
 					t.Fatal(err)
 				}
-				result, err := app.executeChatTaskRequest(context.Background(), map[string]any{"api_key": "test-key", "api_mode": mode, "stream": stream, "prompt_cache_key": "stable-agent-session", "owner_id": "owner", "model": "test-model", "reasoning_enabled": true, "max_output_tokens": 4000, "messages": []map[string]any{{"role": "user", "content": "read canvas"}}})
+				result, err := app.executeChatTaskRequest(context.Background(), map[string]any{"api_key": "test-key", "api_mode": mode, "stream": stream, "prompt_cache_key": "stable-agent-session", "owner_id": "owner", "model": "test-model", "reasoning_enabled": true, "max_output_tokens": 4000, "messages": []map[string]any{{"role": "user", "content": "read canvas"}}, service.ReasoningSummaryCallbackPayloadKey: func(string, string, bool) {}})
 				if err != nil {
 					t.Fatal(err)
 				}

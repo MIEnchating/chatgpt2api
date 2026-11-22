@@ -57,8 +57,9 @@ export function useCanvasCodexApproval() {
                   }}
                   onSelect={(value) => {
                     const next = { ...answers, [question.id]: value };
+                    setDrafts((current) => ({ ...current, [question.id]: value }));
                     setAnswers(next);
-                    if (pending.questions?.every((item) => next[item.id]?.trim())) {
+                    if (pending.questions?.length === 1) {
                       settle({ accepted: true, answers: next });
                     }
                   }}

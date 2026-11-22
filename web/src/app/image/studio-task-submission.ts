@@ -68,6 +68,8 @@ export function createStudioTaskSubmitter({
   const createTask = ({ taskId, count }: StudioTaskGroup) => {
     if (turn.mode === "video") {
       return createVideoGenerationTask({
+        draft: turn.videoDraft,
+        draftSourceTaskId: turn.videoDraftSourceTaskId,
         clientTaskId: taskId,
         prompt: turn.prompt,
         model: turn.model,

@@ -101,3 +101,39 @@ func TestCanvasVideoMergeStoresOwnedMovie(t *testing.T) {
 		t.Fatal("another user read merged movie")
 	}
 }
+
+func TestCanvasVideoAnalysisReturnsOwnedFrameImages(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("FFmpeg required")
+	}
+	app := newTestApp(t)
+	defer app.Close()
+	alice, _ := createPasswordUserSession(t, app, "analysis-owner", "", "Alice")
+	bob, _ := createPasswordUserSession(t, app, "analysis-other", "", "Bob")
+	input := filepath.Join(t.TempDir(), "clip.mp4")
+	if data, err := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:size=96x64:rate=2", "-t", "2", "-c:v", "libx264", "-threads", "1", input).CombinedOutput(); err != nil {
+		t.Fatalf("fixture: %v %s", err, data)
+	}
+	data, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := app.storageFiles.Upload(context.Background(), identityScope(*alice), false, "clip.mp4", "video/mp4", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := service.CanvasNode{ID: "video", Type: "video", URL: obj.URL, StorageKey: obj.StorageKey}
+	if _, err := app.analyzeCanvasVideo(context.Background(), *bob, node, service.CanvasVideoAnalysisOptions{}); err == nil {
+		t.Fatal("read another user's video")
+	}
+	batch, err := app.analyzeCanvasVideo(context.Background(), *alice, node, service.CanvasVideoAnalysisOptions{})
+	if err != nil || len(batch.Frames) != 2 || batch.Frames[0].URL == "" || batch.Frames[0].JPEG != nil {
+		t.Fatalf("analysis: %+v %v", batch, err)
+	}
+	if _, err := app.canvasAgentImage(context.Background(), *alice, batch.Frames[0].URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.canvasAgentImage(context.Background(), *bob, batch.Frames[0].URL); err == nil {
+		t.Fatal("read another user's extracted frame")
+	}
+}

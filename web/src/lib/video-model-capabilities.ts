@@ -302,3 +302,8 @@ export function videoComposerAspectRatio(size: string) {
   const dimensions = size.match(/^(\d+)x(\d+)$/i);
   return dimensions ? `${dimensions[1]}:${dimensions[2]}` : undefined;
 }
+
+export function videoSupportsDraft(model: string, contract = videoModelContract(model)) {
+  const name = model.toLowerCase().replace(/[_.]/g, "-");
+  return Boolean(contract && contract.capability.resolutions.includes("480p") && contract.capability.resolutions.includes("1080p") && ["ark-seedance", "apimart-video"].includes(contract.driver) && (name.includes("seedance-2-5") || name.includes("seedance2-5") || name.includes("sd2-5")));
+}

@@ -1,3 +1,4 @@
+import { videoSupportsDraft } from "./video-model-capabilities.ts";
 import { normalizeVideoParameters, videoDurationValue } from "./video-parameters.ts";
 import type { VideoParameterValues } from "./video-model-contracts";
 import {
@@ -22,6 +23,8 @@ export function videoWorkbenchReferenceLimitError(model: string, imageCount: num
 }
 
 export type VideoRequestInput = {
+  draft?: boolean;
+  draftSourceTaskId?: string;
   parameters?: VideoParameterValues;
   model?: string;
   size?: string;
@@ -244,6 +247,12 @@ function normalizeVisibleVideoRequest(visibleInput: VideoReferenceCombinationInp
 }
 
 export function videoGenerationTaskRequestBody(input: VideoGenerationTaskRequestInput) {
+
+  if (input.draftSourceTaskId) {
+    if (!videoSupportsDraft(input.model || "")) throw new Error("当前模型不支持样片转正片");
+    return { client_task_id: input.clientTaskId, model: input.model, draft_source_task_id: input.draftSourceTaskId, ...(input.relayTokenName ? { token_name: input.relayTokenName } : {}) };
+  }
+  if (input.draft && !videoSupportsDraft(input.model || "")) throw new Error("当前模型不支持样片生成");
   const model = String(input.model || "").trim();
   const contract = videoModelContract(model);
   if (!contract) throw new Error(`视频模型 ${model || "未选择"} 未配置启用的视频模型契约`);
@@ -258,6 +267,7 @@ export function videoGenerationTaskRequestBody(input: VideoGenerationTaskRequest
   const prompt = composeVideoPrompt(input.prompt, input.systemPrompt);
   return {
     client_task_id: input.clientTaskId,
+    ...(input.draft ? { draft: true } : {}),
     ...(prompt || contract.capability.prompt?.required !== false ? {prompt} : {}),
     model: normalized.model,
     ...(normalized.parameters && Object.keys(normalized.parameters).length ? { parameters: normalized.parameters } : {}),

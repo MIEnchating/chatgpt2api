@@ -1,5 +1,7 @@
 "use client";
 
+import { videoSupportsDraft } from "@/lib/video-model-capabilities";
+
 import { canvasScriptProductionNodes, canvasScriptShotPosition } from "./canvas-script-layout";
 import { downloadCanvasNodeMedia } from "./canvas-media-download";
 
@@ -410,6 +412,8 @@ function canvasVideoParameters(node?: CanvasNode | null) {
     referenceMode = "first-frame";
   }
 	return {
+    generation_video_draft: node?.generation_video_draft === true && videoSupportsDraft(model),
+    generation_video_draft_source_task_id: node?.generation_video_draft_source_task_id,
     generation_video_model: model,
 		generation_video_size: normalizedSize,
 		generation_video_seconds: normalizedSeconds,
@@ -516,6 +520,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   const visibleReferenceMaterials = videoFieldVisible(imageRuleField) || videoFieldVisible("reference_video") || videoFieldVisible("reference_audio");
   const [referenceUploading, setReferenceUploading] = useState<VideoReferenceSlot | "" >("");
   const videoSettingsValue: VideoSettingsValue = {
+    draft: params.generation_video_draft,
     size: params.generation_video_size,
     seconds: String(params.generation_video_seconds),
     parameters: params.generation_video_parameters,
@@ -526,6 +531,7 @@ function CanvasVideoPromptPanel({ node, mentionReferences = [], onReferenceSelec
   };
   function updateVideoSettings(patch: Partial<VideoSettingsValue>) {
     onParametersChange({
+      ...(patch.draft !== undefined ? { generation_video_draft: patch.draft } : {}),
       ...(patch.size !== undefined ? { generation_video_size: patch.size } : {}),
       ...(patch.parameters !== undefined ? {generation_video_parameters:patch.parameters} : {}),
       ...(patch.seconds !== undefined && videoSecondsIsValid(params.generation_video_model, Number(patch.seconds)) ? { generation_video_seconds: Number(patch.seconds) } : {}),
@@ -813,7 +819,6 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
   const historyRef = useRef<CanvasHistorySnapshot[]>([]);
   const redoRef = useRef<CanvasHistorySnapshot[]>([]);
   const generationHistoryBaseRef = useRef<CanvasHistorySnapshot[] | null>(null);
-  const clipboardRef = useRef<{ nodes: CanvasNode[]; connections: CanvasConnection[] }>({ nodes: [], connections: [] });
   const saveTimerRef = useRef<number | null>(null);
   const recoveryDraftTimerRef = useRef<number | null>(null);
   const recoveryDraftWriterRef = useRef("");
@@ -3474,7 +3479,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     void runGeneration(nodeID, canvasImageAnglePrompt(params), false, { forceImageGeneration: true, resultTitle: canvasImageAngleLabel(params), resultCount: 1, selectResultNode: true });
   }
 
-  async function copySelected() {
+  async function copySelected(event?: ClipboardEvent) {
     const copiedIDs = expandCanvasBatchNodeIDs(expandCanvasGroupNodeIDs(selectedNodeIDs, nodesRef.current), nodesRef.current);
     const copiedNodes = nodesRef.current.filter((node) => copiedIDs.has(node.id)).map((node) => (
       node.group_id && !copiedIDs.has(node.group_id) ? { ...node, group_id: undefined } : node
@@ -3482,45 +3487,51 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     if (!copiedNodes.length) return;
     const ids = new Set(copiedNodes.map((node) => node.id));
     const copiedConnections = connectionsRef.current.filter((connection) => ids.has(connection.from_node_id) && ids.has(connection.to_node_id));
-    clipboardRef.current = { nodes: copiedNodes, connections: copiedConnections };
     try {
-      await copyClipboardText(JSON.stringify({ type: "yunmian-canvas-nodes", nodes: copiedNodes, connections: copiedConnections }));
+      const serialized = JSON.stringify({ type: "yunmian-canvas-nodes", nodes: copiedNodes, connections: copiedConnections });
+      if (event?.clipboardData) { event.preventDefault(); event.clipboardData.setData("text/plain", serialized); }
+      else await copyClipboardText(serialized);
       toast.success(`已复制 ${copiedNodes.length} 个节点`);
     } catch (error) {
-      toast.info(`已复制 ${copiedNodes.length} 个节点，可在当前画布内粘贴`, { description: error instanceof Error ? error.message : "系统剪贴板不可用" });
+      toast.error(error instanceof Error ? error.message : "系统剪贴板不可用");
     }
   }
 
-  async function pasteSelected() {
-    let copied = normalizeCanvasClipboard(clipboardRef.current) || { nodes: [] as CanvasNode[], connections: [] as CanvasConnection[] };
-    if (!copied.nodes.length) {
-      try {
+  async function pasteSelected(event?: ClipboardEvent) {
+    let copied: { nodes: CanvasNode[]; connections: CanvasConnection[] } = { nodes: [], connections: [] };
+    let clipboardText = "";
+    try {
+      if (event?.clipboardData) {
+        const image = Array.from(event.clipboardData.files).find(file => file.type.startsWith("image/"));
+        if (image) { await uploadImageFile(image, "", canvasCenterPosition()); return; }
+        clipboardText = event.clipboardData.getData("text/plain");
+      } else {
         const items = await navigator.clipboard.read();
-        const imageItem = items.find((item) => item.types.some((type) => type.startsWith("image/")));
-        const imageType = imageItem?.types.find((type) => type.startsWith("image/"));
-        if (imageItem && imageType) {
-          const blob = await imageItem.getType(imageType);
-          await uploadImageFile(new File([blob], "clipboard-image.png", { type: imageType }), "", canvasCenterPosition());
-          return;
+        for (const item of items) {
+          if (item.types.includes("text/plain")) { clipboardText = await (await item.getType("text/plain")).text(); break; }
+          const imageType = item.types.find(type => type.startsWith("image/"));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            await uploadImageFile(new File([blob], "clipboard-image.png", { type: imageType }), "", canvasCenterPosition());
+            return;
+          }
         }
-      } catch { /* Clipboard image access is optional. */ }
-      let clipboardText = "";
-      try {
-        clipboardText = await navigator.clipboard.readText();
-        const parsed = JSON.parse(clipboardText) as { type?: string; nodes?: CanvasNode[]; connections?: CanvasConnection[] };
-        if (parsed.type === "yunmian-canvas-nodes") {
-          const normalized = normalizeCanvasClipboard(parsed);
-          if (!normalized) return toast.error("剪贴板中的画布节点格式无效");
-          copied = normalized;
-        }
-      } catch { /* Invalid clipboard content is handled as plain text below. */ }
-      if (!copied.nodes.length && clipboardText.trim()) {
-        const text = clipboardText.trim();
-        const center = canvasCenterPosition();
-        addNode({ id: `text-${randomID()}`, type: "text", x: center.x - 170, y: center.y - 120, width: 340, height: 240, font_size: 14, scale_x: 1, scale_y: 1, title: text.split(/\r?\n/, 1)[0].slice(0, 32) || "文字", prompt: text, created_at: createdAt() });
-        toast.success("已从剪贴板添加文字");
-        return;
       }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "无法读取系统剪贴板，请使用粘贴快捷键"); return; }
+    try {
+      const parsed: unknown = JSON.parse(clipboardText);
+      if (parsed && typeof parsed === "object" && "type" in parsed && parsed.type === "yunmian-canvas-nodes") {
+        const normalized = normalizeCanvasClipboard(parsed);
+        if (!normalized) return toast.error("剪贴板中的画布节点格式无效");
+        copied = normalized;
+      }
+    } catch { /* Plain text is a valid clipboard payload. */ }
+    if (!copied.nodes.length && clipboardText.trim()) {
+      const text = clipboardText.trim();
+      const center = canvasCenterPosition();
+      addNode({ id: `text-${randomID()}`, type: "text", x: center.x - 170, y: center.y - 120, width: 340, height: 240, font_size: 14, scale_x: 1, scale_y: 1, title: text.split(/\r?\n/, 1)[0].slice(0, 32) || "文字", prompt: text, created_at: createdAt() });
+      toast.success("已从剪贴板添加文字");
+      return;
     }
     if (!copied.nodes.length) return toast.error("剪贴板中没有可粘贴的内容");
     const bounds = copied.nodes.reduce((result, node) => ({
@@ -4833,13 +4844,13 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       setRelayTokenDialogKind("video");
       return;
     }
-			const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.composer_content ?? sourceNode.prompt ?? "");
+			const context = buildCanvasGenerationContext(nodeID, params.generation_video_draft_source_task_id ? [sourceNode] : nodesRef.current, params.generation_video_draft_source_task_id ? [] : connectionsRef.current, prompt ?? sourceNode.composer_content ?? sourceNode.prompt ?? "");
     const text = context.prompt.trim();
 		const requestPrompt = text;
     if (!text && !context.referenceImageURLs.length && !context.firstFrameURL && !context.lastFrameURL && !context.referenceVideoURLs.length && !context.referenceAudioURLs.length) return toast.error("请填写视频描述或连接参考素材");
-				const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
-			const configuredImageReferenceURLs = params.generation_video_reference_image_urls.filter((url) => url.trim());
-			const configuredAudioReferenceURLs = params.generation_video_reference_audio_urls.filter((url) => url.trim());
+				const configuredVideoReferenceURLs = (params.generation_video_draft_source_task_id ? [] : params.generation_video_reference_urls).filter((url) => url.trim());
+			const configuredImageReferenceURLs = (params.generation_video_draft_source_task_id ? [] : params.generation_video_reference_image_urls).filter((url) => url.trim());
+			const configuredAudioReferenceURLs = (params.generation_video_draft_source_task_id ? [] : params.generation_video_reference_audio_urls).filter((url) => url.trim());
 			const frameReferencesEnabled = params.generation_video_reference_mode !== "reference" && supportsVideoFrameReferences(params.generation_video_model);
 			const videoImageReferences = canvasVideoGenerationReferences(context, configuredImageReferenceURLs, frameReferencesEnabled);
 			const allImageReferenceURLs = videoImageReferences.referenceImageURLs;
@@ -4876,7 +4887,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
 		if (videoModelRequiresHTTPSReferences(params.generation_video_model) && [...configuredImageURLs, firstFrameURL, lastFrameURL, ...referenceVideoURLs, ...referenceAudioURLs].filter(Boolean).some((url) => isPublicReferenceURL(url) && !isPublicHTTPSReferenceURL(url))) {
 			return toast.error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
 		}
-			if (videoRequiresReferenceImage(params.generation_video_model) && configuredImageURLs.length === 0 && !firstFrameURL) {
+			if (!params.generation_video_draft_source_task_id && videoRequiresReferenceImage(params.generation_video_model) && configuredImageURLs.length === 0 && !firstFrameURL) {
 			return toast.error(`模型 ${params.generation_video_model} 仅支持图生视频，请连接一张参考图片`);
 		}
     const taskID = `canvas-video-${randomID()}`;
@@ -4931,7 +4942,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
 						throw new Error("该 MiniMax 模型的参考素材必须是公网 HTTPS 链接，请将 IMAGE_BASE_URL 配置为 https://... 后重新上传");
 					}
 				}
-				const normalizedVideo = normalizeVideoRequest({
+				const normalizedVideo = params.generation_video_draft_source_task_id ? { model: params.generation_video_model, size: params.generation_video_size, seconds: params.generation_video_seconds, resolution: "1080p", referenceMode: "first-frame" as const, referenceImageURLs: [], referenceVideoURLs: [], referenceAudioURLs: [], parameters: undefined, generateAudio: params.generation_video_audio, watermark: params.generation_video_watermark, firstFrameURL: undefined, lastFrameURL: undefined } : normalizeVideoRequest({
 				model: params.generation_video_model,
 				size: params.generation_video_size,
 				seconds: params.generation_video_seconds,
@@ -4952,6 +4963,8 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       if (!isCurrentProject()) return;
       controller.signal.throwIfAborted();
       const submitted = await createVideoGenerationTask({
+        draft: params.generation_video_draft,
+        draftSourceTaskId: params.generation_video_draft_source_task_id,
         workflowInputs: sourceNode.generation_workflow_inputs,
 				clientTaskId: taskID,
 					prompt: requestPrompt,
@@ -5496,6 +5509,18 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     }
   }
 
+  async function convertVideoDraft(node: CanvasNode) {
+    if (!node.task_id || !node.generation_video_draft || node.generation_status !== "success") return;
+    if (nodesRef.current.some(result => result.generation_video_draft_source_task_id === node.task_id && nodeGenerationRunning(result.id))) return;
+    const id = `video-${randomID()}`;
+    const result: CanvasNode = { ...node, id, url: "", storage_key: "", task_id: "", generation_status: "idle", generation_progress: undefined, generation_started_at: undefined, generation_error: "", generation_video_draft: false, generation_video_draft_source_task_id: node.task_id, generation_video_resolution: "1080p", generation_video_first_frame_node_id: undefined, generation_video_last_frame_node_id: undefined, generation_video_last_frame_url: undefined, generation_video_reference_image_urls: [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [], generation_reference_urls: [], title: `${node.title || "视频"} · 正片`, x: node.x + node.width + 96, created_at: createdAt() };
+    replaceNodes([...nodesRef.current, result]);
+    replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: node.id, to_node_id: id }]);
+    setSelectedNodeIDs(new Set([id]));
+    pushHistory();
+    await runVideoGeneration(id, node.prompt || "基于样片生成正片");
+  }
+
   function renderNodeQuickActions(node: CanvasNode) {
     if (node.type === "script") return <CanvasScriptActions running={scriptNodeRunning(node.id)} ready={{ image: Boolean(node.script_project && scriptCanGenerateMedia(node.script_project, "image", nodesRef.current)), video: Boolean(node.script_project && scriptCanGenerateMedia(node.script_project, "video", nodesRef.current)) }} onGenerate={() => requestScriptGeneration(node.id)} onImages={() => void generateScriptMedia(node.id, "image")} onVideos={() => void generateScriptMedia(node.id, "video")} onDownload={() => downloadScript(node)} />;
     const imageEditingModel = node.generation_model?.trim() || imageModel.trim();
@@ -5515,6 +5540,8 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         onTextToImage={() => generateFromTextNode(node.id)}
         onOpenDirector={() => { setPanelNodeID(""); setOpenDirectorNodeID(node.id); }}
         onMediaOperation={(operation) => handleCanvasMediaOperation(node.id, operation)}
+        onConvertDraft={node.type === "video" && node.generation_video_draft && node.generation_status === "success" && node.task_id && videoSupportsDraft(node.generation_video_model || "") ? () => void convertVideoDraft(node) : undefined}
+        convertingDraft={nodes.some(result => result.generation_video_draft_source_task_id === node.task_id && nodeGenerationRunning(result.id))}
       />
     );
   }
@@ -5843,8 +5870,6 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       else if (command && !event.altKey && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
       else if (command && !event.altKey && event.key.toLowerCase() === "a") { event.preventDefault(); selectionChanged(new Set(nodesRef.current.map((node) => node.id))); }
       else if (command && !event.altKey && event.key.toLowerCase() === "g") { event.preventDefault(); createGroupFromSelection(); }
-      else if (command && !event.altKey && event.key.toLowerCase() === "c") { event.preventDefault(); void copySelected(); }
-      else if (command && !event.altKey && event.key.toLowerCase() === "v") { event.preventDefault(); void pasteSelected(); }
       else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeSelected(); }
       else if (event.key === "Escape") {
         selectionChanged(new Set());
@@ -5855,8 +5880,17 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         setCanvasMenuOpen(false);
       }
     };
+    const clipboard = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || documentRef.current.agent_run?.status === "running") return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input,textarea,select,[contenteditable=true],[data-canvas-no-pan],[data-canvas-side-panel],[data-canvas-agent-panel],[data-canvas-controls],[role=dialog],[role=listbox],[role=combobox]")) return;
+      if (event.type === "copy") { if (!window.getSelection()?.toString()) void copySelected(event); }
+      else { event.preventDefault(); void pasteSelected(event); }
+    };
     window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    window.addEventListener("copy", clipboard);
+    window.addEventListener("paste", clipboard);
+    return () => { window.removeEventListener("keydown", keydown); window.removeEventListener("copy", clipboard); window.removeEventListener("paste", clipboard); };
   });
 
   useEffect(() => {

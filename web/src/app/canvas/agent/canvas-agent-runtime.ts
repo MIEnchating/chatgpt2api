@@ -4,7 +4,7 @@ import { canvasAgentPendingMediaNodeIDs } from "./canvas-agent-execution";
 import { type AgentSkill } from "@/services/api/agent-skills";
 import { type CanvasAgentContext } from "./canvas-agent-context";
 import { canvasAgentActionLabel, isCanvasAgentMediaAction, normalizeCanvasAgentAction, type CanvasAgentAction, type CanvasAgentToolResult } from "./canvas-agent-tools";
-import type { CanvasAgentProtocolMessage, CanvasAgentState, CanvasAgentTraceEntry, CanvasAssistantMessageStatus, CanvasAssistantReference } from "./canvas-agent-types";
+import type { CanvasAgentProtocolMessage, CanvasAgentState, CanvasAgentTraceEntry, CanvasAssistantMessageStatus, CanvasAssistantReference, CanvasCodexContextUsage } from "./canvas-agent-types";
 
 
 
@@ -35,6 +35,7 @@ export type RunCanvasAgentInput = {
   persist?: () => Promise<void>;
   onEvent?: (event: CanvasAgentRuntimeEvent) => void;
   onTrace?: (entry: CanvasAgentTraceEntry) => void;
+  onContextUsage?: (usage: CanvasCodexContextUsage) => void;
   onCheckpoint?: (checkpoint: { state: CanvasAgentState; protocolMessages: CanvasAgentProtocolMessage[]; contextCheckpoint?: string }) => void;
   signal?: AbortSignal;
 };

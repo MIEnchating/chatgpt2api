@@ -97,6 +97,8 @@ type ImageComposerProps = {
   videoSeconds: string;
   videoResolution: string;
   videoGenerateAudio: boolean;
+  videoDraft?: boolean;
+  onVideoDraftChange?: (value: boolean) => void;
   videoWatermark: boolean;
   videoTaskCount: number;
   videoFirstFrameURL: string;
@@ -289,6 +291,8 @@ export function ImageComposer({
   videoSeconds,
   videoResolution,
   videoGenerateAudio,
+  videoDraft,
+  onVideoDraftChange,
   videoWatermark,
   videoTaskCount,
   videoFirstFrameURL,
@@ -434,6 +438,7 @@ export function ImageComposer({
   }
 
   const videoSettingsValue: VideoSettingsValue = {
+    draft: videoDraft,
     parameters: videoParameters,
     size: videoSize,
     seconds: videoSeconds,
@@ -444,6 +449,7 @@ export function ImageComposer({
   };
 
   function updateVideoSettings(patch: Partial<VideoSettingsValue>) {
+    if (patch.draft !== undefined) onVideoDraftChange?.(patch.draft);
     if (patch.parameters !== undefined) onVideoParametersChange?.(patch.parameters);
     if (patch.size !== undefined) onVideoSizeChange(patch.size);
     if (patch.seconds !== undefined) onVideoSecondsChange(patch.seconds);

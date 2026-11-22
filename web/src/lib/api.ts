@@ -661,6 +661,8 @@ export type CreationTaskData = {
 };
 
 export type CreationTask = {
+  draft?: boolean;
+  draft_source_task_id?: string;
   id: string;
   video_contract?: VideoTaskContractReference;
   /** Monotonic server-side task revision when available. */

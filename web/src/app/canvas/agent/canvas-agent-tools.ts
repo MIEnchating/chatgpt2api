@@ -10,6 +10,7 @@ const CANVAS_AGENT_ACTION_NAMES = [
   "query_canvas_nodes",
   "read_skill_file",
   "get_node",
+  "analyze_video",
   "get_reference",
   "list_references",
   "get_upstream_nodes",
@@ -95,7 +96,7 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
     case "ask_user_question": {
       const options = stringArray(input.options);
       if (options.length !== (input.options as string[]).length) throw new Error("提问选项不得重复或为空");
-      normalized = { question: requiredString(input.question, "question"), reason: requiredString(input.reason, "reason"), options, kind: input.kind, ...(input.purpose === "media_generation" || input.purpose === "workflow_review" ? { purpose: input.purpose } : {}) };
+      normalized = { ...(input.questions ? { questions: input.questions } : {}), question: requiredString(input.question, "question"), reason: requiredString(input.reason, "reason"), options, kind: input.kind, ...(input.purpose === "media_generation" || input.purpose === "workflow_review" ? { purpose: input.purpose } : {}) };
       break;
     }
     case "update_plan": {
@@ -110,6 +111,10 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
       break;
     case "list_references":
       normalized = { ...(typeof input.keyword === "string" ? { keyword: input.keyword } : {}), page: Math.max(1, Number(input.page) || 1), pageSize: Math.min(50, Math.max(1, Number(input.pageSize) || 20)) };
+      break;
+    case "analyze_video":
+      normalized = { ...input, nodeId: requiredString(input.nodeId, "nodeId"), question: requiredString(input.question, "question") };
+      if (typeof input.endMs === "number" && input.endMs <= Number(input.startMs || 0)) throw new Error("视频结束时间必须大于起始时间");
       break;
     case "get_reference":
       normalized = { referenceId: requiredString(input.referenceId, "referenceId") };

@@ -5,6 +5,7 @@ import {
   Brush,
   Camera,
   MoreHorizontal,
+  Film,
   Download,
   Eye,
   FileText,
@@ -44,6 +45,8 @@ export function CanvasNodeQuickActions({
   onTextToImage,
   onOpenDirector,
   onMediaOperation,
+  onConvertDraft,
+  convertingDraft,
 }: {
   node: CanvasNode;
   busy: boolean;
@@ -59,6 +62,8 @@ export function CanvasNodeQuickActions({
   onTextToImage: () => void;
   onOpenDirector: () => void;
   onMediaOperation: (operation: CanvasMediaOperation) => void;
+  onConvertDraft?: () => void;
+  convertingDraft?: boolean;
 }) {
   const actionClosedRef = useRef(false);
   type QuickAction = { key: string; label: string; icon: LucideIcon; disabled?: boolean; onClick: () => void };
@@ -82,6 +87,7 @@ export function CanvasNodeQuickActions({
       { key: "save-asset", label: "存入我的素材", icon: FolderPlus, onClick: onSaveAsset },
     ]);
   } else if (node.type === "video" && hasMedia) {
+    if (onConvertDraft) groups.push([{ key: "convert-draft", label: "生成正片（1080p）", icon: Film, disabled: busy || convertingDraft, onClick: onConvertDraft }]);
     moreActions.push({ key: "first-frame", label: "截取首帧", icon: Camera, disabled: busy, onClick: () => onMediaOperation("frame-first") });
     moreActions.push({ key: "last-frame", label: "截取尾帧", icon: Camera, disabled: busy, onClick: () => onMediaOperation("frame-last") });
     groups.push([

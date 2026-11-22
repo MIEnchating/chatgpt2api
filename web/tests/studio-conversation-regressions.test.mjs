@@ -388,7 +388,7 @@ test("smart video generation can choose required material from conversation hist
     composerMode: "video", smartContextEnabled: true, videoModel: "image-to-video",
     setImagePrompt: () => {}, replaceReferenceImages: () => {}, setVideoFirstFrameURL: () => {}, setVideoLastFrameURL: () => {}, setVideoReferenceImageURLs: () => {}, setVideoReferenceVideoURLs: () => {}, setVideoReferenceAudioURLs: () => {}, videoReferenceAudioURLsRef: { current: [] },
     videoModelOptions: [{ value: "image-to-video" }], videoTaskCount: "1", videoSize: "16:9",
-    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: { seed: 0 },
+    videoDraft: false, videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false, videoParameters: { seed: 0 },
     videoRequiresReferenceImage: () => true, videoRequiresReferenceVideo: () => true, videoRequiresReferenceAudio: () => true,
     videoWorkbenchReferenceLimitError: () => "", videoReferenceImageLimit: () => 2,
     videoReferenceCombinationError: () => { throw Error("Agent must select materials first"); },

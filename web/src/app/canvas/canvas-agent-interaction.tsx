@@ -3,7 +3,7 @@ import { Confirmation } from "@/components/ai-elements/confirmation";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { CanvasAgentAnswerInput } from "./canvas-agent-answer-input";
@@ -21,14 +21,37 @@ export function CanvasAgentQuestionRecord({ question, answer, cancelled }: { que
   </MessageContent></Message>;
 }
 
-export function CanvasAgentQuestionCard({ question, busy, active: _active, onAnswer, onCancel }: {
+export function CanvasAgentQuestionCard(props: { question: CanvasAgentQuestion; busy: boolean; active: boolean; onAnswer: (answer: string) => boolean; onCancel?: () => void }) {
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [index, setIndex] = useState(0);
+  const questions = props.question.questions;
+  if (!questions?.length) return <CanvasAgentSingleQuestionCard {...props} />;
+  const current = questions[index];
+  return <CanvasAgentSingleQuestionCard {...props} key={`${props.question.id}:${index}`} defaultAnswer={answers[index]} selectOnly submitLabel={index === questions.length - 1 ? "发送全部回答" : "下一题"} onPrevious={index > 0 ? answer => {
+    setAnswers(previous => { const next = [...previous]; next[index] = answer; return next; });
+    setIndex(index - 1);
+  } : undefined} question={{ ...props.question, question: `${index + 1} / ${questions.length} · ${current.question}`, options: current.options }} onAnswer={answer => {
+    const next = [...answers];
+    next[index] = answer;
+    if (index === questions.length - 1) return questions.every((_, i) => next[i]?.trim()) && props.onAnswer(questions.map((item, i) => `${item.question}\n${next[i]}`).join("\n\n"));
+    setAnswers(next);
+    setIndex(index + 1);
+    return true;
+  }} />;
+}
+
+function CanvasAgentSingleQuestionCard({ question, busy, active: _active, onAnswer, onCancel, defaultAnswer = "", selectOnly = false, submitLabel = "发送", onPrevious }: {
   question: CanvasAgentQuestion;
   busy: boolean;
   active: boolean;
   onAnswer: (answer: string) => boolean;
   onCancel?: () => void;
+  defaultAnswer?: string;
+  selectOnly?: boolean;
+  submitLabel?: string;
+  onPrevious?: (answer: string) => void;
 }) {
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(defaultAnswer);
   const [submitted, setSubmitted] = useState(false);
   const submitting = useRef(false);
   useEffect(() => {
@@ -51,9 +74,10 @@ export function CanvasAgentQuestionCard({ question, busy, active: _active, onAns
     <div className="w-full min-w-0 px-3 pb-1">
     {question.reason ? <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{question.reason}</p> : null}
     <p className="mt-2 whitespace-pre-wrap break-words text-sm font-medium leading-6">{question.question}</p>
-    <div className="mt-3"><CanvasAgentAnswerInput options={question.options.map((label) => ({ label }))} value={answer} onChange={setAnswer} onSelect={respond} disabled={sending} actions={<>
+    <div className="mt-3"><CanvasAgentAnswerInput options={question.options.map((label) => ({ label }))} value={answer} onChange={setAnswer} onSelect={selectOnly ? setAnswer : respond} disabled={sending} actions={<>
+      {onPrevious ? <Button type="button" variant="outline" disabled={sending} onClick={() => onPrevious(answer)}><ArrowLeft />上一题</Button> : null}
       {onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>取消</Button> : null}
-      <Button type="button" onClick={() => respond(answer)} aria-busy={sending} disabled={sending || !answer.trim()}>{sending ? <Spinner aria-hidden="true" /> : <ArrowRight />}发送</Button>
+      <Button type="button" onClick={() => respond(answer)} aria-busy={sending} disabled={sending || !answer.trim()}>{sending ? <Spinner aria-hidden="true" /> : <ArrowRight />}{submitLabel}</Button>
     </>} /></div>
     </div></Confirmation>
     </div></ScrollAreaViewport><ScrollBar /></ScrollAreaRoot>;

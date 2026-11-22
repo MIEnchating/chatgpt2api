@@ -10,6 +10,13 @@ import (
 // Submission and preview share one normalization pass. Queued tasks contain
 // these canonical values, so request mapping must not apply rules a second time.
 func normalizeVideoContractInput(body map[string]any, contract protocol.VideoModelContract) error {
+	if util.Clean(body["draft_task_id"]) != "" {
+		if !protocol.SupportsVideoDraft(util.Clean(body["model"]), contract) {
+			return fmt.Errorf("当前视频协议不支持生成正片")
+		}
+		body["resolution"] = "1080p"
+		return nil
+	}
 	refs := removeVideoFrameAliases(util.AsStringSlice(body["reference_image_urls"]), videoFrameAliases(body))
 	videos := util.AsStringSlice(body["reference_video_urls"])
 	audios := util.AsStringSlice(body["reference_audio_urls"])

@@ -100,7 +100,7 @@ func cleanAuditPayloadMap(payload map[string]any) map[string]any {
 	out := make(map[string]any, len(payload))
 	for key, value := range payload {
 		switch key {
-		case relayTaskCredentialKey, relayTranslationSourceKey, "owner_id", "owner_name", "base_url", "relay_base_url", relayCustomEndpointPayloadKey:
+		case relayTaskCredentialKey, relayTranslationSourceKey, "video_draft_origin", "draft_source_base_url", "owner_id", "owner_name", "base_url", "relay_base_url", relayCustomEndpointPayloadKey:
 			continue
 		}
 		if isInternalPayloadValue(value) {

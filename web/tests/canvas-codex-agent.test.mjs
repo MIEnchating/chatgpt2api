@@ -14,6 +14,40 @@ import { CANVAS_AGENT_SKILL_FILE_TOOL, CANVAS_AGENT_TOOLS, isCanvasAgentMediaAct
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test("Codex stores real context usage for the active thread and requests public summaries", async () => {
+  const f = fixture();
+  try {
+    const agent = await f.connect(), controller = new AbortController(), usages = [];
+    const pending = agent.run({ ...f.runInput(controller), onContextUsage: usage => usages.push(usage) });
+    const rejected = assert.rejects(pending, /已停止/);
+    await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+    assert.equal(f.rpcCalls.find(call => call.method === "turn/start").params.summary, "auto");
+    const event = params => f.event({ type: "rpc", message: { method: "thread/tokenUsage/updated", params } });
+    const tokenUsage = { last: { totalTokens: 1000 }, total: { totalTokens: 999999 }, modelContextWindow: 128000 };
+    event({ threadId: "other", tokenUsage });
+    event({ threadId: "thread", turnId: "old-turn", tokenUsage });
+    event({ threadId: "thread", tokenUsage });
+    event({ threadId: "thread", turnId: "turn", tokenUsage: { ...tokenUsage, modelContextWindow: -1 } });
+    assert.equal(usages.length, 0);
+    event({ threadId: "thread", turnId: "turn", tokenUsage });
+    assert.deepEqual(usages.map(usage => ({ ...usage })), [{ model: "codex-test", tokens: 1000, contextWindow: 128000, threadId: "thread", serviceId: "service" }]);
+    controller.abort(); await rejected;
+    event({ threadId: "thread", turnId: "turn", tokenUsage }); assert.equal(usages.length, 1);
+  } finally { f.cleanup(); }
+});
+test("Codex resumed turns explicitly replace prior Skill selections without loading roots twice", async () => {
+  const f = fixture();
+  try {
+    const agent = await f.connect(), controller = new AbortController();
+    const pending = agent.run({ ...f.runInput(controller), codexThreadId: "thread", codexServiceId: "service", activeSkills: [{ id: "new-skill", name: "New flow", content: "Rules" }] });
+    const rejected = assert.rejects(pending, /已停止/);
+    await flush();
+    assert.ok(f.rpcCalls.some(call => call.method === "thread/resume"));
+    const text = f.rpcCalls.find(call => call.method === "turn/start").params.input[0].text;
+    assert.match(text, /替换此前选择/); assert.match(text, /New flow（new-skill）/); assert.doesNotMatch(text, /Rules/);
+    controller.abort(); f.threadReady[0]({ turn: { id: "turn" } }); await rejected;
+  } finally { f.cleanup(); }
+});
 test("completed task status does not inherit historical media failures", () => {
   const state = { phase: "video", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] };
   const history = [{ role: "tool", name: "get_generation_task", toolCallId: "read-old", content: '{"ok":true,"nodeId":"old-video","status":"error"}' }];
@@ -681,5 +715,37 @@ test("Codex streams public reasoning summaries while ignoring raw reasoning delt
     event("item/completed", { item: { id: "answer", type: "agentMessage", text: "检查完成。" } });
     event("turn/completed", { turn: { id: "turn", status: "completed" } });
     await pending;
+  } finally { f.cleanup(); }
+});
+
+test("Codex grouped choices wait for every answer before returning the tool result", async () => {
+  let request, resolveAnswer;
+  const f = fixture({ ask: value => { request = value; return new Promise(resolve => { resolveAnswer = resolve; }); } });
+  try {
+    const agent = await f.connect();
+    const pending = agent.run(f.runInput());
+    await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
+    f.event({ type: "rpc", message: { id: "batch-request", method: "item/tool/call", params: { threadId: "thread", turnId: "turn", tool: "ask_user_question", arguments: { question: "确认创作方向", reason: "两项会影响方案", options: [], kind: "clarification", questions: [{ question: "主题？", options: ["自然", "城市"] }, { question: "画风？", options: ["写实", "水彩"] }] }, callId: "batch" } } });
+    await flush();
+    assert.equal(request.questions.length, 2);
+    resolveAnswer({ accepted: true, answers: Object.fromEntries(request.questions.map((question, index) => [question.id, index === 0 ? "自然" : "水彩"])) });
+    await flush(); await flush();
+    f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
+    const result = await pending;
+    const receipt = result.protocolMessages.find(message => message.role === "tool" && message.toolCallId === "codex-turn-batch");
+    assert.match(receipt.content, /自然/);
+    assert.match(receipt.content, /水彩/);
+  } finally { f.cleanup(); }
+});
+
+test("MCP frame loading failures return an error instead of leaving the call waiting", async () => {
+  const f = fixture({ executeAction: async () => ({ ok: true, frames: [{ timestampMs: 0, url: "unsupported-frame-address" }] }) });
+  try {
+    await f.connect();
+    f.event({ type: "tool", requestId: "video-analysis", name: "analyze_video", arguments: { nodeId: "clip", question: "构图？" } });
+    for (let i = 0; i < 20 && !f.toolResults.length; i++) await flush();
+    assert.equal(f.toolResults.length, 1);
+    assert.equal(f.toolResults[0].result.ok, false);
+    assert.equal(typeof f.toolResults[0].result.message, "string");
   } finally { f.cleanup(); }
 });

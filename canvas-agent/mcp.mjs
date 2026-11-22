@@ -10,7 +10,7 @@ export function createCanvasMCP({ endpoint, token, sessionId, fetchRequest = fet
   async function call(path, body, signal) {
     const response = await fetchRequest(`${url.origin}/sessions/${encodeURIComponent(sessionId)}/${path}`, {
       method: body ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.any([controller.signal, signal, AbortSignal.timeout(125_000)]),
+      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.any([controller.signal, signal, AbortSignal.timeout(body?.name === "analyze_video" ? 155_000 : 125_000)]),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "画布连接失败");
@@ -36,7 +36,7 @@ export function createCanvasMCP({ endpoint, token, sessionId, fetchRequest = fet
         else if (message.method === "tools/list") result = await call("tools", undefined, request.signal);
         else if (message.method === "tools/call") {
           const value = await call("tools-call", { name: message.params?.name, arguments: message.params?.arguments || {} }, request.signal);
-          result = { content: [{ type: "text", text: JSON.stringify(value) }], isError: value?.ok === false };
+          result = { content: message.params?.name === "analyze_video" && Array.isArray(value?.content) ? value.content : [{ type: "text", text: JSON.stringify(value) }], isError: value?.ok === false };
         } else return { jsonrpc: "2.0", id, error: { code: -32601, message: "不支持的 MCP 方法" } };
         return { jsonrpc: "2.0", id, result };
       } catch (error) { return { jsonrpc: "2.0", id, error: { code: -32603, message: error instanceof Error ? error.message : "MCP 请求失败" } }; } finally { requests.delete(id); }

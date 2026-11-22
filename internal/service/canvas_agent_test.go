@@ -1550,3 +1550,25 @@ func TestCanvasAgentReportsTechnicalBlockerWithoutQuestionOrSuccessfulDelivery(t
 		t.Fatalf("failed node was lost or treated as successful: %+v", done.Nodes)
 	}
 }
+
+func TestCanvasAgentQuestionBatchWaitsForAllUserAnswers(t *testing.T) {
+	var calls atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		if calls.Add(1) == 1 {
+			return agentTurn(agentCall("questions", "ask_user_question", map[string]any{"question": "确认两项创作方向", "reason": "两项都会影响方案", "kind": "clarification", "options": []string{}, "questions": []map[string]any{{"question": "主题？", "options": []string{"自然", "城市"}}, {"question": "画风？", "options": []string{"写实", "水彩"}}}})), nil
+		}
+		return agentTurn(agentCall("finish", "finish_task", map[string]any{"text": "已确认", "status": "success"})), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	question := agentMap(agentMap(session["agentState"])["pendingQuestion"])
+	if done.AgentRun.Status != "waiting" || len(util.AsMapSlice(question["questions"])) != 2 || calls.Load() != 1 {
+		t.Fatalf("question batch did not pause: %v", question)
+	}
+}

@@ -417,7 +417,14 @@ func declaredVideoContractRequestPayload(payload map[string]any, contract protoc
 }
 
 func declaredCanonicalVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
-	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, videoContractRuleValues(payload, contract))
+	if id := util.Clean(payload["draft_task_id"]); id != "" {
+		return map[string]any{"model": payload["model"], "draft_task_id": id, "resolution": "1080p", "watermark": util.ToBool(payload["watermark"])}
+	}
+	request := declaredVideoContractRequestPayloadFromRuleValues(payload, contract, videoContractRuleValues(payload, contract))
+	if payload["draft"] == true {
+		request["draft"] = true
+	}
+	return request
 }
 
 func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, contract protocol.VideoModelContract, ruleValues map[string]any) map[string]any {

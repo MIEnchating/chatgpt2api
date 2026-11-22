@@ -287,10 +287,11 @@ test("Codex questions retain separate drafts and require every answer before con
   const state = hooks();
   const { useCanvasCodexApproval } = loadSource("../src/app/canvas/agent/use-canvas-codex-approval.tsx", { react: state.react });
   let current = state.render(useCanvasCodexApproval);
+  let settled = false;
   const result = current.ask({ title: "补充创作要求", questions: [
     { id: "style", question: "选择风格", options: [{ label: "极简" }] },
     { id: "size", question: "选择尺寸", options: [{ label: "方形" }] },
-  ] }, new AbortController().signal);
+  ] }, new AbortController().signal).then(answer => { settled = true; return answer; });
   current = state.render(useCanvasCodexApproval);
   let nodes = descendants(current.dialog);
   assert.equal(nodes.some(node => node.type === "Confirmation"), false);
@@ -302,9 +303,17 @@ test("Codex questions retain separate drafts and require every answer before con
   assert.equal(inputs[0].props.value, "自定义风格");
   assert.equal(inputs[1].props.value, "");
   inputs[1].props.onSelect("方形");
+  await flush();
+  assert.equal(settled, false, "a batch must remain editable until explicit confirmation");
+  current = state.render(useCanvasCodexApproval);
+  nodes = descendants(current.dialog);
+  assert.equal(nodes.filter(node => node.type === "CanvasAgentAnswerInput")[1].props.value, "方形");
+  nodes.filter(node => node.type === "CanvasAgentAnswerInput")[0].props.onChange("水彩风格");
+  current = state.render(useCanvasCodexApproval);
+  descendants(current.dialog).find(node => node.type === "Button" && node.props.children === "确认").props.onClick();
   const answer = await result;
   assert.equal(answer.accepted, true);
-  assert.deepEqual({ ...answer.answers }, { style: "自定义风格", size: "方形" });
+  assert.deepEqual({ ...answer.answers }, { style: "水彩风格", size: "方形" });
 });
 
 test("reference media attachments separate preview, removal and uploading states", () => {

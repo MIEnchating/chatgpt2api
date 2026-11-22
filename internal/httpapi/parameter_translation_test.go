@@ -123,7 +123,7 @@ func TestTranslatedAudioAndVideoUseCreationResults(t *testing.T) {
 
 func TestTranslatedTaskInternalsAreExcludedFromRequestsAndAudit(t *testing.T) {
 	payload := map[string]any{
-		"model": "custom", "prompt": "hello",
+		"model": "custom", "prompt": "hello", "video_draft_origin": map[string]any{"base_url": "private endpoint"}, "draft_source_base_url": "private endpoint",
 		relayTaskCredentialKey:                      frozenTaskCredential{relayCredential{APIKey: "secret"}},
 		relayTranslationSourceKey:                   "private rule",
 		service.MediaTaskProgressCallbackPayloadKey: func(int) {},
@@ -133,7 +133,7 @@ func TestTranslatedTaskInternalsAreExcludedFromRequestsAndAudit(t *testing.T) {
 		"chat":  relayPayloadForPath("/v1/chat/completions", payload),
 		"audit": cleanAuditPayloadMap(payload),
 	} {
-		for _, key := range []string{relayTaskCredentialKey, relayTranslationSourceKey, service.MediaTaskProgressCallbackPayloadKey} {
+		for _, key := range []string{relayTaskCredentialKey, relayTranslationSourceKey, service.MediaTaskProgressCallbackPayloadKey, "video_draft_origin", "draft_source_base_url"} {
 			if _, ok := result[key]; ok {
 				t.Errorf("%s leaked internal field %s", name, key)
 			}
@@ -277,5 +277,28 @@ func TestStoreTranslatedVideoRejectsInvalidDataWithoutLeavingFiles(t *testing.T)
 	after, err := os.ReadDir(app.videoDir)
 	if err != nil || len(after) != len(before) {
 		t.Fatalf("temporary files leaked: %v err=%v", after, err)
+	}
+}
+
+func TestTranslatedVideoDraftKeepsOriginalUpstreamID(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["draft"] != true || body["mode"] != "draft" {
+				t.Errorf("draft conversion variables missing: %v %v", body, err)
+			}
+			io.WriteString(w, `{"id":"original-sample"}`)
+			return
+		}
+		io.WriteString(w, `{"status":"done","output":"https://media.example/sample.mp4"}`)
+	}))
+	defer server.Close()
+	externalWorkflowTestClient(app, server)
+	var original string
+	payload := map[string]any{"model": "custom", "prompt": "scene", "draft": true, "api_key": "key", "relay_base_url": "http://translate.example", relayCustomEndpointPayloadKey: true, relayTranslationSourceKey: `{models:{custom:{POST:{url:"/create",body:{draft,mode,source:draft_task_id}},result:"output",poll:{GET:{url:"/query/{taskId}"},taskId:"id",status:"status",success:["done"],failure:["failed"]}}}}`, service.VideoTaskProgressCallbackPayloadKey: func(update service.VideoTaskProgressUpdate) { original = update.UpstreamTaskID }}
+	if _, matched, err := app.relayTranslatedMedia(context.Background(), payload, nil, "video"); err != nil || !matched || original != "original-sample" {
+		t.Fatalf("original ID lost: %s %v", original, err)
 	}
 }

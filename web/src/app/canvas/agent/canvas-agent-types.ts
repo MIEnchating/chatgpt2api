@@ -25,6 +25,7 @@ export type CanvasAgentPlan = {
 };
 
 export type CanvasAgentQuestion = {
+  questions?: Array<{ question: string; options: string[] }>;
   id: string;
   question: string;
   reason: string;
@@ -109,6 +110,7 @@ export type CanvasAgentQueuedMessage = { id: string; text: string; references: C
 export type CanvasAgentMessageQueue = { messages: CanvasAgentQueuedMessage[]; paused: boolean; steeringId?: string };
 
 export type CanvasAgentContextUsage = { model: string; usedTokens: number; inputTokens?: number; maxTokens: number; compacting: boolean; basis: "compression-budget" };
+export type CanvasCodexContextUsage = { model: string; tokens: number; contextWindow?: number; threadId: string; serviceId: string };
 
 export type CanvasAssistantSession = {
   engine?: "native" | "codex";
@@ -121,6 +123,7 @@ export type CanvasAssistantSession = {
   contextCheckpoint?: string;
   messageQueue?: CanvasAgentMessageQueue;
   contextUsage?: CanvasAgentContextUsage;
+  codexContextUsage?: CanvasCodexContextUsage;
   codexThreadId?: string;
   codexServiceId?: string;
   activeSkillIds?: string[];

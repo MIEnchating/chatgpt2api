@@ -130,6 +130,8 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
 	}
 	switch name {
+	case "analyze_video":
+		return w.analyzeVideo(args)
 	case "create_primary_script_node", "create_script_node", "update_script_node", "confirm_script_node":
 		return w.scriptTool(name, args)
 	case "list_workflows", "get_workflow", "save_workflow", "run_saved_workflow", "create_canvas_workflow", "run_canvas_workflow":
@@ -531,7 +533,7 @@ func (w *canvasAgentWorker) createMedia(name string, args map[string]any) (map[s
 		n.GenerationVideoSize = util.Clean(args["size"])
 		n.GenerationVideoSeconds = util.ToInt(args["seconds"], 0)
 		n.GenerationVideoResolution = util.Clean(args["resolution"])
-		audio, _ := args["generateAudio"].(bool)
+		audio := canvasAgentVideoAudio(args, w.req.Generation)
 		n.GenerationVideoAudio = &audio
 		videoCapabilities := agentMap(agentMap(w.req.Generation["capabilities"])["video"])
 		n.GenerationVideoParameters, err = normalizeCanvasAgentVideoParameters(videoCapabilities, agentMap(args["videoParameters"]))

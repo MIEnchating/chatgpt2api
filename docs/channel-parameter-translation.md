@@ -51,7 +51,7 @@
 - 同站 `/videos/{id}/content` 下载沿用请求头和查询参数。跨来源重定向会被拒绝。
 - 视频结果中的 MP4、WebM、QuickTime Base64 Data URL 会先保存为本地视频文件，任务结果只持久化 `/videos/` 地址，避免大段 Base64 写入任务记录；无效数据会报错并清理临时文件。
 
-可用变量：`model`、`prompt`、`size`、`aspectRatio`、`quality`、`count`、`images`、`resolution`、`seconds`、`mode`、`negativePrompt`、`generateAudio`、`watermark`、`videos`、`audios`、`firstFrame`、`lastFrame`、`voice`、`audioFormat`、`speed`、`instructions`。素材变量为 URL/Data URL 数组，未提供的可选标量为 `undefined`。
+可用变量：`model`、`prompt`、`size`、`aspectRatio`、`quality`、`count`、`images`、`resolution`、`seconds`、`mode`、`draft`、`draft_task_id`、`negativePrompt`、`generateAudio`、`watermark`、`videos`、`audios`、`firstFrame`、`lastFrame`、`voice`、`audioFormat`、`speed`、`instructions`。素材变量为 URL/Data URL 数组，未提供的可选标量为 `undefined`。
 
 `aspectRatio` 按 `aspect_ratio`、`ratio`、`size` 的顺序取首个非空值，并转换为最简整数比例：`1536x1024` → `3:2`、`1920×1080` → `16:9`；`auto` 或无效尺寸得到空字符串。`size` 仍保留原始值。
 

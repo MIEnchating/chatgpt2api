@@ -735,6 +735,10 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("视频模型 %q 未配置启用的视频模型契约", model))
 			return
 		}
+		if err := a.resolveVideoDraft(identity, body, contract); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if err := normalizeVideoContractInput(body, contract); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -746,6 +750,10 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		seconds := util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
 		if err := a.freezeRelayCredentialForTask(r.Context(), identity, body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		if expected := util.Clean(body["draft_source_base_url"]); expected != "" && strings.TrimRight(a.relayBaseURLFromPayload(body), "/") != strings.TrimRight(expected, "/") {
+			util.WriteError(w, http.StatusBadRequest, "样片渠道地址已改变，未提交正片")
 			return
 		}
 		contractReference, err := a.videoContracts.ReferenceForContract(contract, model)
@@ -924,6 +932,9 @@ func chatTaskRequestMetadata(body map[string]any) map[string]any {
 
 func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelContract) map[string]any {
 	constraints := service.VideoTaskInputConstraints{PromptRequired: contract.Capability.Prompt == nil || contract.Capability.Prompt.Required, MaximumSeconds: 3600}
+	if util.Clean(body["draft_task_id"]) != "" {
+		constraints.PromptRequired = false
+	}
 	if duration := contract.Capability.SecondsRange; duration != nil {
 		constraints.MaximumSeconds = 0
 		if duration.Max != nil {
@@ -936,6 +947,16 @@ func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelC
 		protocol.VideoContractSnapshotPayloadKey:  contract,
 		service.VideoTaskInputConstraintsKey:      constraints,
 		service.VideoTaskTimeoutSecondsPayloadKey: contract.Polling.TimeoutSeconds + contract.Polling.IntervalSeconds,
+	}
+	for _, key := range []string{"draft", "draft_task_id", "draft_source_task_id"} {
+		if value, ok := body[key]; ok {
+			metadata[key] = value
+		}
+	}
+	if body["draft"] == true {
+		if frozen, ok := body[relayTaskCredentialKey].(frozenTaskCredential); ok {
+			metadata["video_draft_origin"] = map[string]any{"base_url": frozen.credential.BaseURL, "token_name": selectedRelayTokenNameFromPayload(body), "token_group": selectedRelayTokenGroupFromPayload(body)}
+		}
 	}
 	if parameters, ok := body["parameters"].(map[string]any); ok {
 		metadata["parameters"] = parameters

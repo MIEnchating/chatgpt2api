@@ -88,3 +88,15 @@ test("MCP cancellation aborts the matching HTTP call", async () => {
 test("MCP refuses remote or credential-bearing connection URLs", () => {
   for (const endpoint of ["https://example.com", "http://localhost@evil.example", "http://127.0.0.1:3210/path", "http://127.0.0.1:3210?token=bad"]) assert.throws(() => createCanvasMCP({ endpoint, token: "x", sessionId: "x" }));
 });
+
+test("MCP video analysis returns real image content instead of JSON-encoded pixels", async () => {
+  const content = [{ type: "text", text: "视频时间 1000 毫秒" }, { type: "image", mimeType: "image/jpeg", data: "aW1hZ2U=" }];
+  const mcp = createCanvasMCP({ endpoint: "http://127.0.0.1:3210", token: "token", sessionId: "canvas", fetchRequest: async () => Response.json({ ok: true, content }) });
+  try {
+    await mcp.handle({ id: 1, method: "initialize" });
+    await mcp.handle({ method: "notifications/initialized" });
+    const reply = await mcp.handle({ id: 2, method: "tools/call", params: { name: "analyze_video", arguments: { nodeId: "clip", question: "构图？" } } });
+    assert.deepEqual(reply.result.content, content);
+    assert.equal(reply.result.isError, false);
+  } finally { mcp.close(); }
+});

@@ -201,3 +201,18 @@ func validateCanvasAgentVideoParameter(name, kind string, required bool, enum []
 	}
 	return nil
 }
+
+// Explicit sound choices take precedence; omitted choices inherit the configured model default.
+func canvasAgentVideoAudio(args, generation map[string]any) bool {
+	if audio, explicit := args["generateAudio"].(bool); explicit {
+		return audio
+	}
+	caps := agentMap(agentMap(generation["capabilities"])["video"])
+	if caps["audioControl"] == "always" {
+		return true
+	}
+	if caps["audioControl"] == "none" {
+		return false
+	}
+	return util.ToBool(generation["videoGenerateAudio"])
+}

@@ -573,7 +573,7 @@ test("result retries use the currently selected model instead of the failed turn
     imagePageSource.indexOf("const handleSaveEditingTurn"),
   );
   for (const source of [retryImageSource, regenerateSource]) {
-    assert.match(source, /const retryModel = targetTurn\.mode === "video" \? videoModel\.trim\(\) : imageModel\.trim\(\)/);
+    assert.match(source, /const retryModel = targetTurn\.videoDraftSourceTaskId \? targetTurn\.model : targetTurn\.mode === "video" \? videoModel\.trim\(\) : imageModel\.trim\(\)/);
     assert.match(source, /normalizeRetryVideoTurnFields\(targetTurn, retryModel\)/);
     assert.match(source, /model: retryModel/);
     assert.match(source, /relayTokenNameForKind\(targetTurn\.mode === "video" \? "video" : "image", retryModel\)/);

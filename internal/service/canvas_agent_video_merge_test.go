@@ -244,3 +244,25 @@ func TestCanvasMovieFingerprintIgnoresReviewAndPresentationMetadata(t *testing.T
 		t.Fatal("dialogue content missing from composition identity", err)
 	}
 }
+
+func TestCanvasAgentVideoSoundInheritsDefaultUnlessExplicit(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		w := parallelAgentWorker(t, nil)
+		w.req.Generation["autoGenerateMedia"] = false
+		w.req.Generation["videoModel"] = "test-video"
+		w.req.Generation["videoGenerateAudio"] = true
+		w.req.Generation["capabilities"] = map[string]any{"video": map[string]any{"contractConfigured": true, "sizes": []string{"16:9"}, "duration": map[string]any{"values": []int{5}}, "audioControl": "toggle"}}
+		args := map[string]any{"prompt": "A moving cloud", "size": "16:9", "seconds": 5, "sourceNodeIds": []string{}}
+		if explicit {
+			args["generateAudio"] = false
+		}
+		result, err := w.createMedia("generate_video", args)
+		if err != nil || result["ok"] != true {
+			t.Fatalf("create video: %v %v", result, err)
+		}
+		node := w.node(result["nodeId"].(string))
+		if node.GenerationVideoAudio == nil || *node.GenerationVideoAudio == explicit {
+			t.Fatalf("explicit=%v audio=%v", explicit, node.GenerationVideoAudio)
+		}
+	}
+}

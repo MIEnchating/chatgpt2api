@@ -49,6 +49,24 @@ function worker(config, handler, store = { items: [], transactions: new Map() })
     child.stdin.write(JSON.stringify(config) + '\n');
   });
 }
+test('an upstream context rejection compacts retained history and retries without repeating tools', async () => {
+  const store = { items: [{ role: 'user', content: 'Earlier work '.repeat(5000) }, { role: 'assistant', content: 'Already done.' }], transactions: new Map() };
+  let models = 0, summaries = 0, finished = 0;
+  await worker({ tools: [], input: [{ role: 'user', content: 'Continue current work.' }] }, async (method, params) => {
+    if (method === 'model') {
+      if (params.summary) { summaries++; return { text_response: 'Previous work completed, do not repeat.' }; }
+      if (!models++) return { rpcError: '400 context_length_exceeded', retryable: false };
+      assert.match(JSON.stringify(params.messages), /Continue current work/);
+      assert.match(JSON.stringify(params.messages), /do not repeat/);
+      assert.doesNotMatch(JSON.stringify(params.messages), /Earlier work Earlier work/);
+      return { text_response: 'Continued.' };
+    }
+    if (method === 'finish') finished++;
+    return {};
+  }, store);
+  assert.equal(models, 2); assert(summaries > 0); assert.equal(finished, 1);
+  assert.match(JSON.stringify(store.items), /Earlier work Earlier work/);
+});
 test('completion mixed with another tool rejects the batch before executing either', async () => {
   let turns = 0;
   const executed = [];

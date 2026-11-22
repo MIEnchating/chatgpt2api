@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"chatgpt2api/internal/protocol"
@@ -38,6 +39,25 @@ func (a *App) executeChatTaskRequest(ctx context.Context, payload map[string]any
 		}
 		return nil, err
 	}
+	if callback, ok := payload[service.ReasoningSummaryCallbackPayloadKey].(func(string, string, bool)); ok {
+		for index, item := range util.AsMapSlice(result["output"]) {
+			if item["type"] != "reasoning" {
+				continue
+			}
+			var parts []string
+			for _, part := range util.AsMapSlice(item["summary"]) {
+				if part["type"] == "summary_text" {
+					if text, ok := part["text"].(string); ok {
+						parts = append(parts, text)
+					}
+				}
+			}
+			id := firstNonEmpty(util.Clean(item["id"]), fmt.Sprintf("reasoning-%d", index))
+			if text := strings.Join(parts, "\n\n"); text != "" {
+				callback(id, text, false)
+			}
+		}
+	}
 	return map[string]any{"created": result["created_at"], "output_type": "text", "data": []map[string]any{data}}, nil
 }
 
@@ -46,8 +66,41 @@ func collectResponseChatTaskStream(payload map[string]any, stream *protocol.Stre
 	var streamError error
 	var text strings.Builder
 	onProgress := relayTextTaskProgressCallback(payload)
+	onSummary, _ := payload[service.ReasoningSummaryCallbackPayloadKey].(func(string, string, bool))
+	summaries := map[string][]string{}
+	summaryOrder := []string{}
+	defer func() {
+		if onSummary != nil {
+			for _, id := range summaryOrder {
+				onSummary(id, strings.Join(summaries[id], "\n\n"), false)
+			}
+		}
+	}()
 	for item := range stream.Items {
 		switch item["type"] {
+		case "response.reasoning_summary_text.delta":
+			if onSummary == nil {
+				continue
+			}
+			id, _ := item["item_id"].(string)
+			delta, _ := item["delta"].(string)
+			index, valid := util.StrictInt(item["summary_index"])
+			if id == "" || len(id) > 512 || !valid || index < 0 || index >= 256 || delta == "" {
+				continue
+			}
+			parts, exists := summaries[id]
+			if !exists {
+				if len(summaryOrder) >= 256 {
+					continue
+				}
+				summaryOrder = append(summaryOrder, id)
+			}
+			for len(parts) <= index {
+				parts = append(parts, "")
+			}
+			parts[index] += delta
+			summaries[id] = parts
+			onSummary(id, strings.Join(parts, "\n\n"), true)
 		case "response.output_text.delta":
 			if delta, ok := item["delta"].(string); ok {
 				text.WriteString(delta)

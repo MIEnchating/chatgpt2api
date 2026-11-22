@@ -132,6 +132,17 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 			}
 		}
 	}
+	if req.OnReasoningSummary != nil {
+		body[service.ReasoningSummaryCallbackPayloadKey] = func(id, text string, streaming bool) {
+			if progressErr != nil {
+				return
+			}
+			progressErr = req.OnReasoningSummary(id, text, streaming)
+			if progressErr != nil {
+				cancel()
+			}
+		}
+	}
 	capture := auditRequestCapture{args: map[string]any{"model": req.Model, "api_mode": body["api_mode"], "stream": body["stream"], "message_count": len(messages), "tool_count": len(util.AsMapSlice(body["tools"]))}}
 	task, err := a.runLoggedChatTaskCaptured(modelCtx, identity, body, "/api/agent-model", "Agent 模型调用", capture)
 	if ctx.Err() != nil {

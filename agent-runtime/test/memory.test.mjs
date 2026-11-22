@@ -5,6 +5,42 @@ import { contextTokenBudget, DEFAULT_CONTEXT_WINDOW_TOKENS } from '../context-po
 import { importProtocol, modelMessages, modelOutput } from '../history.mjs';
 
 const filterArgs = input => ({ modelData: { input, instructions: 'Follow the business rules.' } });
+test('video analysis keeps its complete latest frame batch alongside ordinary references', async () => {
+  const frames = Array.from({ length: 90 }, (_, i) => [{ type: 'text', text: `frame ${i}` }, { type: 'image', image: `/frame-${i}.jpg` }]).flat();
+  const video = { type: 'function_call_result', callId: 'analyze', name: 'analyze_video', output: frames };
+  const input = [{ role: 'user', content: 'Read the whole clip.' }, { type: 'function_call', callId: 'analyze', name: 'analyze_video', arguments: '{}' }, video];
+  const filtered = await createInputFilter(async () => assert.fail('no summary needed'), 457000)(filterArgs(input));
+  assert.equal(filtered.input.at(-1).output.filter(part => part.type === 'image').length, 90);
+  const projected = visualWindow([video, { ...video, callId: 'newer', output: frames.slice(0, 20) }]);
+  assert.equal(projected[0].output.filter(part => part.type === 'image').length, 0);
+  assert.equal(projected[1].output.filter(part => part.type === 'image').length, 10);
+  const nextRequest = visualWindow([video, { role: 'user', content: 'A new task.' }]);
+  assert.equal(nextRequest[0].output.filter(part => part.type === 'image').length, 0);
+});
+test('compaction preserves unobserved video frames and their paired call', async () => {
+  const input = [{ role: 'user', content: 'Old task '.repeat(10000) }, { role: 'assistant', content: 'Done' }, { role: 'user', content: 'Analyze this clip.' }, { type: 'function_call', callId: 'video', name: 'analyze_video', arguments: '{}' }, { type: 'function_call_result', callId: 'video', name: 'analyze_video', output: [{ type: 'text', text: 'frame at 1000ms' }, { type: 'image', image: '/unobserved.jpg' }] }];
+  const result = await createInputFilter(async (method, params) => {
+    if (method === 'memory') return {};
+    assert.doesNotMatch(JSON.stringify(params.messages), /unobserved.jpg|Analyze this clip/);
+    return { text_response: 'Old task finished.' };
+  }, 10000)(filterArgs(input));
+  assert.deepEqual(result.input.slice(-3), input.slice(-3));
+});
+test('forced compaction reduces misestimated histories and subdivides rejected summary chunks', async () => {
+  const parts = [];
+  const input = [{ role: 'user', content: '😀'.repeat(7000) }, { role: 'assistant', content: 'Done' }, { role: 'user', content: 'Continue.' }];
+  const result = await createInputFilter(async (method, params) => {
+    if (method === 'memory') return {};
+    const content = params.messages.at(-1).content;
+    if (content.length > 9000) throw new Error('context_length_exceeded');
+    parts.push(content);
+    return { text_response: 'History saved.' };
+  }, 457000)({ ...filterArgs(input), force: true });
+  assert.equal(result.compacted, true);
+  assert(parts.length > 1);
+  assert(parts.every(part => part.isWellFormed()));
+  assert.deepEqual(result.input.at(-1), input.at(-1));
+});
 test('context filter preserves current input, reference labels and omits old pixels and opaque reasoning from summaries', async () => {
   const current = { role: 'user', content: [{ type: 'input_text', text: '本轮要求，不得改写。ID=photo' }, { type: 'input_image', image: 'data:image/png;base64,current-original' }] };
   let summaries = 0;

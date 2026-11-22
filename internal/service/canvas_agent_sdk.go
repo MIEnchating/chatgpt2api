@@ -192,9 +192,12 @@ func (w *canvasAgentWorker) sdkPrepare(turn map[string]any) (any, error) {
 				break
 			}
 			args := agentMap(call["arguments"])
-			q := map[string]any{"id": call["id"], "question": args["question"], "reason": args["reason"], "options": args["options"], "kind": args["kind"], "request": w.req.UserText}
+			q := map[string]any{"id": call["id"], "question": args["question"], "reason": args["reason"], "options": args["options"], "kind": args["kind"], "request": w.req.UserText, "questions": args["questions"]}
 			if args["purpose"] != nil {
 				q["purpose"] = args["purpose"]
+			}
+			if args["purpose"] != nil {
+				delete(q, "questions")
 			}
 			if args["purpose"] == "workflow_review" {
 				reviewNodeIDs := w.workflowReviewUnapprovedIDs()
@@ -310,6 +313,23 @@ func (w *canvasAgentWorker) sdkForwardModel(params map[string]any) (any, error) 
 		}
 		return nil
 	}}
+	if params["summary"] != true && !w.conversation {
+		request.OnReasoningSummary = func(id, text string, streaming bool) error {
+			if err := w.ctx.Err(); err != nil {
+				return err
+			}
+			// Only public Responses summaries enter the visible execution trace.
+			w.trace(map[string]any{"id": "summary:" + util.Clean(params["promptCacheKey"]) + ":" + id, "type": "reasoning", "text": text, "isStreaming": streaming})
+			if streaming && !lastProgressSave.IsZero() && time.Since(lastProgressSave) < 150*time.Millisecond {
+				return nil
+			}
+			lastProgressSave = time.Now()
+			if err := w.save(); err != nil {
+				return fmt.Errorf("%w: %w", ErrAgentProgressPersistence, err)
+			}
+			return nil
+		}
+	}
 	if params["summary"] == true {
 		request.OnText = nil
 	}

@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { CodexClient } from "./codex-client.mjs";
 import { canvasCodexConfig, createCodexRuntime } from "./codex-runtime.mjs";
 
-const MAX_BODY = 4 * 1024 * 1024;
+const MAX_BODY = 20 * 1024 * 1024;
 const METHODS = new Set(["account/read", "model/list", "thread/start", "thread/resume", "thread/archive", "turn/start", "turn/interrupt"]);
 const INTERNAL_TOOLS = new Set(["read_skill_file", "set_agent_state"]);
 const BROWSER_REQUESTS = new Set(["item/tool/call", "item/tool/requestUserInput"]);
@@ -112,6 +112,7 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
         safe.input = params.input.map((item) => item.type === "text" ? { type: "text", text: String(item.text || ""), text_elements: [] } : { type: "image", url: String(item.url || "") });
         if (typeof params.model === "string") safe.model = params.model;
         if (typeof params.effort === "string") safe.effort = params.effort;
+        if (params.summary === "auto") safe.summary = "auto";
         session.activeTurn = "starting";
       }
       if (method === "turn/interrupt") safe.turnId = params.turnId;
@@ -132,7 +133,7 @@ export function createCanvasAgentServer({ token, origins, codexCommand = "codex"
     return new Promise((resolve, reject) => {
       const finish = (settle, value) => { clearTimeout(timer); response.removeListener("close", cancelled); session.pending.delete(requestId); settle(value); };
       const cancelled = () => { if (!response.writableEnded) { emit(session, { type: "tool-cancel", requestId }); finish(reject, new Error("外部请求已取消")); } };
-      const timer = setTimeout(() => { emit(session, { type: "tool-cancel", requestId }); finish(reject, new Error("画布操作超时")); }, 120_000);
+      const timer = setTimeout(() => { emit(session, { type: "tool-cancel", requestId }); finish(reject, new Error("画布操作超时")); }, name === "analyze_video" ? 150_000 : 120_000);
       response.on("close", cancelled);
       session.pending.set(requestId, { resolve: (value) => finish(resolve, value), reject: (error) => finish(reject, error), timer });
       emit(session, { type: "tool", source: "mcp", requestId, name, arguments: args });

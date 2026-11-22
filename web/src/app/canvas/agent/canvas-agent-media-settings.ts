@@ -46,7 +46,7 @@ type MediaSettingsResult =
   | { ok: false; code: string; message: string; supported: unknown };
 
 export function resolveCanvasAgentMediaSettings(action: CanvasAgentAction, model: string, defaults: Partial<CanvasNode>): MediaSettingsResult {
-  const required = action.name === "generate_video" ? ["size", "seconds", "generateAudio"] : ["size", "count"];
+  const required = action.name === "generate_video" ? ["size", "seconds"] : ["size", "count"];
   const missing = required.filter((field) => action.arguments[field] === undefined || (typeof action.arguments[field] === "string" && !action.arguments[field].trim()));
   if (missing.length) return { ok: false, code: "missing_media_parameters", message: `缺少必要交付参数：${missing.join("、")}。请按用户要求、已有方案或模型支持的合理默认显式填写；只有真正阻塞或超出已有范围时才调用 ask_user_question。`, supported: { required, missing } };
   const size = typeof action.arguments.size === "string" ? action.arguments.size.trim() : "";

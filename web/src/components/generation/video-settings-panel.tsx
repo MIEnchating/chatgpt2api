@@ -1,3 +1,4 @@
+import { videoSupportsDraft } from "@/lib/video-model-capabilities";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InputGroup, InputGroupInput, InputGroupAddon } from "@/components/ui/input-group";
@@ -42,6 +43,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type VideoSettingsValue = {
+  draft?: boolean;
   parameters?: VideoParameterValues;
   size: string;
   seconds: string;
@@ -109,13 +111,14 @@ export function VideoSettingsPanel({
 
   return (
     <div className="@container flex min-w-0 flex-col gap-4">
+      {videoSupportsDraft(model, contract) ? <Label className="flex items-center justify-between gap-3">先生成样片（480p）<Switch aria-label="先生成样片" checked={value.draft === true} onCheckedChange={draft => onChange({ draft, ...(draft ? { resolution: "480p" } : {}) })} /></Label> : null}
       {(!hidden("resolution") && resolutionOptions.length > 0) || (!hidden("size") && sizeOptions.length > 0) || (!coreOnly && !hidden("duration")) ? <Card size="sm" role="group" aria-label="画面设置">
         <CardHeader><CardTitle>画面设置</CardTitle></CardHeader>
         <CardContent className="grid min-w-0 gap-4">
           {!hidden("resolution") && resolutionOptions.length > 0 ? <section className={resolutionOptions.length === 1 && resolutionValid ? "flex items-center justify-between gap-3" : "space-y-2.5"}>
             <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
             <ToggleGroup type="single" value={displayResolution} onValueChange={(resolution) => { if (resolution) onChange({ resolution }); }} disabled={disabled("resolution")} aria-label="视频清晰度" className={cn("w-full grid", resolutionOptions.length === 1 ? "w-24 grid-cols-1" : resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
-              {resolutionOptions.map((resolution) => <ToggleGroupItem key={resolution} value={resolution} className="min-w-0 uppercase">{resolution}</ToggleGroupItem>)}
+              {resolutionOptions.map((resolution) => <ToggleGroupItem key={resolution} value={resolution} disabled={videoSupportsDraft(model, contract) && value.draft && resolution !== "480p"} className="min-w-0 uppercase">{resolution}</ToggleGroupItem>)}
             </ToggleGroup>
             {!resolutionValid ? <p className="text-[11px] text-destructive">当前模型不支持该清晰度</p> : null}
           </section> : null}

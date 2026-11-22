@@ -42,6 +42,7 @@ const (
 	ImageOutputCompletionReleasePayloadKey = "image_output_completion_release"
 
 	TextOutputCallbackPayloadKey        = "text_output_callback"
+	ReasoningSummaryCallbackPayloadKey  = "reasoning_summary_callback"
 	MediaTaskProgressCallbackPayloadKey = "media_task_progress_callback"
 	// VideoTaskProgressCallbackPayloadKey reports the normalized upstream
 	// queue state without exposing a provider-specific status as our task state.
@@ -664,7 +665,7 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		if reference := videoTaskContractReference(payload["video_contract"]); reference != nil {
 			task["video_contract"] = reference
 		}
-		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
+		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark", "draft", "draft_source_task_id", "video_draft_origin"} {
 			if payload[key] != nil {
 				task[key] = payload[key]
 			}
@@ -1463,6 +1464,9 @@ func (s *ImageTaskService) decodeTasksLocked(raw any) (map[string]map[string]any
 		mergeMediaTaskFields(normalized, task, mode)
 		mergePublicImageToolTaskFields(normalized, task)
 		if mode == "video" {
+			if origin := util.StringMap(task["video_draft_origin"]); len(origin) > 0 {
+				normalized["video_draft_origin"] = origin
+			}
 			normalized["video_recovery_attempt"] = util.ToInt(task["video_recovery_attempt"], 0)
 			if recovery := videoTaskRecovery(task); recovery != nil {
 				normalized["video_recovery"] = recovery.document()
@@ -1982,7 +1986,7 @@ func (s *ImageTaskService) cleanupLocked() bool {
 
 func mergeMediaTaskFields(target, source map[string]any, mode string) {
 	if mode == "video" {
-		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
+		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark", "draft", "draft_source_task_id"} {
 			if source[key] != nil {
 				target[key] = source[key]
 			}
@@ -2194,6 +2198,11 @@ func normalizedFallbackReferenceImage(value any) map[string]any {
 }
 
 func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	for _, key := range []string{"draft", "draft_task_id", "draft_source_task_id", "video_draft_origin"} {
+		if value, ok := metadata[key]; ok {
+			payload[key] = value
+		}
+	}
 	if parameters, ok := metadata["parameters"].(map[string]any); ok {
 		payload["parameters"] = util.CopyMap(parameters)
 	}

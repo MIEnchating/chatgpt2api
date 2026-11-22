@@ -57,6 +57,15 @@ test("requires a local host, allowed Origin and exact bearer token", async (t) =
   assert.equal(preflight.headers.get("access-control-allow-credentials"), null);
 });
 
+test("forwards the public reasoning summary request to the local Codex process", async (t) => {
+  const f = await fixture(t), { sessionId } = await f.session();
+  const response = await f.request(`/sessions/${sessionId}/rpc`, { method: "thread/start", params: { model: "codex-test" } });
+  const { thread } = await response.json();
+  const started = await f.request(`/sessions/${sessionId}/rpc`, { method: "turn/start", params: { threadId: thread.id, summary: "auto", input: [{ type: "text", text: "Inspect the canvas." }] } });
+  assert.equal(started.status, 200);
+  assert.equal(f.clients[0].calls.find(call => call.method === "turn/start").params.summary, "auto");
+});
+
 test("enforces current dynamic tool schema, local cwd, approval and sandbox limits", async (t) => {
   const f = await fixture(t); const { sessionId } = await f.session();
   const response = await f.request(`/sessions/${sessionId}/rpc`, { method: "thread/start", params: { cwd: "/root", approvalPolicy: "never", sandbox: "danger-full-access", dynamicTools: [], model: "test-model" } });

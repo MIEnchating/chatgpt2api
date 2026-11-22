@@ -38,6 +38,35 @@
               "workflow_review"
             ],
             "description": "普通需求、范围、方案确认必须省略此字段。媒体生成授权使用 media_generation；只有工具已返回 requiresUserReview=true 且存在待审核系列提示词时才使用 workflow_review。"
+          },
+          "questions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "description": "同阶段有多个真正阻塞的问题时一次提交。question 仍填写本批问题摘要，options 传空数组；收到本批所有答案前不继续执行。普通单题省略。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "options": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              },
+              "required": [
+                "question",
+                "options"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1171,7 +1200,7 @@
     "type": "function",
     "function": {
       "name": "generate_video",
-      "description": "创建视频节点，显式填写 size/seconds/generateAudio，优先用户要求和已有方案，未指定时按用途与当前模型配置选择合法值并简短说明，不逐项追问。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片、视频、音频分别按各自顺序编号。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
+      "description": "创建视频节点，显式填写 size/seconds；仅用户明确指定声音时填写 generateAudio，否则继承全局视频声音设置，优先用户要求和已有方案，未指定时按用途与当前模型配置选择合法值并简短说明，不逐项追问。并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，attachmentIds 引用当前对话附件；独立生成时两者均传空数组，其中图片、视频、音频分别按各自顺序编号。 脚本用途必须传 scriptNodeId 与 assetId（设定图）或 shotId（镜头），创建时同步关联；已有节点请用 update_script_node 关联并复用。镜头提交前必须确认脚本且所需素材图已成功。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1207,7 +1236,8 @@
             "maximum": 9007199254740991
           },
           "generateAudio": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "仅用户明确要求本次有声或静音时传入；未指定时省略，沿用全局设置。无背景音乐写入提示词，不代表关闭整段原声。"
           },
           "videoParameters": {
             "type": "array",
@@ -1258,8 +1288,7 @@
           "prompt",
           "sourceNodeIds",
           "size",
-          "seconds",
-          "generateAudio"
+          "seconds"
         ],
         "additionalProperties": false
       }
@@ -1581,7 +1610,7 @@
     "type": "function",
     "function": {
       "name": "create_canvas_workflow",
-      "description": "创建画布节点及真实来源连线，不提交生成。多张独立图片优先一次建图，再 run_canvas_workflow 并行生成。同批交付传 groupTitle 分组；已有素材不加入结果组。sourceNodeIds 是已有来源节点，dependsOn 是实际依赖的本批 key，独立步骤不要串联。按用户要求或合理默认选择并显式填写媒体参数；图片要求 size/count，视频要求 size/seconds/generateAudio。每个步骤显式提供 sourceNodeIds 和 attachmentIds，无来源传空数组。系列提示词需要审核时，创建后必须询问用户；用户明确确认前不得执行生成。禁止循环。 脚本步骤必须传 scriptNodeId 与 assetId 或 shotId，整批节点与脚本关联一起保存。镜头依赖的设定图步骤须加入 dependsOn；已有设定图直接复用。",
+      "description": "创建画布节点及真实来源连线，不提交生成。多张独立图片优先一次建图，再 run_canvas_workflow 并行生成。同批交付传 groupTitle 分组；已有素材不加入结果组。sourceNodeIds 是已有来源节点，dependsOn 是实际依赖的本批 key，独立步骤不要串联。按用户要求或合理默认选择并显式填写媒体参数；图片要求 size/count，视频要求 size/seconds；generateAudio 仅用户明确指定时传入，否则继承全局设置。每个步骤显式提供 sourceNodeIds 和 attachmentIds，无来源传空数组。系列提示词需要审核时，创建后必须询问用户；用户明确确认前不得执行生成。禁止循环。 脚本步骤必须传 scriptNodeId 与 assetId 或 shotId，整批节点与脚本关联一起保存。镜头依赖的设定图步骤须加入 dependsOn；已有设定图直接复用。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1791,6 +1820,48 @@
         },
         "required": [
           "scriptNodeId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "analyze_video",
+      "description": "读取当前画布真实视频的抽样画面供你分析。默认每秒一帧，细查构图、表情、字幕或动作时 detailed=true 每半秒一帧。每批最多90帧，nextStartMs 非空时继续。按实际时间戳回答；不含音频，不可据此声称已确认对白。仅作视频生成参考时不需要调用。 快速动作或字幕细节可指定不超过250毫秒的 startMs/endMs 区间读取全部原始帧；original=true 显式启用此模式。先概览，再对疑点小区间细查。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "startMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1800000
+          },
+          "endMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1800000
+          },
+          "detailed": {
+            "type": "boolean"
+          },
+          "original": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nodeId",
+          "question"
         ],
         "additionalProperties": false
       }

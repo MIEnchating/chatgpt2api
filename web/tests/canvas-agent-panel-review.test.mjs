@@ -71,7 +71,7 @@ test("context estimates run outside render and draft edits reuse the current est
   const source = ts.createSourceFile("panel.tsx", panelSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const declarations = [];
   function visit(node) {
-    if (ts.isVariableDeclaration(node) && ["contextEstimate", "contextUsage", "tokenEstimate", "contextInfo"].includes(node.name.getText(source))) declarations.push(`const ${node.getText(source)};`);
+    if (ts.isVariableDeclaration(node) && ["contextEstimate", "contextUsage", "codexUsage", "tokenEstimate", "contextInfo"].includes(node.name.getText(source))) declarations.push(`const ${node.getText(source)};`);
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -130,6 +130,17 @@ test("context estimates run outside render and draft edits reuse the current est
   props.open = false;
   budget();
   assert.equal(requested, undefined, "a hidden panel must stop estimating");
+  props.open = true;
+  props.agentMode = "codex";
+  props.codex = { model: "codex-model" };
+  props.agentConfig = { contextWindowTokens: 999999 };
+  props.activeSession = { ...props.activeSession, codexThreadId: "thread", codexServiceId: "bridge", codexContextUsage: { model: "codex-model", tokens: 1000, contextWindow: 128000, threadId: "thread", serviceId: "bridge" } };
+  assert.equal(budget().tokens, 1000);
+  assert.equal(budget().limit, 128000, "Codex uses its reported window rather than the native Agent setting");
+  assert.equal(requested, undefined, "Codex usage does not run the local transcript estimator");
+  props.activeSession = { ...props.activeSession, codexThreadId: "another-thread" };
+  assert.equal(budget().tokens, undefined, "another thread cannot reuse the saved count");
+  assert.equal(budget().limit, undefined);
 });
 
 test("history directories reuse validated sessions without reading transcript bodies", () => {

@@ -124,6 +124,8 @@ type CanvasNode struct {
 	GenerationError                      string                       `json:"generation_error,omitempty"`
 	GenerationType                       string                       `json:"generation_type,omitempty"`
 	GenerationReferenceURLs              []string                     `json:"generation_reference_urls,omitempty"`
+	GenerationVideoDraft                 bool                         `json:"generation_video_draft,omitempty"`
+	GenerationVideoDraftSourceTaskID     string                       `json:"generation_video_draft_source_task_id,omitempty"`
 	GenerationVideoModel                 string                       `json:"generation_video_model,omitempty"`
 	GenerationVideoSize                  string                       `json:"generation_video_size,omitempty"`
 	GenerationVideoParameters            map[string]any               `json:"generation_video_parameters,omitempty"`

@@ -757,6 +757,8 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     videoParameters: turn.videoParameters && typeof turn.videoParameters === "object" && !Array.isArray(turn.videoParameters)
       ? Object.fromEntries(Object.entries(turn.videoParameters).filter(([key, value]) => !["__proto__", "prototype", "constructor"].includes(key) && (["string", "boolean"].includes(typeof value) || typeof value === "number" && Number.isFinite(value)))) : undefined,
     videoSeconds: normalizeStoredVideoSeconds(turn.videoSeconds),
+    videoDraft: turn.videoDraft === true || undefined,
+    videoDraftSourceTaskId: typeof turn.videoDraftSourceTaskId === "string" ? turn.videoDraftSourceTaskId : undefined,
     videoResolution: typeof turn.videoResolution === "string" && turn.videoResolution ? turn.videoResolution : undefined,
     videoGenerateAudio: typeof turn.videoGenerateAudio === "boolean" ? turn.videoGenerateAudio : undefined,
     videoWatermark: typeof turn.videoWatermark === "boolean" ? turn.videoWatermark : undefined,

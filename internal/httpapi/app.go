@@ -361,6 +361,7 @@ func NewApp() (*App, error) {
 	app.canvasAgent.SetWorkflowService(workflows)
 	app.canvasAgent.SetVideoModels(app.canvasAgentVideoModels)
 	app.canvasAgent.SetVideoMerger(app.mergeCanvasVideos)
+	app.canvasAgent.SetVideoAnalyzer(app.analyzeCanvasVideo)
 	app.tasks.SetFileReferenceProtector(fileLifecycle)
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedVideoTask(ctx, identity, payload)

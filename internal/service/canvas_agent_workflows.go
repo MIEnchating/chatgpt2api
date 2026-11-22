@@ -314,9 +314,8 @@ func (w *canvasAgentWorker) createCanvasWorkflow(steps []map[string]any) (map[st
 			if err != nil {
 				return nil, err
 			}
-			if audio, ok := step["generateAudio"].(bool); ok {
-				n.GenerationVideoAudio = &audio
-			}
+			audio := canvasAgentVideoAudio(step, w.req.Generation)
+			n.GenerationVideoAudio = &audio
 			if n.GenerationVideoModel == "" {
 				return nil, fmt.Errorf("请配置视频模型")
 			}

@@ -32,6 +32,11 @@ export function isCanvasAgentSession(value: unknown): value is CanvasAssistantSe
       || usage.inputTokens !== undefined && (!Number.isSafeInteger(usage.inputTokens) || Number(usage.inputTokens) < 0)
       || !Number.isSafeInteger(usage.usedTokens) || Number(usage.usedTokens) < 0 || !Number.isSafeInteger(usage.maxTokens) || Number(usage.maxTokens) <= 0) return false;
   }
+  if (value.codexContextUsage !== undefined) {
+    const usage = value.codexContextUsage;
+    if (!record(usage) || !strings(usage, ["model", "threadId", "serviceId"]) || !Number.isSafeInteger(usage.tokens) || Number(usage.tokens) < 0
+      || usage.contextWindow !== undefined && (!Number.isSafeInteger(usage.contextWindow) || Number(usage.contextWindow) <= 0)) return false;
+  }
   if (value.messageQueue !== undefined) {
     const queue = value.messageQueue;
     if (!record(queue) || typeof queue.paused !== "boolean" || !optionalStrings(queue, ["steeringId"]) || !Array.isArray(queue.messages) || queue.messages.length > MAX_AGENT_QUEUED_MESSAGES) return false;
@@ -76,7 +81,7 @@ function isCanvasAgentState(value: unknown): value is CanvasAgentState {
     || !value.plan.steps.every((step) => record(step) && strings(step, ["id", "title"]) && ["pending", "in_progress", "completed", "deferred"].includes(String(step.status))))) return false;
   if (value.pendingQuestion !== undefined && (!record(value.pendingQuestion) || !strings(value.pendingQuestion, ["id", "question", "reason", "request"]) || !optionalStrings(value.pendingQuestion, ["purpose"])
     || value.pendingQuestion.purpose !== undefined && !["media_generation", "workflow_review", "delete_node"].includes(String(value.pendingQuestion.purpose))
-    || !["clarification", "confirmation"].includes(String(value.pendingQuestion.kind)) || !stringArray(value.pendingQuestion.options))) return false;
+    || !["clarification", "confirmation"].includes(String(value.pendingQuestion.kind)) || !stringArray(value.pendingQuestion.options) || value.pendingQuestion.questions != null && (!Array.isArray(value.pendingQuestion.questions) || value.pendingQuestion.questions.length > 4 || !value.pendingQuestion.questions.every(item => record(item) && typeof item.question === "string" && stringArray(item.options))))) return false;
   return true;
 }
 
