@@ -7,11 +7,12 @@ func TestCanvasAgentToolKinds(t *testing.T) {
 		"update_plan": "plan", "set_agent_state": "plan",
 		"list_workflows": "workflow", "get_workflow": "workflow", "save_workflow": "workflow",
 		"create_canvas_workflow": "workflow", "run_canvas_workflow": "workflow", "run_saved_workflow": "workflow",
-		"read_skill_file": "file", "get_node": "read", "query_canvas_nodes": "read",
+		"read_skill_file": "file", "get_node": "read", "query_canvas_nodes": "read", "search_agent_history": "read", "get_agent_history_message": "read",
 		"generate_image": "generate", "edit_image": "generate", "create_group": "create",
 		"update_node": "edit", "delete_connection": "edit", "arrange_nodes": "edit",
 		"list_video_models": "read", "set_video_model": "edit",
 		"confirm_script_node": "edit",
+		"review_canvas_nodes": "subagent",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := agentToolKind(name); got != want {

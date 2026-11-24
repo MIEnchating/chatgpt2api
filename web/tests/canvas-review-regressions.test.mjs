@@ -224,7 +224,7 @@ test("workspace effect cancels discarded reads and retains late-response and fai
     const calls = [], errors = [], applied = [], loading = [];
     let complete, completeConfig;
     const dependencies = {
-      AbortController, session: { key: "isolated-account" }, projectID,
+      AbortController, session: { key: "isolated-account" }, projectID, linkedAgentSessionID: "",
       batchAnimationTimersRef: { current: new Map() }, activeGenerationsRef: { current: new Map() },
       activateCanvasTaskQueueSession() {}, mountedRef: { current: true }, setLoadError: error => errors.push(error),
       fetchModelConfig: async () => {

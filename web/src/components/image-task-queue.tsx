@@ -10,7 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { TooltipHint } from "@/components/ui/tooltip";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { CheckCircle2, ClipboardList, Clock3 } from "lucide-react";
+import { CheckCircle2, ClipboardList } from "lucide-react";
+import { ClipboardTextIcon } from "@phosphor-icons/react/dist/csr/ClipboardText";
+import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -494,9 +496,9 @@ export function ImageTaskQueue({ className, side }: { className?: string; side: 
           aria-label={activeCount > 0 ? `查看 ${activeCount} 个排队或处理中任务` : hasRecentCompletion ? "查看刚结束的任务" : "查看任务队列"}
         >
           {activeCount > 0 ? (
-            hasRunningTasks ? <Spinner className="size-5" /> : <Clock3 className="size-5" />
+            hasRunningTasks ? <Spinner className="size-5.5 dark:text-white" /> : <ClockIcon weight={open ? "fill" : "regular"} className="size-5.5 dark:text-white" aria-hidden="true" />
           ) : (
-            <ClipboardList className="size-5" />
+            <ClipboardTextIcon weight={open ? "fill" : "regular"} className="size-5.5 dark:text-white" aria-hidden="true" />
           )}
           {activeCount > 0 ? (
             <Badge variant="default" className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center">

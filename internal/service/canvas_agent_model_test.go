@@ -133,6 +133,16 @@ func TestCanvasAgentContextPrioritizesSelectedNodesAndCapsIndex(t *testing.T) {
 	}
 }
 
+func TestCanvasAgentPromptUsesOnlyAnActiveGoalAsContext(t *testing.T) {
+	for _, status := range []string{"active", "paused", "blocked", "complete"} {
+		worker := &canvasAgentWorker{session: map[string]any{"goal": map[string]any{"objective": "核对十二个分镜", "status": status}}}
+		prompt := worker.prompt()
+		if strings.Contains(prompt, "核对十二个分镜") != (status == "active") {
+			t.Fatalf("unexpected goal context for %s", status)
+		}
+	}
+}
+
 func TestCanvasAgentPromptSelectsSkillsFromIntent(t *testing.T) {
 	if agentPrompts["WORKFLOW_SKILL"] == "" || agentPrompts["VIDEO_SKILL"] == "" {
 		t.Fatal("embedded prompts are missing")
@@ -152,8 +162,14 @@ func TestCanvasAgentPromptSelectsSkillsFromIntent(t *testing.T) {
 func TestCanvasAgentPromptUsesSelectedSkillsInsteadOfIntentRouting(t *testing.T) {
 	w := &canvasAgentWorker{doc: CanvasDocument{ID: "d"}, state: map[string]any{}, req: CanvasAgentRequest{UserText: "做一个宣传片"}, skills: []AgentSkill{{ID: "skill-1", Name: "custom", Content: "custom body", Files: map[string]string{"a.md": "x"}}}}
 	prompt := w.prompt()
-	if !strings.Contains(prompt, "Skill custom (skill-1)") || !strings.Contains(prompt, "custom body") || !strings.Contains(prompt, "a.md") {
+	if !strings.Contains(prompt, "Skill custom (skill-1)") || !strings.Contains(prompt, "摘要：") || !strings.Contains(prompt, "a.md") {
 		t.Fatal("selected skill missing from prompt")
+	}
+	if strings.Contains(prompt, "custom body") {
+		t.Fatal("selected skill body was eagerly expanded into the prompt")
+	}
+	if !strings.Contains(prompt, "read_skill_file") || !strings.Contains(prompt, "path 留空读取正文") {
+		t.Fatal("prompt does not explain on-demand skill loading")
 	}
 	if strings.Contains(prompt, agentPrompts["VIDEO_SKILL"]) {
 		t.Fatal("intent routing must not run when skills are selected")

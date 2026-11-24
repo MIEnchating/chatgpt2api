@@ -8,6 +8,33 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+// AgentModelUsage normalizes reported counters for diagnostics and audit logs.
+func AgentModelUsage(usage map[string]any, responses bool) map[string]int64 {
+	out := map[string]int64{}
+	count := func(dst string, value any) {
+		if _, text := value.(string); text {
+			return
+		}
+		if n, ok := util.StrictInt(value); ok && n >= 0 && int64(n) <= 1<<53-1 {
+			out[dst] = int64(n)
+		}
+	}
+	input, output := "prompt_tokens", "completion_tokens"
+	if responses {
+		input, output = "input_tokens", "output_tokens"
+	}
+	details := agentMap(usage[input+"_details"])
+	count("input_tokens", usage[input])
+	count("output_tokens", usage[output])
+	count("total_tokens", usage["total_tokens"])
+	count("cache_read_tokens", details["cached_tokens"])
+	count("cache_write_tokens", details["cache_write_tokens"])
+	if _, present := out["cache_read_tokens"]; !present {
+		count("cache_read_tokens", usage["prompt_cache_hit_tokens"])
+	}
+	return out
+}
+
 // Publish the exact SDK filter estimate and budget, never private model inputs.
 func (w *canvasAgentWorker) updateContextUsage(params map[string]any) error {
 	value, exists := params["contextUsage"]

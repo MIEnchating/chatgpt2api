@@ -229,12 +229,35 @@ type CanvasDocument struct {
 }
 
 type CanvasProjectSummary struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	NodeCount int    `json:"node_count"`
-	Revision  int64  `json:"revision"`
-	CreatedAt string `json:"created_at,omitempty"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	ID          string                    `json:"id"`
+	Title       string                    `json:"title"`
+	NodeCount   int                       `json:"node_count"`
+	Revision    int64                     `json:"revision"`
+	CreatedAt   string                    `json:"created_at,omitempty"`
+	UpdatedAt   string                    `json:"updated_at,omitempty"`
+	AgentStatus *CanvasProjectAgentStatus `json:"agent_status,omitempty"`
+}
+
+type CanvasProjectAgentStatus struct {
+	Status    string `json:"status"`
+	SessionID string `json:"session_id"`
+}
+
+func canvasProjectAgentStatus(run *CanvasAgentRun) *CanvasProjectAgentStatus {
+	if run == nil || run.SessionID == "" || run.Engine == "codex-tools" {
+		return nil
+	}
+	switch run.Status {
+	case "running", "waiting", "error", "interrupted":
+		return &CanvasProjectAgentStatus{Status: run.Status, SessionID: run.SessionID}
+	case "success":
+		if run.Unread {
+			return &CanvasProjectAgentStatus{Status: "success", SessionID: run.SessionID}
+		}
+	default:
+		return nil
+	}
+	return nil
 }
 
 type CanvasWorkspaceResult struct {
@@ -242,6 +265,7 @@ type CanvasWorkspaceResult struct {
 	Projects        []CanvasProjectSummary `json:"projects"`
 	ActiveProjectID string                 `json:"active_project_id"`
 	historyDeferred bool
+	agentRunActive  bool
 }
 
 type CanvasProjectList struct {
@@ -252,6 +276,8 @@ type CanvasProjectList struct {
 type canvasWorkspace struct {
 	verifiedAgentHistories        map[string]canvasVerifiedAgentHistory
 	AgentHistories                map[string]canvasAgentHistoryReference `json:"agent_histories,omitempty"`
+	AgentRunLeases                map[string]canvasAgentWorkspaceLease   `json:"agent_run_leases,omitempty"`
+	AgentCompactionLeases         map[string]canvasAgentWorkspaceLease   `json:"agent_compaction_leases,omitempty"`
 	Shares                        map[string]string                      `json:"shares,omitempty"`
 	Version                       int                                    `json:"version"`
 	Generation                    int64                                  `json:"generation"`
@@ -271,6 +297,7 @@ type CanvasDocumentService struct {
 	mu                     sync.Mutex
 	store                  storage.JSONDocumentBackend
 	storageObjectValidator func(ownerID, objectID string) error
+	agentSearchIndex       canvasAgentSearchIndex
 }
 
 func NewCanvasDocumentService(backend storage.Backend, validators ...func(ownerID, objectID string) error) *CanvasDocumentService {
@@ -334,7 +361,8 @@ func (s *CanvasDocumentService) ProjectList(ownerID string) (CanvasProjectList, 
 		ActiveProjectID string `json:"active_project_id"`
 		Projects        []struct {
 			CanvasProjectSummary
-			Nodes []struct{} `json:"nodes"`
+			Nodes    []struct{}      `json:"nodes"`
+			AgentRun *CanvasAgentRun `json:"agent_run"`
 		} `json:"projects"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
@@ -353,6 +381,7 @@ func (s *CanvasDocumentService) ProjectList(ownerID string) (CanvasProjectList, 
 	for _, entry := range manifest.Projects {
 		project := entry.CanvasProjectSummary
 		project.NodeCount = len(entry.Nodes)
+		project.AgentStatus = canvasProjectAgentStatus(entry.AgentRun)
 		list.Projects = append(list.Projects, project)
 		if project.ID == manifest.ActiveProjectID {
 			list.ActiveProjectID = project.ID
@@ -619,9 +648,9 @@ func (s *CanvasDocumentService) SaveAtRevision(ownerID string, input CanvasDocum
 }
 
 func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expectedRevision *int64) (CanvasDocument, error) {
-	return s.saveWithAgent(ownerID, input, expectedRevision, false)
+	return s.saveWithAgent(ownerID, input, expectedRevision, false, "", "")
 }
-func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocument, expectedRevision *int64, agentWrite bool) (CanvasDocument, error) {
+func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocument, expectedRevision *int64, agentWrite bool, leaseToken, queueSessionID string) (CanvasDocument, error) {
 	partial := input.AgentHistoryPartial
 	deleted := input.DeletedAgentSessionIDs
 	expectedSessions := input.AgentSessionSummaries
@@ -695,10 +724,11 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 			normalized.AgentMessages = current.AgentMessages
 		}
 		if !agentWrite && current.AgentRun != nil && current.AgentRun.Status == "running" {
-			normalized.AgentSessions = mergeCanvasAgentMessageQueues(current.AgentSessions, normalized.AgentSessions)
+			normalized.AgentSessions = mergeCanvasAgentMessageQueues(current.AgentSessions, normalized.AgentSessions, false, "")
 			normalized.ActiveAgentSessionID = current.ActiveAgentSessionID
 		}
 		if !agentWrite {
+			normalized.AgentSessions = mergeCanvasAgentMessageQueues(normalized.AgentSessions, current.AgentSessions, true, "")
 			normalized.AgentRun = current.AgentRun
 		}
 		if !agentWrite && !bytes.Equal(normalized.AgentSessions, current.AgentSessions) {
@@ -743,6 +773,15 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 				if usage, ok := previous["contextUsage"]; ok {
 					session["contextUsage"] = usage
 				}
+				for _, key := range []string{"textEditProposals", "textEditTasks"} {
+					delete(session, key)
+					if saved, ok := previous[key]; ok {
+						session[key] = saved
+					}
+				}
+				if err := preserveCanvasAgentMessageMetadata(session, previous); err != nil {
+					return CanvasDocument{}, err
+				}
 				incoming[index], _ = json.Marshal(session)
 				rebuilt = true
 			}
@@ -754,6 +793,11 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
 		}
 		candidate := normalized
+		// Queue edits can run alongside the worker and can change only the requested queue.
+		if queueSessionID != "" {
+			candidate = current
+			candidate.AgentSessions = mergeCanvasAgentMessageQueues(current.AgentSessions, normalized.AgentSessions, false, queueSessionID)
+		}
 		candidate.ID = current.ID
 		candidate.CreatedAt = current.CreatedAt
 		reconcileCanvasScriptDependencies(current, &candidate)
@@ -782,6 +826,20 @@ func (s *CanvasDocumentService) saveWithAgent(ownerID string, input CanvasDocume
 		}
 		if err := s.validateStorageObjectReferencesLocked(ownerID, workspace, candidate); err != nil {
 			return CanvasDocument{}, err
+		}
+		if agentWrite && queueSessionID == "" {
+			lease, exists := workspace.AgentRunLeases[candidate.ID]
+			if leaseToken != "" && (!exists || lease.Token != leaseToken || lease.ExpiresAt <= time.Now().UnixMilli()) {
+				return CanvasDocument{}, errCanvasAgentLeaseLost
+			}
+			if exists && (lease.Token != leaseToken || lease.ExpiresAt <= time.Now().UnixMilli()) {
+				return CanvasDocument{}, ErrCanvasAgentBusy
+			}
+			if candidate.AgentRun != nil && candidate.AgentRun.Status == "running" {
+				if lease, exists := workspace.AgentCompactionLeases[candidate.ID]; exists && lease.ExpiresAt > time.Now().UnixMilli() {
+					return CanvasDocument{}, ErrCanvasAgentBusy
+				}
+			}
 		}
 		workspace.Projects[projectIndex] = candidate
 		if !agentWrite {
@@ -840,6 +898,35 @@ func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (Ca
 	defer s.mu.Unlock()
 	now := util.NowISO()
 	normalized.AgentRun = nil
+	if len(normalized.AgentSessions) > 0 {
+		var sessions []json.RawMessage
+		if err := json.Unmarshal(normalized.AgentSessions, &sessions); err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
+		for index, raw := range sessions {
+			var session map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &session); err != nil {
+				return CanvasWorkspaceResult{}, err
+			}
+			messages, queue := session["messages"], session["messageQueue"]
+			if err := preserveCanvasAgentHistoryReferences(session, nil, false); err != nil {
+				return CanvasWorkspaceResult{}, err
+			}
+			if err := preserveCanvasAgentQueuedHistoryReferences(session, nil); err != nil {
+				return CanvasWorkspaceResult{}, err
+			}
+			if !bytes.Equal(messages, session["messages"]) || !bytes.Equal(queue, session["messageQueue"]) {
+				sessions[index], err = json.Marshal(session)
+				if err != nil {
+					return CanvasWorkspaceResult{}, err
+				}
+			}
+		}
+		normalized.AgentSessions, err = json.Marshal(sessions)
+		if err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
+	}
 	normalized.ID = newCanvasProjectID()
 	normalized.Revision = 0
 	normalized.CreatedAt = now
@@ -1176,6 +1263,34 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 		pendingDeletions = append(pendingDeletions, objectID)
 	}
 	workspace.PendingStorageObjectDeletions = pendingDeletions
+	projectIDs := make(map[string]struct{}, len(workspace.Projects))
+	for _, project := range workspace.Projects {
+		projectIDs[project.ID] = struct{}{}
+	}
+	leases := make(map[string]canvasAgentWorkspaceLease, len(workspace.AgentRunLeases))
+	for projectID, lease := range workspace.AgentRunLeases {
+		projectID = strings.TrimSpace(projectID)
+		if projectID == "" || lease.SessionID == "" || lease.Token == "" || lease.ExpiresAt <= time.Now().UnixMilli() {
+			continue
+		}
+		if _, exists := projectIDs[projectID]; !exists {
+			continue
+		}
+		leases[projectID] = lease
+	}
+	workspace.AgentRunLeases = leases
+	leases = make(map[string]canvasAgentWorkspaceLease, len(workspace.AgentCompactionLeases))
+	for projectID, lease := range workspace.AgentCompactionLeases {
+		projectID = strings.TrimSpace(projectID)
+		if projectID == "" || lease.SessionID == "" || lease.Token == "" || lease.ExpiresAt <= time.Now().UnixMilli() {
+			continue
+		}
+		if _, exists := projectIDs[projectID]; !exists {
+			continue
+		}
+		leases[projectID] = lease
+	}
+	workspace.AgentCompactionLeases = leases
 	if len(workspace.Projects) > canvasWorkspaceMaxProjects {
 		return canvasWorkspace{}, invalidCanvasDocument("canvas contains too many projects")
 	}
@@ -1242,12 +1357,13 @@ func canvasWorkspaceResult(workspace canvasWorkspace) CanvasWorkspaceResult {
 	projects := make([]CanvasProjectSummary, 0, len(workspace.Projects))
 	for _, project := range workspace.Projects {
 		projects = append(projects, CanvasProjectSummary{
-			ID:        project.ID,
-			Title:     project.Title,
-			NodeCount: len(project.Nodes),
-			Revision:  project.Revision,
-			CreatedAt: project.CreatedAt,
-			UpdatedAt: project.UpdatedAt,
+			ID:          project.ID,
+			Title:       project.Title,
+			NodeCount:   len(project.Nodes),
+			Revision:    project.Revision,
+			CreatedAt:   project.CreatedAt,
+			UpdatedAt:   project.UpdatedAt,
+			AgentStatus: canvasProjectAgentStatus(project.AgentRun),
 		})
 	}
 	return CanvasWorkspaceResult{
@@ -1524,6 +1640,9 @@ func validateCanvasAgentJSON(value json.RawMessage, sessions bool) error {
 				if json.Unmarshal(queueJSON, &queue) != nil || !validateCanvasAgentMessageQueue(queue) {
 					return invalidCanvasDocument("canvas agent message queue is invalid")
 				}
+			}
+			if goalJSON, exists := session["goal"]; exists && !validCanvasAgentGoal(goalJSON) {
+				return invalidCanvasDocument("创作目标或验收清单无效")
 			}
 		}
 		if token, err := decoder.Token(); err != nil || token != json.Delim(']') {

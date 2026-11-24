@@ -3,30 +3,31 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"sync/atomic"
 	"testing"
 
 	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
 )
 
 // A run left "running" by a service restart must not block renaming the project.
 func TestCanvasProjectRenameSettlesRunLeftRunningByRestart(t *testing.T) {
 	for _, readBeforeRename := range []bool{false, true} {
 		t.Run(map[bool]string{false: "rename-directly", true: "read-before-rename"}[readBeforeRename], func(t *testing.T) {
-			runtimePath, pathErr := filepath.Abs("../../agent-runtime/worker.mjs")
-			if pathErr != nil {
-				t.Fatal(pathErr)
-			}
-			t.Setenv("AGENT_RUNTIME_PATH", runtimePath)
 			app := newTestApp(t)
 			defer app.Close()
-			if _, err := app.config.Update(map[string]any{"text_models": []string{"agent-test"}}); err != nil {
+			backend, err := storage.NewDatabaseBackend("sqlite:///:memory:")
+			if err != nil {
 				t.Fatal(err)
 			}
+			defer backend.Close()
+			app.canvasAgent.Close()
+			app.canvas = service.NewCanvasDocumentService(backend)
+			app.canvasAgent = service.NewCanvasAgentService(context.Background(), nil, app.canvas, nil, nil, nil)
 			token := adminSessionToken(t, app)
 			identity := app.auth.Authenticate(token)
 			if identity == nil {
@@ -42,26 +43,17 @@ func TestCanvasProjectRenameSettlesRunLeftRunningByRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			entered, release := make(chan struct{}), make(chan struct{})
-			var calls atomic.Int32
-			app.canvasAgent.Close()
-			old := service.NewCanvasAgentService(app.ctx, app.agentExecutions, app.canvas, app.agentSkills, func(context.Context, service.Identity, service.AgentModelRequest) (map[string]any, error) {
-				if calls.Add(1) == 1 {
-					close(entered)
-				}
-				// Ignore cancellation so the persisted run stays "running" like a crashed process would.
-				<-release
-				return map[string]any{"text_response": "done"}, nil
-			}, nil)
-			defer old.Close()
-			defer close(release)
-			if _, err = old.Start(*identity, doc.ID, service.CanvasAgentRequest{ID: "run-restart", SessionID: "s", AssistantID: "a", UserText: "hello", Model: "agent-test", RelayTokenName: "test", APIMode: "responses"}); err != nil {
+			name := fmt.Sprintf("canvas_workspaces/%x.json", sha256.Sum256([]byte(identityScope(*identity))))
+			raw, err := backend.LoadJSONDocument(name)
+			if err != nil {
 				t.Fatal(err)
 			}
-			<-entered
-
-			// The new service has an empty active table, exactly like a restarted process.
-			app.canvasAgent = service.NewCanvasAgentService(app.ctx, app.agentExecutions, app.canvas, app.agentSkills, nil, nil)
+			work := raw.(map[string]any)
+			project := work["projects"].([]any)[0].(map[string]any)
+			project["agent_run"] = service.CanvasAgentRun{ID: "run-restart", SessionID: "s", AssistantID: "a", Status: "running", Engine: "langgraph"}
+			if err := backend.SaveJSONDocument(name, work); err != nil {
+				t.Fatal(err)
+			}
 			persisted, err := app.canvas.Project(identityScope(*identity), doc.ID)
 			if err != nil {
 				t.Fatal(err)

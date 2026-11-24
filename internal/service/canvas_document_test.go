@@ -33,7 +33,19 @@ func clearCanvas(service *CanvasDocumentService, ownerID, projectID string) (Can
 	return service.clear(ownerID, projectID, nil)
 }
 
-func newCanvasLongHistoryBenchmark(b *testing.B) (*CanvasDocumentService, CanvasDocument, CanvasDocument) {
+type canvasHistoryBenchmarkSize struct {
+	turns       int
+	toolRepeats int
+}
+
+var canvasHistoryBenchmarkSizes = []canvasHistoryBenchmarkSize{
+	{turns: 20, toolRepeats: 40},
+	{turns: 240, toolRepeats: 40},
+	{turns: 240, toolRepeats: 480},
+	{turns: 1000, toolRepeats: 480},
+}
+
+func newCanvasLongHistoryBenchmark(b *testing.B, size canvasHistoryBenchmarkSize) (*CanvasDocumentService, CanvasDocument, CanvasDocument) {
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(b.TempDir(), "history.db")))
 	if err != nil {
 		b.Fatal(err)
@@ -45,10 +57,11 @@ func newCanvasLongHistoryBenchmark(b *testing.B) (*CanvasDocumentService, Canvas
 		b.Fatal(err)
 	}
 	var messages, protocol []map[string]any
-	for i := 0; i < 1000; i++ {
+	toolOutput := strings.Repeat("Retained history. ", size.toolRepeats)
+	for i := 0; i < size.turns; i++ {
 		id := fmt.Sprintf("request-%d", i)
 		messages = append(messages, map[string]any{"id": id, "role": "user", "text": "Retained request"}, map[string]any{"id": fmt.Sprintf("reply-%d", i), "role": "assistant", "text": "Retained reply"})
-		protocol = append(protocol, map[string]any{"role": "user", "messageID": id, "content": "Retained request"}, map[string]any{"role": "assistant", "toolCalls": []map[string]any{{"id": id, "name": "get_canvas_summary", "arguments": map[string]any{}}}}, map[string]any{"role": "tool", "toolCallId": id, "content": strings.Repeat("Retained history. ", 480)}, map[string]any{"role": "assistant", "content": "Retained reply"})
+		protocol = append(protocol, map[string]any{"role": "user", "messageID": id, "content": "Retained request"}, map[string]any{"role": "assistant", "toolCalls": []map[string]any{{"id": id, "name": "get_canvas_summary", "arguments": map[string]any{}}}}, map[string]any{"role": "tool", "toolCallId": id, "content": toolOutput}, map[string]any{"role": "assistant", "content": "Retained reply"})
 	}
 	document.AgentSessions, err = json.Marshal([]map[string]any{{"id": "long-session", "messages": messages, "protocolMessages": protocol}})
 	if err != nil {
@@ -68,7 +81,7 @@ func newCanvasLongHistoryBenchmark(b *testing.B) (*CanvasDocumentService, Canvas
 }
 
 func BenchmarkCanvasDocumentLongHistoryGeometrySave(b *testing.B) {
-	svc, document, view := newCanvasLongHistoryBenchmark(b)
+	svc, document, view := newCanvasLongHistoryBenchmark(b, canvasHistoryBenchmarkSize{turns: 1000, toolRepeats: 480})
 	var err error
 	b.ReportAllocs()
 	b.SetBytes(int64(len(document.AgentSessions)))
@@ -91,7 +104,7 @@ func BenchmarkCanvasDocumentLongHistoryGeometrySave(b *testing.B) {
 }
 
 func BenchmarkCanvasDocumentLongHistoryMetadataSave(b *testing.B) {
-	svc, document, view := newCanvasLongHistoryBenchmark(b)
+	svc, document, view := newCanvasLongHistoryBenchmark(b, canvasHistoryBenchmarkSize{turns: 1000, toolRepeats: 480})
 	var err error
 	b.ReportAllocs()
 	b.SetBytes(int64(len(document.AgentSessions)))
@@ -129,40 +142,48 @@ func BenchmarkCanvasDocumentLongHistoryMetadataSave(b *testing.B) {
 }
 
 func BenchmarkCanvasDocumentLongHistoryEditorRead(b *testing.B) {
-	svc, document, _ := newCanvasLongHistoryBenchmark(b)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(document.AgentSessions)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		workspace, err := svc.EditorWorkspace("benchmark-owner", document.ID, nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if !workspace.Document.AgentHistoryPartial || string(workspace.Document.AgentSessions) != string(document.AgentSessions) {
-			b.Fatal("editor read changed the active conversation")
-		}
+	for _, size := range canvasHistoryBenchmarkSizes {
+		b.Run(fmt.Sprintf("turns=%d/tool_bytes=%d", size.turns, len("Retained history. ")*size.toolRepeats), func(b *testing.B) {
+			svc, document, _ := newCanvasLongHistoryBenchmark(b, size)
+			b.ReportAllocs()
+			b.SetBytes(int64(len(document.AgentSessions)))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				workspace, err := svc.EditorWorkspace("benchmark-owner", document.ID, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if !workspace.Document.AgentHistoryPartial || string(workspace.Document.AgentSessions) != string(document.AgentSessions) {
+					b.Fatal("editor read changed the active conversation")
+				}
+			}
+		})
 	}
 }
 
 func BenchmarkCanvasAgentSettledLongHistoryEditorRead(b *testing.B) {
-	canvas, document, _ := newCanvasLongHistoryBenchmark(b)
-	identity := Identity{ID: "benchmark-owner"}
-	document.AgentPanel.Open = true
-	document.AgentRun = &CanvasAgentRun{ID: "settled", SessionID: document.ActiveAgentSessionID, AssistantID: "reply-999", Status: "success"}
-	document, err := canvas.saveAgent(identity.ID, document)
-	if err != nil {
-		b.Fatal(err)
-	}
-	agent := NewCanvasAgentService(context.Background(), nil, canvas, nil, nil, nil)
-	b.Cleanup(agent.Close)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(document.AgentSessions)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		result, err := agent.Workspace(identity, document.ID, nil, CanvasHistoryEditor)
-		if err != nil || result.Document.Revision != document.Revision || string(result.Document.AgentSessions) != string(document.AgentSessions) {
-			b.Fatal("opening settled history changed the saved conversation", err)
-		}
+	for _, size := range canvasHistoryBenchmarkSizes {
+		b.Run(fmt.Sprintf("turns=%d/tool_bytes=%d", size.turns, len("Retained history. ")*size.toolRepeats), func(b *testing.B) {
+			canvas, document, _ := newCanvasLongHistoryBenchmark(b, size)
+			identity := Identity{ID: "benchmark-owner"}
+			document.AgentPanel.Open = true
+			document.AgentRun = &CanvasAgentRun{ID: "settled", SessionID: document.ActiveAgentSessionID, AssistantID: fmt.Sprintf("reply-%d", size.turns-1), Status: "success"}
+			document, err := canvas.saveAgent(identity.ID, document)
+			if err != nil {
+				b.Fatal(err)
+			}
+			agent := NewCanvasAgentService(context.Background(), nil, canvas, nil, nil, nil)
+			b.Cleanup(agent.Close)
+			b.ReportAllocs()
+			b.SetBytes(int64(len(document.AgentSessions)))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				result, err := agent.Workspace(identity, document.ID, nil, CanvasHistoryEditor)
+				if err != nil || result.Document.Revision != document.Revision || string(result.Document.AgentSessions) != string(document.AgentSessions) {
+					b.Fatal("opening settled history changed the saved conversation", err)
+				}
+			}
+		})
 	}
 }
 
@@ -573,7 +594,7 @@ func TestCanvasSessionMetadataUpdatesPreserveHistoryAndRequireOriginalVersion(t 
 		t.Fatal("rejected metadata update changed the saved document", err)
 	}
 	stored.AgentRun = &CanvasAgentRun{ID: "active-run", SessionID: "s", Status: "running", Engine: "codex"}
-	running, err := svc.saveWithAgent("metadata-owner", stored, nil, true)
+	running, err := svc.saveWithAgent("metadata-owner", stored, nil, true, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,6 +693,50 @@ func TestCanvasSessionMetadataUpdatesRejectInvalidAndOverlappingWrites(t *testin
 	}
 }
 
+func TestCanvasAgentMessageFeedbackSurvivesBrowserBodyMerge(t *testing.T) {
+	previous := map[string]json.RawMessage{}
+	_ = json.Unmarshal(json.RawMessage(`{"messages":[{"id":"reply","role":"assistant","text":"原回复","feedback":{"rating":"negative","note":"缺少约束","version":"v1","createdAt":"2026-11-23T00:00:00Z","updatedAt":"2026-11-23T00:00:00Z"}}]}`), &previous)
+	current := map[string]json.RawMessage{}
+	_ = json.Unmarshal(json.RawMessage(`{"messages":[{"id":"reply","role":"assistant","text":"浏览器编辑后的回复"}]}`), &current)
+	if err := preserveCanvasAgentMessageMetadata(current, previous); err != nil {
+		t.Fatal(err)
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(current["messages"], &messages); err != nil || len(messages) != 1 || string(messages[0]["feedback"]) == "" {
+		t.Fatalf("feedback metadata was lost: %s", current["messages"])
+	}
+}
+
+func TestCanvasAgentHistoryReferenceMetadataUsesServerValues(t *testing.T) {
+	previous := map[string]json.RawMessage{
+		"messages":     json.RawMessage(`[{"id":"reply","historyReference":"saved reply"}]`),
+		"messageQueue": json.RawMessage(`{"paused":false,"messages":[{"id":"kept","text":"same","historyReference":"saved queue"},{"id":"edited","text":"old","historyReference":"stale queue"}]}`),
+	}
+	current := map[string]json.RawMessage{
+		"messages":     json.RawMessage(`[{"id":"reply","historyReference":"forged reply"},{"id":"new","historyReference":"forged new reply"}]`),
+		"messageQueue": json.RawMessage(`{"paused":false,"messages":[{"id":"kept","text":"same"},{"id":"edited","text":"new","historyReference":"forged queue"}]}`),
+	}
+	if err := preserveCanvasAgentMessageMetadata(current, previous); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"messages", "messageQueue"} {
+		data := string(current[field])
+		if !strings.Contains(data, "saved ") || strings.Contains(data, "forged") || strings.Contains(data, "stale queue") {
+			t.Errorf("%s did not retain only the matching server snapshot: %s", field, data)
+		}
+	}
+
+	canvas := NewCanvasDocumentService(newTestStorageBackend(t))
+	body := json.RawMessage(`[{"id":"session","messages":[{"id":"reply","role":"assistant","text":"reply","historyReference":"forged reply"}],"messageQueue":{"paused":false,"serverManaged":true,"messages":[{"id":"kept","text":"same","createdAt":"now","references":[],"historyReference":"forged queue"}]}}]`)
+	imported, err := canvas.Import("history-reference-import-owner", CanvasDocument{Title: "Imported canvas", AgentSessions: body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data := string(imported.Document.AgentSessions); strings.Contains(data, "historyReference") || !strings.Contains(data, "\"text\":\"same\"") {
+		t.Fatalf("import did not remove snapshot metadata while retaining the queue: %s", data)
+	}
+}
+
 func TestCanvasDocumentLongAgentHistorySurvivesIndependentStorage(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -701,9 +766,11 @@ func exerciseCanvasAgentHistoryStorage(t *testing.T, backend storage.Backend, da
 	if err != nil {
 		t.Fatal(err)
 	}
+	const transcriptTail = "Detail stored in the transcript blocks."
+	transcript := strings.Repeat("Long history retained. ", 5000) + transcriptTail
 	var sessions []map[string]any
 	for i := 0; i < 30; i++ {
-		sessions = append(sessions, map[string]any{"id": fmt.Sprintf("session-%d", i), "messages": []map[string]any{{"id": "reply", "role": "assistant", "text": strings.Repeat("Long history retained. ", 5000)}}})
+		sessions = append(sessions, map[string]any{"id": fmt.Sprintf("session-%d", i), "messages": []map[string]any{{"id": "reply", "role": "assistant", "text": transcript}}})
 	}
 	doc.AgentSessions, err = json.Marshal(sessions)
 	if err != nil {
@@ -728,7 +795,7 @@ func exerciseCanvasAgentHistoryStorage(t *testing.T, backend storage.Backend, da
 		t.Fatal(err)
 	}
 	data, err := json.Marshal(raw)
-	if err != nil || strings.Contains(string(data), "Long history retained.") || len(data) >= canvasDocumentMaxBytes {
+	if err != nil || strings.Contains(string(data), transcriptTail) || len(data) >= canvasDocumentMaxBytes {
 		t.Fatal("workspace still embeds the full transcript", err)
 	}
 	t.Run("history_pages_do_not_load_unrelated_message_bodies", func(t *testing.T) {
@@ -1511,6 +1578,45 @@ func TestCanvasDocumentServiceStoresAgentSessions(t *testing.T) {
 	}
 }
 
+func TestCanvasAgentSearchReusesOnlyUnchangedSessionVersions(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	service := NewCanvasDocumentService(backend)
+	const owner = "search-owner"
+	document, err := loadCanvas(service, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.AgentSessions = json.RawMessage(`[{"id":"one","title":"一","messages":[{"id":"m1","role":"assistant","text":"蓝色大厅"}]},{"id":"two","title":"二","messages":[{"id":"m2","role":"user","text":"蓝色走廊"}],"protocolMessages":[{"role":"tool","content":"隐私数据"}]}]`)
+	saved, err := service.SaveAtRevision(owner, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	backend.beforeLoad = func(name string) {
+		if strings.HasPrefix(name, "canvas_agent_history/") {
+			reads++
+		}
+	}
+	search := func(query string, wantCount, wantReads int) {
+		t.Helper()
+		reads = 0
+		page, err := service.SearchAgentHistory(context.Background(), owner, saved.ID, CanvasAgentHistorySearch{Query: query, Limit: 10})
+		if err != nil || len(page.Matches) != wantCount || reads != wantReads {
+			t.Fatalf("search %q: %+v, reads=%d, err=%v", query, page, reads, err)
+		}
+	}
+	search("蓝色", 2, 2)
+	search("大厅", 1, 0)
+	search("隐私", 0, 0)
+	saved.AgentSessions = json.RawMessage(strings.ReplaceAll(string(saved.AgentSessions), "蓝色走廊", "绿色走廊"))
+	saved, err = service.SaveAtRevision(owner, saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search("蓝色", 1, 1)
+	search("绿色", 1, 0)
+}
+
 func TestCanvasDocumentServicePersistsAgentAutoTitleState(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
 	document, err := loadCanvas(service, "agent-title-owner")
@@ -1550,6 +1656,33 @@ func TestCanvasDocumentServiceRejectsInvalidAgentSessions(t *testing.T) {
 	document.AgentSessions = json.RawMessage(`{"not":"an array"}`)
 	if _, err := service.SaveAtRevision("invalid-agent-owner", document); !errors.Is(err, ErrInvalidCanvasDocument) {
 		t.Fatalf("SaveAtRevision() error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
+func TestCanvasDocumentServicePersistsGoalAndRejectsUnverifiedCompletion(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	const owner = "goal-owner"
+	document, err := loadCanvas(service, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := `[{"id":"s","title":"海报","messages":[],"goal":{"objective":"完成一组海报","status":"blocked","blocker":"等待产品图","criteria":[{"id":"layout","text":"确认版式","done":true},{"id":"product","text":"替换正式产品图","done":false}]}}]`
+	document.AgentSessions = json.RawMessage(active)
+	saved, err := service.SaveAtRevision(owner, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.AgentHistorySession(owner, saved.ID, "s", saved.Revision)
+	if err != nil || !strings.Contains(string(session), `"blocker":"等待产品图"`) {
+		t.Fatalf("persisted goal missing: %s %v", session, err)
+	}
+	saved.AgentSessions = json.RawMessage(strings.ReplaceAll(active, `"status":"blocked","blocker":"等待产品图"`, `"status":"complete"`))
+	if _, err := service.SaveAtRevision(owner, saved); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("unexpected completion error: %v", err)
+	}
+	saved.AgentSessions = json.RawMessage(strings.ReplaceAll(string(saved.AgentSessions), `"done":false`, `"done":true`))
+	if _, err := service.SaveAtRevision(owner, saved); err != nil {
+		t.Fatalf("verified completion was rejected: %v", err)
 	}
 }
 
@@ -2954,6 +3087,202 @@ func TestCanvasDocumentServiceActivatesProjectWithoutRewritingWorkspace(t *testi
 	}
 	if len(created.Projects) != len(workspace.Projects) {
 		t.Fatalf("project count = %d, want %d", len(workspace.Projects), len(created.Projects))
+	}
+}
+
+func TestCanvasActivatingUnreadAgentRunKeepsArchivedHistory(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			databaseURL := os.Getenv("TEST_CANVAS_" + strings.ToUpper(dialect) + "_DATABASE_URL")
+			if dialect == "sqlite" {
+				databaseURL = "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "history.db"))
+			} else if databaseURL == "" {
+				t.Skip("isolated canvas database not configured")
+			}
+			backend, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = backend.Close() })
+			exerciseCanvasUnreadRunActivation(t, backend, databaseURL)
+		})
+	}
+}
+
+func TestCanvasUnreadActivationRetriesConcurrentProjectUpdate(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			databaseURL := os.Getenv("TEST_CANVAS_" + strings.ToUpper(dialect) + "_DATABASE_URL")
+			if dialect == "sqlite" {
+				databaseURL = "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "concurrent.db"))
+			} else if databaseURL == "" {
+				t.Skip("isolated canvas database not configured")
+			}
+			first, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = first.Close() })
+			second, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = second.Close() })
+
+			owner := "concurrent-unread-activation"
+			canvas := NewCanvasDocumentService(first)
+			initial, err := canvas.Workspace(owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := canvas.Import(owner, CanvasDocument{
+				Title: "Finished project", ActiveAgentSessionID: "selected",
+				AgentSessions: json.RawMessage(`[{"id":"selected","messages":[{"id":"reply","role":"assistant","text":"Result"}]},{"id":"archived","messages":[{"id":"older","role":"assistant","text":"Older result"}]}]`),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected.Document.AgentRun = &CanvasAgentRun{ID: "settled", SessionID: "selected", AssistantID: "reply", Status: "success", Unread: true}
+			saved, err := canvas.saveAgent(owner, selected.Document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			started, release := make(chan struct{}), make(chan struct{})
+			blocked := &blockingCanvasDocumentBackend{Backend: first, documents: first, started: started, release: release}
+			agent := NewCanvasAgentService(context.Background(), nil, NewCanvasDocumentService(blocked), nil, nil, nil)
+			t.Cleanup(agent.Close)
+			result := make(chan error, 1)
+			go func() {
+				_, err := agent.ActivateWorkspace(Identity{ID: owner}, saved.ID, CanvasHistoryEditor)
+				result <- err
+			}()
+			select {
+			case <-started:
+			case <-time.After(10 * time.Second):
+				close(release)
+				t.Fatal("activation did not reach the workspace write")
+			}
+			_, updateErr := NewCanvasDocumentService(second).UpdateProject(owner, "rename", initial.Document.ID, "Concurrent update")
+			close(release)
+			if updateErr != nil {
+				t.Fatal(updateErr)
+			}
+			if err := <-result; err != nil {
+				t.Fatal(err)
+			}
+			workspace, err := NewCanvasDocumentService(second).Workspace(owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if workspace.ActiveProjectID != saved.ID || workspace.Document.AgentRun == nil || workspace.Document.AgentRun.Unread || !reflect.DeepEqual(workspace.Document.AgentSessions, saved.AgentSessions) {
+				t.Fatal("activation lost the read marker, active project, or archived history")
+			}
+			other, err := NewCanvasDocumentService(second).Project(owner, initial.Document.ID)
+			if err != nil || other.Title != "Concurrent update" {
+				t.Fatalf("concurrent project update was lost: title=%q error=%v", other.Title, err)
+			}
+		})
+	}
+}
+
+func exerciseCanvasUnreadRunActivation(t *testing.T, database *storage.DatabaseBackend, databaseURL string) {
+	t.Helper()
+	for _, tc := range []struct {
+		name       string
+		scope      CanvasHistoryScope
+		panelOpen  bool
+		chunkReads int
+	}{
+		{name: "closed editor", scope: CanvasHistoryEditor},
+		{name: "open editor", scope: CanvasHistoryEditor, panelOpen: true, chunkReads: 1},
+		{name: "active history", scope: CanvasHistoryActive, chunkReads: 1},
+		{name: "complete history", scope: CanvasHistoryFull, chunkReads: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &countingCanvasDocumentBackend{Backend: database, documents: database, saves: map[string]int{}}
+			canvas := NewCanvasDocumentService(backend)
+			agent := NewCanvasAgentService(context.Background(), nil, canvas, nil, nil, nil)
+			t.Cleanup(agent.Close)
+			identity := Identity{ID: DefaultCanvasDocument().ID}
+			initial, err := canvas.Workspace(identity.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := canvas.Import(identity.ID, CanvasDocument{
+				Title: "Finished project", ActiveAgentSessionID: "selected",
+				AgentSessions: json.RawMessage(`[{"id":"selected","messages":[{"id":"reply","role":"assistant","text":"Result"}]},{"id":"archived","messages":[{"id":"older","role":"assistant","text":"Older result"}]}]`),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected.Document.AgentPanel.Open = tc.panelOpen
+			selected.Document.AgentRun = &CanvasAgentRun{ID: "settled", SessionID: "selected", AssistantID: "reply", Status: "success", Unread: true}
+			saved, err := canvas.saveAgent(identity.ID, selected.Document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := canvas.ActivateProjectWorkspace(identity.ID, initial.Document.ID, true); err != nil {
+				t.Fatal(err)
+			}
+			root := canvasWorkspaceName(identity.ID)
+			if tc.chunkReads == 0 {
+				injected := errors.New("workspace storage unavailable")
+				backend.failSave = func(name string) error {
+					if name == root {
+						return injected
+					}
+					return nil
+				}
+				if _, err := agent.ActivateWorkspace(identity, saved.ID, tc.scope); !errors.Is(err, injected) {
+					t.Fatal("failed acknowledgement was not reported", err)
+				}
+				backend.failSave = nil
+				workspace, err := canvas.ProjectList(identity.ID)
+				if err != nil || workspace.ActiveProjectID != initial.Document.ID {
+					t.Fatal("failed acknowledgement changed the active project", err)
+				}
+				project, err := canvas.Project(identity.ID, saved.ID)
+				if err != nil || project.AgentRun == nil || !project.AgentRun.Unread || project.Revision != saved.Revision {
+					t.Fatal("failed acknowledgement changed the unread run", err)
+				}
+			}
+			rootSaves := backend.saves[root]
+			chunkReads := 0
+			backend.beforeLoad = func(name string) {
+				if strings.HasPrefix(name, "canvas_agent_history/") {
+					chunkReads++
+				}
+			}
+			result, err := agent.ActivateWorkspace(identity, saved.ID, tc.scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.ActiveProjectID != saved.ID || result.Document.AgentRun == nil || result.Document.AgentRun.Unread || result.Document.Revision != saved.Revision+1 {
+				t.Fatalf("activation did not acknowledge the completed run: active=%q revision=%d run=%+v", result.ActiveProjectID, result.Document.Revision, result.Document.AgentRun)
+			}
+			if chunkReads != tc.chunkReads || backend.saves[root] != rootSaves+1 {
+				t.Fatalf("activation read %d history chunks and performed %d workspace writes", chunkReads, backend.saves[root]-rootSaves)
+			}
+			for _, project := range result.Projects {
+				if project.ID == saved.ID && project.AgentStatus != nil {
+					t.Fatal("acknowledged result is still shown as unread in the project list")
+				}
+			}
+			reopened, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reopened.Close() })
+			reloaded, err := NewCanvasDocumentService(reopened).Workspace(identity.ID)
+			if err != nil || reloaded.ActiveProjectID != saved.ID || reloaded.Document.AgentRun == nil || reloaded.Document.AgentRun.Unread ||
+				!reflect.DeepEqual(reloaded.Document.AgentSessions, saved.AgentSessions) {
+				t.Fatal("activation lost the acknowledgement or the archived conversations", err)
+			}
+			repeated, err := agent.ActivateWorkspace(identity, saved.ID, tc.scope)
+			if err != nil || repeated.Document.Revision != result.Document.Revision || backend.saves[root] != rootSaves+1 {
+				t.Fatal("repeated activation rewrote the acknowledgement", err)
+			}
+		})
 	}
 }
 

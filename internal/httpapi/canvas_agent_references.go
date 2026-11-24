@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,13 +18,29 @@ import (
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
+
+	"golang.org/x/image/draw"
 )
 
 // Keep durable URLs in agent memory. Protected images are encoded only at the
 // authenticated model transport boundary; public images retain their URLs.
 func (a *App) canvasAgentModelImages(ctx context.Context, identity service.Identity, messages []map[string]any) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(messages))
-	resolved := map[string]string{}
+	type variant struct {
+		url      string
+		longEdge int
+	}
+	resolved := map[variant]string{}
+	protectedImages := 0
+	for _, message := range messages {
+		for _, part := range util.AsMapSlice(message["content"]) {
+			if part["type"] == "image_url" && !canvasAgentPublicImage(util.Clean(util.StringMap(part["image_url"])["url"])) {
+				protectedImages++
+			}
+		}
+	}
+	const requestImageBytes = 16 << 20
+	imageBudget := requestImageBytes / max(1, protectedImages)
 	for _, message := range messages {
 		next := make(map[string]any, len(message))
 		for key, value := range message {
@@ -35,23 +55,31 @@ func (a *App) canvasAgentModelImages(ctx context.Context, identity service.Ident
 				}
 				image, _ := part["image_url"].(map[string]any)
 				raw := util.Clean(image["url"])
-				parsed, err := url.Parse(raw)
-				if err != nil {
-					return nil, err
-				}
-				protected := strings.HasPrefix(parsed.Path, "/api/files/") || strings.HasPrefix(parsed.Path, "/images/") || strings.HasPrefix(parsed.Path, service.ImageConversationAssetURLPrefix)
-				if !protected && isPublicReferenceURL(raw) {
+				if canvasAgentPublicImage(raw) {
 					content = append(content, part)
 					continue
 				}
-				transportURL, ok := resolved[raw]
+				longEdge := 1536
+				switch image["detail"] {
+				case "low":
+					longEdge = 768
+				case "high":
+					longEdge = 2048
+				}
+				key := variant{url: raw, longEdge: longEdge}
+				transportURL, ok := resolved[key]
 				if !ok {
 					loaded, err := a.canvasAgentImage(ctx, identity, raw)
 					if err != nil {
 						return nil, err
 					}
-					transportURL = "data:" + loaded.ContentType + ";base64," + base64.StdEncoding.EncodeToString(loaded.Data)
-					resolved[raw] = transportURL
+					budget := min(imageBudget, longEdge*1024)
+					data, contentType, err := canvasAgentImageVariant(ctx, loaded, longEdge, budget)
+					if err != nil {
+						return nil, err
+					}
+					transportURL = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
+					resolved[key] = transportURL
 				}
 				transportImage := map[string]any{"url": transportURL}
 				if detail, ok := image["detail"]; ok {
@@ -64,6 +92,57 @@ func (a *App) canvasAgentModelImages(ctx context.Context, identity service.Ident
 		out = append(out, next)
 	}
 	return out, nil
+}
+
+func canvasAgentPublicImage(raw string) bool {
+	parsed, err := url.Parse(raw)
+	return err == nil && isPublicReferenceURL(raw) &&
+		!strings.HasPrefix(parsed.Path, "/api/files/") &&
+		!strings.HasPrefix(parsed.Path, "/images/") &&
+		!strings.HasPrefix(parsed.Path, service.ImageConversationAssetURLPrefix)
+}
+
+func canvasAgentImageVariant(ctx context.Context, source protocol.UploadedImage, longEdge, maxBytes int) ([]byte, string, error) {
+	info, err := util.InspectRasterImage(source.Data)
+	if err != nil {
+		return nil, "", err
+	}
+	if max(info.Width, info.Height) <= longEdge && len(source.Data) <= maxBytes {
+		return source.Data, info.ContentType, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(source.Data))
+	if err != nil {
+		return nil, "", err
+	}
+	originalEdge := max(info.Width, info.Height)
+	for edge := min(longEdge, originalEdge); ; edge = max(1, edge*3/4) {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
+		size := image.Rect(0, 0, max(1, info.Width*edge/originalEdge), max(1, info.Height*edge/originalEdge))
+		scaled := image.NewRGBA(size)
+		draw.CatmullRom.Scale(scaled, size, decoded, decoded.Bounds(), draw.Src, nil)
+		var encoded bytes.Buffer
+		contentType := "image/jpeg"
+		if !scaled.Opaque() {
+			contentType = "image/png"
+			err = png.Encode(&encoded, scaled)
+		} else {
+			err = jpeg.Encode(&encoded, scaled, &jpeg.Options{Quality: 90})
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		if encoded.Len() <= maxBytes {
+			return encoded.Bytes(), contentType, nil
+		}
+		if edge == 1 {
+			return nil, "", fmt.Errorf("参考图超过当前模型请求的图片体积预算")
+		}
+	}
 }
 
 // Resolve protected references through their owner-scoped storage APIs, never

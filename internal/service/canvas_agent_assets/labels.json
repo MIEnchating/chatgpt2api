@@ -42,5 +42,15 @@
   "set_video_model": "正在切换视频模型",
   "merge_script_videos": "正在合并分镜视频",
   "confirm_script_node": "确认已核对脚本",
-  "analyze_video": "正在分析视频画面"
+  "analyze_video": "正在分析视频画面",
+  "review_canvas_nodes": "并行审阅画布节点",
+  "draft_canvas_text_edits": "并行起草文本修改",
+  "apply_canvas_text_edits": "提交文本修改提案",
+  "plan_canvas_text_tasks": "建立文本编辑任务",
+  "list_canvas_text_tasks": "查看文本编辑任务",
+  "draft_canvas_text_tasks": "领取文本编辑任务",
+  "discard_canvas_text_task_draft": "放弃文本修改提案",
+  "reopen_canvas_text_task": "重开已完成的编辑任务",
+  "revise_canvas_text_task": "调整编辑任务计划",
+  "remove_canvas_text_task": "移除文本编辑任务"
 }

@@ -131,3 +131,22 @@ func TestHTTPErrorExposesStatusWithoutChangingMessage(t *testing.T) {
 		t.Fatalf("unexpected HTTP error: %v", err)
 	}
 }
+
+func TestHTTPErrorFailureCodeUsesExplicitCodeBeforeStatus(t *testing.T) {
+	if got := (HTTPError{Status: 400, Message: "quota", Code: "rate_limit"}).FailureCode(); got != "RATE_LIMIT" {
+		t.Fatalf("explicit failure code = %q, want RATE_LIMIT", got)
+	}
+	for _, test := range []struct {
+		status int
+		want   string
+	}{
+		{status: 408, want: "TIMEOUT"},
+		{status: 401, want: "AUTH"},
+		{status: 429, want: "RATE_LIMIT"},
+		{status: 503, want: "SERVER"},
+	} {
+		if got := (HTTPError{Status: test.status}).FailureCode(); got != test.want {
+			t.Errorf("status %d failure code = %q, want %q", test.status, got, test.want)
+		}
+	}
+}

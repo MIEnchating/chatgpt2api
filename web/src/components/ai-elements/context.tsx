@@ -1,7 +1,7 @@
 // AI Elements Context: official circular indicator, composed with shadcn HoverCard.
 // https://elements.ai-sdk.dev/components/context
 // https://ui.shadcn.com/docs/ai-elements/radix/context
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   HoverCard,
@@ -9,6 +9,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export function Context({
   tokens,
@@ -20,6 +21,7 @@ export function Context({
   measured = false,
   pendingLabel = "正在估算",
   description,
+  actions,
 }: {
   tokens?: number;
   error?: string;
@@ -30,6 +32,7 @@ export function Context({
   measured?: boolean;
   pendingLabel?: string;
   description?: string;
+  actions?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const status = error ? "用量估算失败" : tokens === undefined ? pendingLabel : undefined;
@@ -43,21 +46,14 @@ export function Context({
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(value);
-  return (
-    <HoverCard
-      open={open}
-      onOpenChange={setOpen}
-      openDelay={100}
-      closeDelay={100}
-    >
-      <HoverCardTrigger asChild>
+  const trigger = (
         <Button
           data-ai-element="context"
           type="button"
           size="icon-sm"
           variant="ghost"
           aria-label="查看上下文"
-          onClick={() => setOpen(true)}
+          onClick={actions ? undefined : () => setOpen(true)}
         >
           <svg
             className="size-5"
@@ -99,12 +95,8 @@ export function Context({
             )}
           </svg>
         </Button>
-      </HoverCardTrigger>
-      {open ? <HoverCardContent
-        side="top"
-        align="end"
-        className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 p-4"
-      >
+  );
+  const content = open ? <>
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-medium">{compacting ? "正在压缩上下文" : "上下文"}</span>
           <span className="shrink-0 text-muted-foreground">{status || (percent === undefined ? "上限未知" : `${percent}%`)}</span>
@@ -125,7 +117,17 @@ export function Context({
             ? "最近一次模型输入的估算，包含系统指令和工具定义。"
             : "可见对话和画布内容的估算；运行后更新模型输入统计。")}
         </p>
-      </HoverCardContent> : null}
+        {actions}
+  </> : null;
+  const layout = "flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 p-4";
+  if (actions) return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+    {open ? <PopoverContent side="top" align="end" className={layout}>{content}</PopoverContent> : null}
+  </Popover>;
+  return (
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={100} closeDelay={100}>
+      <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
+      {open ? <HoverCardContent side="top" align="end" className={layout}>{content}</HoverCardContent> : null}
     </HoverCard>
   );
 }

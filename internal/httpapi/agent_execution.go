@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
@@ -27,6 +29,15 @@ func (a *App) handleAgentExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, domain := r.URL.Query().Get("id"), r.URL.Query().Get("domain")
+	w.Header().Add("Vary", "Accept")
+	if r.Method == http.MethodGet && r.Header.Get("Accept") == "text/event-stream" {
+		if id == "" || len(id) > 128 || strings.ContainsRune(id, 0) {
+			util.WriteError(w, http.StatusBadRequest, "请选择 Agent 任务")
+			return
+		}
+		a.streamAgentExecution(w, r, identity, id)
+		return
+	}
 	if id == "" && domain != "workflow" && domain != "video_contract" && domain != "studio" {
 		util.WriteError(w, 400, "请选择 Agent 业务")
 		return
@@ -44,7 +55,7 @@ func (a *App) handleAgentExecution(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		permissionMethod = http.MethodPost
 	}
-	if run.Domain == "video_contract" && identity.Role != service.AuthRoleAdmin || run.Domain == "workflow" && !a.identityCanAccessAPI(identity, permissionMethod, "/api/workflows/agent-draft") || run.Domain == "studio" && !a.identityCanAccessAPI(identity, permissionMethod, "/api/creation-tasks") || run.Domain != "workflow" && run.Domain != "video_contract" && run.Domain != "studio" {
+	if !a.canAccessAgentExecution(identity, permissionMethod, run.Domain) {
 		util.WriteError(w, 403, "没有访问此 Agent 任务的权限")
 		return
 	}
@@ -87,6 +98,116 @@ func (a *App) handleAgentExecution(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, 200, map[string]any{"run": run})
 }
 
+func (a *App) canAccessAgentExecution(identity service.Identity, method, domain string) bool {
+	switch domain {
+	case "workflow":
+		return a.identityCanAccessAPI(identity, method, "/api/workflows/agent-draft")
+	case "studio":
+		return a.identityCanAccessAPI(identity, method, "/api/creation-tasks")
+	case "video_contract":
+		return identity.Role == service.AuthRoleAdmin
+	default:
+		return false
+	}
+}
+
+func (a *App) streamAgentExecution(w http.ResponseWriter, r *http.Request, identity service.Identity, id string) {
+	changed, stop := a.agentExecutions.WatchProgress(identity, id)
+	defer stop()
+	load := func(current service.Identity) (*service.AgentExecution, int, string) {
+		run, err := a.agentExecutions.Snapshot(current, id, "")
+		if errors.Is(err, service.ErrAgentExecutionNotFound) {
+			return nil, 0, ""
+		}
+		if err != nil {
+			return nil, http.StatusServiceUnavailable, "读取 Agent 进度失败"
+		}
+		if !a.canAccessAgentExecution(current, http.MethodGet, run.Domain) {
+			return nil, http.StatusForbidden, "没有访问此 Agent 任务的权限"
+		}
+		return &run, 0, ""
+	}
+	run, status, message := load(identity)
+	if status != 0 {
+		util.WriteError(w, status, message)
+		return
+	}
+	awaitStart := r.URL.Query().Get("await_start") == "1"
+	awaitResume := r.URL.Query().Get("await_resume") == "1"
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "private, no-store, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	controller := http.NewResponseController(w)
+	write := func(frame string) error {
+		_ = controller.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		if _, err := fmt.Fprint(w, frame); err != nil {
+			return err
+		}
+		return controller.Flush()
+	}
+	writeError := func(status int, message string) {
+		_ = write("data: " + agentJSONValue(map[string]any{"type": "error", "status": status, "message": message}) + "\n\n")
+	}
+	publish := func() bool {
+		if write("data: "+agentJSONValue(map[string]any{"type": "snapshot", "run": run})+"\n\n") != nil {
+			return false
+		}
+		if run == nil {
+			return awaitStart
+		}
+		return run.Status == "running" || awaitResume && run.Domain == "studio" && run.Status == "waiting"
+	}
+	if !publish() {
+		return
+	}
+	if run != nil {
+		awaitStart = false
+	}
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		updated := false
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changed:
+			updated = true
+		case <-heartbeat.C:
+		}
+		current, err := a.authenticateSession(r, requestAuthCookieToken(r))
+		if err != nil {
+			writeError(http.StatusServiceUnavailable, "读取登录会话失败")
+			return
+		}
+		if current == nil {
+			writeError(http.StatusUnauthorized, "登录会话已失效，请重新登录")
+			return
+		}
+		if current.ID != identity.ID || current.OwnerID != identity.OwnerID || current.Role != identity.Role ||
+			(run != nil && !a.canAccessAgentExecution(*current, http.MethodGet, run.Domain)) {
+			writeError(http.StatusForbidden, "任务访问权限已更改，请刷新页面")
+			return
+		}
+		if !updated {
+			if write(": heartbeat\n\n") != nil {
+				return
+			}
+			continue
+		}
+		run, status, message = load(*current)
+		if status != 0 {
+			writeError(status, message)
+			return
+		}
+		if run != nil {
+			awaitStart = false
+		}
+		if !publish() {
+			return
+		}
+	}
+}
+
 func (a *App) executeWorkflowAgent(ctx context.Context, identity service.Identity, worker *service.AgentExecutionWorker) error {
 	var input service.WorkflowAgentDraftRequest
 	if err := worker.Input(&input); err != nil {
@@ -110,8 +231,12 @@ func (a *App) executeWorkflowAgent(ctx context.Context, identity service.Identit
 				return nil, errors.New("未知的工作流工具")
 			}
 			draft, warnings, err := service.NormalizeWorkflowAgentDraft(agentJSONValue(util.StringMap(params["arguments"])["draft"]), input.Scope)
-			if err == nil && (strings.TrimSpace(util.Clean(draft["name"])) == "" || strings.TrimSpace(util.Clean(util.StringMap(draft["config"])["prompt_template"])) == "") {
-				err = errors.New("工作流必须包含名称和完整的提示词模板")
+			if err == nil {
+				name, _ := draft["name"].(string)
+				template, _ := util.StringMap(draft["config"])["prompt_template"].(string)
+				if strings.TrimSpace(name) == "" || strings.TrimSpace(template) == "" {
+					err = errors.New("工作流必须包含名称和完整的提示词模板，且两者都必须是字符串")
+				}
 			}
 			if err != nil {
 				return map[string]any{"result": map[string]any{"ok": false, "message": err.Error()}}, nil
@@ -160,7 +285,7 @@ func (a *App) runDomainAgentModel(ctx context.Context, identity service.Identity
 	if err := worker.Event(map[string]any{"stage": "generating", "message": "正在处理任务"}); err != nil {
 		return nil, err
 	}
-	return a.runAgentModel(ctx, identity, service.AgentModelRequest{Model: model, Messages: util.AsMapSlice(params["messages"]), Metadata: metadata, OnText: onText})
+	return a.runAgentModel(ctx, identity, service.AgentModelRequest{RunID: worker.ID(), Diagnostic: util.StringMap(params["diagnostic"]), Model: model, Messages: util.AsMapSlice(params["messages"]), Metadata: metadata, OnText: onText})
 }
 
 func (a *App) waitAgentExecution(ctx context.Context, identity service.Identity, id string, report func(map[string]any)) (service.AgentExecution, error) {

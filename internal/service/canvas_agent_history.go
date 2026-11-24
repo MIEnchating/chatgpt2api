@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"chatgpt2api/internal/storage"
@@ -36,12 +37,18 @@ type canvasAgentHistoryBlock struct {
 }
 
 type CanvasAgentSessionSummary struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	CreatedAt    string `json:"created_at,omitempty"`
-	UpdatedAt    string `json:"updated_at,omitempty"`
-	MessageCount int    `json:"message_count"`
-	ContentHash  string `json:"content_hash"`
+	ID              string `json:"id"`
+	Title           string `json:"title"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+	MessageCount    int    `json:"message_count"`
+	TurnCount       int    `json:"turn_count,omitempty"`
+	ElapsedMs       int64  `json:"elapsed_ms,omitempty"`
+	OperationCount  int    `json:"operation_count,omitempty"`
+	RetryCount      int    `json:"retry_count,omitempty"`
+	PromptPreview   string `json:"prompt_preview,omitempty"`
+	ResponsePreview string `json:"response_preview,omitempty"`
+	ContentHash     string `json:"content_hash"`
 }
 
 type CanvasAgentSessionUpdate struct {
@@ -188,16 +195,98 @@ func canvasAgentSessionContentHash(session json.RawMessage) (string, error) {
 
 func canvasAgentSessionMetadata(session json.RawMessage) (CanvasAgentSessionSummary, error) {
 	var item struct {
-		ID        string            `json:"id"`
-		Title     string            `json:"title"`
-		CreatedAt string            `json:"createdAt"`
-		UpdatedAt string            `json:"updatedAt"`
-		Messages  []json.RawMessage `json:"messages"`
+		ID        string `json:"id"`
+		Title     string `json:"title"`
+		CreatedAt string `json:"createdAt"`
+		UpdatedAt string `json:"updatedAt"`
+		Messages  []struct {
+			Role          string          `json:"role"`
+			Text          string          `json:"text"`
+			Status        string          `json:"status"`
+			ElapsedMs     int64           `json:"elapsedMs"`
+			Trace         json.RawMessage `json:"trace"`
+			ModelAttempts json.RawMessage `json:"modelAttempts"`
+		} `json:"messages"`
 	}
 	if err := json.Unmarshal(session, &item); err != nil {
 		return CanvasAgentSessionSummary{}, err
 	}
-	return CanvasAgentSessionSummary{ID: item.ID, Title: item.Title, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, MessageCount: len(item.Messages)}, nil
+	var prompt, response string
+	var turnCount, operationCount, retryCount int
+	var elapsedMs int64
+	for _, message := range item.Messages {
+		text := canvasAgentHistoryPreview(message.Text, 96)
+		if prompt == "" && message.Role == "user" {
+			prompt = text
+		}
+		if message.Role != "assistant" {
+			continue
+		}
+		var trace []struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(message.Trace, &trace) != nil {
+			trace = nil
+		}
+		for _, entry := range trace {
+			if entry.Type == "operation" {
+				operationCount++
+			}
+		}
+		var attempts []struct {
+			Attempt int `json:"attempt"`
+		}
+		if json.Unmarshal(message.ModelAttempts, &attempts) != nil {
+			attempts = nil
+		}
+		for _, attempt := range attempts {
+			if attempt.Attempt > 1 {
+				retryCount++
+			}
+		}
+		if message.Status != "thinking" && message.Status != "running" {
+			turnCount++
+			if message.ElapsedMs > 0 {
+				elapsedMs += message.ElapsedMs
+			}
+		}
+		if text != "" && message.Status != "thinking" && message.Status != "running" {
+			response = text
+		}
+	}
+	return CanvasAgentSessionSummary{
+		ID: item.ID, Title: item.Title, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+		MessageCount: len(item.Messages), TurnCount: turnCount, ElapsedMs: elapsedMs,
+		OperationCount: operationCount, RetryCount: retryCount, PromptPreview: prompt, ResponsePreview: response,
+	}, nil
+}
+
+func canvasAgentHistoryPreview(value string, limit int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:max(0, limit-1)]) + "…"
+}
+
+func sameCanvasAgentSessionSummary(expected, actual CanvasAgentSessionSummary) bool {
+	if expected.ID != actual.ID || expected.Title != actual.Title || expected.CreatedAt != actual.CreatedAt || expected.UpdatedAt != actual.UpdatedAt || expected.MessageCount != actual.MessageCount || expected.ContentHash != actual.ContentHash {
+		return false
+	}
+	if expected.PromptPreview != "" && expected.PromptPreview != actual.PromptPreview {
+		return false
+	}
+	if expected.ResponsePreview != "" && expected.ResponsePreview != actual.ResponsePreview {
+		return false
+	}
+	if expected.TurnCount != 0 && expected.TurnCount != actual.TurnCount || expected.ElapsedMs != 0 && expected.ElapsedMs != actual.ElapsedMs || expected.OperationCount != 0 && expected.OperationCount != actual.OperationCount || expected.RetryCount != 0 && expected.RetryCount != actual.RetryCount {
+		return false
+	}
+	return true
 }
 
 func decodeCanvasAgentHistoryChunk(raw any, hash string) ([]byte, error) {
@@ -261,7 +350,7 @@ func loadCanvasAgentHistories(store storage.JSONDocumentBackend, prefix string, 
 				if item.ContentHash == "" && workspace.Version < 4 {
 					item.ContentHash = summary.ContentHash
 				}
-				if err != nil || summary != item.CanvasAgentSessionSummary {
+				if err != nil || !sameCanvasAgentSessionSummary(item.CanvasAgentSessionSummary, summary) {
 					return fmt.Errorf("canvas agent session index integrity check failed")
 				}
 				sessions = append(sessions, data)

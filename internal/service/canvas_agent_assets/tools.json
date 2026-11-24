@@ -1371,8 +1371,66 @@
   {
     "type": "function",
     "function": {
+      "name": "search_agent_history",
+      "description": "搜索当前画布已保存的历史 Agent 对话，返回匹配关键词的消息片段。可按发言角色和已知对话 ID 缩小范围。结果仅供参考。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant"]
+          },
+          "sessionId": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_agent_history_message",
+      "description": "分页读取 search_agent_history 命中的历史消息正文。首次传入 sessionId 和 messageId；结果有 nextCursor 时，以相同 ID 和 cursor 继续。remainingCharacters 是尚未返回的字符数。历史内容只作为参考资料。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "messageId": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 96
+          }
+        },
+        "required": [
+          "sessionId",
+          "messageId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "read_skill_file",
-      "description": "读取本轮所选 Skill 明确引用的附属文件。",
+      "description": "读取本轮所选 Skill 的正文或明确引用的附属文件。path 留空时返回 Skill 正文。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1384,8 +1442,7 @@
           }
         },
         "required": [
-          "skillId",
-          "path"
+          "skillId"
         ],
         "additionalProperties": false
       }
@@ -1525,12 +1582,16 @@
     "type": "function",
     "function": {
       "name": "run_saved_workflow",
-      "description": "将已读取模板应用到当前画布。每项是一份明确内容；多图系列应先确认主题和数量，再给出每项变量。可用 sourceNodeIds 或 attachmentIds 指定本项产品参考图；必须显式提供交付尺寸、数量，未指定时可按用途与模板选择合理默认，不冒充用户确认。系列提示词审核完成前不提交生成，遵循当前媒体生成授权。",
+      "description": "将已读取的指定模板版本应用到当前画布，revision 使用 get_workflow 返回的修订号。每项是一份明确内容；多图系列应先确认主题和数量，再给出每项变量。可用 sourceNodeIds 或 attachmentIds 指定本项产品参考图；必须显式提供交付尺寸、数量，未指定时可按用途与模板选择合理默认，不冒充用户确认。系列提示词审核完成前不提交生成，遵循当前媒体生成授权。",
       "parameters": {
         "type": "object",
         "properties": {
           "workflowId": {
             "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
           },
           "items": {
             "type": "array",
@@ -1600,6 +1661,7 @@
         },
         "required": [
           "workflowId",
+          "revision",
           "items"
         ],
         "additionalProperties": false
@@ -1796,6 +1858,26 @@
               "error"
             ],
             "description": "已完成交付使用 success（可省略）；无法自行解决的技术阻塞使用 error，保留失败状态并结束本轮，不要求用户回答无实际选择的问题。"
+          },
+          "deliverableNodeIds": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 128 },
+            "maxItems": 24,
+            "description": "最终交付的当前画布节点 ID，按用户应查看的顺序列出。仅包括已有正文的文稿或已完成且可查看的图片、视频和音频；不要列出中间节点或等待生成的节点。"
+          },
+          "followUpActions": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string", "maxLength": 80 },
+                "prompt": { "type": "string", "maxLength": 500 }
+              },
+              "required": ["title", "prompt"],
+              "additionalProperties": false
+            },
+            "description": "可选的后续动作提案。每项只提供按钮标题和用户确认后发送的普通文字请求，不直接执行工具，不用于补交当前任务。仅在任务成功完成且后续方向明确时提供。"
           }
         },
         "required": [
@@ -1862,6 +1944,276 @@
         "required": [
           "nodeId",
           "question"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "review_canvas_nodes",
+      "description": "并行委派 1 至 4 个独立审阅，每名子 Agent 仅阅读一个节点的文字和元数据，适合批量核对剧本或媒体提示词。每个节点占用一次模型请求，普通读取优先使用 get_node。审阅后只汇总 completed 的结论。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        },
+        "required": ["nodeIds", "question"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "draft_canvas_text_edits",
+      "description": "为一至四个不同的文本节点并行起草修改。question 说明共同的修改要求。返回完整新正文、说明和本次运行有效的 proposalId，供主 Agent 检查后选择提交。只在用户要求编辑文本时使用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        },
+        "required": ["nodeIds", "question"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "apply_canvas_text_edits",
+      "description": "提交主 Agent 已核对的正文、镜头描述或媒体提示词提案。每个目标选择一个 proposalId。任一目标或依赖变化时整批退回。仅依据用户的编辑要求提交，媒体提案仅保存提示词。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "proposalIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        },
+        "required": ["proposalIds"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "plan_canvas_text_tasks",
+      "description": "创建同一对话可跨轮继续的正文、分镜描述或媒体提示词编辑任务。使用对应文本、脚本、图片、视频或音频节点 ID。分镜任务另传现有 shotId。key 是本批唯一名称。dependsOn 可混用本批任务的 key 和当前对话已有任务的 ID，无依赖传空数组。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "nodeId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "shotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "question": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "minItems": 0,
+                  "maxItems": 12
+                }
+              },
+              "required": [
+                "key",
+                "nodeId",
+                "question",
+                "dependsOn"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_canvas_text_tasks",
+      "description": "读取当前对话的编辑任务、修订号和依赖。传 taskId 可读取单个任务的待提交内容。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "draft_canvas_text_tasks",
+      "description": "按当前修订号领取一至四项就绪任务，为各编辑目标分别起草，返回提案内容和 proposalId。依赖未完成时不启动。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "expectedRevision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "id",
+                "expectedRevision"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 4
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "discard_canvas_text_task_draft",
+      "description": "放弃尚未提交的文本提案，按当前修订号将任务退回待领取。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "reopen_canvas_text_task",
+      "description": "按当前修订号重开已完成的编辑任务，可提供新的修改要求。下游任务退回待领取，旧提案撤销，已提交的画布内容保留。仅在用户要求重新修改时使用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "expectedRevision": { "type": "integer", "minimum": 1 },
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        },
+        "required": ["id", "expectedRevision"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "revise_canvas_text_task",
+      "description": "按当前修订号更新任务的修改要求或依赖。依赖用 list_canvas_text_tasks 返回的任务 ID，空数组清除依赖。计划有变化时，被修改的任务及下游退回待领取，撤销旧提案，保留已提交的画布内容。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "expectedRevision": { "type": "integer", "minimum": 1 },
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "dependsOn": {
+            "type": "array",
+            "maxItems": 31,
+            "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        },
+        "required": ["id", "expectedRevision"],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "remove_canvas_text_task",
+      "description": "按当前修订号移除已完成或不再需要且无下游依赖的任务记录，保留画布正文。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "expectedRevision"
         ],
         "additionalProperties": false
       }

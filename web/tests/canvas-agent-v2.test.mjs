@@ -166,11 +166,14 @@ describe("canvas agent v2 tool contract", () => {
   });
 
   test("Agent configuration stores runtime preferences without fixed media parameters", () => {
-    const defaults = { contextWindowTokens: 457_000, autoGenerateMedia: true, textApiMode: "responses", textReasoningEnabled: false, textStreaming: true, activeSkillIds: [] };
+    const defaults = { contextWindowTokens: 457_000, modelRequestLimit: 0, autoGenerateMedia: true, textApiMode: "responses", textReasoningEnabled: false, textStreaming: true, activeSkillIds: [] };
     assert.deepEqual(defaultCanvasAgentStarterConfig(), defaults);
     assert.equal(normalizeCanvasAgentConfig(JSON.parse(JSON.stringify({ contextWindowTokens: 128_000 }))).contextWindowTokens, 128_000);
     for (const contextWindowTokens of [0, 1, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1, "457000", undefined]) {
       assert.equal(normalizeCanvasAgentConfig({ contextWindowTokens }).contextWindowTokens, 457_000);
+    }
+    for (const modelRequestLimit of [-1, 1.5, 1001, Infinity, "5", undefined]) {
+      assert.equal(normalizeCanvasAgentConfig({ modelRequestLimit }).modelRequestLimit, 0);
     }
     assert.equal(normalizeCanvasAgentConfig({ autoGenerateMedia: false }).autoGenerateMedia, false);
     assert.deepEqual(normalizeCanvasAgentConfig({ imageQuality: "high", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" }), defaults);
@@ -183,8 +186,8 @@ describe("canvas agent v2 tool contract", () => {
   });
 
   test("canvas Agent settings survive document serialization independently", () => {
-    const first = { textModel: "text-a", imageModel: "image-a", videoModel: "video-a", codexModel: "codex-a", codexEffort: "high", textStreaming: false };
-    const second = { textModel: "text-b", imageModel: "image-b", videoModel: "video-b", codexModel: "codex-b", codexEffort: "low", textStreaming: true };
+    const first = { textModel: "text-a", imageModel: "image-a", videoModel: "video-a", codexModel: "codex-a", codexEffort: "high", textStreaming: false, modelRequestLimit: 8 };
+    const second = { textModel: "text-b", imageModel: "image-b", videoModel: "video-b", codexModel: "codex-b", codexEffort: "low", textStreaming: true, modelRequestLimit: 0 };
     for (const settings of [first, second]) {
       const restored = normalizeCanvasAgentConfig(JSON.parse(JSON.stringify(normalizeCanvasAgentConfig(settings))));
       for (const [key, value] of Object.entries(settings)) assert.equal(restored[key], value);
@@ -259,6 +262,11 @@ describe("canvas agent v2 tool contract", () => {
       id: "run", name: "run_canvas_workflow", arguments: { nodeIds: ["node-1", "node-2"] },
     });
     assert.throws(() => normalizeCanvasAgentAction("get_workflow", {}), /workflowId/);
+    const apply = { workflowId: "template", items: [{ values: [], size: "1:1", count: 1, sourceNodeIds: [], attachmentIds: [] }] };
+    assert.equal(normalizeCanvasAgentAction("run_saved_workflow", { ...apply, revision: 3 }).arguments.revision, 3);
+    for (const revision of [undefined, 0, 1.5, "3"]) {
+      assert.throws(() => normalizeCanvasAgentAction("run_saved_workflow", { ...apply, revision }), /revision/);
+    }
     assert.throws(() => normalizeCanvasAgentAction("run_canvas_workflow", { nodeIds: [] }), /nodeIds/);
   });
 

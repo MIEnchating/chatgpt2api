@@ -904,7 +904,12 @@ func normalizeVideoContractRelayError(err error) error {
 	status := protocolErrorHTTPStatus(err)
 	message := strings.ToLower(strings.TrimSpace(err.Error()))
 	if status == 524 || strings.Contains(message, "origin web server did not respond to cloudflare") {
-		return protocol.HTTPError{Status: 524, Message: "上游 API 在 Cloudflare 允许时间内没有返回数据（HTTP 524）"}
+		normalized := protocol.HTTPError{Status: 524, Message: "上游 API 在 Cloudflare 允许时间内没有返回数据（HTTP 524）"}
+		var retry interface{ RetryAfter() time.Duration }
+		if errors.As(err, &retry) {
+			normalized.RetryDelay = retry.RetryAfter()
+		}
+		return normalized
 	}
 	return err
 }

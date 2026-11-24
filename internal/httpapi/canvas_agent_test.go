@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -78,6 +79,77 @@ func TestCanvasAgentModelImagesKeepPublicURLsAndResolveProtectedImagesAtTranspor
 	}
 }
 
+func TestCanvasAgentModelImageUsesDetailSizedVariantAndPreservesOriginal(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	owner := service.Identity{ID: "image-owner"}
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2400, 1200))); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	file, err := app.storageFiles.Upload(ctx, owner.ID, false, "product.png", "image/png", pixels.Bytes(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := []map[string]any{
+		{"type": "image_url", "image_url": map[string]any{"url": file.URL, "detail": "low"}},
+		{"type": "image_url", "image_url": map[string]any{"url": file.URL, "detail": "high"}},
+	}
+	messages, err := app.canvasAgentModelImages(ctx, owner, []map[string]any{{"role": "user", "content": parts}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, part := range util.AsMapSlice(messages[0]["content"]) {
+		_, encoded, _ := strings.Cut(util.Clean(util.StringMap(part["image_url"])["url"]), ",")
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := util.InspectRasterImage(data)
+		width := []int{768, 2048}[index]
+		if err != nil || info.Width != width || info.Height != width/2 || info.ContentType != "image/png" {
+			t.Fatalf("unexpected variant %d: %+v %v", index, info, err)
+		}
+	}
+	original, err := app.canvasAgentImage(ctx, owner, file.URL)
+	if err != nil || !bytes.Equal(original.Data, pixels.Bytes()) {
+		t.Fatal("model input transformation changed the source file", err)
+	}
+	if _, _, err := canvasAgentImageVariant(ctx, original, 768, 1); err == nil {
+		t.Fatal("impossible byte budget was accepted")
+	}
+}
+
+func TestCanvasAgentProgressDeltaKeepsUnchangedCanvasAndTextOutOfFrame(t *testing.T) {
+	nodes := make([]any, 300)
+	for index := range nodes {
+		nodes[index] = map[string]any{"id": fmt.Sprint(index), "prompt": strings.Repeat("产品宣传片分镜。", 20), "generation_progress": 40}
+	}
+	text := strings.Repeat("已有文字。", 150)
+	before := map[string]any{"revision": 10, "nodes": nodes, "assistant": map[string]any{"text": text}}
+	nextNodes := append([]any(nil), nodes...)
+	nextNodes[0] = map[string]any{"id": "0", "prompt": strings.Repeat("产品宣传片分镜。", 20), "generation_progress": 41}
+	after := map[string]any{"revision": 11, "nodes": nextNodes, "assistant": map[string]any{"text": text + "新增文字。"}}
+	ops := canvasProgressChanges(nil, nil, before, after)
+	delta, err := json.Marshal(canvasProgressDelta{Type: "delta", BaseRevision: 10, Revision: 11, Operations: ops})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := json.Marshal(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := json.Marshal(canvasProgressSnapshot{Type: "snapshot", Document: document})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("synthetic SSE JSON: snapshot=%d B, delta=%d B", len(snapshot), len(delta))
+	if len(ops) != 3 || len(delta) > 500 || len(snapshot) < 100_000 || bytes.Contains(delta, []byte("已有文字")) || !bytes.Contains(delta, []byte(`"append":true`)) {
+		t.Fatalf("unexpected progress delta: %s", delta)
+	}
+}
+
 func TestCanvasAgentHTTPContinuesAfterRequestDisconnect(t *testing.T) {
 	runtimePath, pathErr := filepath.Abs("../../agent-runtime/worker.mjs")
 	if pathErr != nil {
@@ -139,31 +211,70 @@ func TestCanvasAgentHTTPContinuesAfterRequestDisconnect(t *testing.T) {
 	}
 	<-entered
 	disconnect()
-	close(release)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		get := httptest.NewRequest(http.MethodGet, path, nil)
-		setRequestAuthCookie(get, token)
-		result := httptest.NewRecorder()
-		app.Handler().ServeHTTP(result, get)
-		if result.Code != 200 {
-			t.Fatal(result.Body.String())
-		}
-		var snapshot struct {
-			Document service.CanvasDocument `json:"document"`
-		}
-		if err := json.Unmarshal(result.Body.Bytes(), &snapshot); err != nil {
-			t.Fatal(err)
-		}
-		if snapshot.Document.AgentRun.Status == "success" {
-			if calls.Load() != 1 {
-				t.Fatal("model executed repeatedly")
-			}
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	streamCtx, stopStream := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopStream()
+	stream, err := http.NewRequestWithContext(streamCtx, http.MethodGet, server.URL+path+"&run_id=run-http", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("disconnected request interrupted backend run")
+	stream.Header.Set("Accept", "text/event-stream")
+	setRequestAuthCookie(stream, token)
+	progress, err := server.Client().Do(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer progress.Body.Close()
+	if progress.StatusCode != http.StatusOK || progress.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("progress stream: %d %v", progress.StatusCode, progress.Header)
+	}
+	scanner := bufio.NewScanner(progress.Body)
+	read := func() []byte {
+		t.Helper()
+		for scanner.Scan() {
+			payload, ok := strings.CutPrefix(scanner.Text(), "data: ")
+			if ok {
+				return []byte(payload)
+			}
+		}
+		t.Fatalf("progress stream ended early: %v", scanner.Err())
+		return nil
+	}
+	var snapshot struct {
+		Type     string                 `json:"type"`
+		Document service.CanvasDocument `json:"document"`
+	}
+	if err := json.Unmarshal(read(), &snapshot); err != nil || snapshot.Type != "snapshot" {
+		t.Fatalf("invalid initial snapshot: %v %+v", err, snapshot)
+	}
+	initial := snapshot.Document
+	if initial.AgentRun == nil || initial.AgentRun.Status != "running" || !initial.AgentHistoryPartial {
+		t.Fatalf("initial run snapshot: %+v", initial.AgentRun)
+	}
+	close(release)
+	revision := initial.Revision
+	for {
+		var next canvasProgressDelta
+		payload := read()
+		if err := json.Unmarshal(payload, &next); err != nil || next.Type != "delta" ||
+			next.BaseRevision != revision || next.Revision < revision || len(next.Operations) == 0 || bytes.Contains(payload, []byte(`"document":`)) {
+			t.Fatalf("invalid progress delta based at %d: %v %s", revision, err, payload)
+		}
+		revision = next.Revision
+		completed := false
+		for _, op := range next.Operations {
+			if len(op.Path) == 2 && op.Path[0] == "agent_run" && op.Path[1] == "status" && op.Value == "success" {
+				completed = true
+			}
+		}
+		if completed {
+			break
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("model executed %d times", calls.Load())
+	}
 }
 func TestCanvasAgentHTTPRequiresAuthentication(t *testing.T) {
 	app := newTestApp(t)
@@ -541,7 +652,9 @@ func TestCanvasAgentModelForwardsDirectlyWithoutCreatingBackgroundTask(t *testin
 		t.Run(fmt.Sprint(stream), func(t *testing.T) {
 			app := newTestApp(t)
 			defer app.Close()
+			dispatched := make(chan struct{}, 2)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				dispatched <- struct{}{}
 				var body map[string]any
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Error(err)
@@ -570,9 +683,25 @@ func TestCanvasAgentModelForwardsDirectlyWithoutCreatingBackgroundTask(t *testin
 				t.Fatal(err)
 			}
 			var progress string
-			result, err := app.runAgentModel(context.Background(), identity, service.AgentModelRequest{Model: "test-model", Prompt: "SDK request", Messages: []map[string]any{{"role": "user", "content": "SDK request"}}, Metadata: map[string]any{"api_mode": "chat", "stream": stream, "relay_token_name": config.TokenName, "prompt_cache_key": "agent-test-session"}, OnText: func(text string) error { progress = text; return nil }})
+			request := service.AgentModelRequest{Model: "test-model", Prompt: "SDK request", Messages: []map[string]any{{"role": "user", "content": "SDK request"}}, Metadata: map[string]any{"api_mode": "chat", "stream": stream, "relay_token_name": config.TokenName, "prompt_cache_key": "agent-test-session"}, OnText: func(text string) error { progress = text; return nil }}
+			var admitted int
+			rejected := fmt.Errorf("model request limit")
+			request.BeforeDispatch = func() error {
+				admitted++
+				if admitted == 1 {
+					return rejected
+				}
+				return nil
+			}
+			if _, err = app.runAgentModel(context.Background(), identity, request); err != rejected || len(dispatched) != 0 {
+				t.Fatalf("rejected request reached upstream or lost its error: %v, dispatched=%d", err, len(dispatched))
+			}
+			result, err := app.runAgentModel(context.Background(), identity, request)
 			if err != nil || result["text_response"] != "SDK reply" {
 				t.Fatalf("result=%v err=%v", result, err)
+			}
+			if admitted != 2 || len(dispatched) != 1 {
+				t.Fatalf("dispatch counts: callback=%d upstream=%d", admitted, len(dispatched))
 			}
 			if stream && progress != "SDK reply" {
 				t.Fatalf("stream progress=%q", progress)

@@ -42,7 +42,7 @@ func mergeCanvasAgentDocument(base, edited, current CanvasDocument) CanvasDocume
 	}
 	if sessions, ok := merged["agent_sessions"]; ok {
 		data, _ := json.Marshal(sessions)
-		merged["agent_sessions"] = json.RawMessage(mergeCanvasAgentMessageQueues(data, current.AgentSessions))
+		merged["agent_sessions"] = json.RawMessage(mergeCanvasAgentMessageQueues(data, current.AgentSessions, false, ""))
 	}
 	data, _ := json.Marshal(merged)
 	var result CanvasDocument
@@ -195,6 +195,10 @@ func mergeCanvasAgentEntities(base, edited, current any) []any {
 }
 
 func (s *CanvasDocumentService) saveAgentChanges(owner string, base, edited CanvasDocument) (CanvasDocument, error) {
+	return s.saveAgentChangesWithLease(owner, base, edited, "", nil)
+}
+
+func (s *CanvasDocumentService) saveAgentChangesWithLease(owner string, base, edited CanvasDocument, leaseToken string, revisions map[string]string) (CanvasDocument, error) {
 	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
 		current, err := s.Project(owner, edited.ID)
 		if err != nil {
@@ -203,7 +207,17 @@ func (s *CanvasDocumentService) saveAgentChanges(owner string, base, edited Canv
 		if current.AgentRun == nil || edited.AgentRun == nil || current.AgentRun.ID != edited.AgentRun.ID {
 			return CanvasDocument{}, ErrCanvasAgentBusy
 		}
-		next, err := s.saveAgent(owner, mergeCanvasAgentDocument(base, edited, current))
+		for id, revision := range revisions {
+			index := slices.IndexFunc(current.Nodes, func(node CanvasNode) bool { return node.ID == id })
+			if index < 0 || canvasTextTaskNodeRevision(current, current.Nodes[index]) != revision {
+				return current, errCanvasTextEditStale
+			}
+		}
+		merged := mergeCanvasAgentDocument(base, edited, current)
+		if err := recordCanvasAgentChanges(current, &merged); err != nil {
+			return current, err
+		}
+		next, err := s.saveAgentWithLease(owner, merged, leaseToken)
 		if !errors.Is(err, ErrCanvasRevisionConflict) {
 			return next, err
 		}

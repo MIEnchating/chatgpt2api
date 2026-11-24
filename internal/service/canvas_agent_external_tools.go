@@ -20,7 +20,8 @@ type CanvasAgentToolRequest struct {
 }
 
 func (s *CanvasAgentService) StartTool(identity Identity, project string, input CanvasAgentToolRequest) (CanvasDocument, error) {
-	if input.Call.Name == "ask_user_question" || input.Call.Name == "delete_node" || input.Call.Name == "read_skill_file" {
+	switch input.Call.Name {
+	case "ask_user_question", "delete_node", "read_skill_file", "review_canvas_nodes", "draft_canvas_text_edits", "apply_canvas_text_edits", "plan_canvas_text_tasks", "list_canvas_text_tasks", "draft_canvas_text_tasks", "discard_canvas_text_task_draft", "reopen_canvas_text_task", "revise_canvas_text_task", "remove_canvas_text_task":
 		return CanvasDocument{}, invalidCanvasDocument("此工具需要当前对话的交互流程")
 	}
 	calls, err := agentCalls([]map[string]any{{"id": input.Call.ID, "function": map[string]any{"name": input.Call.Name, "arguments": agentJSON(input.Call.Arguments)}}})
@@ -100,7 +101,7 @@ func (w *canvasAgentWorker) failTool(cause error) {
 	}
 	w.doc.AgentRun.Status = "error"
 	w.doc.AgentRun.Error = cause.Error()
-	if _, err := w.service.canvas.saveAgent(canvasAgentOwner(w.identity), w.doc); err != nil {
+	if _, err := w.service.canvas.saveAgentWithLease(canvasAgentOwner(w.identity), w.doc, w.req.leaseToken); err != nil {
 		slog.Error("Failed to persist canvas tool failure", "run_id", w.req.ID, "error", err)
 	}
 }

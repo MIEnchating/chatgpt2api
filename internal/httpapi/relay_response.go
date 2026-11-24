@@ -9,7 +9,9 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
@@ -119,7 +121,11 @@ func relayImageJSONResultError(result map[string]any) error {
 		}
 	}
 	message = firstNonEmpty(message, "upstream image API returned no image data")
-	return protocol.HTTPError{Status: http.StatusBadGateway, Message: message}
+	code := relayErrorCodeFromValue(result)
+	if code == "" {
+		code = "EMPTY_RESPONSE"
+	}
+	return protocol.HTTPError{Status: http.StatusBadGateway, Message: message, Code: code}
 }
 
 func relayResponseIsEventStream(resp *http.Response) bool {
@@ -188,10 +194,11 @@ func relayDecodeJSONResponseWithLimits(resp *http.Response, successLimit, errorL
 		return nil, err
 	}
 	if int64(len(data)) > maxBytes {
-		return nil, protocol.HTTPError{Status: tooLargeStatus, Message: tooLargeMessage}
+		return nil, protocol.HTTPError{Status: tooLargeStatus, Message: tooLargeMessage, RetryDelay: relayRetryDelay(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, protocol.HTTPError{Status: resp.StatusCode, Message: relayErrorMessage(data, resp.Status)}
+		message, code := relayErrorDetails(data, resp.Status)
+		return nil, protocol.HTTPError{Status: resp.StatusCode, Message: message, Code: code, RetryDelay: relayRetryDelay(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return map[string]any{}, nil
@@ -203,11 +210,34 @@ func relayDecodeJSONResponseWithLimits(resp *http.Response, successLimit, errorL
 	return payload, nil
 }
 
+func relayRetryDelay(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if strings.Trim(value, "0123456789") == "" {
+		seconds, err := strconv.ParseUint(value, 10, 64)
+		if err != nil || seconds > uint64((1<<63-1)/time.Second) {
+			return 1<<63 - 1
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if at, err := http.ParseTime(value); err == nil {
+		return max(0, at.Sub(now))
+	}
+	return 0
+}
+
 func relayErrorMessage(data []byte, fallback string) string {
+	message, _ := relayErrorDetails(data, fallback)
+	return message
+}
+
+func relayErrorDetails(data []byte, fallback string) (string, string) {
 	var payload any
 	if json.Unmarshal(data, &payload) == nil {
 		if message := relayErrorMessageFromValue(payload); message != "" {
-			return message
+			return message, relayErrorCodeFromValue(payload)
 		}
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
@@ -219,14 +249,14 @@ func relayErrorMessage(data []byte, fallback string) string {
 		var event any
 		if json.Unmarshal([]byte(value), &event) == nil {
 			if message := relayErrorMessageFromValue(event); message != "" {
-				return message
+				return message, relayErrorCodeFromValue(event)
 			}
 		}
 	}
 	if text := strings.TrimSpace(string(data)); text != "" {
-		return text
+		return text, ""
 	}
-	return fallback
+	return fallback, ""
 }
 
 func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
@@ -308,7 +338,65 @@ func relayStreamItemError(item map[string]any) error {
 	if status < 400 {
 		status = http.StatusBadGateway
 	}
-	return protocol.HTTPError{Status: status, Message: message}
+	return protocol.HTTPError{Status: status, Message: message, Code: relayErrorCodeFromValue(item)}
+}
+
+func relayErrorCodeFromValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return ""
+	case map[string]any:
+		for _, key := range []string{"code", "error_code", "failure_code"} {
+			if code := normalizeRelayFailureCode(util.Clean(typed[key])); code != "" {
+				return code
+			}
+		}
+		if code := normalizeRelayFailureCode(util.Clean(typed["type"])); isRelayFailureCategory(code) {
+			return code
+		}
+		if code := relayErrorCodeFromValue(typed["error"]); code != "" {
+			return code
+		}
+		if code := relayErrorCodeFromValue(typed["detail"]); code != "" {
+			return code
+		}
+	case []any:
+		for _, item := range typed {
+			if code := relayErrorCodeFromValue(item); code != "" {
+				return code
+			}
+		}
+	}
+	return ""
+}
+
+func isRelayFailureCategory(value string) bool {
+	switch value {
+	case "RATE_LIMIT", "TIMEOUT", "AUTH", "SERVER", "TRANSPORT", "EMPTY_RESPONSE":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRelayFailureCode(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(strings.ReplaceAll(value, "-", "_")))
+	switch value {
+	case "RATE_LIMIT", "RATE_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS":
+		return "RATE_LIMIT"
+	case "TIMEOUT", "REQUEST_TIMEOUT", "GATEWAY_TIMEOUT", "CLOUDFLARE_TIMEOUT", "UPSTREAM_TIMEOUT":
+		return "TIMEOUT"
+	case "AUTH", "UNAUTHORIZED", "FORBIDDEN", "AUTHENTICATION_ERROR", "INVALID_API_KEY":
+		return "AUTH"
+	case "SERVER", "INTERNAL_SERVER_ERROR", "SERVICE_UNAVAILABLE":
+		return "SERVER"
+	case "TRANSPORT", "CONNECTION_ERROR":
+		return "TRANSPORT"
+	case "EMPTY", "EMPTY_RESPONSE", "NO_CONTENT":
+		return "EMPTY_RESPONSE"
+	default:
+		return value
+	}
 }
 
 func relayErrorMessageFromValue(value any) string {

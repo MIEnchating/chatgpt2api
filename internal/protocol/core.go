@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"chatgpt2api/internal/util"
 )
@@ -83,14 +84,36 @@ func (t *AccountUsageTracker) Accounts() []map[string]any {
 }
 
 type HTTPError struct {
-	Status  int
-	Message string
+	Status     int
+	Message    string
+	Code       string
+	RetryDelay time.Duration
 }
 
 func (e HTTPError) Error() string { return e.Message }
 
 // HTTPStatusCode exposes transport status without requiring a protocol dependency.
-func (e HTTPError) HTTPStatusCode() int { return e.Status }
+func (e HTTPError) HTTPStatusCode() int       { return e.Status }
+func (e HTTPError) RetryAfter() time.Duration { return e.RetryDelay }
+
+// FailureCode returns a stable provider-independent error category.
+func (e HTTPError) FailureCode() string {
+	if code := strings.ToUpper(strings.TrimSpace(strings.ReplaceAll(e.Code, "-", "_"))); code != "" {
+		return code
+	}
+	switch {
+	case e.Status == 408 || e.Status == 504 || e.Status == 524:
+		return "TIMEOUT"
+	case e.Status == 401 || e.Status == 403:
+		return "AUTH"
+	case e.Status == 429:
+		return "RATE_LIMIT"
+	case e.Status >= 500:
+		return "SERVER"
+	default:
+		return ""
+	}
+}
 
 type ImageOutputProgressCallback func([]map[string]any)
 type ImageOutputSlotAcquirer func(context.Context, int) (func(), error)

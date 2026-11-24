@@ -12,7 +12,13 @@ import { Toggle as ToggleButton } from "@/components/ui/toggle";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { watchCreationTasks, waitForCreationTask } from "@/lib/creation-task-events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronDown, ClipboardList, Copy, Globe2, Image as ImageIcon, Layers3, LayoutGrid, List, Folder, LockKeyhole, Pencil, Play, Plus, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
+import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
+import { ImageIcon as WorkflowImageIcon } from "@phosphor-icons/react/dist/csr/Image";
+import { PlusCircleIcon } from "@phosphor-icons/react/dist/csr/PlusCircle";
+import { SquaresFourIcon } from "@phosphor-icons/react/dist/csr/SquaresFour";
+import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
+import { Bot, ChevronDown, Copy, Globe2, Image as ImageIcon, Layers3, LayoutGrid, List, LockKeyhole, Pencil, Play, Plus, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
 import { buildSeriesPromptDraftRequest, createBlankWorkflow, createDefaultInputValues, createProductDetailWorkflow, createStarterWorkflows, composeWorkflowReferencePrompt, isWorkflowModelConfigured, mergeWorkflowRunMetadata, normalizeWorkflow, parseWorkflowSeriesDrafts, workflowGenerationDefaultsFromPreferences, renderWorkflowPrompt, resolveWorkflowRuntime, resolveWorkflowTextModel, type WorkflowGenerationDefaults, type WorkflowSeriesDraft } from "@/app/workflows/workflow-runtime";
 import {
@@ -1504,22 +1510,22 @@ function CreativeWorkflowWorkspaceContent({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button>
-          <Plus />
+          <PlusCircleIcon className="size-4.5" aria-hidden="true" />
           创建
           <ChevronDown />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem onSelect={() => createWorkflow("single_image")}>
-          <ImageIcon />
+          <WorkflowImageIcon className="size-4.5 dark:text-white" aria-hidden="true" />
           新建工作流
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => createWorkflow("multi_image_series")}>
-          <Layers3 />
+          <StackIcon className="size-4.5 dark:text-white" aria-hidden="true" />
           新建多图系列
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={createDetailWorkflow}>
-          <Layers3 />
+          <FileTextIcon className="size-4.5 dark:text-white" aria-hidden="true" />
           新建详情模板
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -1562,31 +1568,34 @@ function CreativeWorkflowWorkspaceContent({
           sidebar={
             <>
               <Button variant="ghost" className="h-11 w-full justify-start" onClick={() => createWorkflow("single_image")}>
-                <Plus />
+                <PlusCircleIcon className="size-4.5 dark:text-white" aria-hidden="true" />
                 创建工作流
               </Button>
               <nav aria-label="工作流分类" className="space-y-1">
                 {(
                   [
-                    { value: "all", label: "全部工作流", icon: Folder },
-                    { value: "single_image", label: "单图工作流", icon: ImageIcon },
-                    { value: "multi_image_series", label: "多图系列", icon: Layers3 },
+                    { value: "all", label: "全部工作流", icon: SquaresFourIcon },
+                    { value: "single_image", label: "单图工作流", icon: WorkflowImageIcon },
+                    { value: "multi_image_series", label: "多图系列", icon: StackIcon },
                   ] as const
-                ).map((option) => (
-                  <Button
-                    key={option.value}
-                    data-library-filter
-                    variant={category === "all" && modeFilter === option.value ? "secondary" : "ghost"}
-                    className="h-11 w-full justify-start font-normal"
-                    onClick={() => {
-                      setCategory("all");
-                      setModeFilter(option.value);
-                    }}
-                  >
-                    <option.icon />
-                    {option.label}
-                  </Button>
-                ))}
+                ).map(({ value, label, icon: Icon }) => {
+                  const active = category === "all" && modeFilter === value;
+                  return (
+                    <Button
+                      key={value}
+                      data-library-filter
+                      variant={active ? "secondary" : "ghost"}
+                      className="h-11 w-full justify-start font-normal"
+                      onClick={() => {
+                        setCategory("all");
+                        setModeFilter(value);
+                      }}
+                    >
+                      <Icon weight={active ? "fill" : "regular"} className="size-4.5 dark:text-white" aria-hidden="true" />
+                      {label}
+                    </Button>
+                  );
+                })}
               </nav>
               {categories.length ? (
                 <div className="space-y-1">
@@ -1602,7 +1611,7 @@ function CreativeWorkflowWorkspaceContent({
                         setModeFilter("all");
                       }}
                     >
-                      <Folder />
+                      <FolderSimpleIcon weight={category === item ? "fill" : "regular"} className="size-4.5 dark:text-white" aria-hidden="true" />
                       <span className="truncate">{item}</span>
                     </Button>
                   ))}
@@ -1613,7 +1622,7 @@ function CreativeWorkflowWorkspaceContent({
           footer={
             !hideTaskList ? (
               <Button variant="ghost" className="h-11 w-full justify-start" aria-label="任务记录" onClick={() => setTaskHistoryOpen(true)}>
-                {runningTaskCount ? <Spinner /> : <ClipboardList />}任务记录
+                {runningTaskCount ? <Spinner className="size-4.5 dark:text-white" /> : <FileTextIcon weight={taskHistoryOpen ? "fill" : "regular"} className="size-4.5 dark:text-white" aria-hidden="true" />}任务记录
                 {runningTaskCount ? <Badge variant="secondary">{runningTaskCount}</Badge> : null}
               </Button>
             ) : null

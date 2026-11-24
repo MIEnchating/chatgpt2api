@@ -1,9 +1,10 @@
-import { fetchAgentExecution, observeAgentExecution, resumeAgentExecution, stopAgentExecution, type AgentExecution, type AgentExecutionDomain } from "./agent-executions";
+import { fetchAgentExecution, observeAgentExecution, resumeAgentExecution, stopAgentExecution, watchAgentExecution, type AgentExecution, type AgentExecutionDomain } from "./agent-executions";
 
 type ExecutionAPI<TResult> = {
   fetch: (query: { id: string } | { domain: AgentExecutionDomain }, signal?: AbortSignal) => Promise<AgentExecution<TResult> | null>;
   resume: (id: string, signal?: AbortSignal) => Promise<AgentExecution<TResult>>;
   observe: (id: string, signal: AbortSignal, progress: (run: AgentExecution<TResult>) => void) => Promise<TResult>;
+  watch: typeof watchAgentExecution<TResult>;
   stop: (id: string) => Promise<void>;
 };
 export type AgentExecutionSnapshot<TResult> = {
@@ -18,10 +19,9 @@ export class AgentExecutionMonitor<TResult> {
   private snapshot: AgentExecutionSnapshot<TResult> = { run: null, loading: true, action: "idle", error: "" };
   private listeners = new Set<() => void>();
   private request: AbortController | undefined;
-  private timer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
   constructor(private query: AgentExecutionDomain | { id: string }, private api: ExecutionAPI<TResult> = {
-    fetch: fetchAgentExecution<TResult>, resume: resumeAgentExecution<TResult>, observe: observeAgentExecution<TResult>, stop: stopAgentExecution,
+    fetch: fetchAgentExecution<TResult>, resume: resumeAgentExecution<TResult>, observe: observeAgentExecution<TResult>, watch: watchAgentExecution<TResult>, stop: stopAgentExecution,
   }) {}
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -31,7 +31,6 @@ export class AgentExecutionMonitor<TResult> {
     for (const listener of this.listeners) listener();
   }
   private begin() {
-    clearTimeout(this.timer);
     this.request?.abort();
     const controller = new AbortController();
     this.request = controller;
@@ -40,17 +39,27 @@ export class AgentExecutionMonitor<TResult> {
   private current(controller: AbortController) {
     return !this.disposed && !controller.signal.aborted && this.request === controller;
   }
+  private async watchProgress(id: string, controller: AbortController, awaitStart = false) {
+    try {
+      await this.api.watch(id, controller.signal, (run) => {
+        if (this.current(controller)) this.update({ run, loading: false, error: "" });
+      }, { awaitStart });
+    } catch (failure) {
+      if (this.current(controller)) this.update({ loading: false, error: failure instanceof Error ? failure.message : "读取任务进度失败" });
+    }
+  }
   async refresh() {
     if (this.disposed || this.snapshot.action !== "idle") return;
     const controller = this.begin();
     this.update({ loading: true, error: "" });
+    if (typeof this.query !== "string") {
+      return this.watchProgress(this.query.id, controller, true);
+    }
     try {
-      const query = typeof this.query === "string" ? { domain: this.query } : this.query;
-      const run = await this.api.fetch(query, controller.signal);
+      const run = await this.api.fetch({ domain: this.query }, controller.signal);
       if (!this.current(controller)) return;
-      if ("id" in query && run && run.id !== query.id) throw new Error("任务标识不匹配，请重新读取进度");
       this.update({ run, loading: false });
-      if (run?.status === "running" || (!run && "id" in query)) this.timer = setTimeout(() => { void this.refresh(); }, 2000);
+      if (run?.status === "running") void this.watchProgress(run.id, controller);
     } catch (failure) {
       if (this.current(controller)) this.update({ loading: false, error: failure instanceof Error ? failure.message : "读取任务进度失败" });
     }
@@ -94,13 +103,12 @@ export class AgentExecutionMonitor<TResult> {
     } finally {
       if (this.current(controller)) {
         this.update({ action: "idle" });
-        if (this.snapshot.run?.status === "running") this.timer = setTimeout(() => { void this.refresh(); }, 2000);
+        if (this.snapshot.run?.status === "running") void this.watchProgress(run.id, controller);
       }
     }
   }
   dispose() {
     this.disposed = true;
-    clearTimeout(this.timer);
     this.request?.abort();
     this.listeners.clear();
   }

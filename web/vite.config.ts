@@ -1,9 +1,10 @@
 import path from "node:path";
+import { TLSSocket } from "node:tls";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import compression from "compression";
 import { defineConfig } from "vite";
-import type { Connect, Plugin } from "vite";
+import type { Connect, Plugin, ProxyOptions } from "vite";
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url));
 const backendTarget = process.env.VITE_BACKEND_URL || "http://127.0.0.1:8090";
@@ -23,10 +24,21 @@ const backendProxyPaths = [
   "/site-icons",
   "/health",
 ] as const;
-const backendProxy = Object.fromEntries(
-  // Preserve the browser-facing host for the backend's origin validation.
-  backendProxyPaths.map((path) => [path, { target: backendTarget, changeOrigin: false }]),
-);
+const backendProxyOptions: ProxyOptions = {
+  target: backendTarget,
+  changeOrigin: false,
+  bypass(request) {
+    // Go trusts the local proxy peer. Forward the actual client address and protocol.
+    const { headers, socket } = request;
+    delete headers.forwarded;
+    delete headers["x-real-ip"];
+    delete headers["x-forwarded-host"];
+    delete headers["x-forwarded-port"];
+    headers["x-forwarded-for"] = socket.remoteAddress;
+    headers["x-forwarded-proto"] = socket instanceof TLSSocket && socket.encrypted ? "https" : "http";
+  },
+};
+const backendProxy = Object.fromEntries(backendProxyPaths.map((path) => [path, backendProxyOptions]));
 
 function compressDevelopmentAssets(): Plugin {
   return {
@@ -74,9 +86,10 @@ export default defineConfig({
     include: ["@videojs/react/i18n", "@videojs/react/video"],
   },
   server: {
-    host: "0.0.0.0",
+    host: "127.0.0.1",
     port: 8002,
     strictPort: true,
+    fs: { allow: [webRoot] },
     watch: {
       ignored: (filePath) => {
         const relative = path.relative(webRoot, filePath);

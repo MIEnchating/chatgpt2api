@@ -2,20 +2,24 @@ import type {
   CanvasAssistantSession,
   CanvasAgentMessageQueue,
 } from "./canvas-agent-types";
+import { canvasAgentConversationRun } from "./canvas-agent-run-state";
+
+type CanvasAgentQueueRun = { sessionId: string; assistantId: string; status: string; engine?: string };
 
 export const MAX_AGENT_QUEUED_MESSAGES = 16;
 
 export function canvasAgentCanResume(
   session: CanvasAssistantSession,
-  run?: { sessionId: string; assistantId: string; status: string },
+  run?: CanvasAgentQueueRun,
 ) {
   const latest = session.messages.findLast(
     (message) => message.role === "assistant",
   );
   if (!latest || session.agentState.pendingQuestion) return false;
+  const turn = canvasAgentConversationRun(run);
   const status =
-    run?.sessionId === session.id && run.assistantId === latest.id
-      ? run.status
+    turn?.sessionId === session.id && turn.assistantId === latest.id
+      ? turn.status
       : latest.status;
   return (
     status === "error" ||
@@ -44,13 +48,14 @@ export function canvasAgentComposerAction({
   return resumable || queued ? "resume" : "send";
 }
 
-export function canvasAgentNextQueuedMessage(session: CanvasAssistantSession, run?: { sessionId: string; assistantId: string; status: string }) {
+export function canvasAgentNextQueuedMessage(session: CanvasAssistantSession, run?: CanvasAgentQueueRun) {
   const queue = session.messageQueue;
   if (!queue?.messages.length || session.agentState.pendingQuestion) return;
   const next = queue.messages[0];
   if (queue.steeringId === next.id) return next;
   const latest = session.messages.findLast((message) => message.role === "assistant");
-  const status = run?.sessionId === session.id && run.assistantId === latest?.id ? run.status : latest?.status;
+  const turn = canvasAgentConversationRun(run);
+  const status = turn?.sessionId === session.id && turn.assistantId === latest?.id ? turn.status : latest?.status;
   if (
     queue.paused ||
     status !== "success"
@@ -89,7 +94,7 @@ export function mergeCanvasAgentMessageQueues(
   const before = byId(base),
     edited = byId(local);
   return remote.map((item) => {
-    if (!record(item) || typeof item.id !== "string") return item;
+    if (!record(item) || typeof item.id !== "string" || record(item.messageQueue) && item.messageQueue.serverManaged === true) return item;
     const original = before.get(item.id),
       changed = edited.get(item.id);
     if (

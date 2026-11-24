@@ -22,6 +22,7 @@ type TaskListener = Pick<TaskObserver, "onError" | "signal"> & {
 };
 type TaskStreamScope = { task_ids: string[]; workflow_batch_ids: string[] };
 type OpenTaskStream = (options: { scope: TaskStreamScope; signal: AbortSignal; onData: (data: string) => void }) => Promise<void>;
+const SCOPE_SHRINK_DELAY_MS = 500;
 
 function workflowBatchID(task: CreationTask) {
   const context = task.workflow_context as { workflow_id?: unknown; batch_task_id?: unknown } | undefined;
@@ -43,9 +44,15 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
   let connectedTaskIDs = new Set<string>();
   let connectedBatchIDs = new Set<string>();
   let reconcileQueued = false;
+  let shrinkTimer: ReturnType<typeof setTimeout> | undefined;
   let ready = false;
 
+  const cancelShrink = () => {
+    clearTimeout(shrinkTimer);
+    shrinkTimer = undefined;
+  };
   const stop = () => {
+    cancelShrink();
     connection?.abort();
     connection = undefined;
     ready = false;
@@ -139,30 +146,48 @@ export function createCreationTaskEventClient(open: OpenTaskStream) {
     }
     return { task_ids: [...taskIDs], workflow_batch_ids: [...batchIDs] };
   };
-  const reconcileConnection = () => {
+  const reconcileConnection = (allowShrink = false) => {
     reconcileQueued = false;
     if (!observers.size) return;
     const scope = currentScope();
-    if (connection && scope.task_ids.every(id => connectedTaskIDs.has(id)) &&
-      scope.workflow_batch_ids.every(id => connectedBatchIDs.has(id))) return;
+    const covered = connection && scope.task_ids.every(id => connectedTaskIDs.has(id)) &&
+      scope.workflow_batch_ids.every(id => connectedBatchIDs.has(id));
+    if (covered) {
+      if (scope.task_ids.length === connectedTaskIDs.size && scope.workflow_batch_ids.length === connectedBatchIDs.size) {
+        cancelShrink();
+        return;
+      }
+      if (!allowShrink) {
+        // Short gaps between successive task waiters do not need a reconnect.
+        shrinkTimer ??= setTimeout(() => {
+          shrinkTimer = undefined;
+          reconcileConnection(true);
+        }, SCOPE_SHRINK_DELAY_MS);
+        return;
+      }
+    }
+    cancelShrink();
     connection?.abort();
     connection = new AbortController();
     ready = false;
     void run(connection);
   };
+  const queueReconcile = () => {
+    if (reconcileQueued) return;
+    reconcileQueued = true;
+    queueMicrotask(reconcileConnection);
+  };
   const subscribe = (observer: TaskListener) => {
     if (observer.signal?.aborted) return () => {};
     const unsubscribe = () => {
-      observers.delete(observer);
+      if (!observers.delete(observer)) return;
       observer.signal?.removeEventListener("abort", unsubscribe);
       if (!observers.size) stop();
+      else queueReconcile();
     };
     observers.set(observer, unsubscribe);
     observer.signal?.addEventListener("abort", unsubscribe, { once: true });
-    if (!reconcileQueued) {
-      reconcileQueued = true;
-      queueMicrotask(reconcileConnection);
-    }
+    queueReconcile();
     if (ready) queueMicrotask(() => { if (ready) deliver(observer, new Set()); });
     return unsubscribe;
   };

@@ -102,6 +102,11 @@ const detailLabels: Record<string, string> = {
   added: "新增",
   skipped: "跳过",
   removed: "删除",
+  input_tokens: "总输入 Token",
+  output_tokens: "输出 Token",
+  total_tokens: "合计 Token",
+  cache_read_tokens: "缓存读取 Token",
+  cache_write_tokens: "缓存写入 Token",
 };
 
 const summaryDetailKeys = new Set([
@@ -320,6 +325,14 @@ function getDetailFieldSections(item: SystemLog | null) {
       entries: getDetailGroupEntries(item, section.keys),
     }))
     .filter((section) => section.entries.length > 0);
+  const modelUsage = item?.detail?.model_usage;
+  if (modelUsage && typeof modelUsage === "object") {
+    const counts = modelUsage as Record<string, unknown>;
+    const entries = ["input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens"]
+      .filter(key => typeof counts[key] === "number")
+      .map(key => [key, counts[key]] as const);
+    if (entries.length) sections.push({ title: "模型用量", entries });
+  }
   const extraEntries = getExtraDetailEntries(item);
   if (extraEntries.length > 0) {
     sections.push({ title: "其他", entries: extraEntries });

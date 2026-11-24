@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
+
+	"chatgpt2api/internal/util"
 )
 
 func scriptAgentProject() map[string]any {
@@ -28,6 +31,108 @@ func scriptAgentNodes() []CanvasNode {
 		{ID: "reference", Type: "image", URL: "/images/reference.png", TaskID: "original-image-task", GenerationStatus: "success", Width: 360, Height: 240, ScaleX: 1, ScaleY: 1},
 		{ID: "completed", Type: "video", URL: "/videos/completed.mp4", TaskID: "original-completed-task", Prompt: "Original video prompt", GenerationVideoModel: "original-model", GenerationVideoSeconds: 5, GenerationStatus: "success", Width: 240, Height: 360, ScaleX: 1, ScaleY: 1},
 		{ID: "pending", Type: "video", TaskID: "original-pending-task", Prompt: "Original pending prompt", GenerationVideoModel: "original-model", GenerationVideoSeconds: 5, GenerationStatus: "loading", Width: 240, Height: 360, ScaleX: 1, ScaleY: 1},
+	}
+}
+
+func TestCanvasAgentDelegatedShotDescriptionsPreserveScriptAndMedia(t *testing.T) {
+	w := memoryWorker(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if err := request.BeforeDispatch(); err != nil {
+			return nil, err
+		}
+		var input struct {
+			Node struct {
+				Shot CanvasScriptShot `json:"shot"`
+			} `json:"node"`
+		}
+		if err := json.Unmarshal([]byte(util.Clean(request.Messages[1]["content"])), &input); err != nil {
+			return nil, err
+		}
+		if input.Node.Shot.ID == "" || strings.Contains(util.Clean(request.Messages[1]["content"]), "Original story") {
+			return nil, fmt.Errorf("expected a single scoped shot snapshot")
+		}
+		return map[string]any{"text_response": agentJSON(map[string]any{"content": "New description for " + input.Node.Shot.ID, "notes": "Revised the action"})}, nil
+	})
+	w.doc.Nodes = scriptAgentNodes()
+	if result, err := w.scriptTool("update_script_node", map[string]any{"nodeId": "main", "scriptProject": scriptAgentProject()}); err != nil || result["ok"] != true {
+		t.Fatalf("prepare script: %v, %v", result, err)
+	}
+	w.node("main").ScriptProject.Confirmed = true
+	w.node("main").ScriptProject.Shots[0].QualityReview = &CanvasScriptQualityReview{
+		MediaURL: "/videos/completed.mp4", Continuity: "passed", Dialogue: "unchecked", Speaker: "unchecked", LipSync: "unchecked",
+	}
+	if err := w.save(); err != nil {
+		t.Fatal(err)
+	}
+	original := cloneCanvasAgentDocument(w.doc)
+	plan := w.planCanvasTextEditTasks(map[string]any{"tasks": []map[string]any{
+		{"key": "first", "nodeId": "main", "shotId": "shot-1", "question": "Revise the opening action"},
+		{"key": "second", "nodeId": "main", "shotId": "shot-2", "question": "Revise the reaction"},
+	}})
+	tasks := util.AsMapSlice(plan["tasks"])
+	if len(tasks) != 2 {
+		t.Fatalf("plan: %v", plan)
+	}
+	draft := map[string]any{"id": "draft-shots", "name": "draft_canvas_text_tasks", "arguments": map[string]any{"tasks": []map[string]any{
+		{"id": tasks[0]["id"], "expectedRevision": 1},
+		{"id": tasks[1]["id"], "expectedRevision": 1},
+	}}}
+	w.batchCalls = []map[string]any{draft}
+	drafted, err := w.sdkTool(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposals := []string{}
+	for _, review := range util.AsMapSlice(agentMap(drafted)["reviews"]) {
+		if id := util.Clean(review["proposalId"]); id != "" {
+			proposals = append(proposals, id)
+		}
+	}
+	if len(proposals) != 2 {
+		t.Fatalf("both shots should have proposals: %v", drafted)
+	}
+	apply := map[string]any{"id": "apply-shots", "name": "apply_canvas_text_edits", "arguments": map[string]any{"proposalIds": proposals}}
+	w.batchCalls = []map[string]any{apply}
+	applied, err := w.sdkTool(apply)
+	if err != nil || agentMap(applied)["ok"] != true {
+		t.Fatalf("apply: %v, %v", applied, err)
+	}
+	script := w.node("main").ScriptProject
+	if script.Confirmed || script.Shots[0].Description != "New description for shot-1" || script.Shots[1].Description != "New description for shot-2" {
+		t.Fatalf("unexpected script: %+v", script)
+	}
+	before := original.Nodes[0].ScriptProject
+	for i, shot := range script.Shots {
+		old := before.Shots[i]
+		if shot.ID != old.ID || shot.SourceNodeID != old.SourceNodeID || shot.ImageNodeID != old.ImageNodeID ||
+			shot.VideoNodeID != old.VideoNodeID || !reflect.DeepEqual(shot.QualityReview, old.QualityReview) || !shot.VideoPromptOutdated {
+			t.Fatalf("shot metadata changed unexpectedly: %+v", shot)
+		}
+	}
+	if !reflect.DeepEqual(original.Nodes[1:], w.doc.Nodes[1:]) {
+		t.Fatal("shot edits changed existing text or media nodes")
+	}
+
+	current := cloneCanvasAgentDocument(w.doc)
+	first := w.saveCanvasTaskProposal("main", "shot-1", "script_shot", canvasScriptShotRevision(current.Nodes[0], "shot-1"), "draft-again", "Stale first edit")
+	second := w.saveCanvasTaskProposal("main", "shot-2", "script_shot", canvasScriptShotRevision(current.Nodes[0], "shot-2"), "draft-again", "Stale second edit")
+	result, revisions := w.applyCanvasTextEdits(map[string]any{"proposalIds": []string{first, second}})
+	if result["ok"] != true {
+		t.Fatalf("stage second batch: %v", result)
+	}
+	current.Nodes[0].ScriptProject.Shots[0].Description = "New browser edit"
+	if _, err := w.service.canvas.SaveAtRevision(w.identity.ID, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.saveWithNodeRevisions(revisions); !errors.Is(err, errCanvasTextEditStale) {
+		t.Fatalf("concurrent script edit did not reject the batch: %v", err)
+	}
+	saved, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shots := saved.Nodes[0].ScriptProject.Shots
+	if shots[0].Description != "New browser edit" || shots[1].Description != "New description for shot-2" {
+		t.Fatalf("stale batch changed saved shots: %+v", shots)
 	}
 }
 

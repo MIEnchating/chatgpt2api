@@ -4,17 +4,21 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"time"
 
 	"chatgpt2api/internal/util"
 )
 
 const MaxCanvasVideoFrames = 90
+
+const canvasAgentVideoAnalysisTimeout = 4 * time.Minute
 
 type CanvasVideoAnalysisOptions struct {
 	StartMS  int64 `json:"startMs"`
@@ -183,8 +187,13 @@ func (w *canvasAgentWorker) analyzeVideo(args map[string]any) (map[string]any, e
 	}
 	options.Detailed, _ = args["detailed"].(bool)
 	options.Original, _ = args["original"].(bool)
-	result, err := w.service.videoAnalyzer(w.ctx, w.identity, *node, options)
+	analysisCtx, cancel := context.WithTimeoutCause(w.ctx, canvasAgentVideoAnalysisTimeout, context.DeadlineExceeded)
+	defer cancel()
+	result, err := w.service.videoAnalyzer(analysisCtx, w.identity, *node, options)
 	if err != nil {
+		if w.ctx.Err() == nil && errors.Is(context.Cause(analysisCtx), context.DeadlineExceeded) {
+			return agentError("tool_timeout", "视频分析超过工具时间上限，当前进度已保留；请缩小分析范围后继续"), nil
+		}
 		return nil, err
 	}
 	if w.doc.AgentRun.Engine != "codex-tools" {

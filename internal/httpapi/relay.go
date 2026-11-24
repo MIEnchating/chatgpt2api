@@ -385,6 +385,11 @@ func (a *App) relayJSONDataAt(ctx context.Context, baseURL, method, pathValue, a
 	if err != nil {
 		return nil, err
 	}
+	if before, ok := ctx.Value(agentModelDispatchKey{}).(func() error); ok {
+		if err = before(); err != nil {
+			return nil, err
+		}
+	}
 	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
@@ -403,6 +408,11 @@ func (a *App) relayJSONStreamAt(ctx context.Context, baseURL, pathValue, apiKey 
 	req, err := protocol.NewRelayJSONRequest(ctx, baseURL, http.MethodPost, pathValue, apiKey, "text/event-stream", data)
 	if err != nil {
 		return nil, nil, err
+	}
+	if before, ok := ctx.Value(agentModelDispatchKey{}).(func() error); ok {
+		if err = before(); err != nil {
+			return nil, nil, err
+		}
 	}
 	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {

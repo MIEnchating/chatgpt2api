@@ -1539,6 +1539,17 @@ func TestRelayErrorMessageSupportsNewAPIShapes(t *testing.T) {
 	}
 }
 
+func TestRelayErrorDetailsNormalizesProviderFailureCodes(t *testing.T) {
+	message, code := relayErrorDetails([]byte(`{"error":{"code":"rate_limit_exceeded","message":"slow down"}}`), "fallback")
+	if message != "slow down" || code != "RATE_LIMIT" {
+		t.Fatalf("relayErrorDetails() = (%q, %q), want (slow down, RATE_LIMIT)", message, code)
+	}
+	message, code = relayErrorDetails([]byte("event: error\ndata: {\"type\":\"timeout\",\"message\":\"upstream timed out\"}\n\n"), "fallback")
+	if message != "upstream timed out" || code != "TIMEOUT" {
+		t.Fatalf("SSE relayErrorDetails() = (%q, %q), want (upstream timed out, TIMEOUT)", message, code)
+	}
+}
+
 func TestRelayStreamResultRecognizesTypedUpstreamErrorMessage(t *testing.T) {
 	stream := relayStreamResult(io.NopCloser(strings.NewReader(
 		"event: upstream_error\n" +
@@ -2332,6 +2343,26 @@ func TestRelayDecodeJSONResponseLimitsSuccessfulBody(t *testing.T) {
 	required := int64(4*base64.StdEncoding.EncodedLen(40*1024*1024) + 1*1024*1024)
 	if relayJSONSuccessMaxBytes < required {
 		t.Fatalf("success response limit = %d, need at least %d bytes for four 40 MiB images", relayJSONSuccessMaxBytes, required)
+	}
+}
+
+func TestRelayModelErrorPreservesRetryAfter(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		header   string
+		min, max time.Duration
+	}{
+		{"12", 12 * time.Second, 12 * time.Second},
+		{now.Add(20 * time.Second).Format(http.TimeFormat), 18 * time.Second, 20 * time.Second},
+		{"invalid", 0, 0},
+		{"999999999999999999999", time.Duration(1<<63 - 1), time.Duration(1<<63 - 1)},
+	} {
+		response := &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": []string{tc.header}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"limited"}}`))}
+		_, _, err := relayDecodeMaybeStreamResponse(context.Background(), response, "/v1/responses")
+		var upstream protocol.HTTPError
+		if !errors.As(err, &upstream) || upstream.Status != 429 || upstream.RetryAfter() < tc.min || upstream.RetryAfter() > tc.max {
+			t.Fatalf("Retry-After %q: %v, delay %s", tc.header, err, upstream.RetryAfter())
+		}
 	}
 }
 

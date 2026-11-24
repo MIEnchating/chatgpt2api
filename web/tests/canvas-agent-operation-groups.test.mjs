@@ -4,7 +4,7 @@ import { canvasAgentOperationGroups, canvasAgentOperationCategory } from '../src
 import { canvasAgentToolKind, canvasAgentActionTrace, canvasCodexItemTrace } from '../src/app/canvas/agent/canvas-agent-trace.ts';
 const operation=(id,kind)=>({id,type:'operation',kind,label:id,status:'success',detail:''});
 test('commands distinguish plans, workflows, node mutations, reads and files',()=>{
- for(const [name,category] of [['update_plan','plan'],['set_agent_state','plan'],['run_canvas_workflow','workflow'],['list_workflows','workflow'],['save_workflow','workflow'],['create_group','nodes'],['update_node','nodes'],['delete_connection','nodes'],['arrange_nodes','nodes'],['edit_image','nodes'],['get_node','tools'],['read_skill_file','files']]){
+ for(const [name,category] of [['update_plan','plan'],['set_agent_state','plan'],['run_canvas_workflow','workflow'],['list_workflows','workflow'],['save_workflow','workflow'],['create_group','nodes'],['update_node','nodes'],['delete_connection','nodes'],['arrange_nodes','nodes'],['edit_image','nodes'],['get_node','tools'],['search_agent_history','tools'],['read_skill_file','files']]){
   assert.equal(canvasAgentOperationCategory(operation(name,canvasAgentToolKind(name))),category,name);
   assert.equal(canvasAgentOperationCategory(canvasAgentActionTrace({id:name,name,arguments:{}},{ok:true})),category,name);
  }

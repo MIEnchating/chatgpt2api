@@ -2,6 +2,13 @@ import type { ImageOutputFormat, ImageQuality } from "@/lib/api";
 import { httpRequest } from "@/lib/request";
 import type { AgentRunStatus } from "@/lib/agent-run-state";
 
+export type CanvasAgentFeedbackCategory = "task-result" | "instruction-following" | "product-interaction" | "service-stability" | "resource-cost" | "security-privacy-permission" | "other";
+export type CanvasAgentFeedbackInput = {
+  rating: "positive" | "negative";
+  note?: string;
+  category?: CanvasAgentFeedbackCategory;
+};
+
 export type CanvasScriptDialogue = { id: string; kind: "dialogue" | "narration"; asset_id: string; text: string };
 export type CanvasScriptReviewStatus = "unchecked" | "passed" | "needs_fix";
 export type CanvasScriptQualityReview = { media_url: string; continuity: CanvasScriptReviewStatus; dialogue: CanvasScriptReviewStatus; speaker: CanvasScriptReviewStatus; lip_sync: CanvasScriptReviewStatus; text_on_screen?: CanvasScriptReviewStatus; notes: string };
@@ -185,7 +192,7 @@ type CanvasAgentMessage = {
 };
 
 export type CanvasDocument = {
-  agent_run?: { id: string; sessionId: string; assistantId: string; engine?: string; toolResult?: { ok: boolean; [key: string]: unknown }; status: AgentRunStatus; error?: string; updatedAt: string };
+  agent_run?: { id: string; sessionId: string; assistantId: string; engine?: string; toolResult?: { ok: boolean; [key: string]: unknown }; status: AgentRunStatus; error?: string; updatedAt: string; modelRetryAt?: string; readOnly?: boolean };
   retained_storage_object_ids?: string[];
   retained_storage_object_urls?: string[];
   retained_storage_objects_until?: string;
@@ -222,9 +229,10 @@ export type CanvasAgentSessionUpdate = {
   changes: { title?: string; engine?: "native" | "codex"; updatedAt?: string };
 };
 
-export type CanvasAgentSessionSummary = { id: string; title: string; created_at?: string; updated_at?: string; message_count: number; content_hash: string };
+export type CanvasAgentSessionSummary = { id: string; title: string; created_at?: string; updated_at?: string; message_count: number; turn_count?: number; elapsed_ms?: number; operation_count?: number; retry_count?: number; prompt_preview?: string; response_preview?: string; content_hash: string };
 
 export type CanvasProjectSummary = {
+  agent_status?: { status: "running" | "waiting" | "error" | "interrupted" | "success"; session_id: string };
   id: string;
   title: string;
   node_count: number;
@@ -257,6 +265,46 @@ export async function fetchCanvasDocument(projectID?: string, history: CanvasHis
 export function fetchCanvasAgentHistorySession(projectID: string, sessionID: string, revision: number, signal?: AbortSignal) {
   const query = new URLSearchParams({ project_id: projectID, session_id: sessionID, revision: String(revision) });
   return httpRequest<{ session: unknown; revision: number }>(`/api/canvas/agent-history?${query}`, { signal });
+}
+
+export type CanvasAgentTextTaskDetail =
+  | { proposalStatus: "current"; content: string }
+  | { proposalStatus: "none" | "stale" };
+
+export function fetchCanvasAgentTextTask(projectID: string, sessionID: string, taskID: string, revision: number, signal: AbortSignal) {
+  const query = new URLSearchParams({ project_id: projectID, session_id: sessionID, task_id: taskID, revision: String(revision) });
+  return httpRequest<CanvasAgentTextTaskDetail>(`/api/canvas/agent-text-tasks?${query}`, { signal });
+}
+
+export type CanvasAgentHistoryMatch = {
+  session_id: string;
+  title: string;
+  message_id: string;
+  role: "user" | "assistant";
+  snippet: string;
+};
+
+export function searchCanvasAgentHistory(projectID: string, text: string, { role, sessionID, cursor, signal }: {
+  role?: CanvasAgentHistoryMatch["role"];
+  sessionID?: string;
+  cursor?: string;
+  signal?: AbortSignal;
+}) {
+  const query = new URLSearchParams({ project_id: projectID, q: text });
+  if (role) query.set("role", role);
+  if (sessionID) query.set("in_session", sessionID);
+  if (cursor) query.set("cursor", cursor);
+  return httpRequest<{ matches: CanvasAgentHistoryMatch[]; revision: number; next_cursor?: string }>(`/api/canvas/agent-history?${query}`, { signal });
+}
+
+export function branchCanvasAgentHistory(projectID: string, input: { sessionId: string; messageId: string; branchId: string; revision: number }, signal?: AbortSignal) {
+  const query = new URLSearchParams({ project_id: projectID });
+  return httpRequest<{ document: CanvasDocument }>(`/api/canvas/agent-history?${query}`, { method: "POST", body: input, signal });
+}
+
+export function saveCanvasAgentFeedback(projectID: string, input: { sessionId: string; messageId: string; ifVersion: string; feedback: CanvasAgentFeedbackInput | null }) {
+  const query = new URLSearchParams({ project_id: projectID });
+  return httpRequest<{ document: CanvasDocument }>(`/api/canvas/agent-feedback?${query}`, { method: "POST", body: input });
 }
 
 export async function saveCanvasDocument(document: CanvasDocument) {

@@ -34,7 +34,7 @@ func TestStudioAgentAdjustsParametersGeneratesAndResumesWithoutDuplicatePayment(
 	_ = png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2)))
 	encoded := base64.StdEncoding.EncodeToString(pixels.Bytes())
 	var modelCalls, mediaCalls atomic.Int32
-	var taskID atomic.Value
+	var taskID, partialRequest atomic.Value
 	interrupt := atomic.Bool{}
 	interrupt.Store(true)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +65,26 @@ func TestStudioAgentAdjustsParametersGeneratesAndResumesWithoutDuplicatePayment(
 			}
 		}
 		call := modelCalls.Add(1)
+		if call == 4 {
+			partialRequest.Store(agentJSONValue(body))
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"studio-call-4","type":"function","function":{"name":"generate_image","arguments":"{\"prompt\":\""}}]},"finish_reason":null}]}`+"\n\n")
+			w.(http.Flusher).Flush()
+			return
+		}
+		if call == 5 {
+			if agentJSONValue(body) != partialRequest.Load() || mediaCalls.Load() != 0 {
+				t.Error("interrupted tool arguments changed the retried model request or submitted media")
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"studio-call-4","type":"function","function":{"name":"generate_image","arguments":"{\"prompt\":\""}}]},"finish_reason":null}]}`+"\n\n")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"海边产品海报\",\"reference_ids\":[]}"}}]},"finish_reason":null}]}`+"\n\n")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		if call > 5 {
+			call--
+		}
 		name, args := "get_history", map[string]any{}
 		switch call {
 		case 1:
@@ -72,8 +92,6 @@ func TestStudioAgentAdjustsParametersGeneratesAndResumesWithoutDuplicatePayment(
 			name = "get_generation_config"
 		case 3:
 			name, args = "set_generation_parameters", map[string]any{"parameters": map[string]any{"size": "1536x1024", "quality": "high", "n": 1}}
-		case 4:
-			name, args = "generate_image", map[string]any{"prompt": "海边产品海报", "reference_ids": []string{}}
 		default:
 			if interrupt.Load() {
 				util.WriteError(w, 400, "simulated model interruption")
@@ -134,6 +152,9 @@ func TestStudioAgentAdjustsParametersGeneratesAndResumesWithoutDuplicatePayment(
 	run := wait()
 	if run.Status != "error" || mediaCalls.Load() != 1 {
 		t.Fatalf("interrupted run=%+v media=%d", run, mediaCalls.Load())
+	}
+	if modelCalls.Load() != 6 || !strings.Contains(agentJSONValue(run.Events), `"stage":"retrying"`) {
+		t.Fatalf("partial model stream did not retry as expected: model=%d events=%v", modelCalls.Load(), run.Events)
 	}
 	public := request("GET", "/api/agent-runs?id=turn-agent", "").Body.String()
 	for _, secret := range []string{"studio-test-secret", "studio-image-secret", "frozen_task_credential", "\"sdk\"", "\"receipts\""} {
@@ -243,11 +264,15 @@ func TestStudioAgentReadsConversationAssetAndSubmitsEdit(t *testing.T) {
 		case 1:
 		case 2:
 			name = "get_generation_config"
-		case 3:
+		case 3, 4, 5:
 			name, args = "read_image", map[string]any{"reference_id": "turn-reference-1"}
-		case 4:
+		case 6:
+			messages := util.AsMapSlice(body["messages"])
+			if !strings.Contains(agentJSONValue(messages), "repeatedReadReminder") {
+				t.Error("third identical image read did not remind the model")
+			}
 			name, args = "edit_image", map[string]any{"prompt": "Make this image a cartoon", "reference_ids": []string{"turn-reference-1"}}
-		case 5:
+		case 7:
 			name, args = "get_generation_task", map[string]any{"task_id": taskID.Load()}
 		default:
 			name, args = "finish_task", map[string]any{"text": "已完成卡通图"}

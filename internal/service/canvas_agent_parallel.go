@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"chatgpt2api/internal/util"
 )
 
 const canvasAgentGenerationConcurrency = 4
@@ -54,10 +56,12 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 				n := w.node(id)
 				if n == nil {
 					failure = w.canvasChangedResult("工作流节点已被移除，后续步骤未执行")
+					w.updateWorkflowMember(id, "changed", "")
 					break
 				}
 				if n.Type != "script" && canvasAgentWorkflowNodeReady(*n) {
 					started[id], done[id] = true, true
+					w.updateWorkflowMember(id, "success", n.TaskID)
 					continue
 				}
 				ready := true
@@ -72,10 +76,12 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 				}
 				if n.Type == "script" {
 					started[id], done[id] = true, true
+					w.updateWorkflowMember(id, "success", "")
 					continue
 				}
 				if err := w.bindWorkflowReferences(id); err != nil {
 					failure = agentError("dependency_failed", err.Error())
+					w.updateWorkflowMember(id, "error", "")
 					break
 				}
 				job, result, err := w.prepareGeneration(id)
@@ -87,9 +93,11 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 					results = append(results, result)
 					if result["ok"] != true {
 						failure = result
+						w.updateWorkflowMember(id, "error", util.Clean(result["taskId"]))
 						break
 					}
 					done[id] = true
+					w.updateWorkflowMember(id, "success", util.Clean(result["taskId"]))
 					continue
 				}
 				w.generationTrace(job.node, "running", "已提交生成，完成后自动推进依赖此素材的步骤")
@@ -173,7 +181,30 @@ func (w *canvasAgentWorker) runWorkflowGenerations(order []string) ([]map[string
 }
 
 func (w *canvasAgentWorker) generationTrace(node CanvasNode, status, detail string) {
-	w.trace(map[string]any{"id": "generation:" + node.TaskID, "type": "operation", "kind": "generate", "label": "正在生成" + firstAgentString(node.Title, "媒体"), "status": status, "detail": detail, "nodeId": node.ID})
+	entry := map[string]any{"id": "generation:" + node.TaskID, "type": "operation", "kind": "generate", "label": "正在生成" + firstAgentString(node.Title, "媒体"), "status": status, "detail": detail, "nodeId": node.ID}
+	if w.updateWorkflowMember(node.ID, status, node.TaskID) {
+		entry["workflowRunId"] = w.workflowRun["id"]
+	}
+	w.trace(entry)
+}
+
+func (w *canvasAgentWorker) updateWorkflowMember(nodeID, status, taskID string) bool {
+	for _, member := range util.AsMapSlice(w.workflowRun["members"]) {
+		if member["nodeId"] != nodeID {
+			continue
+		}
+		member["status"] = status
+		if taskID != "" {
+			member["taskId"] = taskID
+		}
+		if node := w.node(nodeID); node != nil && node.TaskID == taskID && status == "running" {
+			member["progress"] = node.GenerationProgress
+		} else {
+			delete(member, "progress")
+		}
+		return true
+	}
+	return false
 }
 
 func (w *canvasAgentWorker) bindWorkflowReferences(id string) error {

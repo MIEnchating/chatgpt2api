@@ -182,6 +182,9 @@ func MatchAPIPermissionKey(method, path string) (string, bool) {
 	if method == "DELETE" && path == "/api/creation-tasks" {
 		method = "POST"
 	}
+	if method == "PATCH" && path == "/api/canvas/agent-runs" || method == "POST" && (path == "/api/canvas/agent-history" || path == "/api/canvas/agent-context" || path == "/api/canvas/agent-feedback") {
+		return APIPermissionKey("PUT", "/api/canvas"), true
+	}
 	if method == "POST" && path == "/api/creation-tasks/events" {
 		return APIPermissionKey("GET", "/api/creation-tasks"), true
 	}

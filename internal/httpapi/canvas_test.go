@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,8 +77,12 @@ func TestCanvasLongHistoryNegotiatesGzip(t *testing.T) {
 			t.Errorf("%s %s: expected gzip for large history", endpoint.method, endpoint.path)
 			continue
 		}
-		if compressed.Header().Get("Cache-Control") != "private, no-store" || compressed.Header().Get("Vary") != "Accept-Encoding" ||
-			plain.Header().Get("Vary") != "Accept-Encoding" || plain.Header().Get("Content-Encoding") != "" ||
+		expectedVary := "Accept-Encoding"
+		if strings.HasPrefix(endpoint.path, "/api/canvas/agent-runs?") {
+			expectedVary = "Accept,Accept-Encoding"
+		}
+		if compressed.Header().Get("Cache-Control") != "private, no-store" || strings.Join(compressed.Header().Values("Vary"), ",") != expectedVary ||
+			strings.Join(plain.Header().Values("Vary"), ",") != expectedVary || plain.Header().Get("Content-Encoding") != "" ||
 			plain.Header().Get("Content-Type") != compressed.Header().Get("Content-Type") {
 			t.Fatalf("%s: unexpected negotiated response headers", endpoint.path)
 		}
@@ -483,9 +488,11 @@ func TestCanvasAgentHistoryPagesRequireOwnerAndCurrentRevision(t *testing.T) {
 	if err := json.Unmarshal(workspaceResponse.Body.Bytes(), &workspace); err != nil {
 		t.Fatal(err)
 	}
+	const transcriptTail = "Detail outside the preview."
+	transcript := strings.Repeat("Private transcript. ", 1000) + transcriptTail
 	var sessions []map[string]any
 	for index := range 25 {
-		sessions = append(sessions, map[string]any{"id": fmt.Sprintf("http-session-%d", index), "title": fmt.Sprintf("History %d", index), "messages": []map[string]any{{"id": "reply", "role": "assistant", "text": strings.Repeat("Private transcript. ", 1000)}}})
+		sessions = append(sessions, map[string]any{"id": fmt.Sprintf("http-session-%d", index), "title": fmt.Sprintf("History %d", index), "messages": []map[string]any{{"id": "reply", "role": "assistant", "text": transcript}}})
 	}
 	workspace.Document.AgentSessions, _ = json.Marshal(sessions)
 	body, _ := json.Marshal(workspace.Document)
@@ -506,8 +513,13 @@ func TestCanvasAgentHistoryPagesRequireOwnerAndCurrentRevision(t *testing.T) {
 	base := "/api/canvas/agent-history?project_id=" + url.QueryEscape(saved.Document.ID)
 	response := request(base, true)
 	var page service.CanvasAgentHistoryPage
-	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Sessions) != 20 || page.NextCursor == "" || strings.Contains(response.Body.String(), "Private transcript") {
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Sessions) != 20 || page.NextCursor == "" || strings.Contains(response.Body.String(), transcriptTail) {
 		t.Fatalf("invalid public history page: %d %s", response.Code, response.Body.String())
+	}
+	for _, session := range page.Sessions {
+		if !strings.HasPrefix(session.ResponsePreview, "Private transcript.") || !strings.HasSuffix(session.ResponsePreview, "…") {
+			t.Fatalf("history summary should contain a truncated response preview: %q", session.ResponsePreview)
+		}
 	}
 	second := request(base+"&cursor="+url.QueryEscape(page.NextCursor), true)
 	var remaining service.CanvasAgentHistoryPage
@@ -516,7 +528,7 @@ func TestCanvasAgentHistoryPagesRequireOwnerAndCurrentRevision(t *testing.T) {
 	}
 	sessionPath := base + "&session_id=http-session-24&revision=" + strconv.FormatInt(page.Revision, 10)
 	selected := request(sessionPath, true)
-	if selected.Code != http.StatusOK || !strings.Contains(selected.Body.String(), "Private transcript") || strings.Contains(selected.Body.String(), "http-session-23") {
+	if selected.Code != http.StatusOK || !strings.Contains(selected.Body.String(), transcriptTail) || strings.Contains(selected.Body.String(), "http-session-23") {
 		t.Fatalf("selected history invalid: %d %s", selected.Code, selected.Body.String())
 	}
 	foreign, err := app.canvas.Import("other-history-owner", service.CanvasDocument{Title: "Other owner", AgentSessions: saved.Document.AgentSessions})
@@ -846,5 +858,301 @@ func TestCanvasUploadWaitsForImageSlotBeforeReadingBody(t *testing.T) {
 	app.Handler().ServeHTTP(response, request.WithContext(ctx))
 	if response.Code != http.StatusRequestTimeout {
 		t.Fatalf("canceled upload status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCanvasAgentTextTaskDetailUsesCurrentInputs(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	owner := identityScope(*app.auth.Authenticate(token))
+	nodes := []service.CanvasNode{
+		{ID: "source", Type: "text", Title: "Reference", Prompt: "Source text", Width: 240, Height: 160, ScaleX: 1, ScaleY: 1},
+		{ID: "target", Type: "text", Title: "Draft", Prompt: "Original text", Width: 240, Height: 160, ScaleX: 1, ScaleY: 1},
+	}
+	fingerprint := func(node service.CanvasNode) string {
+		data, err := json.Marshal([]any{node.ID, node.Type, node.Title, node.Prompt, node.ComposerContent, false})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("%x", sha256.Sum256(data))
+	}
+	history, err := json.Marshal([]map[string]any{
+		{"id": "other", "messages": []any{}, "protocolMessages": []any{}},
+		{
+			"id": "work", "messages": []any{}, "protocolMessages": []any{},
+			"textEditTasks": map[string]any{
+				"task": map[string]any{"id": "task", "key": "draft", "nodeId": "target", "question": "Review draft", "status": "drafted", "revision": 3, "proposalId": "proposal", "dependsOn": []string{}},
+			},
+			"textEditProposals": map[string]any{
+				"proposal": map[string]any{
+					"taskId": "task", "taskRevision": 3, "nodeId": "target", "kind": "text", "revision": fingerprint(nodes[1]),
+					"content": "Revised text", "dependencyRevisions": map[string]string{"source": fingerprint(nodes[0])},
+				},
+				"other-proposal": map[string]any{"content": "Unrelated draft"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := service.CanvasDocument{Title: "Task details", Nodes: nodes, AgentSessions: history, ActiveAgentSessionID: "other"}
+	workspace, err := app.canvas.Import(owner, fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := app.canvas.Import("other-owner", fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(project, session string, revision int, authorized bool) *httptest.ResponseRecorder {
+		t.Helper()
+		path := fmt.Sprintf("/api/canvas/agent-text-tasks?project_id=%s&session_id=%s&task_id=task&revision=%d", url.QueryEscape(project), session, revision)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if authorized {
+			setRequestAuthCookie(req, token)
+		}
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+	doc := workspace.Document
+	res := read(doc.ID, "work", 3, true)
+	if detail := res.Body.String(); res.Code != http.StatusOK || !strings.Contains(detail, `"proposalStatus":"current"`) ||
+		!strings.Contains(detail, "Revised text") || strings.Contains(detail, "Unrelated draft") || res.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("current detail: %d %s", res.Code, detail)
+	}
+	for _, item := range []struct {
+		project, session string
+		revision, status int
+		authorized       bool
+	}{
+		{doc.ID, "work", 3, http.StatusUnauthorized, false},
+		{doc.ID, "work", 2, http.StatusConflict, true},
+		{doc.ID, "work", 0, http.StatusBadRequest, true},
+		{doc.ID, "other", 3, http.StatusBadRequest, true},
+		{foreign.Document.ID, "work", 3, http.StatusBadRequest, true},
+	} {
+		res := read(item.project, item.session, item.revision, item.authorized)
+		if res.Code != item.status || strings.Contains(res.Body.String(), "Revised text") {
+			t.Fatalf("expected %d, got %d %s", item.status, res.Code, res.Body.String())
+		}
+	}
+	doc.Nodes[0].Prompt = "New source text"
+	if _, err := app.canvas.SaveAtRevision(owner, doc); err != nil {
+		t.Fatal(err)
+	}
+	res = read(doc.ID, "work", 3, true)
+	if detail := res.Body.String(); res.Code != http.StatusOK || !strings.Contains(detail, `"proposalStatus":"stale"`) || strings.Contains(detail, "Revised text") {
+		t.Fatalf("stale detail: %d %s", res.Code, detail)
+	}
+}
+
+func TestCanvasAgentMessageFeedback(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	owner := identityScope(*app.auth.Authenticate(token))
+	const protocol = `[{"role":"assistant","content":"Original model reply"}]`
+	workspace, err := app.canvas.Import(owner, service.CanvasDocument{
+		Title:                "Feedback",
+		AgentSessions:        json.RawMessage(`[{"id":"conversation","messages":[{"id":"question","role":"user","text":"Question"},{"id":"reply","role":"assistant","status":"success","text":"Original model reply"}],"protocolMessages":` + protocol + `},{"id":"branch","inheritedMessageCount":1,"messages":[{"id":"reply","role":"assistant","status":"success","text":"Original model reply"}],"protocolMessages":[]}]`),
+		ActiveAgentSessionID: "conversation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(auth string, body service.CanvasAgentFeedbackRequest, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		data, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/canvas/agent-feedback?project_id="+url.QueryEscape(workspace.Document.ID), bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		if auth != "" {
+			setRequestAuthCookie(req, auth)
+		}
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != status {
+			t.Fatalf("got %d, want %d: %s", res.Code, status, res.Body.String())
+		}
+		return res
+	}
+	read := func(res *httptest.ResponseRecorder) (int64, string, string) {
+		t.Helper()
+		var payload struct {
+			Document struct {
+				Revision int64 `json:"revision"`
+				Sessions []struct {
+					ID       string `json:"id"`
+					Messages []struct {
+						ID       string `json:"id"`
+						Feedback struct {
+							Version string `json:"version"`
+							Rating  string `json:"rating"`
+						} `json:"feedback"`
+					} `json:"messages"`
+					Protocol json.RawMessage `json:"protocolMessages"`
+				} `json:"agent_sessions"`
+			} `json:"document"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		for _, session := range payload.Document.Sessions {
+			if session.ID != "conversation" {
+				continue
+			}
+			if string(session.Protocol) != protocol {
+				t.Fatalf("model context changed: %s", session.Protocol)
+			}
+			for _, message := range session.Messages {
+				if message.ID == "reply" {
+					return payload.Document.Revision, message.Feedback.Version, message.Feedback.Rating
+				}
+			}
+		}
+		t.Fatal("missing feedback target")
+		return 0, "", ""
+	}
+	request := service.CanvasAgentFeedbackRequest{SessionID: "conversation", MessageID: "reply", Feedback: &service.CanvasAgentFeedbackInput{Rating: "negative", Category: "task-result", Note: "仅供作者查阅"}}
+	post("", request, http.StatusUnauthorized)
+	_, outsider := createPasswordUserSession(t, app, "feedback-outsider", "", "Outsider")
+	post(outsider, request, http.StatusBadRequest)
+	invalid := request
+	invalid.MessageID = "question"
+	post(token, invalid, http.StatusBadRequest)
+	invalid = request
+	invalid.SessionID = "branch"
+	post(token, invalid, http.StatusBadRequest)
+	invalid = request
+	invalid.Feedback = &service.CanvasAgentFeedbackInput{Rating: "negative", Note: strings.Repeat("评", 2800)}
+	post(token, invalid, http.StatusBadRequest)
+	created, version, rating := read(post(token, request, http.StatusOK))
+	if version == "" || rating != "negative" {
+		t.Fatal("feedback was not created")
+	}
+	conflict := post(token, request, http.StatusConflict)
+	if !strings.Contains(conflict.Body.String(), "feedback_version_conflict") {
+		t.Fatalf("missing feedback conflict code: %s", conflict.Body.String())
+	}
+	if revision, current, rating := read(conflict); revision != created || current != version || rating != "negative" {
+		t.Fatalf("feedback conflict returned revision %d, version %q, rating %q", revision, current, rating)
+	}
+	request.IfVersion = version
+	if revision, same, _ := read(post(token, request, http.StatusOK)); revision != created || same != version {
+		t.Fatal("same feedback advanced its version")
+	}
+	request.Feedback = &service.CanvasAgentFeedbackInput{Rating: "positive"}
+	_, nextVersion, rating := read(post(token, request, http.StatusOK))
+	if nextVersion == version || nextVersion == "" || rating != "positive" {
+		t.Fatal("feedback edit did not update its version")
+	}
+	request.Feedback = nil
+	post(token, request, http.StatusConflict)
+	request.IfVersion = nextVersion
+	deleted, _, _ := read(post(token, request, http.StatusOK))
+	if revision, current, rating := read(post(token, request, http.StatusOK)); revision != deleted || current != "" || rating != "" {
+		t.Fatal("repeated withdrawal changed the document or restored feedback")
+	}
+	request.Feedback = &service.CanvasAgentFeedbackInput{Rating: "positive"}
+	if revision, current, rating := read(post(token, request, http.StatusConflict)); revision != deleted || current != "" || rating != "" {
+		t.Fatal("stale feedback edit did not return the current withdrawal")
+	}
+}
+
+func TestCanvasAgentHistorySearchAndBranchUseVisibleOwnerHistory(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	identity := app.auth.Authenticate(token)
+	history := json.RawMessage(`[{"id":"original","title":"分镜","engine":"native","messages":[{"id":"first","role":"user","text":"镜头一：BLUE hall","agentStateBefore":{"pendingTaskIds":["paid-task"]},"contextCheckpointBefore":"private-checkpoint"},{"id":"reply","role":"assistant","status":"success","text":"完成蓝色大厅"},{"id":"later","role":"user","text":"Blue 走廊备选"}],"protocolMessages":[{"role":"tool","name":"generate_video","toolCallId":"private-call","content":"opaque-only-secret"}],"toolReceipts":{"private-call":{"done":true}},"messageQueue":{"paused":true,"messages":[{"id":"queued","text":"排队内容","createdAt":"now","references":[]}]},"agentState":{"pendingTaskIds":["paid-task"],"pendingQuestion":{"id":"question"}}}]`)
+	workspace, err := app.canvas.Import(identityScope(*identity), service.CanvasDocument{Title: "History", AgentSessions: history, ActiveAgentSessionID: "original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := workspace.Document
+	endpoint := "/api/canvas/agent-history?project_id=" + url.QueryEscape(original.ID)
+	send := func(method, path, auth string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		data, _ := json.Marshal(body)
+		request := httptest.NewRequest(method, path, bytes.NewReader(data))
+		if method == http.MethodPost {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		if auth != "" {
+			setRequestAuthCookie(request, auth)
+		}
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, request)
+		return response
+	}
+	searchPath := endpoint + "&q=BLUE&limit=1"
+	first := send(http.MethodGet, searchPath, token, nil)
+	var page service.CanvasAgentHistorySearchPage
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &page) != nil || len(page.Matches) != 1 || page.Matches[0].MessageID != "later" || page.NextCursor == "" {
+		t.Fatalf("expected latest matching message and cursor: %d %s", first.Code, first.Body.String())
+	}
+	second := send(http.MethodGet, searchPath+"&cursor="+url.QueryEscape(page.NextCursor), token, nil)
+	var next service.CanvasAgentHistorySearchPage
+	if second.Code != http.StatusOK || json.Unmarshal(second.Body.Bytes(), &next) != nil || len(next.Matches) != 1 || next.Matches[0].MessageID != "first" || next.NextCursor != "" || !strings.Contains(next.Matches[0].Snippet, "BLUE hall") {
+		t.Fatalf("expected older matching message with original text: %d %s", second.Code, second.Body.String())
+	}
+	for _, query := range []string{"&role=user", "&in_session=original"} {
+		scopeChanged := send(http.MethodGet, searchPath+query+"&cursor="+url.QueryEscape(page.NextCursor), token, nil)
+		if scopeChanged.Code != http.StatusBadRequest {
+			t.Fatalf("cursor accepted after search scope change: %d %s", scopeChanged.Code, scopeChanged.Body.String())
+		}
+	}
+	for _, query := range []string{"&role=assistant", "&in_session=missing"} {
+		scoped := send(http.MethodGet, searchPath+query, token, nil)
+		if scoped.Code != http.StatusOK || !strings.Contains(scoped.Body.String(), `"matches":[]`) {
+			t.Fatalf("search ignored filter %s: %d %s", query, scoped.Code, scoped.Body.String())
+		}
+	}
+	for _, secret := range []string{"opaque-only-secret", "排队内容", "paid-task"} {
+		result := send(http.MethodGet, endpoint+"&q="+url.QueryEscape(secret), token, nil)
+		if result.Code != http.StatusOK || !strings.Contains(result.Body.String(), `"matches":[]`) {
+			t.Fatalf("search exposed private state: %d %s", result.Code, result.Body.String())
+		}
+	}
+	_, otherToken := createPasswordUserSession(t, app, "history-search-outsider", "", "Outsider")
+	if foreign := send(http.MethodGet, searchPath, otherToken, nil); foreign.Code != http.StatusBadRequest || strings.Contains(foreign.Body.String(), "走廊") {
+		t.Fatalf("search crossed project ownership: %d %s", foreign.Code, foreign.Body.String())
+	}
+
+	branch := service.CanvasAgentHistoryBranchRequest{SessionID: "original", MessageID: "reply", BranchID: "branch", Revision: original.Revision}
+	if foreign := send(http.MethodPost, endpoint, otherToken, branch); foreign.Code != http.StatusBadRequest {
+		t.Fatalf("branch crossed project ownership: %d %s", foreign.Code, foreign.Body.String())
+	}
+	response := send(http.MethodPost, endpoint, token, branch)
+	var result struct {
+		Document service.CanvasDocument `json:"document"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil || result.Document.ActiveAgentSessionID != "branch" || result.Document.AgentRun != nil {
+		t.Fatalf("branch did not save as an independent session: %d %s", response.Code, response.Body.String())
+	}
+	var sessions []map[string]any
+	if json.Unmarshal(result.Document.AgentSessions, &sessions) != nil || len(sessions) != 1 || sessions[0]["parentSessionId"] != "original" || sessions[0]["forkAtMessageId"] != "reply" || sessions[0]["inheritedMessageCount"] != float64(2) {
+		t.Fatalf("branch lost provenance or inherited boundary: %s", result.Document.AgentSessions)
+	}
+	for _, laterOrPrivate := range []string{"走廊", "opaque-only-secret", "paid-task", "private-checkpoint", "messageQueue", "toolReceipts", "pendingQuestion"} {
+		if strings.Contains(string(result.Document.AgentSessions), laterOrPrivate) {
+			t.Fatalf("branch inherited %s: %s", laterOrPrivate, result.Document.AgentSessions)
+		}
+	}
+	project, err := app.canvas.Project(identityScope(*identity), original.ID)
+	if err != nil || json.Unmarshal(project.AgentSessions, &sessions) != nil || len(sessions) != 2 || !strings.Contains(string(project.AgentSessions), "Blue 走廊备选") {
+		t.Fatalf("source session was changed: %v %s", err, project.AgentSessions)
+	}
+	repeated := send(http.MethodPost, endpoint, token, branch)
+	var replay struct {
+		Document service.CanvasDocument `json:"document"`
+	}
+	if repeated.Code != http.StatusOK || json.Unmarshal(repeated.Body.Bytes(), &replay) != nil || replay.Document.Revision != project.Revision {
+		t.Fatalf("retry created another revision: %d %s", repeated.Code, repeated.Body.String())
+	}
+	stale := send(http.MethodGet, searchPath+"&cursor="+url.QueryEscape(page.NextCursor), token, nil)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale history cursor was accepted: %d %s", stale.Code, stale.Body.String())
 	}
 }

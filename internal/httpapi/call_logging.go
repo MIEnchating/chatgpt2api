@@ -52,6 +52,9 @@ func (a *App) logCall(ctx context.Context, identity service.Identity, summary, m
 		detail["urls"] = dedupe(urls)
 	}
 	addAuditRequestDetail(detail, requestCapture)
+	if usage, ok := ctx.Value(agentModelLogUsageKey{}).(map[string]int64); ok && len(usage) > 0 {
+		detail["model_usage"] = usage
+	}
 	suffix := "调用完成"
 	if outcome == "failed" {
 		suffix = "调用失败"

@@ -12,11 +12,14 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 
 	"chatgpt2api/internal/util"
 )
 
 var ErrAgentProgressPersistence = errors.New("Agent 进度保存失败")
+
+const agentModelRetryBudgetMS int64 = 30000
 
 // AgentModelStreamError marks a model response that failed while streaming.
 // The SDK may safely retry it because no business tool result is acknowledged
@@ -90,11 +93,22 @@ func (*AgentExecutionService) RunSDK(ctx context.Context, config map[string]any,
 		if callErr != nil {
 			response["error"] = callErr.Error()
 			response["retryable"] = request.Method == "model" && AgentModelRetryable(callErr)
+			if code := AgentFailureCode(callErr); code != "" {
+				response["failureCode"] = code
+			}
+			if response["retryable"] == true {
+				var retry interface{ RetryAfter() time.Duration }
+				if errors.As(callErr, &retry) {
+					if delay := retry.RetryAfter(); delay > 0 {
+						response["retryAfterMs"] = (delay - 1).Milliseconds() + 1
+					}
+				}
+			}
 		}
 		if err = encoder.Encode(response); err != nil {
 			return err
 		}
-		if callErr == nil && (request.Method == "finish" || request.Method == "pause") {
+		if callErr == nil && (request.Method == "finish" || request.Method == "pause" || request.Method == "compact_complete") {
 			finished = true
 		}
 	}
@@ -118,10 +132,19 @@ func AgentModelRetryable(err error) bool {
 	if err == nil || errors.Is(err, ErrAgentProgressPersistence) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	switch AgentFailureCode(err) {
+	case "RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT":
+		return true
+	case "AUTH", "EMPTY_RESPONSE":
+		return false
+	}
 	var httpErr interface{ HTTPStatusCode() int }
 	if errors.As(err, &httpErr) {
 		status := httpErr.HTTPStatusCode()
-		return status == 408 || status == 429 || status >= 500
+		if status == 408 || status == 429 || status >= 500 {
+			return true
+		}
+		return false
 	}
 	var streamError AgentModelStreamError
 	if errors.As(err, &streamError) {
@@ -133,4 +156,17 @@ func AgentModelRetryable(err error) bool {
 	}
 	message := err.Error()
 	return strings.Contains(message, "stream error: stream ID ") && strings.Contains(message, "received from peer")
+}
+
+// AgentFailureCode extracts the normalized category without coupling the
+// runtime to a concrete upstream error type.
+func AgentFailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	var coded interface{ FailureCode() string }
+	if !errors.As(err, &coded) {
+		return ""
+	}
+	return strings.ToUpper(strings.TrimSpace(coded.FailureCode()))
 }

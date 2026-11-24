@@ -5,10 +5,11 @@ import { PromptInput, PromptInputFooter, PromptInputSubmit } from "@/components/
 import { ItemMedia } from "@/components/ui/item";
 import { Card } from "@/components/ui/card";
 import { ManagementHeader, ManagementPanel, ManagementToolbar } from "@/components/management-page";
-import { CanvasAgentAttachments } from "./canvas-agent-attachments";
-import { InputGroupTextarea } from "@/components/ui/input-group";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { CanvasAgentAssetMenu } from "./canvas-agent-composer";
+import { CanvasAgentMediaModelPicker } from "./canvas-agent-media-model-picker";
+import { CanvasAgentModelPicker } from "./canvas-agent-model-picker";
+import { CanvasAgentPromptChipInput } from "./canvas-agent-prompt-chip-input";
 import { CanvasAgentSkillPicker } from "@/app/canvas/canvas-agent-skill-picker";
 import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -16,10 +17,11 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollAreaRoot, ScrollAreaViewport, ScrollBar } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
@@ -28,8 +30,9 @@ import { canvasProjectPath } from "@/lib/canvas-project-route";
 import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasAgentConfig, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "@/app/canvas/agent/canvas-agent-types";
 import { fetchModelConfig } from "@/lib/api";
-import { resolveConfiguredModel } from "@/lib/model-config-selection";
+import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 import { loadImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
+import { resolveConfiguredVideoModel } from "@/lib/video-model-capabilities";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import {
@@ -47,6 +50,9 @@ function projectDate(value?: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "暂无更新时间" : `更新于 ${date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
 }
+
+const agentStatusLabel = { running: "运行中", waiting: "等待处理", error: "执行失败", interrupted: "执行中断", success: "有新结果" };
+const emptyAgentModels = { text: [], image: [], video: [] };
 
 export default function CanvasLibraryPage({ session }: { session: StoredAuthSession }) {
   const navigate = useNavigate();
@@ -70,10 +76,11 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const [projectDialog, setProjectDialog] = useState<{ mode: CanvasProjectDialogMode; project?: CanvasProjectSummary; count?: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const agentUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [agentTextModel, setAgentTextModel] = useState("");
+  const [agentModels, setAgentModels] = useState<Record<"text" | "image" | "video", string[]>>(emptyAgentModels);
   const [agentModelLoading, setAgentModelLoading] = useState(false);
   const [agentModelError, setAgentModelError] = useState("");
   const [agentModelAttempt, setAgentModelAttempt] = useState(0);
+  const agentTextModel = agentModels.text.includes(agentConfig.textModel || "") ? agentConfig.textModel || "" : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,22 +101,58 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }, [session.key, reloadKey]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let refreshing = false;
+    async function refreshAgentStatus() {
+      if (refreshing || document.visibilityState !== "visible") return;
+      refreshing = true;
+      try {
+        const list = await fetchCanvasProjectList(controller.signal);
+        if (controller.signal.aborted) return;
+        const updated = new Map(list.projects.map(project => [project.id, project]));
+        setProjects(current => current.map(project => {
+          const fresh = updated.get(project.id);
+          return fresh && fresh.revision >= project.revision ? { ...project, agent_status: fresh.agent_status } : project;
+        }));
+      } catch {
+        // Keep the last known status until the next visible refresh.
+      } finally {
+        refreshing = false;
+      }
+    }
+    const timer = window.setInterval(() => void refreshAgentStatus(), 10000);
+    document.addEventListener("visibilitychange", refreshAgentStatus);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshAgentStatus);
+    };
+  }, [session.key]);
+
+  useEffect(() => {
     if (!agentStarterOpen) return;
     let active = true;
-    setAgentTextModel("");
+    setAgentModels(emptyAgentModels);
     setAgentModelLoading(true);
     setAgentModelError("");
     void Promise.all([fetchModelConfig(), loadImageGenerationPreferences()])
       .then(([{ config }, result]) => {
         if (!active) return;
         if (result.status === "error") throw result.error;
-        const textModel = resolveConfiguredModel(
-          config.text_models,
-          result.preferences.default_text_model,
-          config.default_text_model,
-        );
-        if (!textModel) setAgentModelError("暂无可用的文本模型");
-        setAgentTextModel(textModel);
+        const { preferences } = result;
+        const models = {
+          text: configuredModelNames(config.text_models),
+          image: configuredModelNames(config.image_models).filter((model) => model.toLowerCase() !== "auto"),
+          video: configuredModelNames(config.video_models),
+        };
+        if (!models.text.length) setAgentModelError("暂无可用的文本模型");
+        setAgentModels(models);
+        setAgentConfig((current) => ({
+          ...current,
+          textModel: resolveConfiguredModel(models.text, current.textModel, preferences.default_text_model, config.default_text_model),
+          imageModel: resolveConfiguredModel(models.image, current.imageModel, preferences.default_image_model, config.default_image_model),
+          videoModel: resolveConfiguredVideoModel(models.video, current.videoModel || "", preferences.workbench.video_model, preferences.default_video_model, config.default_video_model),
+        }));
       })
       .catch((error) => { if (active) setAgentModelError(error instanceof Error ? error.message : "加载文本模型失败"); })
       .finally(() => { if (active) setAgentModelLoading(false); });
@@ -158,11 +201,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   }
 
   function addPendingAsset(payload: CanvasInsertAssetPayload) {
-    setPendingAssets((current) => {
-      const asset = createCanvasPendingAgentAsset(payload, canvasAgentStarterLabel(payload.kind, current));
-      setAgentPrompt((prompt) => `${prompt}${prompt.endsWith(" ") || !prompt ? "" : " "}${asset.reference.label} `);
-      return [...current, asset];
-    });
+    setPendingAssets((current) => [...current, createCanvasPendingAgentAsset(payload, canvasAgentStarterLabel(payload.kind, current))]);
   }
 
   function onAgentUploadChange(event: ChangeEvent<HTMLInputElement>) {
@@ -171,8 +210,8 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     void uploadAgentAsset(file);
   }
 
-  async function createWithAgent() {
-    const prompt = agentPrompt.trim();
+  async function createWithAgent(value = agentPrompt) {
+    const prompt = value.trim() || (pendingAssets.length ? "请查看这些附件" : "");
     if (!prompt || !agentTextModel || busy || uploadingAsset) return;
     setBusy(true);
     try {
@@ -366,7 +405,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               <Button type="button" variant="outline"  disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
               <TooltipHint content={"取消选择"}><Button type="button" variant="ghost" size="icon"  aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button></TooltipHint>
             </> : null}
-            <Button type="button" variant="outline" disabled={busy} onClick={() => { setAgentTextModel(""); setAgentModelError(""); setAgentStarterOpen(true); }}><Bot />Agent</Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => { setAgentModels(emptyAgentModels); setAgentModelError(""); setAgentStarterOpen(true); }}><Bot />Agent</Button>
             <Button type="button" disabled={busy} onClick={() => void createAndOpen()}>{busy ? <Spinner /> : <Plus />}新建画布</Button>
           </div>
         </ManagementToolbar>
@@ -402,6 +441,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
                   </div>
                 </Button>
                 <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/70 pt-3">
+                  {project.agent_status ? <Button type="button" size="sm" variant="ghost" className="mr-auto px-0" disabled={busy} aria-label={`${project.title} Agent ${agentStatusLabel[project.agent_status.status]}`} onClick={() => navigate(canvasProjectPath(project.id, project.agent_status?.session_id))}><Badge variant={project.agent_status.status === "error" ? "destructive" : "secondary"}>{agentStatusLabel[project.agent_status.status]}</Badge></Button> : null}
                   <TooltipHint content={"导出画布"}><Button type="button" variant="ghost" size="icon"  aria-label="导出画布" disabled={busy} onClick={() => void exportProject(project)}><Download  /></Button></TooltipHint>
                   <TooltipHint content={"重命名画布"}><Button type="button" variant="ghost" size="icon"  aria-label="重命名画布" disabled={busy} onClick={() => void renameProject(project)}><Pencil  /></Button></TooltipHint>
                   <TooltipHint content={"删除画布"}><Button type="button" variant="ghost" size="icon"  aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2  /></Button></TooltipHint>
@@ -419,9 +459,9 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
       </ManagementPanel>
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
-        <DialogContent className="w-[min(94vw,900px)] max-w-none sm:max-w-none">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center"><Bot className="size-5 text-primary" />Agent</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-primary" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
           {agentModelLoading ? <LoadingState compact label="正在加载文本模型" /> : agentModelError ? (
@@ -430,30 +470,36 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               <Button type="button" size="sm" variant="outline" onClick={() => setAgentModelAttempt((n) => n + 1)}>重试</Button>
             </div>
           ) : null}
-          <PromptInput data-canvas-agent-starter className="flex-1">
-            <ScrollAreaRoot data-slot="scroll-area" className="group/scroll-area relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden flex-1" onWheel={(event) => { event.stopPropagation(); }}><ScrollAreaViewport data-slot="scroll-area-viewport" className="scroll-area-viewport relative min-h-0 min-w-0 w-full flex-1 overflow-auto overscroll-contain"><div className="min-w-0">
-              <CanvasAgentAttachments attachments={pendingAssets.map((asset) => asset.reference)} onRemove={(id) => setPendingAssets((current) => current.filter((item) => item.reference.id !== id))} />
-              <InputGroupTextarea
+          <PromptInput data-canvas-agent-starter>
+            <ScrollArea className="w-full max-h-[min(220px,40dvh)]" onKeyDownCapture={(event) => {
+              if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey) || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+              event.preventDefault();
+              void createWithAgent();
+            }}>
+              <CanvasAgentPromptChipInput
                 value={agentPrompt}
-                onChange={(event) => setAgentPrompt(event.target.value)}
-                onPaste={(event) => {
-                  const image = [...event.clipboardData.files].find((file) => file.type.startsWith("image/"));
-                  if (!image) return;
-                  event.preventDefault();
-                  void uploadAgentAsset(image);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void createWithAgent();
-                }}
-                className="min-h-36 max-h-[50dvh] resize-none sm:min-h-48"
+                references={[]}
+                attachments={pendingAssets.map((asset) => asset.reference)}
+                onRemoveAttachments={(ids) => setPendingAssets((current) => current.filter((item) => !ids.includes(item.reference.id)))}
+                onChange={setAgentPrompt}
+                onPasteImage={(file) => void uploadAgentAsset(file)}
+                onSubmit={(value) => void createWithAgent(value)}
+                className="min-h-24 w-full px-2.5 py-2 text-base md:text-sm"
                 placeholder="描述创作目标"
-                aria-label="Agent 创作目标"
               />
-              <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
-            </div></ScrollAreaViewport><ScrollBar /><ScrollBar orientation="horizontal" /></ScrollAreaRoot>
+            </ScrollArea>
+            {uploadingAsset ? <LoadingState compact className="mt-1 shrink-0" label="附件上传中…" /> : null}
             <PromptInputFooter>
-              <CanvasAgentAssetMenu uploading={uploadingAsset} disabled={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
-              <PromptInputSubmit disabled={!agentPrompt.trim() || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" title="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <Spinner /> : <ArrowUp />}</PromptInputSubmit>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                <CanvasAgentAssetMenu uploading={uploadingAsset} disabled={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
+                <CanvasAgentModelPicker model={agentTextModel} models={agentModels.text.map((value) => ({ value, label: value }))} codex={false} disabled={busy} onChange={(textModel) => setAgentConfig((current) => ({ ...current, textModel }))} />
+                <CanvasAgentMediaModelPicker disabled={busy || agentModelLoading} models={{
+                  image: { value: agentConfig.imageModel || "", options: agentModels.image, onChange: (imageModel) => setAgentConfig((current) => ({ ...current, imageModel })) },
+                  video: { value: agentConfig.videoModel || "", options: agentModels.video, onChange: (videoModel) => setAgentConfig((current) => ({ ...current, videoModel })) },
+                }} />
+                <CanvasAgentSkillPicker compact selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} />
+              </div>
+              <TooltipHint content="创建画布并执行"><PromptInputSubmit disabled={(!agentPrompt.trim() && !pendingAssets.length) || !agentTextModel || uploadingAsset || busy} aria-label="创建画布并执行" onClick={() => void createWithAgent()}>{busy ? <Spinner /> : <ArrowUp />}</PromptInputSubmit></TooltipHint>
             </PromptInputFooter>
             <input ref={agentUploadInputRef} hidden type="file" accept="image/*,video/*,audio/*" onChange={onAgentUploadChange} />
           </PromptInput>

@@ -45,6 +45,23 @@ func TestResponsesTaskStreamsOnlyPublicReasoningSummaries(t *testing.T) {
 	}
 }
 
+func TestAgentModelLogUsagePreservesZeroAndOmitsMissingOrInvalidCounters(t *testing.T) {
+	for _, tc := range []struct {
+		usage     map[string]any
+		responses bool
+		want      map[string]int64
+	}{
+		{map[string]any{"input_tokens": float64(10), "output_tokens": 2, "total_tokens": 12, "input_tokens_details": map[string]any{"cached_tokens": 0, "cache_write_tokens": 6, "opaque": "ignore"}}, true, map[string]int64{"input_tokens": 10, "output_tokens": 2, "total_tokens": 12, "cache_read_tokens": 0, "cache_write_tokens": 6}},
+		{map[string]any{"prompt_tokens": 10, "prompt_cache_hit_tokens": 4, "completion_tokens": 1.5, "total_tokens": -1}, false, map[string]int64{"input_tokens": 10, "cache_read_tokens": 4}},
+		{nil, false, map[string]int64{}},
+	} {
+		got := service.AgentModelUsage(tc.usage, tc.responses)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("logged counters = %#v, want %#v", got, tc.want)
+		}
+	}
+}
+
 func TestChatTaskSelectedAPIReachesUpstream(t *testing.T) {
 	for _, mode := range []string{"chat", "responses"} {
 		for _, stream := range []bool{false, true} {
@@ -98,7 +115,9 @@ func TestChatTaskSelectedAPIReachesUpstream(t *testing.T) {
 				if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
 					t.Fatal(err)
 				}
-				result, err := app.executeChatTaskRequest(context.Background(), map[string]any{"api_key": "test-key", "api_mode": mode, "stream": stream, "prompt_cache_key": "stable-agent-session", "owner_id": "owner", "model": "test-model", "reasoning_enabled": true, "max_output_tokens": 4000, "messages": []map[string]any{{"role": "user", "content": "read canvas"}}, service.ReasoningSummaryCallbackPayloadKey: func(string, string, bool) {}})
+				identity := service.Identity{ID: "owner"}
+				capture := auditRequestCapture{args: map[string]any{"agent_run_id": "test-run", "agent_model_attempt": map[string]any{"requestId": "test-request", "attempt": 1}}}
+				result, err := app.runLoggedChatTaskCaptured(context.Background(), identity, map[string]any{relayTaskCredentialKey: frozenTaskCredential{relayCredential{APIKey: "test-key"}}, "api_mode": mode, "stream": stream, "prompt_cache_key": "stable-agent-session", "model": "test-model", "reasoning_enabled": true, "max_output_tokens": 4000, "messages": []map[string]any{{"role": "user", "content": "read canvas"}}, service.ReasoningSummaryCallbackPayloadKey: func(string, string, bool) {}}, "/api/agent-model", "Agent 测试调用", capture)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -115,6 +134,18 @@ func TestChatTaskSelectedAPIReachesUpstream(t *testing.T) {
 				calls := util.AsMapSlice(data["tool_calls"])
 				if len(calls) != 1 || calls[0]["id"] != "call-1" || util.StringMap(calls[0]["function"])["arguments"] != "{}" || data["usage"] == nil || data["finish_reason"] == nil {
 					t.Fatalf("normalized data = %#v", data)
+				}
+				logs, err := app.logs.SearchPage(service.LogQuery{Summary: "Agent 测试调用", Limit: 10})
+				if err != nil || len(logs.Items) != 1 {
+					t.Fatalf("logged model calls = %#v, err = %v", logs, err)
+				}
+				detail := util.StringMap(logs.Items[0]["detail"])
+				counters := util.StringMap(detail["model_usage"])
+				request := util.StringMap(detail["request_args"])
+				if util.ToInt(counters["input_tokens"], -1) != 100 || util.ToInt(counters["cache_read_tokens"], -1) != 80 ||
+					util.ToInt(counters["cache_write_tokens"], -1) != 20 || request["agent_run_id"] != "test-run" ||
+					util.StringMap(request["agent_model_attempt"])["requestId"] != "test-request" || request["messages"] != nil {
+					t.Fatalf("unexpected persisted diagnostics: %#v", detail)
 				}
 			})
 		}

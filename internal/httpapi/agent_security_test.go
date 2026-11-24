@@ -66,7 +66,7 @@ func TestCanvasAgentRejectsSimpleContentTypes(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 	token := adminSessionToken(t, app)
-	for _, path := range []string{"/api/canvas/agent-runs", "/api/canvas/agent-tools", "/api/canvas/agent-tools/review-answers"} {
+	for _, path := range []string{"/api/canvas/agent-runs", "/api/canvas/agent-context", "/api/canvas/agent-tools", "/api/canvas/agent-tools/review-answers"} {
 		for _, contentType := range []string{"", "text/plain", "application/x-www-form-urlencoded", "multipart/form-data", "application/json-bogus", "application/json; charset"} {
 			r := httptest.NewRequest(http.MethodPost, path+"?project_id=test", strings.NewReader(`{}`))
 			r.Header.Set("Content-Type", contentType)

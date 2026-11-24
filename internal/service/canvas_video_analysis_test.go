@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCanvasVideoAnalysisSamplesActualFramesAndPaginates(t *testing.T) {
@@ -85,9 +86,13 @@ func TestCanvasVideoAnalysisDeduplicatesStaticFrames(t *testing.T) {
 func TestCanvasAgentVideoAnalysisProvidesImagesToModel(t *testing.T) {
 	w := parallelAgentWorker(t, nil)
 	w.doc.Nodes = []CanvasNode{{ID: "clip", Type: "video", URL: "/private.mp4", Title: "Clip"}}
-	w.service.SetVideoAnalyzer(func(_ context.Context, _ Identity, node CanvasNode, options CanvasVideoAnalysisOptions) (CanvasVideoAnalysis, error) {
+	w.service.SetVideoAnalyzer(func(ctx context.Context, _ Identity, node CanvasNode, options CanvasVideoAnalysisOptions) (CanvasVideoAnalysis, error) {
 		if node.ID != "clip" || options.StartMS != 1000 || !options.Detailed {
 			t.Fatal("analysis lost node or window")
+		}
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > canvasAgentVideoAnalysisTimeout {
+			t.Fatal("analysis did not receive its tool deadline")
 		}
 		return CanvasVideoAnalysis{Frames: []CanvasVideoFrame{{TimestampMS: 1000, URL: "/api/files/frame/content"}}}, nil
 	})

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { appendCanvasHistorySnapshot, canvasHistoryKey, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, canvasHistoryLeaseExpired, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "../src/app/canvas/canvas-history.ts";
 import { mergeCanvasDocuments } from "../src/app/canvas/canvas-document-merge.ts";
-import { canvasAgentHistoryChanges, canvasAgentHistoryReceipt } from "../src/app/canvas/agent/canvas-agent-history.ts";
+import { canvasAgentHistoryChanges, canvasAgentHistoryReceipt, canvasAgentHistoryStatsLabel, canvasAgentHistorySummaries } from "../src/app/canvas/agent/canvas-agent-history.ts";
 
 function document(values = {}) {
   return {
@@ -18,6 +18,24 @@ function document(values = {}) {
     ...values,
   };
 }
+
+test("history summaries retain whole-session turn statistics", () => {
+  const summaries = canvasAgentHistorySummaries({
+    agent_session_summaries: [{ id: "s", title: "旧标题", message_count: 0, content_hash: "saved" }],
+    deleted_agent_session_ids: [],
+    agent_sessions: [{
+      id: "s", title: "当前标题", createdAt: "now", updatedAt: "later",
+      messages: [
+        { id: "u", role: "user", text: "请求" },
+        { id: "a", role: "assistant", text: "完成", status: "success", elapsedMs: 65000, trace: [{ id: "op", type: "operation", kind: "read", label: "读取", status: "success", detail: "" }], modelAttempts: [{ runId: "run", requestId: "00000000-0000-0000-0000-000000000000", step: 1, attempt: 1, purpose: "turn", status: "success" }, { runId: "run", requestId: "00000000-0000-0000-0000-000000000000", step: 1, attempt: 2, purpose: "turn", status: "success" }] },
+      ],
+      agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] },
+      protocolMessages: [],
+    }],
+  });
+  assert.deepEqual(summaries[0], { id: "s", title: "当前标题", created_at: "now", updated_at: "later", message_count: 2, turn_count: 1, elapsed_ms: 65000, operation_count: 1, retry_count: 1, content_hash: "saved" });
+  assert.equal(canvasAgentHistoryStatsLabel(summaries[0]), "1 轮 · 用时 1 分 5 秒 · 1 次操作 · 重试 1 次");
+});
 
 test("engine and title updates do not retransmit an unchanged long conversation", () => {
   const session = { id: "s", title: "Original", createdAt: "now", updatedAt: "now", messages: [{ id: "u", role: "user", text: "Keep this request" }], protocolMessages: [{ role: "assistant", content: "Retained history. ".repeat(50000) }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] } };

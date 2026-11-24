@@ -625,7 +625,7 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 			t.Errorf("plugin option did not reach the model tool schema: provider=%t", hasProvider)
 		}
 		requestCount++
-		if requestCount == 2 && time.Since(lastRequest) < time.Second || requestCount == 3 && time.Since(lastRequest) < (2*time.Second) {
+		if requestCount == 2 && time.Since(lastRequest) < time.Second || requestCount == 3 && time.Since(lastRequest) < 900*time.Millisecond {
 			t.Error("upstream request retried without backoff")
 		}
 		lastRequest = time.Now()
@@ -634,6 +634,7 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 		messages := util.AsMapSlice(payload["messages"])
 		switch requestCount {
 		case 1:
+			w.Header().Set("Retry-After", "1")
 			util.WriteError(w, 524, "The origin web server did not respond to Cloudflare within the allowed time.")
 			return
 		case 2:
@@ -681,9 +682,15 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 			}
 			arguments = string(contractBundleJSON[:len(contractBundleJSON)-1]) + validEvidence + "}"
 		case 8:
-			toolName = "finish"
+			toolName = "validate_contracts"
+			arguments = string(contractBundleJSON[:len(contractBundleJSON)-1]) + validEvidence + "}"
 			if !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), `"requests"`) {
 				t.Error("actual request preview missing from tool result")
+			}
+		case 9:
+			toolName = "finish"
+			if !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), `"reused":true`) {
+				t.Error("identical draft did not reuse the validation at the attempt limit")
 			}
 		default:
 			t.Errorf("unexpected extra request %d", requestCount)
@@ -758,8 +765,8 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 	if strings.Contains(res.Body.String(), `"transcript_`) || strings.Contains(res.Body.String(), `"stage":"transcript"`) {
 		t.Fatalf("import progress exposed model transcript: %s", res.Body.String())
 	}
-	if requestCount != 8 {
-		t.Fatalf("document analysis requests = %d, want 8", requestCount)
+	if requestCount != 9 {
+		t.Fatalf("document analysis requests = %d, want 9", requestCount)
 	}
 	details := map[string]videoContractAgentDetail{}
 	corrections, toolRuns := 0, 0
@@ -767,6 +774,9 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 		var event videoContractImportProgressEvent
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event); err != nil {
 			t.Fatal(err)
+		}
+		if event.RequestAttempt > 0 && event.MaxRequestAttempts != 6 {
+			t.Fatalf("request progress reported the wrong total: %d/%d", event.RequestAttempt, event.MaxRequestAttempts)
 		}
 		if event.Detail == nil {
 			continue
@@ -791,7 +801,7 @@ func testAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T, 
 	if third := details["model-1-attempt-3"]; third.Status != "completed" || third.RequestAttempt != 3 {
 		t.Fatalf("successful retry missing: %#v", third)
 	}
-	if corrections != 1 || toolRuns != 5 {
+	if corrections != 1 || toolRuns != 6 {
 		t.Fatalf("corrections=%d toolRuns=%d", corrections, toolRuns)
 	}
 	var last videoContractAgentDetail

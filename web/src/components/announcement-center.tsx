@@ -8,6 +8,7 @@ import { TooltipHint } from "@/components/ui/tooltip";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, BellOff, CalendarClock, ChevronRight } from "lucide-react";
+import { BellSimpleIcon } from "@phosphor-icons/react/dist/csr/BellSimple";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -255,7 +256,7 @@ export function AnnouncementCenter({ className, sessionKey, side }: { className?
             className={cn("relative", className)}
             aria-label={unreadCount > 0 ? `系统公告，${unreadCount} 条未读` : "系统公告"}
           >
-            <Bell className="size-5" />
+            <BellSimpleIcon weight={popoverOpen ? "fill" : "regular"} className="size-5.5 dark:text-white" aria-hidden="true" />
             {unreadCount > 0 ? (
               <Badge variant="secondary" className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}

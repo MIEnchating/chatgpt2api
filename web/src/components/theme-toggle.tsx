@@ -1,5 +1,6 @@
 import { TooltipHint } from "@/components/ui/tooltip";
-import { MoonStar, Sun } from "lucide-react";
+import { MoonStarsIcon } from "@phosphor-icons/react/dist/csr/MoonStars";
+import { SunIcon } from "@phosphor-icons/react/dist/csr/Sun";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,8 +36,9 @@ export function ThemeToggle({
         saveColorTheme(nextTheme);
       }}
     >
-      <span className="relative flex size-5 shrink-0 items-center justify-center"><Sun className="size-5 scale-100 rotate-0 transition-transform dark:scale-0 dark:-rotate-90" />
-      <MoonStar className="absolute size-5 scale-0 rotate-90 transition-transform dark:scale-100 dark:rotate-0" />
+      <span className="relative flex size-5.5 shrink-0 items-center justify-center" aria-hidden="true">
+        <SunIcon className="size-5.5 scale-100 rotate-0 transition-transform dark:scale-0 dark:-rotate-90" />
+        <MoonStarsIcon className="absolute size-5.5 scale-0 rotate-90 transition-transform dark:scale-100 dark:rotate-0 dark:text-white" />
       </span>
     </Button></TooltipHint>
   );

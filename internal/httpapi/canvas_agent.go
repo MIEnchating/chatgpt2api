@@ -1,14 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
@@ -22,6 +25,33 @@ func requireAgentJSON(w http.ResponseWriter, r *http.Request) bool {
 	}
 	util.WriteError(w, http.StatusUnsupportedMediaType, "Agent 接口仅接受 application/json 请求")
 	return false
+}
+
+func (a *App) handleCanvasAgentCompaction(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok || !requireAgentJSON(w, r) {
+		return
+	}
+	if !a.identityCanAccessAPI(identity, http.MethodPut, "/api/canvas") || !a.identityCanAccessAPI(identity, http.MethodPost, "/api/creation-tasks") {
+		util.WriteError(w, http.StatusForbidden, "当前账号没有画布写入或生成权限")
+		return
+	}
+	project := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	var request service.CanvasAgentCompactionRequest
+	if project == "" || decodeStrictJSON(http.MaxBytesReader(w, r.Body, 16<<10), &request) != nil {
+		util.WriteError(w, http.StatusBadRequest, "无效的上下文整理请求")
+		return
+	}
+	if allowedPersonalModel(request.Model, a.config.TextModels()) == "" {
+		util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
+		return
+	}
+	result, err := a.canvasAgent.Compact(r.Context(), identity, project, request)
+	if err != nil {
+		writeCanvasMutationError(w, err, "上下文整理失败，已保留已有记录")
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, result)
 }
 
 func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +68,11 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.Method {
 	case http.MethodGet:
+		w.Header().Add("Vary", "Accept")
+		if r.Header.Get("Accept") == "text/event-stream" {
+			a.streamCanvasAgent(w, r, identity, project)
+			return
+		}
 		var workspace service.CanvasWorkspaceResult
 		workspace, err = a.canvasAgent.Workspace(identity, project, r.URL.Query()["session_id"], service.CanvasHistoryScope(r.URL.Query().Get("history")))
 		doc = workspace.Document
@@ -66,6 +101,25 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 		}
 		req.MediaBaseURL = a.resolveImageBaseURL(r.Context())
 		doc, err = a.canvasAgent.Start(identity, project, req)
+	case http.MethodPatch:
+		if !a.identityCanAccessAPI(identity, http.MethodPut, "/api/canvas") || !a.identityCanAccessAPI(identity, http.MethodPost, "/api/creation-tasks") {
+			util.WriteError(w, http.StatusForbidden, "当前账号没有画布写入或生成权限")
+			return
+		}
+		if !requireAgentJSON(w, r) {
+			return
+		}
+		var update service.CanvasAgentQueueMutation
+		if err := decodeStrictJSON(http.MaxBytesReader(w, r.Body, 8<<20), &update); err != nil {
+			util.WriteError(w, http.StatusBadRequest, "无效的队列请求")
+			return
+		}
+		if update.Settings.Model != "" && allowedPersonalModel(update.Settings.Model, a.config.TextModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
+			return
+		}
+		update.Settings.MediaBaseURL = a.resolveImageBaseURL(r.Context())
+		doc, err = a.canvasAgent.UpdateQueue(identity, project, update)
 	case http.MethodDelete:
 		err = a.canvasAgent.Stop(identity, project, r.URL.Query().Get("run_id"))
 		if err == nil {
@@ -88,8 +142,116 @@ func (a *App) handleCanvasAgent(w http.ResponseWriter, r *http.Request) {
 		writeCanvasMutationError(w, err, "Agent 执行记录读取失败")
 		return
 	}
-	writeCanvasHistoryJSON(w, r, len(doc.AgentSessions), map[string]any{"document": doc})
+	writeCanvasHistoryJSON(w, r, http.StatusOK, len(doc.AgentSessions), map[string]any{"document": doc})
 }
+
+func (a *App) streamCanvasAgent(w http.ResponseWriter, r *http.Request, identity service.Identity, project string) {
+	runID := r.URL.Query().Get("run_id")
+	if runID == "" || len(runID) > 128 {
+		util.WriteError(w, http.StatusBadRequest, "请选择画布 Agent 任务")
+		return
+	}
+	changed, stop := a.canvasAgent.WatchProgress(identity, project)
+	defer stop()
+	load := func() (service.CanvasDocument, error) {
+		workspace, err := a.canvasAgent.Workspace(identity, project, nil, service.CanvasHistoryActive)
+		return workspace.Document, err
+	}
+	document, err := load()
+	if err != nil {
+		writeCanvasMutationError(w, err, "读取画布 Agent 进度失败")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "private, no-store, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	controller := http.NewResponseController(w)
+	write := func(frame string) error {
+		_ = controller.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		if _, err := io.WriteString(w, frame); err != nil {
+			return err
+		}
+		return controller.Flush()
+	}
+	writeError := func(status int, message string) {
+		_ = write("data: " + agentJSONValue(map[string]any{"type": "error", "status": status, "message": message}) + "\n\n")
+	}
+	active := func() bool {
+		return document.AgentRun != nil && document.AgentRun.ID == runID && document.AgentRun.Status == "running"
+	}
+	var baseline map[string]any
+	var baseRevision int64
+	publish := func() bool {
+		encoded, err := json.Marshal(document)
+		if err != nil {
+			return false
+		}
+		var current map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.UseNumber()
+		if err = decoder.Decode(&current); err != nil {
+			return false
+		}
+		var data []byte
+		if baseline == nil {
+			data, err = json.Marshal(canvasProgressSnapshot{Type: "snapshot", Document: encoded})
+		} else {
+			ops := canvasProgressChanges([]canvasProgressOperation{}, nil, baseline, current)
+			data, err = json.Marshal(canvasProgressDelta{Type: "delta", BaseRevision: baseRevision, Revision: document.Revision, Operations: ops})
+		}
+		baseline, baseRevision = current, document.Revision
+		return err == nil && write("data: "+string(data)+"\n\n") == nil && active()
+	}
+	if !publish() {
+		return
+	}
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		progress := false
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changed:
+			progress = true
+		case <-heartbeat.C:
+		}
+		current, err := a.authenticateSession(r, requestAuthCookieToken(r))
+		if err != nil {
+			writeError(http.StatusServiceUnavailable, "读取登录会话失败")
+			return
+		}
+		if current == nil {
+			writeError(http.StatusUnauthorized, "登录会话已失效，请重新登录")
+			return
+		}
+		if current.ID != identity.ID || current.OwnerID != identity.OwnerID || current.Role != identity.Role || !a.identityCanAccessRequest(*current, r) {
+			writeError(http.StatusForbidden, "画布访问权限已更改，请刷新页面")
+			return
+		}
+		if !progress {
+			if write(": heartbeat\n\n") != nil {
+				return
+			}
+			continue
+		}
+		revision := document.Revision
+		previousStatus := document.AgentRun.Status
+		document, err = load()
+		if err != nil {
+			writeError(http.StatusServiceUnavailable, "读取画布 Agent 进度失败")
+			return
+		}
+		if active() && document.Revision <= revision && document.AgentRun.Status == previousStatus {
+			continue
+		}
+		if !publish() {
+			return
+		}
+	}
+}
+
+type agentModelDispatchKey struct{}
 
 func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req service.AgentModelRequest) (map[string]any, error) {
 	if ctx.Err() != nil {
@@ -99,7 +261,10 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 	if err != nil {
 		return nil, err
 	}
-	body := req.Metadata
+	body := maps.Clone(req.Metadata)
+	if body == nil {
+		body = map[string]any{}
+	}
 	body["model"] = req.Model
 	body["token_name"] = body["relay_token_name"]
 	delete(body, "relay_token_name")
@@ -120,6 +285,9 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 	}
 	modelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if req.BeforeDispatch != nil {
+		modelCtx = context.WithValue(modelCtx, agentModelDispatchKey{}, req.BeforeDispatch)
+	}
 	var progressErr error
 	if req.OnText != nil {
 		body[service.TextOutputCallbackPayloadKey] = func(text string) {
@@ -143,7 +311,12 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 			}
 		}
 	}
-	capture := auditRequestCapture{args: map[string]any{"model": req.Model, "api_mode": body["api_mode"], "stream": body["stream"], "message_count": len(messages), "tool_count": len(util.AsMapSlice(body["tools"]))}}
+	args := map[string]any{"model": req.Model, "api_mode": body["api_mode"], "stream": body["stream"], "message_count": len(messages), "tool_count": len(util.AsMapSlice(body["tools"]))}
+	if len(req.Diagnostic) > 0 {
+		args["agent_run_id"] = req.RunID
+		args["agent_model_attempt"] = req.Diagnostic
+	}
+	capture := auditRequestCapture{args: args}
 	task, err := a.runLoggedChatTaskCaptured(modelCtx, identity, body, "/api/agent-model", "Agent 模型调用", capture)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -152,7 +325,7 @@ func (a *App) runAgentModel(ctx context.Context, identity service.Identity, req 
 		return nil, progressErr
 	}
 	if err != nil {
-		return nil, err
+		return chatCompletionTaskData(task), err
 	}
 	data := util.AsMapSlice(task["data"])
 	if len(data) == 0 {

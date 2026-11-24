@@ -53,18 +53,20 @@ func TestCanvasAgentSaveWorkflowPreservesVariableContracts(t *testing.T) {
 
 func TestCanvasAgentWorkflowReviewApprovedAnswers(t *testing.T) {
 	for answer, want := range map[string]bool{
-		"确认":         true,
-		" OK! ":      true,
-		"yes":        true,
-		"没问题，开始生成":   true,
-		"提示词确认通过":    true,
-		"":           false,
-		"先别生成":       false,
-		"不满意，还要改":    false,
-		"确认后再说，暂缓":   false,
-		"随便":         false,
-		"继续":         false,
-		"请继续执行提示词方案": true,
+		"确认":           true,
+		" OK! ":        true,
+		"yes":          true,
+		"没问题，开始生成":     true,
+		"提示词确认通过":      true,
+		"":             false,
+		"先别生成":         false,
+		"不满意，还要改":      false,
+		"确认后再说，暂缓":     false,
+		"随便":           false,
+		"继续":           false,
+		"请继续执行提示词方案":   true,
+		"> 确认通过，开始生成":  false,
+		"> 暂不生成\n\n确认": true,
 	} {
 		if got := canvasAgentWorkflowReviewApproved(answer); got != want {
 			t.Errorf("canvasAgentWorkflowReviewApproved(%q) = %v, want %v", answer, got, want)

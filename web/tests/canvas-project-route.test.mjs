@@ -12,6 +12,13 @@ test("canvas routes restore the storage ID prefix", () => {
   assert.equal(canvasProjectIDFromRoute(), undefined);
 });
 
+test("canvas status links preserve the project path and encode the target session", () => {
+  const path = canvasProjectPath("canvas-project", "session /?&");
+  const url = new URL(path, "http://localhost");
+  assert.equal(url.pathname, "/canvas/project");
+  assert.equal(url.searchParams.get("agent_session"), "session /?&");
+});
+
 test("canvas project URLs reject IDs outside the current format", () => {
   assert.throws(() => canvasProjectPath("0626bfdc6e10c39c5bbbefba"), /格式无效/);
 });

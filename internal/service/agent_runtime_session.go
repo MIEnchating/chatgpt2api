@@ -11,6 +11,8 @@ import (
 
 // SDK history is private server state, independent of browser canvas snapshots.
 type AgentSDKSession struct {
+	ModelContext        json.RawMessage   `json:"modelContext,omitempty"`
+	ReadOnly            bool              `json:"readOnly,omitempty"`
 	Items               []map[string]any  `json:"items"`
 	ContentFingerprint  string            `json:"contentFingerprint,omitempty"`
 	LayoutFingerprint   string            `json:"layoutFingerprint,omitempty"`
@@ -26,6 +28,47 @@ type AgentSDKSession struct {
 	ApprovedAnswer      string            `json:"approvedAnswer,omitempty"`
 	ApprovedMediaChoice string            `json:"approvedMediaChoice,omitempty"`
 	RejectedCallIDs     []string          `json:"rejectedCallIds,omitempty"`
+	RetryWaitMS         int64             `json:"retryWaitMs,omitempty"`
+}
+
+// Carry a compacted projection forward once its source history is committed.
+func (s *AgentSDKSession) retainCompactedContext(preferCheckpoint bool) error {
+	if s.State == "" {
+		return nil
+	}
+	var state struct {
+		ModelContext json.RawMessage `json:"modelContext"`
+	}
+	if err := json.Unmarshal([]byte(s.State), &state); err != nil {
+		return err
+	}
+	if len(state.ModelContext) == 0 {
+		return nil
+	}
+	var projection struct {
+		Through     int               `json:"through"`
+		Compactions []json.RawMessage `json:"compactions"`
+	}
+	if err := json.Unmarshal(state.ModelContext, &projection); err != nil {
+		return err
+	}
+	if len(projection.Compactions) == 0 || projection.Through <= 0 || projection.Through > len(s.Items) {
+		return nil
+	}
+	var previous struct {
+		Through int `json:"through"`
+	}
+	if len(s.ModelContext) > 0 {
+		if err := json.Unmarshal(s.ModelContext, &previous); err != nil {
+			return err
+		}
+		// Manual compaction may have replaced a projection at the same boundary.
+		if previous.Through > projection.Through || previous.Through == projection.Through && !preferCheckpoint {
+			return nil
+		}
+	}
+	s.ModelContext = state.ModelContext
+	return nil
 }
 
 // ApplyAgentSDKSession commits history transactions only after durable storage accepts them.

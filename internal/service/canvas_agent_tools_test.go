@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -31,6 +33,131 @@ func TestCanvasAgentToolReportsMissingNodeAsCanvasChange(t *testing.T) {
 	result := runToolTest(t, toolTestWorker(CanvasNode{ID: "a", Type: "text"}), "get_node", map[string]any{"nodeId": "gone"})
 	if result["ok"] == true {
 		t.Fatalf("missing node reported success: %#v", result)
+	}
+}
+
+func TestCanvasAgentFinishTaskAcceptsBoundedFollowUpActions(t *testing.T) {
+	w := toolTestWorker()
+	result := runToolTest(t, w, "finish_task", map[string]any{
+		"text": "已完成",
+		"followUpActions": []any{
+			map[string]any{"title": "继续优化", "prompt": "继续优化这份方案"},
+		},
+	})
+	actions, ok := result["followUpActions"].([]map[string]string)
+	if result["ok"] != true || !ok || len(actions) != 1 {
+		t.Fatalf("follow-up actions were not retained: %#v", result)
+	}
+	if got := runToolTest(t, toolTestWorker(), "finish_task", map[string]any{
+		"text": "已完成",
+		"followUpActions": []any{
+			map[string]any{"title": "重复", "prompt": "继续"},
+			map[string]any{"title": "重复", "prompt": "继续"},
+		},
+	})["code"]; got != "invalid_follow_up_actions" {
+		t.Fatalf("duplicate follow-up prompt code = %v", got)
+	}
+}
+
+func TestCanvasAgentHistorySearchToolReturnsSavedMatchesWithoutCurrentRequest(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	canvas := NewCanvasDocumentService(backend)
+	doc, err := loadCanvas(canvas, "history-tool-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.AgentSessions = json.RawMessage(`[{"id":"old","title":"旧方案","messages":[{"id":"old-user","role":"user","text":"制作蓝色海报"}]},{"id":"current","title":"当前方案","messages":[{"id":"current-user","role":"user","text":"制作蓝色海报"}]}]`)
+	doc, err = canvas.SaveAtRevision("history-tool-owner", doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &canvasAgentWorker{
+		ctx:      context.Background(),
+		service:  &CanvasAgentService{canvas: canvas},
+		identity: Identity{ID: "history-tool-owner"},
+		doc:      doc,
+		req:      CanvasAgentRequest{SessionID: "current", UserMessageID: "current-user"},
+	}
+	result, err := w.tool(map[string]any{"name": "search_agent_history", "arguments": map[string]any{"query": "蓝色"}})
+	if err != nil || result["ok"] != true {
+		t.Fatalf("history search = %#v, error = %v", result, err)
+	}
+	matches := util.AsMapSlice(result["matches"])
+	if len(matches) != 1 || matches[0]["sessionId"] != "old" || matches[0]["messageId"] != "old-user" || matches[0]["snippet"] != "制作蓝色海报" {
+		t.Fatalf("history matches = %#v", matches)
+	}
+	filtered, err := w.tool(map[string]any{"name": "search_agent_history", "arguments": map[string]any{"query": "蓝色", "role": "assistant", "sessionId": "old"}})
+	if err != nil || filtered["ok"] != true || len(util.AsMapSlice(filtered["matches"])) != 0 {
+		t.Fatalf("history search ignored role filter: %#v, %v", filtered, err)
+	}
+	filtered, err = w.tool(map[string]any{"name": "search_agent_history", "arguments": map[string]any{"query": "蓝色", "role": "user", "sessionId": "current"}})
+	if err != nil || filtered["ok"] != true || len(util.AsMapSlice(filtered["matches"])) != 0 {
+		t.Fatalf("history search ignored session filter or included the current request: %#v, %v", filtered, err)
+	}
+	message, err := w.tool(map[string]any{"name": "get_agent_history_message", "arguments": map[string]any{"sessionId": "old", "messageId": "old-user"}})
+	if err != nil || message["ok"] != true || agentMap(message["message"])["text"] != "制作蓝色海报" {
+		t.Fatalf("history message = %#v, error = %v", message, err)
+	}
+	current, err := w.tool(map[string]any{"name": "get_agent_history_message", "arguments": map[string]any{"sessionId": "current", "messageId": "current-user"}})
+	if err != nil || current["code"] != "history_message_unavailable" {
+		t.Fatalf("current message result = %#v, error = %v", current, err)
+	}
+}
+
+func TestCanvasAgentHistoryMessagePaginationPreservesTextAndVersion(t *testing.T) {
+	const owner = "history-pagination-owner"
+	canvas := NewCanvasDocumentService(newTestStorageBackend(t))
+	doc, err := loadCanvas(canvas, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := "  " + strings.Repeat("片", 11997) + "🎬"
+	suffix := "\n\n" + strings.Repeat("镜", 11999) + "  "
+	source := map[string]any{"id": "message", "role": "assistant", "text": prefix + suffix}
+	other := map[string]any{"id": "other", "role": "assistant", "text": prefix + suffix}
+	session := map[string]any{"id": "old", "messages": []map[string]any{source, other}}
+	doc.AgentSessions = json.RawMessage(agentJSON([]map[string]any{session}))
+	doc, err = canvas.SaveAtRevision(owner, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &canvasAgentWorker{ctx: context.Background(), service: &CanvasAgentService{canvas: canvas}, identity: Identity{ID: owner}, doc: doc}
+	args := map[string]any{"sessionId": "old", "messageId": "message"}
+	read := func() map[string]any { return runToolTest(t, w, "get_agent_history_message", args) }
+	first := read()
+	cursor, _ := first["nextCursor"].(string)
+	if cursor == "" || agentMap(first["message"])["text"] != prefix || first["remainingCharacters"] != 12003 {
+		t.Fatal("first page cut or changed the original Unicode text")
+	}
+	args["cursor"] = cursor
+	second := read()
+	if agentMap(second["message"])["text"] != string([]rune(suffix)[:12000]) || second["remainingCharacters"] != 3 || second["nextCursor"] == nil {
+		t.Fatal("middle page skipped or duplicated characters")
+	}
+	args["cursor"] = second["nextCursor"]
+	last := read()
+	if agentMap(last["message"])["text"] != string([]rune(suffix)[12000:]) || last["remainingCharacters"] != 0 || last["nextCursor"] != nil {
+		t.Fatal("last page did not terminate with the full remaining text")
+	}
+	for _, invalid := range []any{"bad", 15, strings.Repeat("a", 97)} {
+		args["cursor"] = invalid
+		if got := read()["code"]; got != "invalid_history_cursor" {
+			t.Fatalf("invalid cursor returned %v", got)
+		}
+	}
+	args["cursor"], args["messageId"] = cursor, "other"
+	if got := read()["code"]; got != "history_message_changed" {
+		t.Fatalf("cursor worked for a different message: %v", got)
+	}
+	source["text"] = prefix + "changed" + suffix
+	doc.AgentSessions = json.RawMessage(agentJSON([]map[string]any{session}))
+	w.doc, err = canvas.SaveAtRevision(owner, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args["messageId"] = "message"
+	if got := read()["code"]; got != "history_message_changed" {
+		t.Fatalf("cursor worked after the body changed: %v", got)
 	}
 }
 
@@ -191,6 +318,9 @@ func TestCanvasAgentToolCreateGroupValidatesMembers(t *testing.T) {
 }
 
 func TestCanvasAgentToolArrangeRequiresUserRequest(t *testing.T) {
+	if canvasAgentArrangeRequested("> 旧要求：整理画布") || !canvasAgentArrangeRequested("> 不要整理\n\n请整理画布") {
+		t.Fatal("layout permission must follow the direct request")
+	}
 	for _, text := range []string{"随便聊聊", "不整理画布，只回答问题", "整理一下文案", "请整理对白", "请整理画布，但先不要执行", "请整理画布，但不要移动节点", "先不要执行；请整理画布", "不能整理画布", "不要整理画布，只回答问题", "别重新排列", "无需调整画布布局", "不用整理", "不需要整理", "请不要整理", "Do not arrange the canvas", "don't rearrange nodes", "No need to arrange nodes", "整理画布先不要做", "先保持布局不变",
 		"解释一下整理画布功能", "把整理画布写进标题", "整理画布这几个字", "请整理画布功能", "请把整理画布写进标题", "请介绍整理画布", "整理画布是什么意思？", "请整理画布功能怎么用", "如何整理画布", "如果需要，请整理画布", "请不要移动任何节点，也不要在未经确认时自动整理画布",
 		"他说‘请整理画布’", "把‘整理画布’写进标题", "节点内容：整理画布", "`整理画布`", "```\n整理画布\n```", "```\n整理画布", "引用：‘\n整理画布", "请把画布整理一下但不要执行", "Please explain how to arrange the canvas", "Can you arrange the canvas?", "If needed, arrange the canvas", "Do not move any existing nodes or automatically arrange the canvas"} {

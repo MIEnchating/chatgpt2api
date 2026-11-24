@@ -10,7 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { useEffect, useRef, useState } from "react";
 import { SortableList, SortableItem } from "@/components/sortable-list";
-import { LogOut, Menu, Pin, ShieldCheck, UserCircle2 } from "lucide-react";
+import { ListIcon } from "@phosphor-icons/react/dist/csr/List";
+import { LogOut, Pin, ShieldCheck, UserCircle2 } from "lucide-react";
 import { NavigationIcon, type NavigationIconName } from "@/components/navigation-icon";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
@@ -78,7 +79,7 @@ function NavPill({ item, pathname, onPreloadRoute, compact = false, onNavigate }
         onFocus={() => onPreloadRoute(item.href)}
         onTouchStart={() => onPreloadRoute(item.href)}
       >
-        <NavigationIcon name={item.icon} active={active} className={compact ? "size-5" : "size-4.5"} />
+        <NavigationIcon name={item.icon} active={active} className={compact ? "size-5.5" : "size-4.5"} />
         <span className={compact ? "sr-only" : undefined}>{item.label}</span>
       </NavLink>
     </Button>
@@ -96,6 +97,7 @@ function ManagementNavigationMenu({ items, pathname, pinnedPaths, onTogglePin, o
   const closeTimer = useRef<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const active = items.some((item) => isActivePath(pathname, item.href));
 
   function cancelClose() {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
@@ -127,7 +129,7 @@ function ManagementNavigationMenu({ items, pathname, pinnedPaths, onTogglePin, o
 
   return <Popover open={open} onOpenChange={(value) => { cancelClose(); setOpen(value); }}>
     <PopoverTrigger asChild>
-      <Button ref={triggerRef} variant="ghost" size="icon-lg" className="size-9" aria-label="管理中心"
+      <Button ref={triggerRef} variant={active ? "secondary" : "ghost"} size="icon-lg" className="size-9" aria-label="管理中心"
         onPointerEnter={openOnHover} onPointerLeave={closeAfterPointerLeaves}
         onClick={(event) => { event.preventDefault(); cancelClose(); setOpen(true); }}
         onKeyDown={(event) => {
@@ -137,7 +139,7 @@ function ManagementNavigationMenu({ items, pathname, pinnedPaths, onTogglePin, o
           setOpen(true);
           focusFirstLink();
         }}
-      ><NavigationIcon name="shield" active={items.some((item) => isActivePath(pathname, item.href))} className="size-5" /></Button>
+      ><NavigationIcon name="shield" active={active || open} className="size-5.5" /></Button>
     </PopoverTrigger>
     <PopoverContent ref={contentRef} side="right" align="start" sideOffset={8} aria-label="管理中心" className="w-64" data-management-navigation-content
       onPointerEnter={cancelClose} onPointerLeave={closeAfterPointerLeaves} onFocusCapture={cancelClose}
@@ -149,10 +151,11 @@ function ManagementNavigationMenu({ items, pathname, pinnedPaths, onTogglePin, o
       <ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="flex flex-col gap-1 py-1">
         <nav aria-label="管理中心入口" className="flex flex-col gap-1">
           {items.map((item) => {
-                      const pinned = pinnedPaths.includes(item.href);
+            const pinned = pinnedPaths.includes(item.href);
+            const itemActive = isActivePath(pathname, item.href);
             return <div key={item.href} className="flex min-w-0 items-center gap-1">
-              <Button asChild variant={isActivePath(pathname, item.href) ? "secondary" : "ghost"} className="min-h-11 min-w-0 flex-1 justify-start">
-                <NavLink to={item.href} onPointerEnter={() => onPreloadRoute(item.href)} onFocus={() => onPreloadRoute(item.href)} onClick={() => { cancelClose(); setOpen(false); }}><NavigationIcon name={item.icon} active={isActivePath(pathname, item.href)} className="size-4.5" /><span>{item.label}</span></NavLink>
+              <Button asChild variant={itemActive ? "secondary" : "ghost"} className="min-h-11 min-w-0 flex-1 justify-start">
+                <NavLink to={item.href} onPointerEnter={() => onPreloadRoute(item.href)} onFocus={() => onPreloadRoute(item.href)} onClick={() => { cancelClose(); setOpen(false); }}><NavigationIcon name={item.icon} active={itemActive} className="size-4.5" /><span>{item.label}</span></NavLink>
               </Button>
               <TooltipHint content={`${pinned ? "取消置顶" : "置顶"}${item.label}`}><Button variant="ghost" size="icon-sm" aria-pressed={pinned} aria-label={`${pinned ? "取消置顶" : "置顶"}${item.label}`} onClick={() => onTogglePin(item.href)}><Pin className={pinned ? "fill-current" : undefined} /></Button></TooltipHint>
             </div>;
@@ -387,7 +390,7 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
       </Button></TooltipHint></div>
       <div className="md:hidden">
         <Popover open={navigationOpen} onOpenChange={setNavigationOpen}>
-          <PopoverTrigger asChild><Button variant="ghost" size="icon" aria-label="打开导航菜单"><Menu /></Button></PopoverTrigger>
+          <PopoverTrigger asChild><Button variant="ghost" size="icon" aria-label="打开导航菜单"><ListIcon className="size-5.5 dark:text-white" aria-hidden="true" /></Button></PopoverTrigger>
           <PopoverContent align="start" className="w-56">
             <ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="flex flex-col gap-1 py-1">
               <nav aria-label="移动端主导航" className="flex flex-col gap-1">

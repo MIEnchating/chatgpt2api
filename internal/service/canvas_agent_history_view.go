@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
@@ -278,6 +279,10 @@ func (s *CanvasDocumentService) readProjectWorkspace(ownerID, projectID string, 
 			return canvasWorkspaceResult(workspace), nil
 		}
 		document := workspace.Projects[index]
+		workerActive := agentActive != nil && agentActive(document.ID)
+		if lease, exists := workspace.AgentRunLeases[document.ID]; exists && lease.ExpiresAt > time.Now().UnixMilli() {
+			workerActive = true
+		}
 		reference, exists := workspace.AgentHistories[document.ID]
 		legacy := workspace.Version < 4 || !exists || reference.Bytes != 0 || len(reference.Chunks) > 0
 		deferred := false
@@ -295,7 +300,7 @@ func (s *CanvasDocumentService) readProjectWorkspace(ownerID, projectID string, 
 		} else {
 			// Leave closed editors on the directory unless they need the history to resume a run.
 			deferred = scope == CanvasHistoryEditor && len(keepIDs) == 0 && len(document.PendingAgentRequest) == 0 && reference.Messages == nil &&
-				(document.AgentPanel == nil || !document.AgentPanel.Open) && (agentActive == nil || !agentActive(document.ID)) &&
+				(document.AgentPanel == nil || !document.AgentPanel.Open) && !workerActive &&
 				(document.AgentRun == nil || document.AgentRun.Status != "running" && slices.ContainsFunc(reference.Sessions, func(session canvasAgentSessionReference) bool {
 					return session.ID == document.AgentRun.SessionID
 				}))
@@ -323,7 +328,7 @@ func (s *CanvasDocumentService) readProjectWorkspace(ownerID, projectID string, 
 					break
 				}
 				summary, summaryErr := canvasAgentSessionSummary(body)
-				if summaryErr != nil || summary != session.CanvasAgentSessionSummary {
+				if summaryErr != nil || !sameCanvasAgentSessionSummary(session.CanvasAgentSessionSummary, summary) {
 					err = fmt.Errorf("canvas agent session index integrity check failed")
 					break
 				}
@@ -343,7 +348,25 @@ func (s *CanvasDocumentService) readProjectWorkspace(ownerID, projectID string, 
 		}
 		if err == nil {
 			if activate {
-				if err := s.saveActiveProjectLocked(ownerID, projectID, workspace.Generation); err != nil {
+				if agentActive != nil && !workerActive && document.AgentRun != nil && document.AgentRun.Status == "success" && document.AgentRun.Unread {
+					// Commit the active project and read marker together. The
+					// stored project still has its original history manifests.
+					workspace.Generation++
+					if workspace.Generation <= 0 {
+						return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas workspace generation is invalid")
+					}
+					run := *document.AgentRun
+					run.Unread = false
+					document.AgentRun = &run
+					document.Revision++
+					document.UpdatedAt = util.NowISO()
+					stored := &workspace.Projects[index]
+					stored.AgentRun, stored.Revision, stored.UpdatedAt = document.AgentRun, document.Revision, document.UpdatedAt
+					err = saveStoredJSONBounded(s.store, canvasWorkspaceName(ownerID), workspace)
+				} else {
+					err = s.saveActiveProjectLocked(ownerID, projectID, workspace.Generation)
+				}
+				if err != nil {
 					if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 						continue
 					}
@@ -353,6 +376,7 @@ func (s *CanvasDocumentService) readProjectWorkspace(ownerID, projectID string, 
 			workspace.Projects[index] = document
 			result := canvasWorkspaceResult(workspace)
 			result.historyDeferred = deferred
+			result.agentRunActive = workerActive
 			return result, nil
 		}
 		if !errors.Is(err, errCanvasAgentHistoryChunkMissing) {

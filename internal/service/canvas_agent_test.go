@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
 )
 
@@ -46,6 +47,36 @@ func agentFixture(t *testing.T, model AgentModel, media CanvasAgentMedia) (*Canv
 }
 
 var agentFinishSerial atomic.Int64
+
+func TestCanvasAgentDeliverablesPersistOnlyAfterValidCompletion(t *testing.T) {
+	var turns atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if turns.Add(1) == 1 {
+			return agentTurn(agentCall("bad-delivery", "finish_task", map[string]any{"text": "不完整", "deliverableNodeIds": []string{"missing"}})), nil
+		}
+		if !strings.Contains(agentJSON(request.Messages), "invalid_deliverable") {
+			t.Error("model did not receive the rejected deliverable")
+		}
+		return agentTurn(agentCall("delivery", "finish_task", map[string]any{"text": "已交付文稿", "deliverableNodeIds": []string{"draft"}})), nil
+	}, nil)
+	doc.Nodes = []CanvasNode{{ID: "draft", Type: "text", Title: "文稿", Prompt: "正文", Width: 200, Height: 120, ScaleX: 1, ScaleY: 1}}
+	doc, err := svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turns.Load() != 2 {
+		t.Fatalf("delivery did not complete: %+v turns=%d", done.AgentRun, turns.Load())
+	}
+	_, session, _ := agentSession(done, req.SessionID)
+	message := util.AsMapSlice(session["messages"])[1]
+	if agentJSON(message["deliverableNodeIds"]) != `["draft"]` {
+		t.Fatalf("missing delivered node: %v", message)
+	}
+}
 
 func agentTurn(calls ...map[string]any) map[string]any {
 	if len(calls) == 0 {
@@ -103,6 +134,115 @@ func TestCanvasAgentPlanWithoutExplanationContinuesAndPersists(t *testing.T) {
 	}
 }
 
+func TestCanvasAgentRetryBudgetKeepsOriginalTurnResumable(t *testing.T) {
+	var attempts atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if attempts.Add(1) == 1 {
+			return nil, protocol.HTTPError{Status: 429, Message: "rate limited", RetryDelay: time.Minute}
+		}
+		if !strings.Contains(agentJSON(request.Messages), "制作海报") {
+			t.Error("resumed model request lost the original prompt")
+		}
+		return agentTurn(), nil
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	waiting := agentWait(t, svc, identity, doc.ID)
+	if waiting.AgentRun.Status != "waiting" || waiting.AgentRun.SDKState == "" || attempts.Load() != 1 {
+		t.Fatalf("expected a resumable retry pause: %+v, attempts=%d", waiting.AgentRun, attempts.Load())
+	}
+	list, err := svc.ProjectList(identity)
+	if err != nil || len(list.Projects) != 1 || list.Projects[0].AgentStatus == nil || list.Projects[0].AgentStatus.Status != "waiting" || list.Projects[0].AgentStatus.SessionID != req.SessionID {
+		t.Fatalf("project list lost the paused session: %+v, %v", list, err)
+	}
+	req.ID = "resume-retry"
+	req.Resume = true
+	if _, err := svc.Start(identity, doc.ID, req); err == nil || !strings.Contains(err.Error(), "上游仍在限流") {
+		t.Fatalf("resume bypassed upstream delay: %v", err)
+	}
+	waiting.AgentRun.ModelRetryAt = time.Now().Add(-time.Second).Format(time.RFC3339Nano)
+	if _, err := svc.canvas.saveAgent(identity.ID, waiting); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || attempts.Load() != 2 {
+		t.Fatalf("resume did not complete the original turn: %+v, attempts=%d", done.AgentRun, attempts.Load())
+	}
+}
+
+func TestCanvasAgentHistoryReferenceSurvivesSourceRemovalAndResume(t *testing.T) {
+	var calls atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		const direct = "请总结参考资料"
+		const saved = "原创作约束"
+		var inputs []map[string]any
+		for _, message := range request.Messages {
+			if message["role"] == "user" {
+				inputs = append(inputs, util.AsMapSlice(message["content"])...)
+			}
+		}
+		var occurrences int
+		for _, part := range inputs {
+			text, _ := part["text"].(string)
+			if strings.HasPrefix(text, canvasAgentHistoryReferenceLabel) {
+				occurrences++
+				if !strings.Contains(text, saved) || strings.Contains(text, "私有工具数据") {
+					t.Error("model input did not isolate the visible history snapshot")
+				}
+			}
+		}
+		if len(inputs) < 2 || !strings.Contains(util.Clean(inputs[0]["text"]), direct) || occurrences != 1 {
+			t.Errorf("expected a direct request and one history snapshot, got %d text parts and %d snapshots", len(inputs), occurrences)
+		}
+		if calls.Add(1) == 1 {
+			return nil, errors.New("测试中断")
+		}
+		return agentTurn(), nil
+	}, nil)
+	sessions, _, err := agentSession(doc, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.UserText = "请总结参考资料\n\n> 引用对话「历史」 [canvas-session:old%20draft]"
+	util.AsMapSlice(sessions[0]["messages"])[0]["text"] = req.UserText
+	var source map[string]any
+	if err := json.Unmarshal([]byte(`{"id":"old draft","title":"历史","messages":[{"id":"old-user","role":"user","text":"原创作约束","trace":"私有工具数据"}],"protocolMessages":[{"role":"tool","content":"私有工具数据"}]}`), &source); err != nil {
+		t.Fatal(err)
+	}
+	doc.AgentSessions, _ = json.Marshal(append(sessions, source))
+	doc, err = svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	failed := agentWait(t, svc, identity, doc.ID)
+	if failed.AgentRun.Status != "error" || calls.Load() != 1 {
+		t.Fatalf("expected model interruption, got %+v calls=%d", failed.AgentRun, calls.Load())
+	}
+	sessions, _, err = agentSession(failed, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed.AgentSessions, _ = json.Marshal(sessions[:1])
+	if _, err := svc.canvas.SaveAtRevision(identity.ID, failed); err != nil {
+		t.Fatal(err)
+	}
+	req.ID, req.Resume = "resume-history", true
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || calls.Load() != 2 {
+		t.Fatalf("resume failed: %+v calls=%d", done.AgentRun, calls.Load())
+	}
+}
+
 func TestCanvasAgentRunsWithoutBrowserAndMergesConcurrentEdits(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var turns atomic.Int32
@@ -146,6 +286,14 @@ func TestCanvasAgentRunsWithoutBrowserAndMergesConcurrentEdits(t *testing.T) {
 	done := agentWait(t, svc, identity, doc.ID)
 	if done.AgentRun.Status != "success" || len(done.Nodes) != 1 || done.Nodes[0].Prompt != "Hello" || done.Title != "用户修改的名称" || done.Viewport.X != 123 {
 		t.Fatalf("unexpected document: %+v", done.AgentRun)
+	}
+	_, session, err := agentSession(done, req.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := util.AsMapSlice(util.AsMapSlice(session["messages"])[1]["canvasChanges"])
+	if len(changes) != 1 || changes[0]["id"] != done.Nodes[0].ID || changes[0]["action"] != "added" {
+		t.Fatalf("unexpected agent changes: %v", changes)
 	}
 	if _, err = svc.Snapshot(Identity{ID: "another-owner"}, doc.ID); err == nil {
 		t.Fatal("cross-owner read allowed")
@@ -668,9 +816,19 @@ func TestCanvasAgentWorkflowTemplateOwnershipAndRequiredVariables(t *testing.T) 
 	}
 	_, session, _ := agentSession(doc, "session")
 	w := &canvasAgentWorker{persisted: cloneCanvasAgentDocument(doc), service: svc, ctx: context.Background(), identity: identity, doc: doc, req: req, session: session, state: agentMap(session["agentState"])}
-	_, err = w.runSavedWorkflow(map[string]any{"workflowId": template.ID, "items": []map[string]any{{"values": []map[string]any{}, "size": "1:1", "count": 1}}})
+	args := map[string]any{"workflowId": template.ID, "revision": template.Revision, "items": []map[string]any{{"values": []map[string]any{}, "size": "1:1", "count": 1}}}
+	_, err = w.runSavedWorkflow(args)
 	if err == nil || !strings.Contains(err.Error(), "品牌") {
 		t.Fatal("missing required variable accepted")
+	}
+	template.Config.PromptTemplate = "新版 {{brand}} 海报"
+	updated, err := workflows.Save(identity.ID, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := w.runSavedWorkflow(args)
+	if err != nil || result["code"] != "stale_workflow_revision" || result["revision"] != updated.Revision || len(w.doc.Nodes) != 0 {
+		t.Fatalf("stale template execution: %v, err=%v, nodes=%v", result, err, w.doc.Nodes)
 	}
 	w.identity = Identity{ID: "other"}
 	if _, err = w.workflow(template.ID); err == nil {
@@ -1034,6 +1192,7 @@ func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *te
 		case 1:
 			return agentTurn(agentCall("apply", "run_saved_workflow", map[string]any{
 				"workflowId": "series-workflow",
+				"revision":   1,
 				"items": []map[string]any{
 					{"title": "春季广告", "values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{"product-photo"}, "attachmentIds": []string{"uploaded-photo"}},
 					{"title": "春季广告细节", "values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{"product-photo"}, "attachmentIds": []string{"uploaded-photo"}},
@@ -1087,6 +1246,7 @@ func TestCanvasAgentSeriesWorkflowRequiresReviewAndPreservesReferenceOrder(t *te
 	missingReferenceWorker := &canvasAgentWorker{persisted: cloneCanvasAgentDocument(doc), service: svc, ctx: context.Background(), identity: identity, doc: doc, req: req, session: session, state: agentMap(session["agentState"])}
 	_, missingReferenceErr := missingReferenceWorker.runSavedWorkflow(map[string]any{
 		"workflowId": workflow.ID,
+		"revision":   workflow.Revision,
 		"items":      []map[string]any{{"values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{}, "attachmentIds": []string{}}},
 	})
 	if missingReferenceErr == nil || !strings.Contains(missingReferenceErr.Error(), "产品图片") {

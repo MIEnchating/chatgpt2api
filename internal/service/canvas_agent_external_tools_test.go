@@ -25,6 +25,27 @@ func runExternalAgentTool(t *testing.T, svc *CanvasAgentService, identity Identi
 	return done
 }
 
+func TestCanvasAgentExternalToolDoesNotFinishCodexTurn(t *testing.T) {
+	svc, identity, doc, req := agentFixture(t, nil, nil)
+	for _, tool := range []struct {
+		id, name, status string
+		args             map[string]any
+	}{
+		{"read-ok", "get_canvas_summary", "success", map[string]any{}},
+		{"read-missing", "get_node", "error", map[string]any{"nodeId": "missing"}},
+	} {
+		doc = runExternalAgentTool(t, svc, identity, doc, req, tool.id, tool.name, tool.args)
+		_, session, err := agentSession(doc, req.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := util.AsMapSlice(session["messages"])[1]
+		if doc.AgentRun.Status != tool.status || message["status"] != "thinking" || message["text"] != "" || message["processingStartedAt"] == nil {
+			t.Fatalf("tool %s settled the Codex conversation: state=%s message=%v", tool.id, doc.AgentRun.Status, message)
+		}
+	}
+}
+
 func TestCanvasAgentExternalVideoSwitchSurvivesStaleClientContext(t *testing.T) {
 	generated := 0
 	svc, identity, doc, req := agentFixture(t, nil, func(_ context.Context, _ Identity, node CanvasNode, metadata map[string]any, _ func(int) error) (map[string]any, error) {
@@ -129,7 +150,8 @@ func TestCanvasAgentExternalWorkflowToolsExecuteWithoutModel(t *testing.T) {
 		t.Fatalf("workflow variable contract lost through external tools: %v", variables)
 	}
 	req.MediaChoice = "defer"
-	doc = runExternalAgentTool(t, svc, identity, doc, req, "apply", "run_saved_workflow", map[string]any{"workflowId": workflowID, "items": []map[string]any{{"values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{}, "attachmentIds": []string{}}}})
+	revision := agentMap(doc.AgentRun.ToolResult["workflow"])["revision"]
+	doc = runExternalAgentTool(t, svc, identity, doc, req, "apply", "run_saved_workflow", map[string]any{"workflowId": workflowID, "revision": revision, "items": []map[string]any{{"values": []map[string]any{{"key": "brand", "value": "山野"}}, "size": "1:1", "count": 1, "sourceNodeIds": []string{}, "attachmentIds": []string{}}}})
 	if len(doc.Nodes) != 1 || len(generated) != 0 {
 		t.Fatalf("template execution: %v", doc.AgentRun.ToolResult)
 	}

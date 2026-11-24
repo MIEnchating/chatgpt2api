@@ -1,6 +1,8 @@
-import type { CanvasAssistantReference } from "@/services/api/canvas";
+import type { CanvasAgentFeedbackInput, CanvasAssistantReference } from "@/services/api/canvas";
 
 export type {
+  CanvasAgentFeedbackCategory,
+  CanvasAgentFeedbackInput,
   CanvasAssistantReference,
   CanvasInsertAssetPayload,
   CanvasPendingAgentAsset,
@@ -71,6 +73,12 @@ export type CanvasAgentProtocolMessage =
 
 export type CanvasAssistantMessageStatus = "thinking" | "running" | "waiting" | "success" | "error";
 
+export type CanvasAgentMessageFeedback = CanvasAgentFeedbackInput & {
+  version: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CanvasAgentTraceEntry =
   | { id: string; type: "text"; text: string }
   | { id: string; type: "reasoning"; text: string; isStreaming: boolean }
@@ -84,10 +92,29 @@ export type CanvasAgentTraceEntry =
     detail: string;
     resolvedBy?: string;
     nodeId?: string;
+    workflowRunId?: string;
     terminal?: { command: string; output: string; cwd?: string; exitCode?: number };
     tool?: { name: string; input?: unknown; output?: unknown };
-    subagent?: { prompt?: string; model?: string; agents: { id: string; status: string; message?: string }[] };
+    subagent?: { prompt?: string; model?: string; agents: { id: string; name?: string; status: string; message?: string }[] };
   };
+
+export type CanvasAgentModelAttempt = {
+  runId: string;
+  requestId: string;
+  step: number;
+  attempt: number;
+  purpose: "summary" | "turn" | "review";
+  status: "running" | "success" | "retryable_error" | "error" | "cancelled";
+  failureCode?: "RATE_LIMIT" | "SERVER" | "TIMEOUT" | "TRANSPORT" | "AUTH" | "EMPTY_RESPONSE";
+  retryAt?: string;
+  retryDelayMs?: number;
+  retryWaitMs?: number;
+  rateLimited?: boolean;
+  elapsedMs?: number;
+  httpStatus?: number;
+  validationFailed?: boolean;
+  usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number; cache_read_tokens?: number; cache_write_tokens?: number };
+};
 
 export type CanvasAssistantMessage = {
   id: string;
@@ -95,32 +122,79 @@ export type CanvasAssistantMessage = {
   replyToMessageID?: string;
   text: string;
   questionAnswerFor?: string;
+  steeringAssistantId?: string;
   agentStateBefore?: CanvasAgentState;
   contextCheckpointBefore?: string;
   status?: CanvasAssistantMessageStatus;
   activity?: string;
   interactionMode?: "conversation";
   elapsedMs?: number;
+  readOnly?: boolean;
+  goalMediaRestricted?: boolean;
+  modelAttempts?: CanvasAgentModelAttempt[];
+  workflowRuns?: CanvasAgentWorkflowRun[];
   processingStartedAt?: number;
   trace?: CanvasAgentTraceEntry[];
+  deliverableNodeIds?: string[];
+  followUpActions?: { title: string; prompt: string }[];
+  canvasChangeSummary?: { added: number; updated: number; removed: number; total: number };
+  canvasChanges?: { id: string; kind: "node" | "connection"; action: "added" | "updated" | "removed"; label: string }[];
   references?: CanvasAssistantReference[];
+  feedback?: CanvasAgentMessageFeedback;
 };
 
-export type CanvasAgentQueuedMessage = { id: string; text: string; references: CanvasAssistantReference[]; createdAt: string };
-export type CanvasAgentMessageQueue = { messages: CanvasAgentQueuedMessage[]; paused: boolean; steeringId?: string };
+export type CanvasAgentWorkflowRun = {
+  id: string;
+  status: "running" | "success" | "error" | "interrupted";
+  members: {
+    nodeId: string;
+    title: string;
+    status: "waiting" | "running" | "success" | "error" | "changed" | "interrupted" | "skipped";
+    taskId?: string;
+    progress?: number;
+  }[];
+};
+
+export type CanvasAgentTextTask = {
+  id: string;
+  key: string;
+  nodeId: string;
+  shotId?: string;
+  kind?: "text" | "script_shot" | "media_prompt";
+  question: string;
+  dependsOn: string[];
+  revision: number;
+  status: "pending" | "in_progress" | "drafted" | "completed" | "interrupted" | "failed";
+  proposalId?: string;
+};
+
+export type CanvasAgentQueuedMessage = { id: string; text: string; references: CanvasAssistantReference[]; createdAt: string; readOnly?: boolean; modelRequestLimit?: number };
+export type CanvasAgentMessageQueue = { messages: CanvasAgentQueuedMessage[]; paused: boolean; steeringId?: string; serverManaged?: boolean };
 
 export type CanvasAgentContextUsage = { model: string; usedTokens: number; inputTokens?: number; maxTokens: number; compacting: boolean; basis: "compression-budget" };
 export type CanvasCodexContextUsage = { model: string; tokens: number; contextWindow?: number; threadId: string; serviceId: string };
+
+export type CanvasAgentGoal = {
+  objective: string;
+  criteria: { id: string; text: string; done: boolean }[];
+  status: "active" | "paused" | "blocked" | "complete";
+  blocker?: string;
+};
 
 export type CanvasAssistantSession = {
   engine?: "native" | "codex";
   resumeAssistantMessageId?: string;
   id: string;
+  parentSessionId?: string;
+  forkAtMessageId?: string;
+  inheritedMessageCount?: number;
   title: string;
   messages: CanvasAssistantMessage[];
   agentState: CanvasAgentState;
   protocolMessages: CanvasAgentProtocolMessage[];
   contextCheckpoint?: string;
+  goal?: CanvasAgentGoal;
+  textEditTasks?: Record<string, CanvasAgentTextTask>;
   messageQueue?: CanvasAgentMessageQueue;
   contextUsage?: CanvasAgentContextUsage;
   codexContextUsage?: CanvasCodexContextUsage;
@@ -138,6 +212,7 @@ export type CanvasAgentConfig = {
   codexModel?: string;
   codexEffort?: string;
   contextWindowTokens?: number;
+  modelRequestLimit?: number;
   autoGenerateMedia?: boolean;
   textApiMode?: "chat" | "responses";
   textReasoningEnabled?: boolean;

@@ -2094,7 +2094,7 @@ test("queue toolbar never presents failed or stopped work as successful", () => 
     const trigger = descendants(state.render(ImageTaskQueue)).find(node => node.type === "Button" && node.props["aria-label"]);
     assert.equal(trigger.props["aria-label"], "查看刚结束的任务");
     assert.equal(descendants(trigger).some(node => node.type === "Spinner" || node.type === "CheckCircle2"), false);
-    assert.equal(descendants(trigger).some(node => node.type === "ClipboardList"), true);
+    assert.equal(descendants(trigger).some(node => node.type === "ClipboardTextIcon"), true);
   }
 });
 
@@ -2122,7 +2122,7 @@ test("queue toolbar distinguishes queued work from work that has started", () =>
     const trigger = descendants(state.render(ImageTaskQueue)).find(node => node.type === "Button" && node.props["aria-label"]);
     const nodes = descendants(trigger);
     assert.equal(nodes.some(node => node.type === "Spinner"), status === "generating");
-    assert.equal(nodes.some(node => node.type === "Clock3"), status === "queued");
+    assert.equal(nodes.some(node => node.type === "ClockIcon"), status === "queued");
   }
 });
 
@@ -2638,24 +2638,25 @@ test("appearance settings use the existing theme state and ignore an empty toggl
 });
 
 
-test("navigation selects the solid icon only for its active route", () => {
+test("navigation highlights the active route and fills its icon", () => {
   const { NavPill } = loadSource("../src/components/top-nav.tsx", {}, {}, "\nexport { NavPill };\n");
   const item = { href: "/canvas", label: "无限画布", icon: "canvas" };
   for (const [pathname, active] of [["/canvas", true], ["/canvas/project", true], ["/studio", false]]) {
     const nodes = descendants(NavPill({ item, pathname, compact: true, onPreloadRoute() {} }));
+    assert.equal(nodes.find(node => node.type === "Button").props.variant, active ? "secondary" : "ghost");
     assert.equal(nodes.find(node => node.type === "NavigationIcon").props.active, active);
     assert.equal(nodes.find(node => node.type === "NavigationIcon").props.name, "canvas");
   }
 });
 
-test("navigation icon variants keep the icon size while switching from outline to solid", () => {
+test("navigation icons switch from outline to solid when active", () => {
   const { NavigationIcon } = loadSource("../src/components/navigation-icon.tsx");
   for (const name of ["home", "canvas", "workflow", "book", "folder", "users", "shield", "logs", "settings"]) {
-    const outline = NavigationIcon({ name, active: false, className: "icon-size" });
+    const outline = NavigationIcon({ name, className: "icon-size" });
     const solid = NavigationIcon({ name, active: true, className: "icon-size" });
-    assert.equal(outline.props["data-navigation-icon"], "outline");
-    assert.equal(solid.props["data-navigation-icon"], "solid");
-    assert.equal(solid.props.fill, "currentColor");
+    assert.equal(outline.type, solid.type);
+    assert.equal(outline.props.weight, "regular");
+    assert.equal(solid.props.weight, "fill");
     assert.equal(outline.props.className, solid.props.className);
     assert.equal(solid.props["aria-hidden"], "true");
   }
@@ -3072,9 +3073,12 @@ test("canvas node updates skip plain history but refresh node chips, workflows a
     "./agent/canvas-agent-presentation": { canvasAgentOperationContext: entry => ({ nodeId: entry.nodeId || entry.tool?.input?.nodeId || entry.tool?.output?.node?.id }) },
   });
   const reply = { id: "reply", role: "assistant", text: "已读取", status: "success" };
-  const initial = { task: { id: "task", replies: [reply] }, nodes: [{ id: "node", title: "旧名称" }], displayTraces: new Map(), timings: new Map(), components: {}, renderText() {} };
+  const initial = { task: { id: "task", replies: [reply] }, inheritedIDs: new Set(), nodes: [{ id: "node", title: "旧名称" }], displayTraces: new Map(), timings: new Map(), components: {}, renderText() {} };
   const next = { ...initial, nodes: [{ id: "node", title: "新名称" }], components: {}, renderText() {} };
   assert.equal(compare(initial, next), true);
+  assert.equal(compare(initial, { ...next, inheritedIDs: new Set([reply.id]) }), false);
+  const delivered = { ...initial.task, replies: [{ ...reply, deliverableNodeIds: ["node"] }] };
+  assert.equal(compare({ ...initial, task: delivered }, { ...next, task: delivered }), false);
   for (const text of ["查看 `node`", "参考 ```node``` 节点"]) {
     const task = { ...initial.task, replies: [{ ...reply, text }] };
     assert.equal(compare({ ...initial, task }, { ...next, task }), false);
@@ -3120,27 +3124,40 @@ test("Agent run snapshot updates skip historical tasks and refresh only the affe
   assert.equal(initial.filter((previous, index) => !compare(previous, withRun(previous, tick[index]))).length, 0, "snapshot timestamps do not affect task rendering");
   assert.deepEqual(initial.flatMap((previous, index) => compare(previous, withRun(previous, ended[index])) ? [] : [index]), [19], "only the matching task must refresh when its status changes");
   assert.equal(serializedResults, 0, "rendering must not serialize the full tool result");
-  for (const count of [40, 60, 80, 100]) {
-    const earlier = descendants(state.render(CanvasAgentConversationContent, { ...props, run })).find(node => node.props?.["aria-label"] === "加载更早对话");
+  const control = (label) => descendants(state.render(CanvasAgentConversationContent, { ...props, run })).find(node => node.props?.children === label);
+  for (const start of [60, 40, 20, 0]) {
+    const earlier = control("更早回合");
     assert.ok(earlier, "earlier history remains available");
     earlier.props.onClick();
     const loaded = render(run);
-    assert.equal(loaded.length, count);
-    assert.equal(loaded.at(-1).task.id, "task-99", "loading earlier history preserves the newest task");
+    assert.equal(loaded.length, 20);
+    assert.equal(loaded[0].task.id, `task-${start}`);
   }
-  assert.equal(descendants(state.render(CanvasAgentConversationContent, { ...props, run })).some(node => node.props?.["aria-label"] === "加载更早对话"), false);
+  assert.equal(control("更早回合"), undefined);
+  control("后续回合").props.onClick();
+  assert.equal(render(run)[0].task.id, "task-20");
+  control("回到最新").props.onClick();
+  assert.equal(render(run)[0].task.id, "task-80");
   assert.equal(tasks.length, 100, "pagination must not truncate saved history");
+  const jumpState = hooks();
+  const jumped = descendants(jumpState.render(CanvasAgentConversationContent, { ...props, run, targetMessageID: "reply-9" }))
+    .filter(node => node.type?.name === "CanvasAgentTaskItem").map(node => node.props);
+  assert.equal(jumped.length, 20);
+  assert.equal(jumped[0].task.id, "task-4");
+  assert.equal(jumped[5].targetMessage.id, "reply-9");
+  assert.equal(jumped[6].targetMessage, undefined);
 });
 
 test("canvas message copies preserve edit, retry and message visibility rules", () => {
   const edited = [], retried = [];
   const { CanvasAgentTaskItem } = loadSource("../src/app/canvas/canvas-agent-conversation.tsx", {
-    react: { lazy, memo: component => component },
+    react: { lazy, memo: component => component, useCallback: callback => callback, useMemo: create => create() },
     "./agent/canvas-agent-run-state": { canvasAgentMessageRunStatus: message => message.status, canvasAgentResultStatusUnknown: message => message?.text.startsWith("执行状态待核实：") === true },
+    "./agent/canvas-agent-diagnostics": { canvasAgentTurnDiagnostic: () => ({ requests: 0, operations: [] }) },
   }, {}, "\nexport { CanvasAgentTaskItem };\n");
   const request = { id: "request", role: "user", text: "原始消息" };
   const props = {
-    task: { id: "task", request, replies: [] }, nodes: [], busy: false, editDisabled: false,
+    task: { id: "task", request, replies: [] }, inheritedIDs: new Set(), nodes: [], busy: false, editDisabled: false,
     protocolPresentation: { sources: [], reasoning: [] }, timings: new Map(), displayTraces: new Map(),
     onEdit: message => edited.push(message), onRetry: message => retried.push(message),
   };
@@ -3151,6 +3168,9 @@ test("canvas message copies preserve edit, retry and message visibility rules", 
   nodes.find(node => node.props?.["aria-label"] === "编辑消息").props.onClick();
   assert.deepEqual(edited, [request]);
   assert.deepEqual(retried, []);
+  const branched = [];
+  render({ onBranch: message => branched.push(message) }).find(node => node.props?.["aria-label"] === "从这里分支").props.onClick();
+  assert.deepEqual(branched, [request]);
   assert.equal(render({ editDisabled: true }).find(node => node.props?.["aria-label"] === "编辑消息").props.disabled, true);
   for (const patch of [
     { editingMessageID: request.id, onSaveEdit() {}, onCancelEdit() {} },
@@ -3559,6 +3579,13 @@ test("closed Agent media and context menus do not build hidden forms and reopen 
   renderContext().find(node=>node.type==='HoverCard').props.onOpenChange(true);
   nodes=renderContext();assert.ok(nodes.some(node=>node.props?.children==='text-two'));
   assert.ok(nodes.some(node=>node.props?.['aria-valuenow']===25));
+  const actions = { type: "Button", props: { children: "整理上下文" } };
+  const actionProps = { ...props, actions };
+  const renderActions = () => descendants(contextState.render(Context, actionProps));
+  renderActions().find(node => node.type === "Popover").props.onOpenChange(false);
+  assert.equal(renderActions().some(node => node.type === "PopoverContent"), false);
+  renderActions().find(node => node.type === "Popover").props.onOpenChange(true);
+  assert.ok(renderActions().some(node => node.props?.children === "整理上下文"));
 });
 
 test("canvas hidden side panel skips node changes but refreshes on reopen and account change", () => {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"chatgpt2api/internal/util"
 )
@@ -49,30 +50,40 @@ func (w *canvasAgentWorker) sdkConfig() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if w.sdk.RetryWaitMS < 0 || w.sdk.RetryWaitMS > agentModelRetryBudgetMS {
+		return nil, errors.New("SDK 模型重试等待预算无效")
+	}
 	// A worker may stop after creating its private record but before importing
 	// history. Retrying initialization must still import the existing task.
-	if len(w.sdk.Items) == 0 && w.sdk.State == "" {
+	if len(w.sdk.Items) == 0 && w.sdk.State == "" && w.sdk.RetryWaitMS == 0 {
 		found = false
 	}
-	if len(w.sdk.Question) > 0 {
+	if len(w.sdk.Question) > 0 && !w.req.Edit {
+		if w.req.ReadOnly {
+			return nil, invalidCanvasDocument("请先处理待确认的操作，再发送只读请求")
+		}
 		w.state["pendingQuestion"] = w.sdk.Question
 		w.conversation = false
+		w.readOnly = false
 		delete(w.assistant(), "interactionMode")
 	}
-	config := map[string]any{"sessionId": w.sdkStoreName(), "name": "Canvas Creative Agent", "completionTool": "finish_task", "tools": w.tools(), "conversation": w.conversation, "rejectCallIds": w.sdk.RejectedCallIDs}
-	var preferences struct {
-		ContextWindowTokens *float64 `json:"contextWindowTokens"`
+	restoredReadOnly := w.sdk.ReadOnly
+	w.sdk.ReadOnly = w.readOnly
+	config := map[string]any{"sessionId": w.sdkStoreName(), "name": "Canvas Creative Agent", "tools": w.tools(), "conversation": w.conversation, "rejectCallIds": w.sdk.RejectedCallIDs}
+	config["repeatReminderTools"] = slices.Concat(canvasAgentReadOnlyTools, []string{
+		"get_generation_config", "list_video_models", "read_skill_file",
+		"list_workflows", "get_workflow", "list_canvas_text_tasks",
+	})
+	config["repeatReminderIgnoreTools"] = []string{"update_plan"}
+	config["preserveRetryCheckpoint"] = true
+	if w.req.GoalContinuation > 0 {
+		config["goalContinuation"] = w.req.GoalContinuation
 	}
-	if len(w.doc.AgentConfig) > 0 {
-		if err := json.Unmarshal(w.doc.AgentConfig, &preferences); err != nil {
-			return nil, fmt.Errorf("读取 Agent 上下文配置失败: %w", err)
-		}
+	if !w.readOnly {
+		config["completionTool"] = "finish_task"
 	}
-	if window := preferences.ContextWindowTokens; window != nil {
-		if !finiteCanvasNumber(*window) || *window < 2 || *window > 1<<53-1 || math.Trunc(*window) != *window {
-			return nil, errors.New("Agent 上下文上限必须是大于 1 的安全整数")
-		}
-		config["contextWindowTokens"] = *window
+	if err := canvasAgentContextWindow(w.doc.AgentConfig, config); err != nil {
+		return nil, err
 	}
 	if found {
 		w.batchCalls = w.sdk.Calls
@@ -82,6 +93,7 @@ func (w *canvasAgentWorker) sdkConfig() (map[string]any, error) {
 		}
 		if w.req.Edit {
 			w.sdk.State = ""
+			w.sdk.ModelContext = nil
 			w.sdk.Question = nil
 			delete(w.state, "pendingQuestion")
 		}
@@ -100,8 +112,17 @@ func (w *canvasAgentWorker) sdkConfig() (map[string]any, error) {
 		config["legacy"] = legacy
 		w.sdk.Phase = "importing"
 	}
-	if found && !w.req.Resume && len(agentMap(w.state["pendingQuestion"])) == 0 {
+	if w.req.ReadOnly && w.sdk.State != "" && !restoredReadOnly {
 		w.sdk.State = ""
+	}
+	if found && !w.req.Resume {
+		w.sdk.RetryWaitMS = 0
+		if len(agentMap(w.state["pendingQuestion"])) == 0 {
+			w.sdk.State = ""
+		}
+	}
+	if w.sdk.RetryWaitMS > 0 {
+		config["retryWaitMs"] = w.sdk.RetryWaitMS
 	}
 	question := agentMap(w.state["pendingQuestion"])
 	if len(question) > 0 {
@@ -123,6 +144,9 @@ func (w *canvasAgentWorker) sdkConfig() (map[string]any, error) {
 				w.sdk.ApprovedMediaChoice = w.req.MediaChoice
 			}
 		}
+	}
+	if len(w.sdk.ModelContext) > 0 && !w.conversation {
+		config["modelContext"] = w.sdk.ModelContext
 	}
 	if len(question) == 0 && w.sdk.State == "" {
 		w.sdk.ApprovedCallID = ""
@@ -168,6 +192,24 @@ func (w *canvasAgentWorker) sdkConfig() (map[string]any, error) {
 		return nil, err
 	}
 	return config, nil
+}
+
+func canvasAgentContextWindow(raw json.RawMessage, config map[string]any) error {
+	var preferences struct {
+		ContextWindowTokens *float64 `json:"contextWindowTokens"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &preferences); err != nil {
+			return fmt.Errorf("读取 Agent 上下文配置失败: %w", err)
+		}
+	}
+	if window := preferences.ContextWindowTokens; window != nil {
+		if !finiteCanvasNumber(*window) || *window < 2 || *window > 1<<53-1 || math.Trunc(*window) != *window {
+			return errors.New("Agent 上下文上限必须是大于 1 的安全整数")
+		}
+		config["contextWindowTokens"] = *window
+	}
+	return nil
 }
 
 // Revocation is a business decision. SDK applies the recorded rejection when it

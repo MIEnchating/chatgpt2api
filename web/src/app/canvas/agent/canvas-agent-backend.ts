@@ -1,7 +1,8 @@
-import { httpRequest } from "@/lib/request";
+import { httpRequest, httpRequestEventStream } from "@/lib/request";
+import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
 import type { CanvasDocument } from "@/services/api/canvas";
 import type { CanvasAgentGenerationConfig } from "./canvas-agent-context";
-import type { CanvasAssistantReference } from "./canvas-agent-types";
+import type { CanvasAgentQueuedMessage, CanvasAssistantReference } from "./canvas-agent-types";
 import type { CanvasAgentAction } from "./canvas-agent-tools";
 import { CANVAS_AGENT_RESULT_UNKNOWN_PREFIX } from "./canvas-agent-run-state";
 
@@ -25,6 +26,9 @@ export type CanvasBackendAgentRequest = {
   skillIds: string[];
   resume: boolean;
   editPreviousRequest: boolean;
+  readOnly?: boolean;
+  modelRequestLimit?: number;
+  goalContinuation?: number;
   mediaGenerationChoice?: "generate" | "defer";
 };
 const path = (projectID: string) => `/api/canvas/agent-runs?history=active&project_id=${encodeURIComponent(projectID)}`;
@@ -40,6 +44,23 @@ export class CanvasAgentObservationError extends Error {
 }
 export function fetchCanvasAgentRun(projectID: string, signal?: AbortSignal) {
   return httpRequest<{ document: CanvasDocument }>(path(projectID), { signal });
+}
+export function compactCanvasAgentContext(projectID: string, body: Pick<CanvasBackendAgentRequest, "sessionId" | "model" | "relayTokenName" | "apiMode" | "modelRequestLimit">) {
+  return httpRequest<{ kind: "unchanged" | "pruned" | "summarized"; savedTokens: number }>(
+    `/api/canvas/agent-context?project_id=${encodeURIComponent(projectID)}`,
+    { method: "POST", body, timeout: 0 },
+  );
+}
+export type CanvasAgentQueueUpdate = {
+  sessionId: string;
+  action: "append" | "steer" | "remove" | "pause" | "resume" | "unpause";
+  messageId?: string;
+  message?: CanvasAgentQueuedMessage;
+  afterRunId?: string;
+  settings?: Omit<CanvasBackendAgentRequest, "id" | "sessionId" | "assistantId" | "userMessageId" | "userText" | "references" | "resume" | "editPreviousRequest">;
+};
+export function updateBackendCanvasAgentQueue(projectID: string, body: CanvasAgentQueueUpdate) {
+  return httpRequest<{ document: CanvasDocument }>(path(projectID), { method: "PATCH", body });
 }
 export function stopCanvasAgentRun(projectID: string, runID: string) {
   return httpRequest<{ document: CanvasDocument }>(`${path(projectID)}&run_id=${encodeURIComponent(runID)}`, { method: "DELETE" });
@@ -101,61 +122,151 @@ async function submitCanvasAgentRun(projectID: string, runID: string, endpoint: 
   }
 }
 
-async function observeCanvasAgentRun(projectID: string, runID: string, initial: { document: CanvasDocument }, onDocument: (document: CanvasDocument) => void, signal: AbortSignal, alreadyStopped = false, onObservationError?: (error: CanvasAgentObservationError) => void) {
-  // A detached browser only stops observing; explicit Stop cancels the server run.
-  let response = initial;
-  let snapshotPending = true;
-  let stopRequest: Promise<{ document: CanvasDocument } | { error: unknown }> | undefined;
-  let stopIssued = alreadyStopped;
-  let failures = 0;
-  const stop = () => {
-    if (signal.reason === "canvas-detached" || stopIssued) return;
-    stopIssued = true;
-    stopRequest = stopCanvasAgentRun(projectID, runID).catch(error => ({ error }));
-  };
-  signal.addEventListener("abort", stop);
-  try {
-    while (true) {
-      if (signal.aborted && signal.reason === "canvas-detached") return;
-      if (signal.aborted) stop();
-      let applied = false;
-      if (snapshotPending) {
-        snapshotPending = false;
-        try {
-          onDocument(response.document);
-          applied = true;
-        } catch (error) {
-          if (!onObservationError) throw error;
-          onObservationError(new CanvasAgentObservationError(error));
-        }
+type CanvasProgressDelta = {
+  type: "delta";
+  base_revision: number;
+  revision: number;
+  operations: { path: (string | number)[]; value: unknown; remove?: boolean; append?: boolean }[];
+};
+
+function appendCanvasProgressText(previous: unknown, value: unknown) {
+  if (typeof previous !== "string" || typeof value !== "string") throw new SyntaxError("画布增量文本无效");
+  return previous + value;
+}
+
+function applyCanvasProgressDelta(document: CanvasDocument, delta: CanvasProgressDelta): CanvasDocument {
+  if (!Array.isArray(delta.operations) || !Number.isSafeInteger(delta.revision) || delta.revision < document.revision) {
+    throw new SyntaxError("画布增量格式无效");
+  }
+  const next = { ...document };
+  // Published snapshots are immutable. Copy only ancestors of changed fields.
+  const writable = new WeakSet<object>([next]);
+  for (const operation of delta.operations) {
+    const { path, value, remove, append } = operation;
+    if (!Array.isArray(path) || !path.length) throw new SyntaxError("画布增量路径无效");
+    let target: object = next;
+    for (const [index, key] of path.entries()) {
+      if (Array.isArray(target)) {
+        if (typeof key !== "number" || !Number.isInteger(key) || key < 0 || key > target.length) throw new SyntaxError("画布增量索引无效");
+      } else if (typeof key !== "string") {
+        throw new SyntaxError("画布增量字段无效");
       }
-      if (applied && (response.document.agent_run?.id !== runID || response.document.agent_run.status !== "running")) return response.document;
-      if (signal.aborted && signal.reason === "canvas-detached") return;
-      if (stopRequest) {
-        const stopped = await stopRequest;
-        stopRequest = undefined;
-        if ("error" in stopped) throw new CanvasAgentStopError(stopped.error);
-        response = stopped;
-        snapshotPending = true;
+      const previous: unknown = Object.hasOwn(target, key) ? Reflect.get(target, key) : undefined;
+      if (index === path.length - 1) {
+        if (!remove) {
+          writeCanvasProgressField(target, key, append ? appendCanvasProgressText(previous, value) : value);
+        } else if (Array.isArray(target)) {
+          if (Number(key) >= target.length) throw new SyntaxError("画布增量删除索引无效");
+          target.splice(Number(key), 1);
+        } else {
+          Reflect.deleteProperty(target, key);
+        }
+        break;
+      }
+      if (!previous || typeof previous !== "object") throw new SyntaxError("画布增量路径无效");
+      if (writable.has(previous)) {
+        target = previous;
         continue;
       }
-      await new Promise<void>((resolve) => {
-        if (signal.aborted) { setTimeout(resolve, 200); return; }
-        const timer = setTimeout(done, 500);
-        function done() { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); }
-        signal.addEventListener("abort", done, { once: true });
-      });
-      if (stopRequest || signal.aborted && signal.reason === "canvas-detached") continue;
-      try { response = await fetchCanvasAgentRun(projectID, signal.aborted ? undefined : signal); snapshotPending = true; failures = 0; } catch (error) {
-        if (signal.aborted) continue;
-        if (onObservationError) onObservationError(new CanvasAgentObservationError(error));
-        else if (++failures > 5) throw error;
-      }
+      const child = Array.isArray(previous) ? previous.slice() : { ...previous };
+      writeCanvasProgressField(target, key, child);
+      writable.add(child);
+      target = child;
     }
+  }
+  if (next.revision !== delta.revision || next.id !== document.id) throw new SyntaxError("画布增量版本无效");
+  return next;
+}
+
+function writeCanvasProgressField(target: object, key: string | number, value: unknown) {
+  Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
+export async function watchCanvasAgentProgress(projectID: string, runID: string, signal: AbortSignal, onDocument: (document: CanvasDocument) => void, onError?: (error: CanvasAgentObservationError) => void, initial?: CanvasDocument) {
+  let latest: CanvasDocument | undefined;
+  let applied: CanvasDocument | undefined;
+  let terminal = false;
+  let failures = 0;
+  const accept = (document: CanvasDocument) => {
+    signal.throwIfAborted();
+    if (document?.id !== projectID || !Number.isSafeInteger(document.revision)) throw new SyntaxError("画布进度格式无效");
+    if (applied && document.revision < applied.revision) return;
+    if (applied !== document && (!applied || applied.revision !== document.revision || applied.agent_run?.id !== document.agent_run?.id || applied.agent_run?.status !== document.agent_run?.status)) {
+      try {
+        onDocument(document);
+      } catch (cause) {
+        const error = new CanvasAgentObservationError(cause);
+        if (!onError) throw error;
+        onError(error);
+        return;
+      }
+      applied = document;
+      failures = 0;
+    }
+    latest = document;
+    terminal = document.agent_run?.id !== runID || document.agent_run.status !== "running";
+  };
+  if (initial) {
+    try { accept(initial); }
+    catch (cause) { throw cause instanceof CanvasAgentObservationError ? cause : new CanvasAgentObservationError(cause); }
+  }
+  while (!terminal) {
+    signal.throwIfAborted();
+    let baseline: CanvasDocument | undefined;
+    try {
+      await httpRequestEventStream(`${path(projectID)}&run_id=${encodeURIComponent(runID)}`, {
+        signal, timeout: 0, idleTimeoutMs: 45_000, onData(data) {
+          const event = JSON.parse(data) as { type: "snapshot"; document: CanvasDocument } | CanvasProgressDelta | { type: "error"; status: number; message: string };
+          if (event?.type === "error") throw Object.assign(new Error(event.message), { status: event.status });
+          if (event?.type === "snapshot") baseline = event.document;
+          else if (event?.type === "delta") {
+            if (!baseline || baseline.revision !== event.base_revision) throw new Error("画布进度版本不同步，正在重新连接");
+            baseline = applyCanvasProgressDelta(baseline, event);
+          } else throw new SyntaxError("画布进度格式无效");
+          accept(baseline);
+        },
+      });
+      if (!terminal) throw new Error("画布进度连接已断开");
+    } catch (cause) {
+      signal.throwIfAborted();
+      if (cause instanceof CanvasAgentObservationError) throw cause;
+      if (terminal) return latest;
+      const error = new CanvasAgentObservationError(cause);
+      if (cause instanceof SyntaxError || !isRetryableTaskPollError(cause) || failures >= 5) throw error;
+      onError?.(error);
+      await new Promise<void>((resolve) => {
+        const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+        const timer = setTimeout(done, Math.min(4000, 500 * 2 ** failures++));
+        signal.addEventListener("abort", done, { once: true });
+        if (signal.aborted) done();
+      });
+    }
+  }
+  return latest;
+}
+
+async function observeCanvasAgentRun(projectID: string, runID: string, initial: { document: CanvasDocument }, onDocument: (document: CanvasDocument) => void, signal: AbortSignal, alreadyStopped = false, onObservationError?: (error: CanvasAgentObservationError) => void) {
+  const observation = new AbortController();
+  const abort = () => observation.abort(signal.reason);
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  try {
+    if (!signal.aborted) return await watchCanvasAgentProgress(projectID, runID, observation.signal, onDocument, onObservationError, initial.document);
   } catch (error) {
-    if (error instanceof CanvasAgentStopError) throw error;
-    throw new CanvasAgentObservationError(error);
-  } finally { signal.removeEventListener("abort", stop); }
+    if (!signal.aborted) throw error;
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+  if (signal.reason === "canvas-detached") return;
+  let stopped = initial;
+  if (!alreadyStopped) {
+    try {
+      stopped = await stopCanvasAgentRun(projectID, runID);
+    } catch (error) {
+      throw new CanvasAgentStopError(error);
+    }
+  }
+  return watchCanvasAgentProgress(projectID, runID, new AbortController().signal, onDocument, onObservationError, stopped.document);
 }
 
 // Persisted nodes and attachments are authoritative; requests carry handles only.

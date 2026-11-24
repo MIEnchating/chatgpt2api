@@ -248,3 +248,23 @@ test("a new task expands the stream and reconnect drops out-of-scope records wit
     assert.deepEqual(snapshots.at(-1).deletedIDs, []);
   } finally { stop(); client.reset(); }
 });
+
+test("a surviving batch watcher drops settled task IDs without reporting deletions", async () => {
+  const { client, connections } = fixture();
+  const snapshots = [];
+  const stop = client.watch({ workflowBatchIDs: ["batch"], onUpdate: value => snapshots.push(value), onError: assert.fail });
+  try {
+    const completed = client.wait("completed");
+    await Promise.resolve();
+    connections[0].emit(event([task("completed", 1, "success"), workflowTask("child", 1, "running")], "snapshot"));
+    await completed;
+    assert.equal(connections[0].signal.aborted, false);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    assert.equal(connections.length, 2);
+    assert.equal(connections[0].signal.aborted, true);
+    assert.deepEqual(connections[1].scope, { task_ids: [], workflow_batch_ids: ["batch"] });
+    connections[1].emit(event([workflowTask("child", 2, "success")], "snapshot"));
+    assert.deepEqual(snapshots.at(-1).items.map(item => item.id), ["child"]);
+    assert.deepEqual(snapshots.at(-1).deletedIDs, []);
+  } finally { stop(); client.reset(); }
+});

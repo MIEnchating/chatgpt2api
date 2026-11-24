@@ -21,7 +21,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if projectsOnly {
-			projects, err := a.canvas.ProjectList(ownerID)
+			projects, err := a.canvasAgent.ProjectList(identity)
 			if err != nil {
 				writeCanvasMutationError(w, err, "failed to load canvas projects")
 				return
@@ -39,7 +39,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			writeCanvasMutationError(w, err, "failed to load canvas history")
 			return
 		}
-		writeCanvasHistoryJSON(w, r, len(workspace.Document.AgentSessions), workspace)
+		writeCanvasHistoryJSON(w, r, http.StatusOK, len(workspace.Document.AgentSessions), workspace)
 	case http.MethodPost:
 		var input struct {
 			Action    string                  `json:"action"`
@@ -85,7 +85,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			writeCanvasMutationError(w, err, "failed to load canvas history")
 			return
 		}
-		writeCanvasHistoryJSON(w, r, len(workspace.Document.AgentSessions), workspace)
+		writeCanvasHistoryJSON(w, r, http.StatusOK, len(workspace.Document.AgentSessions), workspace)
 	case http.MethodPut:
 		var input service.CanvasDocument
 		if err := util.DecodeJSON(r.Body, &input); err != nil {
@@ -102,7 +102,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			writeCanvasMutationError(w, err, "failed to load canvas history")
 			return
 		}
-		writeCanvasHistoryJSON(w, r, len(document.AgentSessions), map[string]any{"document": document})
+		writeCanvasHistoryJSON(w, r, http.StatusOK, len(document.AgentSessions), map[string]any{"document": document})
 	case http.MethodDelete:
 		revision, parseErr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("revision")), 10, 64)
 		if parseErr != nil || revision < 0 {

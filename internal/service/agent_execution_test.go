@@ -480,8 +480,98 @@ func TestAgentExecutionRetryProgress(t *testing.T) {
 		if got := util.Clean(event["message"]); !strings.Contains(got, fmt.Sprintf("（%d/5）", retries)) {
 			t.Fatalf("retry event = %q", got)
 		}
+		if util.Clean(event["retryAt"]) == "" || util.ToInt(event["retryDelayMs"], 0) < 1 || util.ToInt(event["retryWaitMs"], 0) < util.ToInt(event["retryDelayMs"], 0) {
+			t.Fatalf("retry timing not persisted: %v", event)
+		}
 	}
 	if retries != 5 || calls != 6 {
 		t.Fatalf("retries=%d model calls=%d", retries, calls)
+	}
+}
+
+func TestAgentExecutionsDeferLongModelRetriesAndResumeSavedProgress(t *testing.T) {
+	for _, domain := range []string{"workflow", "video_contract", "studio"} {
+		t.Run(domain, func(t *testing.T) {
+			s, owner := executionFixture(t)
+			var models, writes atomic.Int32
+			s.Register(domain, func(ctx context.Context, _ Identity, w *AgentExecutionWorker) error {
+				config := map[string]any{
+					"tools": []map[string]any{executionTool("write"), executionTool("finish")}, "completionTool": "finish",
+					"input": []map[string]any{{"role": "user", "content": "Preserve original work."}},
+				}
+				return w.Run(ctx, config, func(method string, params map[string]any) (any, error) {
+					switch method {
+					case "context":
+						return map[string]any{"instructions": "Use tools."}, nil
+					case "model":
+						switch models.Add(1) {
+						case 1:
+							return agentTurn(agentCall("write-once", "write", map[string]any{})), nil
+						case 2:
+							return nil, protocol.HTTPError{Status: 429, Message: "rate limited", RetryDelay: time.Minute}
+						default:
+							history := agentJSON(params["messages"])
+							if !strings.Contains(history, `"tool_call_id":"write-once"`) || strings.Count(history, "Preserve original work.") != 1 {
+								t.Errorf("resume did not preserve original work: %s", history)
+							}
+							return agentTurn(agentCall("finish-once", "finish", map[string]any{})), nil
+						}
+					case "tool":
+						if params["name"] == "write" {
+							writes.Add(1)
+						} else {
+							w.SetResult(map[string]any{"draft": "ready"})
+						}
+						return map[string]any{"result": map[string]any{"ok": true}}, nil
+					}
+					return map[string]any{}, nil
+				})
+			})
+			if _, err := s.Start(owner, "deferred", domain, map[string]any{}); err != nil {
+				t.Fatal(err)
+			}
+			waiting := executionWait(t, s, owner, "deferred")
+			if waiting.Status != "waiting" || !strings.Contains(waiting.Error, "自动重试预算") || models.Load() != 2 {
+				t.Fatalf("unexpected deferred run: %+v, model requests=%d", waiting, models.Load())
+			}
+			record, err := s.load(owner, "deferred")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.SDK.State == "" || record.Receipts["write-once"]["done"] != true {
+				t.Fatal("deferred task lost the checkpoint or the committed write")
+			}
+			if _, err := s.Resume(owner, "deferred"); err == nil || !strings.Contains(err.Error(), "后继续") {
+				t.Fatalf("resume before the deadline returned %v", err)
+			}
+			if models.Load() != 2 || writes.Load() != 1 {
+				t.Fatal("resume before the deadline dispatched work")
+			}
+			var retryEvent map[string]any
+			for _, event := range waiting.Events {
+				if event["stage"] == "retry_deferred" {
+					retryEvent = event
+				}
+			}
+			if retryEvent["failureCode"] != "RATE_LIMIT" || util.ToInt(retryEvent["retryDelayMs"], 0) != 60000 {
+				t.Fatalf("deferred retry was not recorded: %v", retryEvent)
+			}
+			retryAt, err := time.Parse(time.RFC3339Nano, util.Clean(retryEvent["retryAt"]))
+			if err != nil || !retryAt.After(time.Now()) || util.Clean(retryEvent["retryAt"]) != waiting.ModelRetryAt {
+				t.Fatalf("expected a future retry time: %v, %v", retryAt, err)
+			}
+			// Simulate time passing without waiting a minute in the test.
+			record.ModelRetryAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+			if err = saveStoredJSONBounded(s.store, agentExecutionPath(owner, "deferred"), record); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Resume(owner, "deferred"); err != nil {
+				t.Fatal(err)
+			}
+			done := executionWait(t, s, owner, "deferred")
+			if done.Status != "success" || done.ModelRetryAt != "" || models.Load() != 3 || writes.Load() != 1 {
+				t.Fatalf("resume failed: %+v, model requests=%d, writes=%d", done, models.Load(), writes.Load())
+			}
+		})
 	}
 }

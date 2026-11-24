@@ -5,6 +5,88 @@ import { contextTokenBudget, DEFAULT_CONTEXT_WINDOW_TOKENS } from '../context-po
 import { importProtocol, modelMessages, modelOutput } from '../history.mjs';
 
 const filterArgs = input => ({ modelData: { input, instructions: 'Follow the business rules.' } });
+test('prunes rereadable historical node text before summarizing and preserves the original tool result', async () => {
+  const node = { id: 'script-1', taskId: 'paid-1', status: 'success', text: `开头${'😀镜头'.repeat(4200)}结尾` };
+  const original = JSON.stringify({ ok: true, node });
+  const call = { type: 'function_call', name: 'get_node', callId: 'read', arguments: '{"nodeId":"script-1"}' };
+  const result = { type: 'function_call_result', name: 'get_node', callId: 'read', output: [{ type: 'text', text: original }, { type: 'image', image: '/old.png' }] };
+  const source = [{ role: 'user', content: '读取旧剧本' }, call, result, { role: 'user', content: '继续写下一幕' }];
+  const unusedModel = async () => assert.fail('pruning should avoid a summary request');
+  const normal = await createInputFilter(unusedModel, 128000)(filterArgs(source));
+  assert.deepEqual(normal.input, source);
+
+  const filter = createInputFilter(unusedModel, 8500);
+  const args = filterArgs(source);
+  Object.assign(args.modelData, { origins: [0, 1, 2, 3], through: 4, trigger: 'pressure' });
+  const pruned = await filter(args);
+  assert.equal(pruned.compacted, true);
+  const [record] = pruned.compactions;
+  assert.deepEqual(record.sourceRanges, [[2, 3]]);
+  assert.equal(record.through, 4);
+  assert.equal(record.trigger, 'pressure');
+  assert.equal(record.kind, 'pruned');
+  assert.ok(record.savedTokens > 0);
+  assert.deepEqual(pruned.origins, [0, 1, 2, 3]);
+  const projected = JSON.parse(modelMessages(pruned.input).find(message => message.role === 'tool').content).node;
+  assert.match(projected.text, /^开头.*省略.*结尾$/su);
+  assert(projected.text.isWellFormed());
+  assert(projected.text.length < node.text.length);
+  assert.deepEqual({ ...projected, text: node.text }, node);
+  assert.deepEqual(pruned.input[2].output[1], result.output[1]);
+  assert.deepEqual(pruned.input[1], call);
+  assert.deepEqual(pruned.input[3], source[3]);
+  assert.equal(result.output[0].text, original);
+  assert.deepEqual((await filter(filterArgs(pruned.input))).input, pruned.input);
+
+  const forced = await createInputFilter(unusedModel, 128000)({ ...filterArgs(source), force: true });
+  assert.equal(forced.compacted, true);
+  assert(estimateTokens(forced.input) < estimateTokens(source));
+});
+test('prunes oversized plain and unknown tool results with a Unicode-safe head and tail', async () => {
+  const originalText = `开头${'😀中间内容'.repeat(5000)}结尾`;
+  const source = [
+    { role: 'user', content: '读取旧工具结果' },
+    { type: 'function_call', name: 'custom_lookup', callId: 'custom', arguments: '{}' },
+    { type: 'function_call_result', name: 'custom_lookup', callId: 'custom', output: originalText },
+    { role: 'user', content: '继续处理当前请求' },
+  ];
+  const filter = await createInputFilter(async () => assert.fail('generic pruning should avoid a summary request'), 10000)(filterArgs(source));
+  const output = filter.input[2].output;
+  assert.equal(typeof output, 'string');
+  assert.match(output, /^开头/);
+  assert.match(output, /结尾$/);
+  assert.match(output, /tool result middle pruned/);
+  assert.equal(output.isWellFormed(), true);
+  assert(output.length < originalText.length);
+  assert.equal(source[2].output, originalText);
+});
+test('prunes historical templates and documents while preserving references, errors and the active results', async () => {
+  const content = '例'.repeat(12000);
+  const workflow = { id: 'workflow-1', revision: 8, config: { prompt_template: content }, template_references: [{ id: 'reference-1' }] };
+  const documents = [{ id: 2, title: '正文', content, cached: true }];
+  const errors = [{ id: 3, error: '读取失败' }];
+  const output = (name, id, data) => [
+    { type: 'function_call', name, callId: id, arguments: '{}' },
+    { type: 'function_call_result', name, callId: id, output: JSON.stringify({ ok: true, ...data }) },
+  ];
+  const active = output('read_documents', 'current-read', { documents: [{ id: 4, content }] });
+  const input = [
+    { role: 'user', content: '查询旧资料' },
+    ...output('get_workflow', 'workflow', { workflow }),
+    ...output('read_documents', 'docs', { documents, errors }),
+    { role: 'user', content: '分析新文档' },
+    ...active,
+  ];
+  const result = await createInputFilter(async () => assert.fail('pruning should avoid summarizing'), 30000)(filterArgs(input));
+  const template = JSON.parse(result.input[2].output).workflow;
+  assert.match(template.config.prompt_template, /get_workflow/);
+  assert.deepEqual({ ...template, config: workflow.config }, workflow);
+  const pages = JSON.parse(result.input[4].output);
+  assert.match(pages.documents[0].content, /read_documents/);
+  assert.deepEqual({ ...pages.documents[0], content }, documents[0]);
+  assert.deepEqual(pages.errors, errors);
+  assert.deepEqual(result.input.slice(-2), active);
+});
 test('video analysis keeps its complete latest frame batch alongside ordinary references', async () => {
   const frames = Array.from({ length: 90 }, (_, i) => [{ type: 'text', text: `frame ${i}` }, { type: 'image', image: `/frame-${i}.jpg` }]).flat();
   const video = { type: 'function_call_result', callId: 'analyze', name: 'analyze_video', output: frames };
@@ -13,7 +95,11 @@ test('video analysis keeps its complete latest frame batch alongside ordinary re
   assert.equal(filtered.input.at(-1).output.filter(part => part.type === 'image').length, 90);
   const projected = visualWindow([video, { ...video, callId: 'newer', output: frames.slice(0, 20) }]);
   assert.equal(projected[0].output.filter(part => part.type === 'image').length, 0);
+  assert.deepEqual(projected[0].output.filter(part => part.text?.includes('省略')), [
+    { type: 'text', text: '［90 张视频抽帧已从模型上下文省略。需要核对画面时，可用 analyze_video 重新读取对应时段。］' },
+  ]);
   assert.equal(projected[1].output.filter(part => part.type === 'image').length, 10);
+  assert.deepEqual(projected[1].output, frames.slice(0, 20));
   const nextRequest = visualWindow([video, { role: 'user', content: 'A new task.' }]);
   assert.equal(nextRequest[0].output.filter(part => part.type === 'image').length, 0);
 });
@@ -104,6 +190,8 @@ test('images use a bounded token estimate, and visual windows retain all labels 
   const source = [{ role: 'user', content: [{ type: 'input_text', text: 'ID=old, ID=new' }, { type: 'input_image', image: '/old.png' }, { type: 'input_image', image: '/new.png' }] }];
   const before = structuredClone(source); const result = visualWindow(source, 1);
   assert.deepEqual(source, before); assert.match(JSON.stringify(result), /ID=old/); assert.doesNotMatch(JSON.stringify(result), /\/old.png/);
+  assert.deepEqual(result[0].content, [source[0].content[0], { type: 'input_text', text: '［此处图片已从模型上下文省略。］' }, source[0].content[2]]);
+  assert.deepEqual(visualWindow(result, 1), result);
 });
 test('legacy transcript imports paired SDK items without repeating an unknown write', () => {
   const source = [{ role: 'user', content: '制作海报' }, { role: 'assistant', toolCalls: [{ id: 'created', name: 'create_text_node', arguments: { title: '已有' } }] }];
@@ -131,6 +219,7 @@ test('SDK reference outputs retain identifiers while bounding the current visual
   const images = projected.flatMap(item => item.output.filter(part => part.type === 'input_image').map(part => part.image));
   assert.deepEqual(images, Array.from({ length: 8 }, (_, i) => `/ref-${i + 4}.png`));
   for (let i = 0; i < 12; i++) assert.match(JSON.stringify(projected), new RegExp(`ID=ref-${i}，`));
+  assert.match(modelMessages(projected)[0].content, /ID=ref-0，\n［此处图片已从模型上下文省略。需要核对原图时，可用 get_reference 重新读取。］/);
 });
 
 test('SDK context counters measure the same input, instructions and tools used by the compression budget', async () => {
@@ -208,4 +297,30 @@ test('compaction preserves the real user request and latest canvas snapshot sepa
  },2000);
  const result=await filter(filterArgs([request,{role:'user',content:'outdated snapshot',contextSnapshot:true},{type:'function_call',callId:'read',name:'get_node',arguments:'{}'},{type:'function_call_result',callId:'read',name:'get_node',output:'tool result '.repeat(1500)},snapshot]));
  assert.deepEqual(result.input.slice(1),[request,snapshot]);
+});
+
+test('repeated summaries map their sources back to the original history positions', async () => {
+  const filter = createInputFilter(async (method) => method === 'model' ? { text_response: 'Retain the approved draft.' } : {});
+  const request = { role: 'user', content: 'Review the new draft.' };
+  const initial = await filter({
+    force: true,
+    modelData: {
+      input: [{ role: 'system', content: 'Existing summary without source positions.' }, { role: 'user', content: 'Old brief' }, request],
+      origins: [null, 4, 5], through: 6, trigger: 'manual', instructions: '',
+    },
+  });
+  assert.deepEqual(initial.origins, [[[4, 5], null], 5]);
+  const next = await filter({
+    force: true,
+    modelData: {
+      ...initial,
+      input: [...initial.input, { role: 'user', content: 'Prepare the final draft.' }],
+      origins: [...initial.origins, 6], through: 7, trigger: 'overflow',
+    },
+  });
+  assert.deepEqual(next.origins, [[[4, 6], null], 6]);
+  assert.deepEqual(next.compactions.map(({ sourceRanges, hasUnmappedSource, trigger, through }) => [sourceRanges, hasUnmappedSource, trigger, through]), [
+    [[[4, 5]], true, 'manual', 6],
+    [[[4, 6]], true, 'overflow', 7],
+  ]);
 });

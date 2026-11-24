@@ -6,10 +6,160 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"chatgpt2api/internal/util"
 )
+
+func TestCanvasAgentGoalContinuationKeepsMediaAuthorizationSeparate(t *testing.T) {
+	var turns, submissions atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if err := request.BeforeDispatch(); err != nil {
+			return nil, err
+		}
+		switch turn := turns.Add(1); turn {
+		case 1:
+			return agentTurn(agentCall("generate-draft", "generate_node", map[string]any{"nodeId": "draft"})), nil
+		case 41:
+			return agentTurn(), nil
+		case 42, 44:
+			return agentTurn(agentCall(fmt.Sprintf("generate-%d", turn), "generate_node", map[string]any{"nodeId": "draft"})), nil
+		case 43, 45:
+			return agentTurn(), nil
+		default:
+			return agentTurn(agentCall(fmt.Sprintf("read-%d", turn), "get_canvas_summary", map[string]any{})), nil
+		}
+	}, func(context.Context, Identity, CanvasNode, map[string]any, func(int) error) (map[string]any, error) {
+		submissions.Add(1)
+		return map[string]any{"data": []map[string]any{{"url": "https://result.test/draft.png"}}}, nil
+	})
+	sessions, session, _ := agentSession(doc, req.SessionID)
+	goal := map[string]any{"objective": "检查海报草稿", "status": "active", "criteria": []map[string]any{{"id": "draft", "text": "核对版式", "done": false}}}
+	session["goal"] = goal
+	agentMap(session["agentState"])["mediaGenerationDeferred"] = false
+	doc.AgentSessions, _ = json.Marshal(sessions)
+	doc.Nodes = []CanvasNode{{ID: "draft", Type: "image", Title: "海报草稿", Prompt: "海报", GenerationModel: "image-test", Width: 320, Height: 320, ScaleX: 1, ScaleY: 1}}
+	doc, err := svc.canvas.SaveAtRevision(identity.ID, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.GoalContinuation, req.ModelRequestLimit = 1, 41
+	invalid := req
+	invalid.MediaChoice = "generate"
+	if _, err := svc.Start(identity, doc.ID, invalid); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("goal accepted a media choice: %v", err)
+	}
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	_, session, _ = agentSession(done, req.SessionID)
+	if turns.Load() != 41 || submissions.Load() != 0 || len(done.Nodes) != 1 || done.Nodes[0].TaskID != "" || agentMap(session["agentState"])["mediaGenerationDeferred"] != false {
+		t.Fatalf("goal run=%+v turns=%d media submissions=%d state=%v nodes=%+v", done.AgentRun, turns.Load(), submissions.Load(), session["agentState"], done.Nodes)
+	}
+	req.Resume, req.GoalContinuation, req.ID = true, 0, "manual-resume"
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done = agentWait(t, svc, identity, doc.ID)
+	if turns.Load() != 43 || submissions.Load() != 0 || done.Nodes[0].TaskID != "" {
+		t.Fatalf("manual resume inherited unwanted media authorization: run=%+v turns=%d media=%d", done.AgentRun, turns.Load(), submissions.Load())
+	}
+	req.ID, req.MediaChoice = "confirmed-resume", "generate"
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done = agentWait(t, svc, identity, doc.ID)
+	if turns.Load() != 45 || submissions.Load() != 1 || done.Nodes[0].GenerationStatus != "success" {
+		t.Fatalf("confirmed resume did not generate media: run=%+v turns=%d media=%d", done.AgentRun, turns.Load(), submissions.Load())
+	}
+}
+
+func TestCanvasAgentGoalContinuationAdmission(t *testing.T) {
+	for _, name := range []string{"admitted", "changed goal", "model limit", "pending question", "cancelled", "queued after admission"} {
+		t.Run(name, func(t *testing.T) {
+			var dispatched bool
+			w := memoryWorker(t, func(_ context.Context, _ Identity, req AgentModelRequest) (map[string]any, error) {
+				if err := req.BeforeDispatch(); err != nil {
+					return nil, err
+				}
+				dispatched = true
+				return agentTurn(), nil
+			})
+			goal := map[string]any{"objective": "检查草稿", "status": "active", "criteria": []map[string]any{{"id": "draft", "text": "检查版式", "done": false}}}
+			w.session["goal"] = goal
+			w.req.GoalContinuation, w.req.goalRevision = 1, agentJSON(goal)
+			w.sdk = &AgentSDKSession{}
+			switch name {
+			case "changed goal":
+				goal["status"] = "paused"
+			case "model limit":
+				w.req.ModelRequestLimit, w.modelRequests = 40, 40
+			case "pending question":
+				w.sdk.Question = map[string]any{"id": "approval"}
+			case "cancelled":
+				ctx, cancel := context.WithCancel(w.ctx)
+				cancel()
+				w.ctx = ctx
+			}
+			if err := w.save(); err != nil {
+				t.Fatal(err)
+			}
+			want := name == "admitted" || name == "queued after admission"
+			allowed, err := w.admitGoalContinuation(1)
+			if allowed != want || name == "cancelled" && !errors.Is(err, context.Canceled) || name != "cancelled" && err != nil {
+				t.Fatalf("admission = %v, %v", allowed, err)
+			}
+			if !allowed {
+				return
+			}
+			persistedRun := agentMap(w.session["goalRun"])
+			started, startedOK := util.StrictInt(persistedRun["roundsStarted"])
+			maxRounds, maxRoundsOK := util.StrictInt(persistedRun["maxRounds"])
+			if util.Clean(persistedRun["runId"]) != w.req.ID || util.Clean(persistedRun["goalRevision"]) != w.req.goalRevision || !startedOK || started != 1 || !maxRoundsOK || maxRounds != w.req.GoalContinuation {
+				t.Fatalf("goal round reservation was not persisted: %v", persistedRun)
+			}
+			if again, err := w.admitGoalContinuation(1); again || err != nil {
+				t.Fatalf("same round could be admitted twice: %v, %v", again, err)
+			}
+			if name == "queued after admission" {
+				_, err := w.service.UpdateQueue(w.identity, w.doc.ID, CanvasAgentQueueMutation{SessionID: w.req.SessionID, Action: "append", Message: map[string]any{"id": "queued", "text": "先改标题", "createdAt": "now", "references": []any{}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			response, err := w.sdkRequest("model", map[string]any{})
+			if err != nil || dispatched != (name == "admitted") || (agentMap(response)["goalContinuationYielded"] == true) == dispatched {
+				t.Fatalf("model result=%v dispatched=%v err=%v", response, dispatched, err)
+			}
+			if !dispatched && (w.modelRequests != 0 || len(util.AsMapSlice(w.assistant()["modelAttempts"])) != 0) {
+				t.Fatal("unstarted round consumed a model request")
+			}
+		})
+	}
+}
+
+func TestCanvasAgentGoalContinuationRejectsStaleReservation(t *testing.T) {
+	w := memoryWorker(t, nil)
+	goal := map[string]any{"objective": "检查草稿", "status": "active", "criteria": []map[string]any{{"id": "draft", "text": "检查版式", "done": false}}}
+	w.session["goal"] = goal
+	w.req.GoalContinuation, w.req.goalRevision = 1, agentJSON(goal)
+	w.session["goalRun"] = map[string]any{
+		"runId":         "another-run",
+		"goalRevision":  w.req.goalRevision,
+		"roundsStarted": 0,
+		"maxRounds":     1,
+	}
+	w.sdk = &AgentSDKSession{}
+	if err := w.save(); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := w.admitGoalContinuation(1)
+	if err != nil || allowed {
+		t.Fatalf("stale goal reservation was admitted: allowed=%v err=%v", allowed, err)
+	}
+}
 
 func TestCanvasAgentSaveRejectsUnserializableSessionWithoutLosingHistory(t *testing.T) {
 	for _, name := range []string{"cycle", "unsupported value"} {
@@ -202,6 +352,36 @@ func TestCanvasAgentToolsHideSkillReaderWithoutSkills(t *testing.T) {
 	w.conversation = true
 	if len(w.tools()) != 0 {
 		t.Fatal("conversation mode must not expose tools")
+	}
+}
+
+func TestCanvasAgentReadSkillFileLoadsBodyAndAttachmentOnDemand(t *testing.T) {
+	skills := NewAgentSkillService(newTestStorageBackend(t))
+	saved, err := skills.Save("", "", true, AgentSkillInput{
+		Name:    "custom",
+		Content: "正文内容",
+		Files:   map[string]string{"a.md": "附属资料"},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &canvasAgentWorker{
+		service:  &CanvasAgentService{skills: skills},
+		identity: Identity{OwnerID: "owner"},
+		skills:   []AgentSkill{saved},
+	}
+	body, err := w.tool(map[string]any{"name": "read_skill_file", "arguments": map[string]any{"skillId": saved.ID}})
+	if err != nil || body["content"] != "正文内容" || body["kind"] != "skill" {
+		t.Fatalf("skill body = %#v, error = %v", body, err)
+	}
+	file, err := w.tool(map[string]any{"name": "read_skill_file", "arguments": map[string]any{"skillId": saved.ID, "path": "a.md"}})
+	if err != nil || file["content"] != "附属资料" {
+		t.Fatalf("skill attachment = %#v, error = %v", file, err)
+	}
+	missing, err := w.tool(map[string]any{"name": "read_skill_file", "arguments": map[string]any{"skillId": "other"}})
+	if err != nil || missing["ok"] != false || missing["code"] != "skill_not_selected" {
+		t.Fatalf("unselected skill result = %#v, error = %v", missing, err)
 	}
 }
 

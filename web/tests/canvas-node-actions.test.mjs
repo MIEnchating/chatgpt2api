@@ -183,7 +183,7 @@ test("canvas task queue is cleared across projects and sessions before stale wor
   const lifecycleSource = pageSource.slice(lifecycleStart, pageSource.indexOf("\n  useEffect(() => {", lifecycleStart + 1));
   assert.match(lifecycleSource, /activateCanvasTaskQueueSession\(session\.key\)/);
   assert.match(lifecycleSource, /active = false;[\s\S]*?canvasOperationEpochRef\.current \+= 1;[\s\S]*?clearCanvasTaskQueueForSession\(session\.key\)/);
-  assert.match(lifecycleSource, /\}, \[projectID, session\.key\]\);/);
+  assert.match(lifecycleSource, /\}, \[projectID, session\.key, linkedAgentSessionID\]\);/);
   assert.match(canvasTaskQueueStoreSource, /window\.addEventListener\(AUTH_SESSION_CHANGE_EVENT,[\s\S]*?clearSnapshot\(\)/);
 });
 

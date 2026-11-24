@@ -16,11 +16,47 @@ import ts from "typescript";
 import { createRequire } from "node:module";
 import { CONTEXT_COMPACTION_RATIO, contextTokenBudget, DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS, estimateCanvasAgentTokens } from "../src/app/canvas/agent/canvas-agent-memory.ts";
 import { canvasAgentHistorySummaries } from "../src/app/canvas/agent/canvas-agent-history.ts";
-import { parseCanvasAgentSessions } from "../src/app/canvas/agent/canvas-agent-sessions.ts";
+import { canvasAgentAutoTitle, parseCanvasAgentSessions } from "../src/app/canvas/agent/canvas-agent-sessions.ts";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const panelSource = read("../src/app/canvas/canvas-agent-panel.tsx");
 const runSettingsSource = read("../src/app/canvas/canvas-agent-run-settings.tsx");
+
+test("自动会话标题清洗控制字符并按 UTF-8 字节边界截断", () => {
+  assert.equal(canvasAgentAutoTitle("  第一行\n\u001b[31m第二行\u001b[0m  "), "第一行 第二行");
+  assert.equal(canvasAgentAutoTitle("界".repeat(31) + "🎬后续"), "界".repeat(31));
+  assert.equal(canvasAgentAutoTitle("a".repeat(92) + "🎬后续"), "a".repeat(92) + "🎬");
+  assert.equal(canvasAgentAutoTitle("👩‍🎨的分镜"), "👩‍🎨的分镜");
+  assert.equal(canvasAgentAutoTitle("\u0000\u200e\u202e"), "新对话");
+});
+
+test("完成回复的后续动作只保留受限的普通文字提案", () => {
+  const session = {
+    id: "follow-up", title: "提案", createdAt: "2026-11-23T00:00:00Z", updatedAt: "2026-11-23T00:00:00Z",
+    messages: [{ id: "assistant", role: "assistant", text: "已完成", status: "success", followUpActions: [{ title: "继续优化", prompt: "继续优化这份方案" }] }],
+    agentState: { phase: "complete", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [],
+  };
+  assert.equal(parseCanvasAgentSessions([session])[0].messages[0].followUpActions[0].prompt, "继续优化这份方案");
+  assert.throws(() => parseCanvasAgentSessions([{ ...session, messages: [{ ...session.messages[0], followUpActions: [{ title: "", prompt: "继续" }] }] }]), /对话记录数据无效/);
+});
+
+test("历史会话接受合法的画布改动摘要并拒绝不一致计数", () => {
+  const base = {
+    id: "changes", title: "改动", createdAt: "2026-11-23T00:00:00Z", updatedAt: "2026-11-23T00:00:00Z",
+    messages: [{ id: "assistant", role: "assistant", text: "完成", status: "success", canvasChangeSummary: { added: 1, updated: 2, removed: 0, total: 3 } }],
+    agentState: { phase: "complete", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [],
+  };
+  assert.equal(parseCanvasAgentSessions([base])[0].messages[0].canvasChangeSummary.total, 3);
+  assert.throws(() => parseCanvasAgentSessions([{ ...base, messages: [{ ...base.messages[0], canvasChangeSummary: { added: 1, updated: 2, removed: 0, total: 2 } }] }]), /对话记录数据无效/);
+});
+
+test("Agent 草稿按画布和会话保存在浏览器本地并恢复引用", () => {
+  assert.match(panelSource, /canvas-agent-draft:\$\{canvasId\}:\$\{activeSession\.id\}/);
+  assert.match(panelSource, /localStorage\.getItem\([^)]*canvas-agent-draft/);
+  assert.match(panelSource, /referenceNodeIDs/);
+  assert.match(panelSource, /localStorage\.setItem\([^,]+, JSON\.stringify\(\{ text: input, referenceNodeIDs: composerReferenceNodeIDs \}\)\)/);
+  assert.match(panelSource, /localStorage\.removeItem\(key\)/);
+});
 
 test("external MCP reads and confirms scripts through the authoritative backend tool chain", async () => {
   const source = ts.createSourceFile("panel.tsx", panelSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

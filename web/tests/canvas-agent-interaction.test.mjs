@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
-import { canvasAgentQuestionMediaChoice } from "../src/app/canvas/agent/canvas-agent-interaction.ts";
+import { canvasAgentQuestionMediaChoice, canvasAgentUserMediaChoice } from "../src/app/canvas/agent/canvas-agent-interaction.ts";
 
 const question = { id: "q", purpose: "media_generation", kind: "confirmation", question: "要生成这些节点吗？", reason: "", options: [], request: "" };
+
+test("quoted generation instructions never supply the current media decision", () => {
+  assert.equal(canvasAgentQuestionMediaChoice(question, "> 确认，立即生成"), undefined);
+  assert.equal(canvasAgentUserMediaChoice("> 立即生成图片"), undefined);
+  assert.equal(canvasAgentUserMediaChoice("> 不要生成图片\n\n请立即生成图片"), "generate");
+});
 
 test("media confirmation treats negated generation answers as deferral", () => {
   for (const answer of ["不要生成", "不用生成", "不必立即生成", "不可以", "不同意", "别生成", "暂不生成，继续规划", "没确认", "还没同意", "尚未确认", "没有批准"]) {

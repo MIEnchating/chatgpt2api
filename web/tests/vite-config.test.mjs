@@ -9,6 +9,10 @@ import test from "node:test";
 import { createServer as createViteServer } from "vite";
 import config from "../vite.config.ts";
 
+test("development server binds to loopback by default", () => {
+  assert.equal(config.server?.host, "127.0.0.1");
+});
+
 test("development watcher ignores external logs while keeping application HMR", () => {
   const ignored = config.server?.watch?.ignored;
   assert.equal(typeof ignored, "function");
@@ -19,14 +23,17 @@ test("development watcher ignores external logs while keeping application HMR", 
   assert.equal(ignored(path.join(root, "../web-other/log.txt")), true);
 });
 
-test("backend proxy preserves the browser host and source origin", async () => {
+test("backend proxy preserves Host and Origin and derives forwarding headers from the connection", async () => {
   const cacheDir = await mkdtemp(path.join(tmpdir(), "chatgpt2api-vite-proxy-test-"));
   const backend = createHTTPServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify({
       host: request.headers.host,
       origin: request.headers.origin,
+      forwardedFor: request.headers["x-forwarded-for"],
       forwardedProto: request.headers["x-forwarded-proto"],
+      realIP: request.headers["x-real-ip"],
+      forwardedHost: request.headers["x-forwarded-host"],
     }));
   });
   let vite;
@@ -62,6 +69,9 @@ test("backend proxy preserves the browser host and source origin", async () => {
             Host: source.host,
             Origin: source.origin,
             "X-Forwarded-Proto": source.proto,
+            "X-Forwarded-For": "192.0.2.20",
+            "X-Real-IP": "192.0.2.21",
+            "X-Forwarded-Host": "proxy.example.test",
             "Content-Type": "application/json",
           },
           body: "{}",
@@ -70,8 +80,9 @@ test("backend proxy preserves the browser host and source origin", async () => {
         assert.deepEqual(await response.json(), {
           host: source.host,
           origin: source.origin,
-          forwardedProto: source.proto,
-        }, `${route} must preserve the headers needed for server-side origin checks`);
+          forwardedFor: "127.0.0.1",
+          forwardedProto: "http",
+        }, `${route} must preserve the browser origin and forward the real connection details`);
       }
     }
   } finally {

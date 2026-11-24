@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,7 +29,12 @@ type videoContractAgentState struct {
 	modelAttempt     int
 	documentRevision int
 	documentPrepared bool
+	validatedDraft   string
 	result           *videoContractGenerationResult
+}
+
+func videoContractDraftFingerprint(arguments string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(arguments)))
 }
 
 func videoContractAgentSystemPrompt(includeProvider bool) string {
@@ -104,7 +110,7 @@ func (s *videoContractAgentState) execute(ctx context.Context, name, arguments s
 		return "", false, fmt.Errorf("不支持的工具 %q，只能调用文档读取、协议查询、契约校验和完成工具", name)
 	}
 	message := map[string]string{"inspect_protocols": "正在匹配内置协议", "read_documents": "正在补充读取相关文档", "validate_contracts": "正在校验配置与请求", "finish": "正在整理审核结果"}[name]
-	if name == "validate_contracts" {
+	if name == "validate_contracts" && s.validatedDraft != videoContractDraftFingerprint(arguments) {
 		s.result = nil
 	}
 	s.emit(videoContractImportProgressEvent{Stage: stage, Message: message, Detail: newVideoContractAgentDetail(id, "tool", name, "running", arguments, "")})
@@ -175,6 +181,10 @@ func (s *videoContractAgentState) executeTool(ctx context.Context, name, argumen
 		})
 		return output, false, err
 	case "validate_contracts":
+		fingerprint := videoContractDraftFingerprint(arguments)
+		if s.result != nil && s.validatedDraft == fingerprint {
+			return encode(map[string]any{"reused": true, "review": s.result.DryRun, "next": "该草稿已校验。请核对此前返回的请求预览，确认后调用 finish。"}), false, nil
+		}
 		s.result = nil
 		s.validations++
 		if s.validations > videoContractGenerationAttempts {
@@ -197,6 +207,7 @@ func (s *videoContractAgentState) executeTool(ctx context.Context, name, argumen
 			return "", false, err
 		}
 		s.result = &result
+		s.validatedDraft = fingerprint
 		return encode(map[string]any{"review": result.DryRun, "requests": requests, "next": "核对请求与文档；需补充证据时读取候选页面并重新校验，确认后调用 finish"}), false, nil
 	case "finish":
 		if s.result == nil {

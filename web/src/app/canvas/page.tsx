@@ -3,7 +3,7 @@
 import { videoSupportsDraft } from "@/lib/video-model-capabilities";
 
 import { canvasScriptProductionNodes, canvasScriptShotPosition } from "./canvas-script-layout";
-import { downloadCanvasNodeMedia } from "./canvas-media-download";
+import { downloadCanvasNodeMedia, downloadCanvasScript } from "./canvas-media-download";
 
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
@@ -30,7 +30,7 @@ import { uploadTemporaryMedia } from "@/services/file-storage";
 
 import { CanvasAgentSessionConflictError, forkCanvasAgentSessionConflicts, mergeCanvasDocuments, mergeCanvasHistory } from "./canvas-document-merge";
 import { canvasDocumentValuesEqual } from "./canvas-document-equality";
-import { fetchCanvasAgentRun } from "./agent/canvas-agent-backend";
+import { watchCanvasAgentProgress } from "./agent/canvas-agent-backend";
 import { canvasAgentHistorySummaries } from "./agent/canvas-agent-history";
 
 import { canvasAgentStarterAttachment } from "./agent/canvas-agent-attachments";
@@ -43,7 +43,7 @@ import { stopCreationTasks } from "@/lib/stop-creation-tasks";
 import { imageMaskEditPrompt } from "@/lib/image-mask-edit";
 import { Bot, ChevronDown, CircleDot, Clipboard, Copy, Download, Eraser, FileDown, FileUp, Grid2X2, ImagePlus, Images, Info, Menu, Paperclip, Pencil, Plus, Redo2, Settings2, SlidersHorizontal, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { useBlocker, useNavigate, useParams, type Blocker, type BlockerFunction } from "react-router-dom";
+import { useBlocker, useNavigate, useParams, useSearchParams, type Blocker, type BlockerFunction } from "react-router-dom";
 import { toast } from "sonner";
 
 import { CanvasNodeReferences, CanvasReferenceReturn } from "./canvas-node-references";
@@ -155,6 +155,8 @@ import {
   clearCanvasDocument,
   fetchCanvasDocument,
   fetchCanvasAgentHistorySession,
+  branchCanvasAgentHistory,
+  saveCanvasAgentFeedback,
   importCanvasProject,
   saveCanvasDocument,
   updateCanvasProject,
@@ -788,6 +790,8 @@ export default function CanvasRoute() {
 
 function CanvasPage({ session, projectID }: { session: StoredAuthSession; projectID?: string }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const linkedAgentSessionID = searchParams.get("agent_session") || "";
   const { preferences: imageGenerationPreferences } = useImageGenerationPreferences(session.key);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const agentAreaRef = useRef<HTMLDivElement | null>(null);
@@ -1603,6 +1607,28 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     return loaded;
   }
 
+  async function branchAgentHistorySession(sessionID: string, messageID: string, signal: AbortSignal) {
+    const projectID = documentRef.current.id;
+    const epoch = canvasOperationEpochRef.current;
+    if (!await flushCanvasSaves({ save: persistCanvas, getChangeVersion: () => saveChangeVersionRef.current, getProjectID: () => documentRef.current.id })) {
+      throw new Error("当前对话保存失败，请重试后创建分支");
+    }
+    const assertCurrent = () => {
+      signal.throwIfAborted();
+      if (!mountedRef.current || canvasOperationEpochRef.current !== epoch || documentRef.current.id !== projectID) throw new DOMException("画布已切换", "AbortError");
+    };
+    assertCurrent();
+    const branchId = randomID();
+    const { document } = await branchCanvasAgentHistory(projectID, {
+      sessionId: sessionID, messageId: messageID, branchId, revision: documentRef.current.revision,
+    }, signal);
+    assertCurrent();
+    const branch = (document.agent_sessions || []).find(item => isCanvasAgentSession(item) && item.id === branchId);
+    if (!isCanvasAgentSession(branch)) throw new Error("创建的对话分支无效");
+    applyBackendAgentDocument(document);
+    return branch;
+  }
+
   async function loadDeferredAgentHistory(signal: AbortSignal) {
     const projectID = documentRef.current.id;
     const epoch = canvasDocumentEpochRef.current;
@@ -1632,18 +1658,14 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     if (backendAgentRun?.status !== "running" || agentLocallyObserving) return;
     const projectID = documentRef.current.id;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      try {
-        const { document } = await fetchCanvasAgentRun(projectID, controller.signal);
-        if (!controller.signal.aborted && documentRef.current.id === projectID) backendSnapshotRef.current(document);
-      } catch (error) {
-        if (!controller.signal.aborted && documentRef.current.id === projectID) setAgentSyncError(error instanceof Error ? error.message : "暂时无法读取后台进度");
-      }
-      if (!controller.signal.aborted) timer = setTimeout(refresh, 1000);
+    const current = () => !controller.signal.aborted && documentRef.current.id === projectID;
+    const report = (error: unknown) => {
+      if (current()) setAgentSyncError(error instanceof Error ? error.message : "暂时无法读取后台进度");
     };
-    void refresh();
-    return () => { controller.abort(); clearTimeout(timer); };
+    void watchCanvasAgentProgress(projectID, backendAgentRun.id, controller.signal, (document) => {
+      if (current()) backendSnapshotRef.current(document);
+    }, report).catch(report);
+    return () => controller.abort();
   }, [backendAgentRun?.id, backendAgentRun?.status, agentLocallyObserving]);
 
   function applyDocument(document: CanvasDocument, resetHistory = true) {
@@ -4013,13 +4035,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
   }
 
   function downloadScript(node: CanvasNode) {
-    const blob = new Blob([JSON.stringify({ title: node.title, story: node.prompt, ...node.script_project }, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = window.document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${node.title || "脚本"}.json`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadCanvasScript(node);
   }
 
   function concatenateScript(nodeID: string, ids: readonly string[]) {
@@ -5742,7 +5758,16 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         workspace = await updateCanvasProject({ action: "create", title: "我的画布" }, "active");
         if (!active) return;
       }
-      applyWorkspace(workspace);
+      if (linkedAgentSessionID) {
+        const current = (await fetchCanvasDocument(workspace.document.id, "active", [linkedAgentSessionID], loadController.signal)).document;
+        if (!active) return;
+        const selected = storedCanvasAgentSessions(current).some(item => item.id === linkedAgentSessionID);
+        workspace = { ...workspace, document: selected ? { ...current, active_agent_session_id: linkedAgentSessionID } : current };
+        applyWorkspace(workspace);
+        setAgentOpen(true);
+      } else {
+        applyWorkspace(workspace);
+      }
     };
     void loadWorkspace()
       .catch((error) => { if (active) setLoadError(error instanceof Error ? error.message : "画布加载失败"); })
@@ -5788,7 +5813,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
     };
     // Workspace loading is keyed by route and account; callbacks read the current canvas refs.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectID, session.key]);
+  }, [projectID, session.key, linkedAgentSessionID]);
 
   useEffect(() => {
     const renewHistoryLease = () => {
@@ -6245,6 +6270,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
       {agentHistoryMissing ? agentPanelPlaceholder : agentPanelMounted ? <Suspense fallback={agentPanelPlaceholder}><CanvasAgentPanel
         key={renderedCanvasID}
         backendRun={backendAgentRun}
+        documentRevision={serverDocumentRef.current.revision}
         syncError={agentSyncError}
         onSyncError={setAgentSyncError}
         onLocalObservationChange={setAgentLocallyObserving}
@@ -6264,6 +6290,7 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
         initialSessions={agentSessions}
         sessionSummaries={agentSessionSummaries}
         onLoadSession={loadAgentHistorySession}
+        onBranchHistory={branchAgentHistorySession}
         initialActiveSessionID={activeAgentSessionID}
         initialRequest={initialAgentRequest}
         agentConfig={resolvedAgentConfig}
@@ -6300,6 +6327,23 @@ function CanvasPage({ session, projectID }: { session: StoredAuthSession; projec
           };
           setAgentSessionSummaries(canvasAgentHistorySummaries({ ...documentRef.current, agent_sessions: sessions }));
           scheduleSave();
+        }}
+        onFeedback={async (sessionID, messageID, ifVersion, feedback) => {
+          const projectID = documentRef.current.id;
+          const epoch = canvasOperationEpochRef.current;
+          const current = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === epoch;
+          if (!await flushCanvasSaves({ save: persistCanvas, getChangeVersion: () => saveChangeVersionRef.current, getProjectID: () => documentRef.current.id })) throw new Error("当前对话保存失败，请重试后保存反馈");
+          if (!current()) throw new DOMException("画布已切换", "AbortError");
+          try {
+            const { document } = await saveCanvasAgentFeedback(projectID, { sessionId: sessionID, messageId: messageID, ifVersion, feedback });
+            if (current()) applyBackendAgentDocument(document);
+          } catch (error) {
+            const failure = error as { code?: string; payload?: { document?: CanvasDocument } } | undefined;
+            if (current() && failure?.code === "feedback_version_conflict" && failure.payload?.document) {
+              applyBackendAgentDocument(failure.payload.document);
+            }
+            throw error;
+          }
         }}
         onAgentConfigChange={updateCanvasAgentConfig}
         onExecuteAction={(action, messageReferenceNodeIDs, execution) => documentRef.current.id === renderedCanvasID

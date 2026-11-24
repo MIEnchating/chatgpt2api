@@ -24,6 +24,7 @@ export function normalizeCanvasAgentConfig(value: Partial<CanvasAgentConfig> | n
     ...(typeof value?.codexModel === "string" && value.codexModel.trim() ? { codexModel: value.codexModel } : {}),
     ...(typeof value?.codexEffort === "string" && value.codexEffort.trim() ? { codexEffort: value.codexEffort } : {}),
     contextWindowTokens: value?.contextWindowTokens && Number.isSafeInteger(value.contextWindowTokens) && value.contextWindowTokens > 1 ? value.contextWindowTokens : DEFAULT_CANVAS_AGENT_CONTEXT_WINDOW_TOKENS,
+    modelRequestLimit: value?.modelRequestLimit && Number.isInteger(value.modelRequestLimit) && value.modelRequestLimit > 0 && value.modelRequestLimit <= 1000 ? value.modelRequestLimit : 0,
     autoGenerateMedia: value?.autoGenerateMedia !== false,
     textApiMode: value?.textApiMode === "chat" ? "chat" : "responses",
     textReasoningEnabled: value?.textReasoningEnabled === true,

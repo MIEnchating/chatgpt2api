@@ -117,6 +117,11 @@ func (w *canvasAgentWorker) runSavedWorkflow(args map[string]any) (map[string]an
 	if err != nil {
 		return nil, err
 	}
+	if revision, ok := util.StrictInt(args["revision"]); !ok || int64(revision) != item.Revision {
+		result := agentError("stale_workflow_revision", "模板版本已变化，请重新读取工作流、核对变量和参考素材后再执行")
+		result["revision"] = item.Revision
+		return result, nil
+	}
 	entries := util.AsMapSlice(args["items"])
 	if item.Mode == "single_image" && len(entries) != 1 {
 		return nil, fmt.Errorf("此工作流只接受一份输入")
@@ -450,7 +455,7 @@ func agentWorkflowOrder(ids []string, nodes []CanvasNode, connections []CanvasCo
 	}
 	return ordered, nil
 }
-func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (map[string]any, error) {
+func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (result map[string]any, runErr error) {
 	order, err := agentWorkflowOrder(ids, w.doc.Nodes, w.doc.Connections)
 	if err != nil {
 		return nil, err
@@ -492,6 +497,29 @@ func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (map[string]any, err
 		}
 		return map[string]any{"ok": true, "nodeIds": order, "submitted": false, "message": "流程已就绪，等待媒体生成授权"}, nil
 	}
+	if w.activeCall != nil {
+		members := make([]map[string]any, 0, len(order))
+		for _, id := range order {
+			node := w.node(id)
+			members = append(members, map[string]any{"nodeId": id, "title": firstAgentString(node.Title, node.Type), "status": "waiting"})
+		}
+		w.workflowRun = map[string]any{"id": w.activeCall["id"], "status": "running", "members": members}
+		message := w.assistant()
+		message["workflowRuns"] = append(util.AsMapSlice(message["workflowRuns"]), w.workflowRun)
+		defer func() {
+			status := "success"
+			if w.ctx.Err() != nil {
+				status = "interrupted"
+			} else if runErr != nil || result["ok"] != true {
+				status = "error"
+			}
+			settleCanvasWorkflowRun(w.workflowRun, status)
+			w.workflowRun = nil
+			if err := w.save(); runErr == nil && err != nil {
+				runErr = fmt.Errorf("%w: %w", ErrAgentProgressPersistence, err)
+			}
+		}()
+	}
 	results, failure, err := w.runWorkflowGenerations(order)
 	if err != nil {
 		return nil, err
@@ -507,6 +535,18 @@ func (w *canvasAgentWorker) runCanvasWorkflow(ids []string) (map[string]any, err
 		return nil, err
 	}
 	return map[string]any{"ok": true, "nodeIds": order, "results": results, "status": "success"}, nil
+}
+
+func settleCanvasWorkflowRun(run map[string]any, status string) {
+	run["status"] = status
+	for _, member := range util.AsMapSlice(run["members"]) {
+		switch member["status"] {
+		case "running":
+			member["status"] = "interrupted"
+		case "waiting":
+			member["status"] = "skipped"
+		}
+	}
 }
 
 func (w *canvasAgentWorker) clearWorkflowReview(nodeIDs []string) {
@@ -533,6 +573,7 @@ func (w *canvasAgentWorker) clearWorkflowReview(nodeIDs []string) {
 }
 
 func canvasAgentWorkflowReviewApproved(answer string) bool {
+	answer = canvasAgentQuoteLines.ReplaceAllString(answer, "")
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	answer = strings.NewReplacer(" ", "", "\t", "", "\n", "", "。", "", "！", "", "？", "", ",", "", "，", "", ".", "", "!", "", "?", "").Replace(answer)
 	// Fail closed: a negation outside the fixed "no problem" phrases means the answer is not an approval.

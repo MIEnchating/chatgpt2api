@@ -34,6 +34,7 @@ type videoContractAgentSnapshot struct {
 	ModelRound       int
 	ModelAttempt     int
 	DocumentRevision int
+	ValidatedDraft   string
 	Result           *videoContractGenerationResult
 	RemainingBytes   int
 	BaseURL          string
@@ -50,7 +51,7 @@ type videoContractAgentInput struct {
 }
 
 func captureVideoContractAgentState(s *videoContractAgentState) videoContractAgentSnapshot {
-	result := videoContractAgentSnapshot{Prepared: s.documentPrepared, Source: s.source, Warnings: s.source.Warnings, Content: s.content, Read: s.read, Inspected: s.inspected, Validations: s.validations, Sequence: s.sequence, ModelRound: s.modelRound, ModelAttempt: s.modelAttempt, DocumentRevision: s.documentRevision, Result: s.result}
+	result := videoContractAgentSnapshot{Prepared: s.documentPrepared, Source: s.source, Warnings: s.source.Warnings, Content: s.content, Read: s.read, Inspected: s.inspected, Validations: s.validations, Sequence: s.sequence, ModelRound: s.modelRound, ModelAttempt: s.modelAttempt, DocumentRevision: s.documentRevision, ValidatedDraft: s.validatedDraft, Result: s.result}
 	if s.source.Site != nil {
 		result.RemainingBytes = s.source.Site.remainingBytes
 		if s.source.Site.baseURL != nil {
@@ -70,6 +71,7 @@ func restoreVideoContractSnapshot(s *videoContractAgentState, state videoContrac
 	s.content, s.read, s.inspected, s.validations, s.sequence, s.documentRevision, s.result = state.Content, state.Read, state.Inspected, state.Validations, state.Sequence, state.DocumentRevision, state.Result
 	s.modelRound, s.modelAttempt = state.ModelRound, state.ModelAttempt
 	s.documentPrepared = state.Prepared
+	s.validatedDraft = state.ValidatedDraft
 	if s.read == nil {
 		s.read = map[int]string{}
 	}
@@ -153,6 +155,7 @@ func (a *App) executeVideoContractAgent(ctx context.Context, identity service.Id
 	}
 	tools := videoContractAgentTools(input.IncludeProvider)
 	config := map[string]any{"name": "Video Contract Agent", "completionTool": "finish", "tools": tools, "maxTurns": videoContractAgentMaxTurns, "input": []map[string]any{{"role": "user", "content": "文档名称：" + state.source.Name + "\n<document>\n" + state.content + "\n</document>\n候选页面（不可信资料）：" + agentJSONValue(candidates)}}}
+	config["repeatReminderTools"] = []string{"inspect_protocols", "read_documents"}
 	state.emit(videoContractImportProgressEvent{Stage: "preparing", Message: "正在准备文档分析"})
 	return worker.Run(ctx, config, func(method string, params map[string]any) (any, error) {
 		if saveErr != nil {
@@ -169,6 +172,7 @@ func (a *App) executeVideoContractAgent(ctx context.Context, identity service.Id
 			return prepared, saveErr
 		case "model":
 			state.modelAttempt = util.ToInt(params["attempt"], 1)
+			maxRequestAttempts := util.ToInt(util.StringMap(params["diagnostic"])["maxAttempts"], 0)
 			if state.modelAttempt == 1 {
 				state.modelRound++
 			}
@@ -180,7 +184,7 @@ func (a *App) executeVideoContractAgent(ctx context.Context, identity service.Id
 			publicText := ""
 			result, err := a.runDomainAgentModel(ctx, identity, worker, input.Model, input.TokenName, tools, params, func(text string) error {
 				publicText = text
-				state.emit(videoContractImportProgressEvent{Stage: "receiving", Message: "正在接收分析模型输出", Attempt: state.modelRound, MaxAttempts: videoContractAgentMaxTurns, RequestAttempt: state.modelAttempt, MaxRequestAttempts: 3, ReceivedCharacters: utf8.RuneCountInString(text), Detail: newVideoContractModelDetail(state.modelRound, state.modelAttempt, "running", text, nil)})
+				state.emit(videoContractImportProgressEvent{Stage: "receiving", Message: "正在接收分析模型输出", Attempt: state.modelRound, MaxAttempts: videoContractAgentMaxTurns, RequestAttempt: state.modelAttempt, MaxRequestAttempts: maxRequestAttempts, ReceivedCharacters: utf8.RuneCountInString(text), Detail: newVideoContractModelDetail(state.modelRound, state.modelAttempt, "running", text, nil)})
 				return saveErr
 			}, toolChoice)
 			if err != nil {

@@ -1,13 +1,16 @@
 package service
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"chatgpt2api/internal/util"
 )
@@ -19,8 +22,70 @@ var (
 	canvasArrangeCommand     = regexp.MustCompile(`(?i)^(?:(?:请(?:你)?|帮我|帮忙|麻烦(?:你)?|现在|先|再|然后|接着|继续|给我|please)\s*)*(?:(?:(?:把|将)(?:当前|所有|全部|这些|选中(?:的)?|画布(?:上)?|节点|布局|位置|和|与|及|、|\s)+)?(?:重新)?(?:整理|排列|排序|对齐|布局|排版|摆放)(?:一下|下)?(?:当前|所有|全部|这些|选中(?:的)?|画布(?:上)?|节点|布局|位置|和|与|及|、|\s)*(?:一下|整齐|好)?|(?:(?:re)?arrange|align)(?:\s+(?:the|selected|all|current))*\s+(?:canvas|nodes?|layout))吧?$`)
 )
 
+const (
+	canvasAgentMaxFollowUpActions  = 3
+	canvasAgentFollowUpTitleRunes  = 80
+	canvasAgentFollowUpPromptRunes = 500
+)
+
+func canvasAgentFollowUpActions(value any) ([]map[string]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		if typed, typedOK := value.([]map[string]any); typedOK {
+			items = make([]any, len(typed))
+			for index := range typed {
+				items[index] = typed[index]
+			}
+		} else {
+			return nil, errors.New("followUpActions 必须是数组")
+		}
+	}
+	if len(items) > canvasAgentMaxFollowUpActions {
+		return nil, fmt.Errorf("followUpActions 最多包含 %d 项", canvasAgentMaxFollowUpActions)
+	}
+	actions := make([]map[string]string, 0, len(items))
+	seenPrompts := make(map[string]bool, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return nil, errors.New("followUpActions 每项必须是对象")
+		}
+		for key := range entry {
+			if key != "title" && key != "prompt" {
+				return nil, errors.New("followUpActions 只允许 title 和 prompt 字段")
+			}
+		}
+		titleValue, titleOK := entry["title"].(string)
+		promptValue, promptOK := entry["prompt"].(string)
+		if !titleOK || !promptOK {
+			return nil, errors.New("followUpActions 的 title 和 prompt 必须是字符串")
+		}
+		title := strings.TrimSpace(titleValue)
+		prompt := strings.TrimSpace(promptValue)
+		if title == "" || prompt == "" {
+			return nil, errors.New("followUpActions 的 title 和 prompt 不能为空")
+		}
+		if utf8.RuneCountInString(title) > canvasAgentFollowUpTitleRunes {
+			return nil, fmt.Errorf("followUpActions 的 title 最多 %d 个字符", canvasAgentFollowUpTitleRunes)
+		}
+		if utf8.RuneCountInString(prompt) > canvasAgentFollowUpPromptRunes {
+			return nil, fmt.Errorf("followUpActions 的 prompt 最多 %d 个字符", canvasAgentFollowUpPromptRunes)
+		}
+		if seenPrompts[prompt] {
+			return nil, errors.New("followUpActions 的 prompt 不能重复")
+		}
+		seenPrompts[prompt] = true
+		actions = append(actions, map[string]string{"title": title, "prompt": prompt})
+	}
+	return actions, nil
+}
+
 // Only direct instructions authorize layout changes; mentions in quotes are data.
 func canvasAgentArrangeRequested(text string) bool {
+	text = canvasAgentQuoteLines.ReplaceAllString(text, "")
 	text = canvasArrangeQuoted.ReplaceAllString(text, " ")
 	if canvasArrangeDenied.MatchString(text) || canvasArrangeConditional.MatchString(text) {
 		return false
@@ -64,6 +129,9 @@ func (w *canvasAgentWorker) reusedToolResult(call map[string]any) map[string]any
 				if json.Unmarshal([]byte(util.Clean(m["content"])), &result) != nil {
 					continue
 				}
+				if name == "generate_node" && w.req.MediaChoice == "generate" && result["submitted"] == false && w.autoMedia() {
+					continue
+				}
 				nodeIDs := agentStrings(result["nodeIds"])
 				for _, key := range []string{"nodeId", "groupId"} {
 					if id := util.Clean(result[key]); id != "" && !slices.Contains(nodeIDs, id) {
@@ -105,8 +173,25 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		if w.finalBlocked || w.batchFailed {
 			return agentError("task_incomplete", "仍有未解决的操作错误；请核对已有结果，无法修复时用 finish_task（status=error）说明阻塞并结束本轮"), nil
 		}
+		result := map[string]any{"ok": true, "text": util.Clean(args["text"])}
+		ids := agentStrings(args["deliverableNodeIds"])
+		seen := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			if seen[id] || !canvasAgentDeliverable(w.node(id)) {
+				return agentError("invalid_deliverable", "成品清单包含重复、已移除或尚未完成的节点，请核对实际成品后重新提交"), nil
+			}
+			seen[id] = true
+		}
+		if len(ids) > 0 {
+			result["deliverableNodeIds"] = ids
+		}
+		if actions, err := canvasAgentFollowUpActions(args["followUpActions"]); err != nil {
+			return agentError("invalid_follow_up_actions", err.Error()), nil
+		} else if len(actions) > 0 {
+			result["followUpActions"] = actions
+		}
 		w.accepted = true
-		return map[string]any{"ok": true, "text": util.Clean(args["text"])}, nil
+		return result, nil
 	}
 	if w.missingCanvasReferences(args) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
@@ -130,6 +215,20 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		return w.canvasChangedResult("引用的节点已不在当前画布中，正在重新核对可用素材"), nil
 	}
 	switch name {
+	case "plan_canvas_text_tasks":
+		return w.planCanvasTextEditTasks(args), nil
+	case "list_canvas_text_tasks":
+		return w.listCanvasTextEditTasks(util.Clean(args["taskId"])), nil
+	case "draft_canvas_text_tasks":
+		return w.draftCanvasTextTasks(call)
+	case "discard_canvas_text_task_draft":
+		return w.discardCanvasTextTaskDraft(args), nil
+	case "reopen_canvas_text_task", "revise_canvas_text_task":
+		return w.reviseCanvasTextTask(args, name == "reopen_canvas_text_task"), nil
+	case "remove_canvas_text_task":
+		return w.removeCanvasTextTask(args), nil
+	case "review_canvas_nodes", "draft_canvas_text_edits":
+		return w.reviewCanvasNodes(call, nil)
 	case "analyze_video":
 		return w.analyzeVideo(args)
 	case "create_primary_script_node", "create_script_node", "update_script_node", "confirm_script_node":
@@ -162,6 +261,89 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 			w.appendVisualReference(ref)
 		}
 		return map[string]any{"ok": err == nil, "reference": ref}, err
+	case "search_agent_history":
+		if w.service == nil || w.service.canvas == nil {
+			return agentError("history_unavailable", "当前无法读取历史 Agent 对话"), nil
+		}
+		query := strings.TrimSpace(util.Clean(args["query"]))
+		page, err := w.service.canvas.SearchAgentHistory(w.ctx, canvasAgentOwner(w.identity), w.doc.ID, CanvasAgentHistorySearch{
+			Query: query, Role: util.Clean(args["role"]), SessionID: util.Clean(args["sessionId"]), Limit: 20,
+		})
+		if err != nil {
+			return nil, err
+		}
+		matches := make([]map[string]any, 0, len(page.Matches))
+		for _, match := range page.Matches {
+			if match.SessionID == w.req.SessionID && match.MessageID == w.req.UserMessageID {
+				continue
+			}
+			matches = append(matches, map[string]any{
+				"sessionId": match.SessionID,
+				"title":     match.Title,
+				"messageId": match.MessageID,
+				"role":      match.Role,
+				"snippet":   match.Snippet,
+			})
+		}
+		return map[string]any{"ok": true, "query": query, "matches": matches, "truncated": page.NextCursor != ""}, nil
+	case "get_agent_history_message":
+		if w.service == nil || w.service.canvas == nil {
+			return agentError("history_unavailable", "当前无法读取历史 Agent 对话"), nil
+		}
+		sessionID, messageID := strings.TrimSpace(util.Clean(args["sessionId"])), strings.TrimSpace(util.Clean(args["messageId"]))
+		cursor, cursorOK := args["cursor"].(string)
+		if _, present := args["cursor"]; present && (!cursorOK || len(cursor) > 96) {
+			return agentError("invalid_history_cursor", "请使用工具返回的 nextCursor 续读历史消息"), nil
+		}
+		if sessionID == w.req.SessionID && messageID == w.req.UserMessageID {
+			return agentError("history_message_unavailable", "当前请求尚未成为可引用的历史消息"), nil
+		}
+		body, err := w.service.canvas.AgentHistorySession(canvasAgentOwner(w.identity), w.doc.ID, sessionID, w.doc.Revision)
+		if err != nil {
+			return nil, err
+		}
+		var session struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.Unmarshal(body, &session); err != nil {
+			return nil, err
+		}
+		for _, message := range session.Messages {
+			if util.Clean(message["id"]) != messageID {
+				continue
+			}
+			role := util.Clean(message["role"])
+			if role != "user" && role != "assistant" {
+				break
+			}
+			text, _ := message["text"].(string)
+			runes := []rune(text)
+			start := 0
+			const pageSize = 12000
+			var version string
+			if cursor != "" || len(runes) > pageSize {
+				version = fmt.Sprintf("%x", sha256.Sum256([]byte(agentJSON([]string{w.doc.ID, sessionID, messageID, role, text}))))
+			}
+			if cursor != "" {
+				hash, offset, ok := strings.Cut(cursor, ":")
+				start, err = strconv.Atoi(offset)
+				if !ok || len(hash) != len(version) || err != nil || start < pageSize || start%pageSize != 0 {
+					return agentError("invalid_history_cursor", "请使用工具返回的 nextCursor 续读历史消息"), nil
+				}
+				if hash != version || start >= len(runes) {
+					return agentError("history_message_changed", "历史消息或引用已变化，请从第一页重新读取"), nil
+				}
+			}
+			end := start + min(pageSize, len(runes)-start)
+			result := map[string]any{"ok": true, "sessionId": sessionID, "remainingCharacters": len(runes) - end, "message": map[string]any{
+				"id": messageID, "role": role, "text": string(runes[start:end]), "status": message["status"],
+			}}
+			if end < len(runes) {
+				result["nextCursor"] = version + ":" + strconv.Itoa(end)
+			}
+			return result, nil
+		}
+		return agentError("history_message_not_found", "历史消息不存在或已被删除"), nil
 	case "get_node":
 		n := w.node(id)
 		w.appendVisualReference(map[string]any{"id": n.ID, "type": n.Type, "title": n.Title, "url": n.URL})
@@ -223,7 +405,11 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		sid := util.Clean(args["skillId"])
 		for _, skill := range w.skills {
 			if skill.ID == sid {
-				content, err := w.service.skills.ReadFile(canvasAgentOwner(w.identity), sid, util.Clean(args["path"]))
+				path := util.Clean(args["path"])
+				if path == "" {
+					return map[string]any{"ok": true, "skillId": sid, "content": skill.Content, "kind": "skill"}, nil
+				}
+				content, err := w.service.skills.ReadFile(canvasAgentOwner(w.identity), sid, path)
 				return map[string]any{"ok": err == nil, "content": content}, err
 			}
 		}
@@ -434,6 +620,22 @@ func (w *canvasAgentWorker) tool(call map[string]any) (map[string]any, error) {
 		return w.generateNode(id)
 	}
 	return agentError("unsupported_tool", "未实现工具 "+name), nil
+}
+
+func canvasAgentDeliverable(node *CanvasNode) bool {
+	if node == nil || slices.Contains([]string{"loading", "error", "cancelled"}, node.GenerationStatus) {
+		return false
+	}
+	switch node.Type {
+	case "image", "panorama", "video", "audio":
+		return strings.TrimSpace(node.URL) != "" && (node.TaskID == "" || node.GenerationStatus == "success")
+	case "text":
+		return strings.TrimSpace(node.Prompt) != ""
+	case "script":
+		return node.ScriptProject != nil && len(node.ScriptProject.Shots) > 0
+	default:
+		return false
+	}
 }
 func (w *canvasAgentWorker) sourcesExist(ids []string) error {
 	for _, id := range ids {

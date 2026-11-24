@@ -86,6 +86,8 @@ func TestCanvasAgentSDKCompletedCheckpointRestoresAcceptanceOnlyForUnchangedCanv
 func TestCanvasAgentBrowserCannotForgeOrEraseSDKToolReceipts(t *testing.T) {
 	w := memoryWorker(t, nil)
 	w.session["toolReceipts"] = map[string]any{"real": map[string]any{"name": "create_text_node", "done": true, "result": map[string]any{"ok": true, "nodeId": "original"}}}
+	w.session["textEditProposals"] = map[string]any{"original": map[string]any{"content": "原始提案"}}
+	w.session["textEditTasks"] = map[string]any{"original": map[string]any{"status": "pending"}}
 	if err := w.save(); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +102,8 @@ func TestCanvasAgentBrowserCannotForgeOrEraseSDKToolReceipts(t *testing.T) {
 	}
 	sessions, session, _ := agentSession(doc, w.req.SessionID)
 	session["toolReceipts"] = map[string]any{"forged": map[string]any{"done": true}}
+	session["textEditProposals"] = map[string]any{"forged": map[string]any{"content": "伪造提案"}}
+	session["textEditTasks"] = map[string]any{"forged": map[string]any{"status": "completed"}}
 	doc.AgentSessions, _ = json.Marshal(sessions)
 	saved, err := w.service.canvas.SaveAtRevision(w.identity.ID, doc)
 	if err != nil {
@@ -109,6 +113,14 @@ func TestCanvasAgentBrowserCannotForgeOrEraseSDKToolReceipts(t *testing.T) {
 	receipts := agentMap(session["toolReceipts"])
 	if receipts["real"] == nil || receipts["forged"] != nil {
 		t.Fatalf("browser rewrote receipts: %v", receipts)
+	}
+	proposals := agentMap(session["textEditProposals"])
+	if proposals["original"] == nil || proposals["forged"] != nil {
+		t.Fatalf("browser rewrote text proposals: %v", proposals)
+	}
+	tasks := agentMap(session["textEditTasks"])
+	if agentMap(tasks["original"])["status"] != "pending" || tasks["forged"] != nil {
+		t.Fatalf("browser rewrote text tasks: %v", tasks)
 	}
 }
 
@@ -161,6 +173,39 @@ func TestCanvasAgentSDKPassesActiveToolsAndRequiresCompletionAfterEveryTurn(t *t
 	done := agentWait(t, svc, identity, doc.ID)
 	if done.AgentRun.Status != "success" || turns != 2 {
 		t.Fatalf("SDK completion failed: %+v turns=%d", done.AgentRun, turns)
+	}
+}
+
+func TestCanvasAgentSDKRemindsAboutRepeatedReadsAcrossPlanUpdates(t *testing.T) {
+	turn := 0
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, r AgentModelRequest) (map[string]any, error) {
+		turn++
+		switch turn {
+		case 1, 3, 5:
+			return agentTurn(agentCall(fmt.Sprintf("read-config-%d", turn), "get_generation_config", map[string]any{})), nil
+		case 2, 4:
+			return agentTurn(agentCall(fmt.Sprintf("plan-%d", turn), "update_plan", map[string]any{
+				"steps": []any{map[string]any{"id": "check", "title": "检查生成配置", "status": "completed"}},
+			})), nil
+		default:
+			reminded := []string{}
+			for _, message := range r.Messages {
+				if message["role"] == "tool" && strings.Contains(util.Clean(message["content"]), `"repeatedReadReminder"`) {
+					reminded = append(reminded, util.Clean(message["tool_call_id"]))
+				}
+			}
+			if len(reminded) != 1 || reminded[0] != "read-config-5" {
+				t.Errorf("expected a reminder on the third matching read, got %v", reminded)
+			}
+			return agentTurn(), nil
+		}
+	}, nil)
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "success" || turn != 6 {
+		t.Fatalf("run status = %s, model turns = %d", done.AgentRun.Status, turn)
 	}
 }
 
@@ -447,6 +492,24 @@ func TestCanvasAgentSDKCoalescesStreamingProgressAndKeepsFinalReply(t *testing.T
 
 func TestCanvasAgentSDKRetryProgress(t *testing.T) {
 	w := memoryWorker(t, nil)
+	w.sdk = &AgentSDKSession{}
+	w.assistant()["modelAttempts"] = []map[string]any{{"runId": w.req.ID, "requestId": "retry-request", "attempt": 1, "status": "retryable_error"}}
+	retryAt := time.Now().Add(time.Second).Format(time.RFC3339Nano)
+	if _, err := w.sdkRequest("retry", map[string]any{
+		"attempt":     2,
+		"diagnostic":  map[string]any{"requestId": "retry-request", "attempt": 1},
+		"retryAt":     retryAt,
+		"delayMs":     500,
+		"retryWaitMs": 500,
+		"rateLimited": true,
+		"failureCode": "RATE_LIMIT",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	attempt := util.AsMapSlice(w.assistant()["modelAttempts"])[0]
+	if attempt["retryAt"] != retryAt || attempt["retryDelayMs"] != 500 || attempt["retryWaitMs"] != 500 || attempt["rateLimited"] != true || attempt["failureCode"] != "RATE_LIMIT" {
+		t.Fatalf("retry metadata was not persisted: %#v", attempt)
+	}
 	for attempt := 1; attempt <= 5; attempt++ {
 		if _, err := w.sdkRequest("retry", map[string]any{"attempt": attempt}); err != nil {
 			t.Fatal(err)
@@ -460,5 +523,67 @@ func TestCanvasAgentSDKRetryProgress(t *testing.T) {
 	}
 	if got := util.Clean(w.assistant()["activity"]); got != "模型工具格式不正确，正在纠正后继续" {
 		t.Fatalf("validation activity = %q", got)
+	}
+}
+
+func TestCanvasAgentSDKRetryBudgetPersistsAcrossResumeAndResetsForNewRequest(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.sdk = &AgentSDKSession{Items: []map[string]any{{"role": "user", "content": "继续任务"}}, RetryWaitMS: 120}
+	if err := w.saveSDKSession(); err != nil {
+		t.Fatal(err)
+	}
+	w.req.Resume = true
+	config, err := w.sdkConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config["retryWaitMs"] != int64(120) {
+		t.Fatalf("resume lost retry budget: %#v", config["retryWaitMs"])
+	}
+	w.req.Resume = false
+	config, err = w.sdkConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := config["retryWaitMs"]; ok || w.sdk.RetryWaitMS != 0 {
+		t.Fatalf("new request reused retry budget: config=%#v session=%d", config["retryWaitMs"], w.sdk.RetryWaitMS)
+	}
+}
+
+func TestCanvasAgentSDKValidationRetryDoesNotConsumeRetryBudget(t *testing.T) {
+	w := memoryWorker(t, nil)
+	w.sdk = &AgentSDKSession{}
+	if _, err := w.sdkRequest("retry", map[string]any{
+		"attempt":     1,
+		"retryAt":     time.Now().Add(time.Second).Format(time.RFC3339Nano),
+		"retryWaitMs": 120,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if w.sdk.RetryWaitMS != 120 {
+		t.Fatalf("model retry did not save budget: %d", w.sdk.RetryWaitMS)
+	}
+	if _, err := w.sdkRequest("retry", map[string]any{"attempt": 1, "validation": true}); err != nil {
+		t.Fatal(err)
+	}
+	if w.sdk.RetryWaitMS != 120 {
+		t.Fatalf("validation retry changed model budget: %d", w.sdk.RetryWaitMS)
+	}
+}
+
+func TestCanvasAgentSDKSuccessfulModelClearsRetryBudget(t *testing.T) {
+	w := memoryWorker(t, func(context.Context, Identity, AgentModelRequest) (map[string]any, error) {
+		return agentTurn(), nil
+	})
+	w.sdk = &AgentSDKSession{RetryWaitMS: 120}
+	if _, err := w.sdkRequest("model", map[string]any{"messages": []map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if w.sdk.RetryWaitMS != 0 {
+		t.Fatalf("successful model retained retry budget: %d", w.sdk.RetryWaitMS)
+	}
+	found, err := w.loadSDKSession()
+	if err != nil || !found || w.sdk.RetryWaitMS != 0 {
+		t.Fatalf("cleared retry budget was not persisted: found=%v err=%v value=%d", found, err, w.sdk.RetryWaitMS)
 	}
 }

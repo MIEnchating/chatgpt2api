@@ -44,6 +44,21 @@ func TestVideoContractAgentToolsValidateBeforeFinish(t *testing.T) {
 	if state.result.Contracts[0].Driver != protocol.VideoContractDriverOpenAI || state.result.DryRun[0].ReviewPassed {
 		t.Fatal("matching or missing-evidence status was lost")
 	}
+	snapshot, err := json.Marshal(captureVideoContractAgentState(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored videoContractAgentSnapshot
+	if err := json.Unmarshal(snapshot, &restored); err != nil {
+		t.Fatal(err)
+	}
+	state = &videoContractAgentState{}
+	if err := restoreVideoContractSnapshot(state, restored); err != nil {
+		t.Fatal(err)
+	}
+	if result, _, err := state.executeTool(ctx, "validate_contracts", string(output)); err != nil || !strings.Contains(result, `"reused":true`) || state.validations != 1 {
+		t.Fatalf("resumed validation was repeated: result=%s validations=%d err=%v", result, state.validations, err)
+	}
 	if _, done, err := state.executeTool(ctx, "finish", `{}`); err != nil || !done {
 		t.Fatalf("finish: %v", err)
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -162,5 +163,91 @@ func TestCanvasAgentTaskWaitPublishesTextBeforeModelCompletes(t *testing.T) {
 	}
 	if text := <-received; text != "完整回复" {
 		t.Fatal(text)
+	}
+}
+
+func TestCanvasAgentReadOnlyUsesOnlyAdmittedToolsAndRejectsMutation(t *testing.T) {
+	var attempts atomic.Int32
+	svc, identity, doc, request := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		tools := util.AsMapSlice(request.Metadata["tools"])
+		names := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			name := util.Clean(util.StringMap(tool["function"])["name"])
+			names = append(names, name)
+		}
+		want := slices.Clone(canvasAgentReadOnlyTools)
+		slices.Sort(names)
+		slices.Sort(want)
+		if !slices.Equal(names, want) {
+			t.Errorf("read-only tool list = %v, want %v", names, want)
+		}
+		if request.Metadata["tool_choice"] == "required" {
+			t.Error("a read-only reply must be able to answer in text")
+		}
+		switch attempts.Add(1) {
+		case 1:
+			return agentTurn(agentCall("unadmitted", "create_text_node", map[string]any{"title": "forbidden", "content": "forbidden"})), nil
+		case 2:
+			if !strings.Contains(agentJSON(request.Messages), "tool_not_admitted") {
+				t.Errorf("tool rejection missing from second model request: %s", agentJSON(request.Messages))
+			}
+			return agentTurn(agentCall("allowed", "get_canvas_summary", map[string]any{})), nil
+		default:
+			if !strings.Contains(agentJSON(request.Messages), "get_canvas_summary") {
+				t.Error("model did not receive the permitted tool result")
+			}
+			return map[string]any{"text_response": "画布暂无节点。"}, nil
+		}
+	}, nil)
+	request.UserText = "当前画布有哪些节点？"
+	if _, err := svc.Start(identity, doc.ID, request); err != nil {
+		t.Fatal(err)
+	}
+	result := agentWait(t, svc, identity, doc.ID)
+	if result.AgentRun.Status != "success" || len(result.Nodes) != len(doc.Nodes) || attempts.Load() != 3 {
+		t.Fatalf("read-only result: status=%s nodes=%d attempts=%d", result.AgentRun.Status, len(result.Nodes), attempts.Load())
+	}
+	if canvasAgentReadOnlyRequest("当前画布有哪些节点？帮我生成一张海报") || !canvasAgentReadOnlyRequest("只读：核对全部素材") {
+		t.Fatal("read-only selection must distinguish a mixed request and explicit read-only intent")
+	}
+}
+
+func TestCanvasAgentExplicitReadOnlyAndRequestLimitSurviveRetry(t *testing.T) {
+	var dispatched atomic.Int32
+	svc, identity, doc, req := agentFixture(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if err := request.BeforeDispatch(); err != nil {
+			return nil, err
+		}
+		n := dispatched.Add(1)
+		for _, definition := range util.AsMapSlice(request.Metadata["tools"]) {
+			if !slices.Contains(canvasAgentReadOnlyTools, util.Clean(agentMap(definition["function"])["name"])) {
+				t.Error("read-only request exposed a write tool")
+			}
+		}
+		if n == 1 {
+			return agentTurn(agentCall("blocked-write", "create_text_node", map[string]any{"title": "private text"})), nil
+		}
+		return map[string]any{"text_response": "已检查", "usage": map[string]any{"input_tokens": 5, "output_tokens": 0, "total_tokens": 5}}, nil
+	}, nil)
+	req.ReadOnly, req.ModelRequestLimit = true, 1
+	req.MediaChoice = "generate"
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done := agentWait(t, svc, identity, doc.ID)
+	if done.AgentRun.Status != "error" || !done.AgentRun.ReadOnly || !strings.Contains(done.AgentRun.Error, "模型请求上限") || len(done.Nodes) != len(doc.Nodes) || dispatched.Load() != 1 {
+		t.Fatalf("unexpected limited run: %+v calls=%d", done.AgentRun, dispatched.Load())
+	}
+	req.ID, req.ReadOnly, req.Resume = "retry", false, true
+	if _, err := svc.Start(identity, doc.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	done = agentWait(t, svc, identity, doc.ID)
+	_, session, _ := agentSession(done, req.SessionID)
+	message := util.AsMapSlice(session["messages"])[1]
+	attempts := util.AsMapSlice(message["modelAttempts"])
+	if done.AgentRun.Status != "success" || !done.AgentRun.ReadOnly || len(attempts) != 2 || attempts[0]["validationFailed"] != true ||
+		attempts[1]["runId"] != "retry" || agentJSON(attempts[1]["usage"]) != `{"input_tokens":5,"output_tokens":0,"total_tokens":5}` || dispatched.Load() != 2 {
+		t.Fatalf("unexpected retry diagnostics: run=%+v attempts=%v", done.AgentRun, attempts)
 	}
 }

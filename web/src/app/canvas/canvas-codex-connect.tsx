@@ -1,18 +1,16 @@
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert } from "@/components/ui/alert";
-import { ItemMedia } from "@/components/ui/item";
 import { Card } from "@/components/ui/card";
 import { CodeBlock, CodeBlockHeader, CodeBlockTitle, CodeBlockActions, CodeBlockCopyButton, CodeBlockContent } from "@/components/ui/code-block";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { PasswordInput } from "@/components/password-input";
 import { useEffect, useState } from "react";
-import { ChevronDown, Plug, Settings2, ShieldCheck, Terminal, Unplug, X } from "lucide-react";
+import { ChevronDown, Plug, ShieldCheck, Terminal, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { useCanvasCodexAgent } from "./agent/canvas-codex-agent";
 import { ModelPicker } from "@/components/model-picker";
@@ -27,37 +25,15 @@ export function CanvasCodexConnect({ agent, busy, open, onOpenChange }: {
   const [token, setToken] = useState("");
   const selectedModel = agent.models.find((item) => item.model === agent.model);
   const startCommand = `node canvas-agent/server.mjs --origin ${window.location.origin}`;
-  const status = agent.connecting ? "连接中" : agent.connected ? "已连接" : agent.error ? "连接异常" : "未连接";
-
   useEffect(() => { if (agent.connected) onOpenChange(false); }, [agent.connected, onOpenChange]);
 
-  return <section aria-label="Codex 连接设置" className="shrink-0 border-b px-3 py-2.5">
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" type="button" aria-label="Codex 连接与模型设置" className="flex w-full min-w-0 items-center text-left justify-start h-auto min-h-8 whitespace-normal py-2">
-          <ItemMedia variant="icon" className="grid size-8 shrink-0 place-items-center">
-            {agent.connecting ? <Spinner /> : <Terminal  />}
-          </ItemMedia>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-2 text-xs font-medium">
-              本地 Codex
-              <Badge variant={agent.error ? "destructive" : "secondary"} role="status">{status}</Badge>
-            </span>
-            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={agent.connected ? selectedModel?.displayName || agent.model : undefined}>
-              {agent.connected ? `${selectedModel?.displayName || agent.model} · ${agent.effort}` : agent.error ? "点击查看详情并重新连接" : "连接后即可协作编辑画布"}
-            </span>
-          </span>
-          {agent.connected ? <Settings2 className="shrink-0 text-muted-foreground" /> : <span className="shrink-0 text-xs font-medium text-primary">配置<ChevronDown className="ml-1 inline" /></span>}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent aria-label="Codex 配置" side="bottom" align="end" className="max-h-(--radix-popover-content-available-height) w-[min(360px,calc(100vw-2rem))]"><ScrollArea data-slot="popover-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
-        <div className="mb-4 flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold">{agent.connected ? "模型与连接" : "连接 Codex"}</h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{agent.connected ? "设置当前对话使用的模型与思考强度" : "使用本机的 Codex，在当前画布中创作"}</p>
-          </div>
-          <Button type="button" size="icon" variant="ghost"  aria-label="关闭 Codex 配置" onClick={() => onOpenChange(false)}><X  /></Button>
-        </div>
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>{agent.connected ? "Codex 模型与连接" : "连接 Codex"}</DialogTitle>
+        <DialogDescription>{agent.connected ? "设置当前对话使用的模型与思考强度" : "使用本机的 Codex，在当前画布中创作"}</DialogDescription>
+      </DialogHeader>
+      <ScrollArea data-slot="dialog-body" className="min-h-0 min-w-0 flex-1" contentClassName="grid gap-4 py-1">
         {!agent.connected ? <form className="space-y-3.5" onSubmit={(event) => {
           event.preventDefault();
           if (busy || agent.connecting || !token.trim()) return;
@@ -111,7 +87,7 @@ export function CanvasCodexConnect({ agent, busy, open, onOpenChange }: {
           </div>
         </div>}
         {agent.error ? <Alert variant="destructive" role="alert">{agent.error}</Alert> : null}
-      </ScrollArea></PopoverContent>
-    </Popover>
-  </section>;
+      </ScrollArea>
+    </DialogContent>
+  </Dialog>;
 }

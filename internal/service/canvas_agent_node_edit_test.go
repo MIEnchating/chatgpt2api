@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"chatgpt2api/internal/util"
@@ -47,6 +50,109 @@ func TestCanvasAgentEmptyMediaFramePreservesExistingMediaAndFreeResize(t *testin
 				t.Fatalf("unexpected frame: %+v", tc.node)
 			}
 		})
+	}
+}
+
+func TestCanvasAgentDelegatedMediaPromptsRespectGenerationInputs(t *testing.T) {
+	w := memoryWorker(t, func(_ context.Context, _ Identity, request AgentModelRequest) (map[string]any, error) {
+		if err := request.BeforeDispatch(); err != nil {
+			return nil, err
+		}
+		var input map[string]any
+		if err := json.Unmarshal([]byte(util.Clean(request.Messages[1]["content"])), &input); err != nil {
+			return nil, err
+		}
+		node := agentMap(input["node"])
+		if node["generation"] == nil || node["mediaUrl"] != nil || node["text"] != "old prompt" {
+			return nil, fmt.Errorf("unexpected draft snapshot: %v", node)
+		}
+		return map[string]any{"text_response": agentJSON(map[string]any{"content": "New " + util.Clean(node["type"]) + " prompt"})}, nil
+	})
+	for _, kind := range []string{"image", "video", "audio"} {
+		n := w.newNode(kind, kind, "old prompt")
+		n.ID, n.TaskID, n.URL, n.GenerationStatus = kind, "task-"+kind, "/media/"+kind, "success"
+		w.doc.Nodes = append(w.doc.Nodes, n)
+	}
+	ref := w.newNode("text", "Reference", "Original reference")
+	w.addNode(ref, nil)
+	w.doc.Connections = []CanvasConnection{{ID: "ref-to-video", FromNodeID: ref.ID, ToNodeID: "video"}}
+	if err := w.save(); err != nil {
+		t.Fatal(err)
+	}
+	original := cloneCanvasAgentDocument(w.doc)
+	runTool := func(id, name string, args map[string]any) map[string]any {
+		t.Helper()
+		call := map[string]any{"id": id, "name": name, "arguments": args}
+		w.batchCalls = []map[string]any{call}
+		result, err := w.sdkTool(call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return agentMap(result)
+	}
+	tasks := util.AsMapSlice(runTool("plan-media", "plan_canvas_text_tasks", map[string]any{"tasks": []map[string]any{
+		{"key": "image", "nodeId": "image", "question": "Refine the composition"},
+		{"key": "video", "nodeId": "video", "question": "Refine the movement"},
+		{"key": "audio", "nodeId": "audio", "question": "Refine the speech"},
+	}})["tasks"])
+	if len(tasks) != 3 {
+		t.Fatalf("unexpected plan: %v", tasks)
+	}
+	selected := make([]map[string]any, 0, len(tasks))
+	for _, task := range tasks {
+		selected = append(selected, map[string]any{"id": task["id"], "expectedRevision": task["revision"]})
+	}
+	draft := runTool("draft-media", "draft_canvas_text_tasks", map[string]any{"tasks": selected})
+	proposals := make([]string, 0, len(tasks))
+	for _, review := range util.AsMapSlice(draft["reviews"]) {
+		if id := util.Clean(review["proposalId"]); id != "" {
+			proposals = append(proposals, id)
+		}
+	}
+	if len(proposals) != len(tasks) {
+		t.Fatalf("unexpected draft: %v", draft)
+	}
+	for i, node := range w.doc.Nodes[:3] {
+		if node.Prompt != original.Nodes[i].Prompt {
+			t.Fatal("draft modified a media node before submission")
+		}
+	}
+	w.state["approvedWorkflowReviewPrompts"] = map[string]any{"image": canvasAgentWorkflowFingerprint(*w.node("image"))}
+	if result := runTool("apply-media", "apply_canvas_text_edits", map[string]any{"proposalIds": proposals}); result["ok"] != true {
+		t.Fatalf("apply: %v", result)
+	}
+	for i, node := range w.doc.Nodes[:3] {
+		want := original.Nodes[i]
+		want.Prompt = "New " + node.Type + " prompt"
+		if !reflect.DeepEqual(node, want) || !slices.Contains(agentStrings(w.state["detachedTaskIds"]), node.TaskID) {
+			t.Fatalf("unexpected media edit: %+v", node)
+		}
+	}
+	if w.workflowReviewApproved("image") {
+		t.Fatal("old prompt approval applied to the edited prompt")
+	}
+	job, result, err := w.prepareGeneration("image")
+	if err != nil || job != nil || result["code"] != "canvas_changed" || w.node("image").TaskID != "task-image" {
+		t.Fatalf("regeneration bypassed confirmation: %v, %v, %v", job, result, err)
+	}
+
+	current := cloneCanvasAgentDocument(w.doc)
+	image := w.saveCanvasTaskProposal("image", "", "media_prompt", canvasTextTaskNodeRevision(w.doc, *w.node("image")), "draft-again", "Stale image prompt")
+	video := w.saveCanvasTaskProposal("video", "", "media_prompt", canvasTextTaskNodeRevision(w.doc, *w.node("video")), "draft-again", "Stale video prompt")
+	result, revisions := w.applyCanvasTextEdits(map[string]any{"proposalIds": []string{image, video}})
+	if result["ok"] != true {
+		t.Fatalf("stage second batch: %v", result)
+	}
+	current.Nodes[3].Prompt = "Updated reference"
+	if _, err := w.service.canvas.SaveAtRevision(w.identity.ID, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.saveWithNodeRevisions(revisions); !errors.Is(err, errCanvasTextEditStale) {
+		t.Fatalf("concurrent generation input change did not reject the batch: %v", err)
+	}
+	saved, err := w.service.canvas.Project(w.identity.ID, w.doc.ID)
+	if err != nil || saved.Nodes[0].Prompt != "New image prompt" || saved.Nodes[1].Prompt != "New video prompt" || saved.Nodes[3].Prompt != "Updated reference" {
+		t.Fatalf("stale batch changed saved nodes: %v, %v", saved.Nodes, err)
 	}
 }
 

@@ -14,6 +14,8 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+type agentModelLogUsageKey struct{}
+
 func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 	return a.runLoggedChatTaskWithContext(ctx, identity, payload, "/api/creation-tasks/chat-completions", "文本生成")
 }
@@ -37,11 +39,14 @@ func (a *App) runLoggedChatTaskCaptured(ctx context.Context, identity service.Id
 		return nil, err
 	}
 	result, err := a.executeChatTaskRequest(ctx, payload)
+	data := chatCompletionTaskData(result)
+	if endpoint == "/api/agent-model" {
+		ctx = context.WithValue(ctx, agentModelLogUsageKey{}, service.AgentModelUsage(util.StringMap(data["usage"]), payload["api_mode"] == "responses"))
+	}
 	if err != nil {
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return result, err
 	}
-	data := chatCompletionTaskData(result)
 	if util.Clean(data["text_response"]) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 && data["finish_reason"] != "length" && data["finish_reason"] != "incomplete" {
 		err = errors.New("模型没有返回文本内容或工具调用")
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", http.StatusBadGateway, err.Error(), nil, requestCapture)

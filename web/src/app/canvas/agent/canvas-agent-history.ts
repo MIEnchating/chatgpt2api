@@ -3,11 +3,40 @@ import type { CanvasAssistantSession } from "./canvas-agent-types";
 import { isCanvasAgentSession } from "./canvas-agent-sessions";
 import { canvasDocumentValuesEqual } from "../canvas-document-equality";
 
+function canvasAgentSessionStats(session: CanvasAssistantSession): Pick<CanvasAgentSessionSummary, "turn_count" | "elapsed_ms" | "operation_count" | "retry_count"> {
+  let turnCount = 0;
+  let elapsedMs = 0;
+  let operationCount = 0;
+  let retryCount = 0;
+  for (const message of session.messages) {
+    if (message.role !== "assistant") continue;
+    operationCount += (message.trace || []).filter(entry => entry.type === "operation").length;
+    retryCount += (message.modelAttempts || []).filter(attempt => (attempt.attempt || 0) > 1).length;
+    if (message.status === "thinking" || message.status === "running") continue;
+    turnCount++;
+    elapsedMs += typeof message.elapsedMs === "number" && Number.isFinite(message.elapsedMs) && message.elapsedMs > 0 ? message.elapsedMs : 0;
+  }
+  return { turn_count: turnCount, elapsed_ms: elapsedMs, operation_count: operationCount, retry_count: retryCount };
+}
+
+export function canvasAgentHistoryStatsLabel(summary: Pick<CanvasAgentSessionSummary, "turn_count" | "elapsed_ms" | "operation_count" | "retry_count">) {
+  const parts: string[] = [];
+  if (summary.turn_count) parts.push(`${summary.turn_count} 轮`);
+  if (summary.elapsed_ms) {
+    const seconds = Math.max(1, Math.round(summary.elapsed_ms / 1000));
+    parts.push(seconds < 60 ? `用时 ${seconds} 秒` : `用时 ${Math.floor(seconds / 60)} 分${seconds % 60 ? ` ${seconds % 60} 秒` : ""}`);
+  }
+  if (summary.operation_count) parts.push(`${summary.operation_count} 次操作`);
+  if (summary.retry_count) parts.push(`重试 ${summary.retry_count} 次`);
+  return parts.join(" · ");
+}
+
 export function canvasAgentHistorySummaries(document: Pick<CanvasDocument, "agent_session_summaries" | "deleted_agent_session_ids"> & { agent_sessions: readonly CanvasAssistantSession[] }): CanvasAgentSessionSummary[] {
   const removed = new Set(document.deleted_agent_session_ids || []);
   const summaries = new Map((document.agent_session_summaries || []).map(item => [item.id, item]));
   for (const session of document.agent_sessions) {
-    summaries.set(session.id, { id: session.id, title: session.title, created_at: session.createdAt, updated_at: session.updatedAt, message_count: session.messages.length, content_hash: summaries.get(session.id)?.content_hash || "" });
+    const previous = summaries.get(session.id);
+    summaries.set(session.id, { ...previous, id: session.id, title: session.title, created_at: session.createdAt, updated_at: session.updatedAt, message_count: session.messages.length, ...canvasAgentSessionStats(session), content_hash: previous?.content_hash || "" });
   }
   return [...summaries.values()].filter(item => !removed.has(item.id));
 }

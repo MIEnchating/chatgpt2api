@@ -16,7 +16,7 @@
 
 - 日常开发必须运行源码：前端使用 Vite `dev` 模式，后端使用 `go run ./internal`；不得用 Docker/Compose、`vite preview` 或已编译二进制替代开发服务。
 - 默认端口固定为前端 `8002`、后端 `8090`。前端通过 `VITE_BACKEND_URL=http://127.0.0.1:8090` 代理后端接口。
-- 推荐分别在两个终端启动：`VITE_BACKEND_URL=http://127.0.0.1:8090 npm run dev -- --host 0.0.0.0 --port 8002`（`web/` 目录）和 `PORT=8090 go run ./internal`（仓库根目录）。
+- 推荐在 `web/` 运行 `VITE_BACKEND_URL=http://127.0.0.1:8090 npm run dev`，在仓库根目录运行 `PORT=8090 go run ./internal`。Vite 默认只监听回环地址，远程开发通过 SSH 端口转发访问。
 - Docker/Compose、`go build -tags=embed` 和 `vite preview` 仅用于部署、发布或构建验证，不作为日常开发启动方式。
 - 修改 Go 代码后重启 `go run` 进程；修改前端代码由 Vite HMR 自动更新。提交前仍需按测试规范执行构建、Lint 和 Go 测试。
 - 启动开发或验证服务前，必须先检查本项目已有进程、`8002`/`8090` 端口、systemd 服务和 Docker 容器，并确认工作目录与服务用途。

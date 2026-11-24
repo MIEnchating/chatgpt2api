@@ -229,6 +229,8 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
       break;
     }
     case "run_saved_workflow": {
+      const revision = input.revision;
+      if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) throw new Error("revision 必须是已读取的工作流修订号");
       if (!Array.isArray(input.items) || input.items.length < 1) throw new Error("items 至少需要一项");
       const items = input.items.map((item) => {
         if (!isRecord(item)) throw new Error("items 必须是对象数组");
@@ -245,7 +247,7 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
           attachmentIds: stringArray(item.attachmentIds),
         };
       });
-      normalized = { workflowId: requiredString(input.workflowId, "workflowId"), items };
+      normalized = { workflowId: requiredString(input.workflowId, "workflowId"), revision, items };
       break;
     }
     case "create_canvas_workflow": {

@@ -20,6 +20,17 @@ export type CanvasCodexAnswer = { accepted: boolean; answers?: Record<string, st
 type ActiveRun = { input: RunCanvasAgentInput; protocolMessages: RunCanvasAgentInput["protocolMessages"]; state: CanvasAgentState; text: string; messageTexts: Map<string, string>; traceItems: Map<string, Record<string, unknown>>; threadId: string; turnId: string; done: (result: RunResult) => void; fail: (error: Error) => void; calls: number; cancelledQuestion: boolean; lifetime: AbortController; pendingMessages: CanvasCodexRPC[]; fileChanges: Map<string, unknown[]>; cleanup: () => void };
 const READ_TOOLS = new Set(["analyze_video","get_canvas_summary", "get_selected_nodes", "query_canvas_nodes", "get_node", "get_reference", "list_references", "get_upstream_nodes", "get_downstream_nodes", "get_connected_nodes", "get_generation_config", "get_generation_task", "get_media_task_status", "list_workflows", "get_workflow"]);
 
+function recordCodexQuestions(run: ActiveRun, requestId: string, questions: NonNullable<CanvasCodexApproval["questions"]>, response?: CanvasCodexAnswer) {
+  for (const question of questions) {
+    const answer = response?.accepted ? response.answers?.[question.id]?.trim() : undefined;
+    run.input.onTrace?.({
+      id: `${run.threadId}:${run.turnId}:question:${requestId}:${question.id}`,
+      type: "question", question: question.question,
+      ...(answer ? { answer } : response ? { cancelled: true } : {}),
+    });
+  }
+}
+
 export function useCanvasCodexAgent(input: { canvasId: string; savedModel?: string; savedEffort?: string; onSettingsChange: (settings: { codexModel?: string; codexEffort?: string }) => void; onDisconnect: (reason?: "canvas-detached") => void; executeAction: (action: CanvasAgentAction, signal: AbortSignal) => Promise<CanvasAgentToolResult>; ask: (approval: CanvasCodexApproval, signal: AbortSignal) => Promise<CanvasCodexAnswer> }) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -84,10 +95,12 @@ export function useCanvasCodexAgent(input: { canvasId: string; savedModel?: stri
       run.input.onEvent?.({ status: "waiting", label: "等待你的回答" });
       const batch = action.arguments.purpose === undefined && Array.isArray(action.arguments.questions) ? action.arguments.questions as Array<{ question: string; options: string[] }> : undefined;
       const questions = batch?.length ? batch.map((question, index) => ({ id: `${action.id}:${index}`, question: question.question, options: question.options.map(label => ({ label })) })) : [{ id: action.id, question: String(action.arguments.question), options: (action.arguments.options as string[]).map(label => ({ label })) }];
+      recordCodexQuestions(run, action.id, questions);
       const response = await inputRef.current.ask({
         title: "Codex 需要你的意见", details: "", description: String(action.arguments.reason),
         questions,
       }, signal);
+      recordCodexQuestions(run, action.id, questions, response);
       if (signal.aborted) throw new DOMException("操作已取消", "AbortError");
       if (action.arguments.purpose === "workflow_review") {
         if (!run.input.onWorkflowReviewAnswer) return { ok: false, code: "workflow_review_unavailable", message: "当前工作流审核不可用" };
@@ -272,7 +285,9 @@ export function useCanvasCodexAgent(input: { canvasId: string; savedModel?: stri
         const record = (result: CanvasAgentToolResult) => {
           if (runSignal.aborted || activeRef.current !== run) return;
           run.state = result.agentState ? result.agentState as CanvasAgentState : applyTaskResult(run.state, result);
-          run.input.onTrace?.(canvasAgentActionTrace(action, result));
+          if (name !== "ask_user_question" || (!result.ok && result.code !== "execution_unknown" && result.code !== "user_cancelled")) {
+            run.input.onTrace?.({ ...canvasAgentActionTrace(action, result), id: action.id });
+          }
           run.protocolMessages = run.protocolMessages.map((item, index) => index === resultIndex ? { role: "tool", name, toolCallId: callId, content: JSON.stringify(canvasAgentModelToolResult(result)) } : item);
           checkpoint();
         };
@@ -307,11 +322,13 @@ export function useCanvasCodexAgent(input: { canvasId: string; savedModel?: stri
           return;
         }
         if (questions) {
+          recordCodexQuestions(run, String(message.id), questions);
           run.protocolMessages = [...run.protocolMessages, { role: "assistant", content: questions.map((question) => question.question).join("\n") }];
           run.input.onCheckpoint?.({ state: run.state, protocolMessages: run.protocolMessages, contextCheckpoint: run.input.contextCheckpoint });
         }
         run.input.onEvent?.({ status: "waiting", label: "等待你的确认" });
         const response = await inputRef.current.ask({ title: questions ? "Codex 需要补充信息" : "Codex 请求本地操作授权", details: JSON.stringify(changes ? { ...params, changes } : params, null, 2), questions }, runSignal);
+        if (questions) recordCodexQuestions(run, String(message.id), questions, response);
         if (runSignal.aborted || activeRef.current !== run) return;
         run.input.onEvent?.({ status: "thinking", label: "正在根据你的回答继续" });
         if (questions) {

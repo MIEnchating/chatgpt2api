@@ -2,6 +2,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ArrowUp, ListTodo, X } from "lucide-react";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Trace,
   TraceIcon,
@@ -46,6 +47,7 @@ export function CanvasAgentQueuedMessages({
             >
               {message.text}
             </span>
+            {message.readOnly ? <Badge variant="secondary">只读</Badge> : null}
             <TooltipHint content="暂停当前执行，并发送这条消息">
               <Button
                 type="button"

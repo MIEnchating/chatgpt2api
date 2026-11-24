@@ -14,7 +14,7 @@ import {
 export type SubagentData = {
   prompt?: string;
   model?: string;
-  agents: { id: string; status: string; message?: string }[];
+  agents: { id: string; name?: string; status: string; message?: string }[];
 };
 export function Subagent({ prompt, model, agents }: SubagentData) {
   return (
@@ -37,7 +37,7 @@ export function Subagent({ prompt, model, agents }: SubagentData) {
                   <Bot />
                 )}
               </TraceIcon>
-              <TraceTitle title={agent.id}>子代理 {agent.id}</TraceTitle>
+              <TraceTitle title={agent.name || agent.id}>{agent.name || `子代理 ${agent.id}`}</TraceTitle>
               <TraceDescription>
                 {(
                   {
@@ -47,6 +47,7 @@ export function Subagent({ prompt, model, agents }: SubagentData) {
                     pendingInit: "准备中",
                     shutdown: "已结束",
                     interrupted: "已中断",
+                    changed: "节点已变更",
                     notFound: "未找到",
                     unknown: "状态未返回",
                   } as Record<string, string>

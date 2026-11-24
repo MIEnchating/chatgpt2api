@@ -20,13 +20,14 @@ var ErrAgentExecutionNotFound = errors.New("Agent 任务不存在")
 
 // AgentExecution is the public projection; inputs, SDK state and tool receipts stay private.
 type AgentExecution struct {
-	ID        string           `json:"id"`
-	Domain    string           `json:"domain"`
-	Status    string           `json:"status"`
-	Error     string           `json:"error,omitempty"`
-	UpdatedAt string           `json:"updatedAt"`
-	Events    []map[string]any `json:"events"`
-	Result    any              `json:"result,omitempty"`
+	ID           string           `json:"id"`
+	Domain       string           `json:"domain"`
+	Status       string           `json:"status"`
+	Error        string           `json:"error,omitempty"`
+	UpdatedAt    string           `json:"updatedAt"`
+	ModelRetryAt string           `json:"modelRetryAt,omitempty"`
+	Events       []map[string]any `json:"events"`
+	Result       any              `json:"result,omitempty"`
 }
 type agentExecutionRecord struct {
 	AgentExecution
@@ -45,14 +46,54 @@ type AgentExecutionService struct {
 	store    storage.JSONDocumentBackend
 	handlers map[string]AgentExecutionHandler
 	active   map[string]context.CancelFunc
+	watchers map[string]map[chan struct{}]struct{}
 	wg       sync.WaitGroup
 	closed   bool
 }
 
 func NewAgentExecutionService(ctx context.Context, store storage.Backend) *AgentExecutionService {
 	ctx, cancel := context.WithCancel(ctx)
-	return &AgentExecutionService{ctx: ctx, cancel: cancel, store: jsonDocumentStoreFromBackend(store), handlers: map[string]AgentExecutionHandler{}, active: map[string]context.CancelFunc{}}
+	return &AgentExecutionService{ctx: ctx, cancel: cancel, store: jsonDocumentStoreFromBackend(store), handlers: map[string]AgentExecutionHandler{}, active: map[string]context.CancelFunc{}, watchers: map[string]map[chan struct{}]struct{}{}}
 }
+
+// WatchProgress subscribes to changes for one owned run. Subscribe before reading the first snapshot.
+func (s *AgentExecutionService) WatchProgress(identity Identity, id string) (<-chan struct{}, func()) {
+	return s.watchProgress(agentExecutionPath(identity, id))
+}
+
+func (s *AgentExecutionService) watchProgress(key string) (<-chan struct{}, func()) {
+	changed := make(chan struct{}, 1)
+	s.mu.Lock()
+	if s.watchers[key] == nil {
+		s.watchers[key] = make(map[chan struct{}]struct{})
+	}
+	s.watchers[key][changed] = struct{}{}
+	s.mu.Unlock()
+	return changed, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.watchers[key], changed)
+		if len(s.watchers[key]) == 0 {
+			delete(s.watchers, key)
+		}
+	}
+}
+
+func (s *AgentExecutionService) notifyProgress(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notifyProgressLocked(key)
+}
+
+func (s *AgentExecutionService) notifyProgressLocked(key string) {
+	for changed := range s.watchers[key] {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (s *AgentExecutionService) Register(domain string, handler AgentExecutionHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -176,6 +217,15 @@ func (s *AgentExecutionService) Resume(identity Identity, id string) (AgentExecu
 	if s.handlers[record.Domain] == nil {
 		return AgentExecution{}, errors.New("Agent 业务不可用")
 	}
+	if retryAt, err := time.Parse(time.RFC3339Nano, record.ModelRetryAt); err == nil {
+		if time.Now().Before(retryAt) {
+			return record.AgentExecution, fmt.Errorf("上游要求延后重试，请在 %s 后继续", retryAt.UTC().Format(time.RFC3339Nano))
+		}
+		if record.Status == "waiting" {
+			record.SDK.RetryWaitMS = 0
+		}
+		record.ModelRetryAt = ""
+	}
 	record.Status = "running"
 	record.Error = ""
 	record.UpdatedAt = util.NowISO()
@@ -236,7 +286,11 @@ func (s *AgentExecutionService) Stop(identity Identity, id string) error {
 	if record.Status != "success" {
 		record.Status = "cancelled"
 		record.UpdatedAt = util.NowISO()
-		return saveStoredJSONBounded(s.store, agentExecutionPath(identity, id), record)
+		key := agentExecutionPath(identity, id)
+		if err := saveStoredJSONBounded(s.store, key, record); err != nil {
+			return err
+		}
+		s.notifyProgressLocked(key)
 	}
 	return nil
 }
@@ -245,6 +299,7 @@ func (s *AgentExecutionService) launch(identity Identity, record *agentExecution
 	ctx, cancel := context.WithCancel(s.ctx)
 	handler := s.handlers[record.Domain]
 	s.active[key] = cancel
+	s.notifyProgressLocked(key)
 	s.wg.Add(1)
 	// Return a projection before the goroutine can mutate its slices.
 	copyRecord := &agentExecutionRecord{}
@@ -272,6 +327,7 @@ func (s *AgentExecutionService) launch(identity Identity, record *agentExecution
 		}
 		s.mu.Lock()
 		delete(s.active, key)
+		s.notifyProgressLocked(key)
 		s.mu.Unlock()
 	}()
 }
@@ -282,12 +338,15 @@ type AgentExecutionWorker struct {
 	identity         Identity
 	record           *agentExecutionRecord
 	persistenceError error
+	modelAttempt     map[string]any
 }
 
 // A service shutdown preserves paid media tasks for recovery.
 func (w *AgentExecutionWorker) CancelledByUser(ctx context.Context) bool {
 	return ctx.Err() != nil && w.service.ctx.Err() == nil
 }
+
+func (w *AgentExecutionWorker) ID() string { return w.record.ID }
 
 func (w *AgentExecutionWorker) Input(target any) error { return json.Unmarshal(w.record.Input, target) }
 func (w *AgentExecutionWorker) Restore(target any) error {
@@ -317,24 +376,42 @@ func (w *AgentExecutionWorker) Save() error {
 	return err
 }
 
+// SaveProgress publishes a change only after it has reached storage.
+func (w *AgentExecutionWorker) SaveProgress() error {
+	if err := w.Save(); err != nil {
+		return err
+	}
+	s := w.service
+	s.notifyProgress(agentExecutionPath(w.identity, w.record.ID))
+	return nil
+}
+
 func (w *AgentExecutionWorker) Event(event map[string]any) error {
 	sequence := 1
 	if len(w.record.Events) > 0 {
 		sequence = util.ToInt(w.record.Events[len(w.record.Events)-1]["sequence"], 0) + 1
 	}
 	event["sequence"] = sequence
+	if len(w.modelAttempt) > 0 {
+		event["modelAttempt"] = w.modelAttempt
+	}
 	w.record.Events = append(w.record.Events, event)
 	// Bound event payloads separately from the SDK's authoritative history.
 	if len(w.record.Events) > 160 {
 		w.record.Events = w.record.Events[len(w.record.Events)-160:]
 	}
-	return w.Save()
+	return w.SaveProgress()
 }
 func (w *AgentExecutionWorker) Run(ctx context.Context, config map[string]any, business func(string, map[string]any) (any, error)) error {
 	config["sessionId"] = agentExecutionPath(w.identity, w.record.ID)
+	config["preserveRetryCheckpoint"] = true
+	config["retryWaitMs"] = w.record.SDK.RetryWaitMS
 	if len(w.record.SDK.Items) > 0 || w.record.SDK.State != "" {
 		delete(config, "inputProtocol")
 		config["input"] = []map[string]any{}
+	}
+	if len(w.record.SDK.ModelContext) > 0 {
+		config["modelContext"] = w.record.SDK.ModelContext
 	}
 	if w.record.SDK.State != "" {
 		config["state"] = w.record.SDK.State
@@ -355,13 +432,22 @@ func (w *AgentExecutionWorker) Run(ctx context.Context, config map[string]any, b
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		w.modelAttempt = util.StringMap(params["diagnostic"])
 		switch method {
 		case "retry":
-			message := fmt.Sprintf("上游连接暂时中断，正在重试模型请求（%d/5）", util.ToInt(params["attempt"], 1))
 			if params["validation"] == true {
-				message = "模型工具格式不正确，正在纠正后继续"
+				return map[string]any{"ok": true}, w.Event(map[string]any{"stage": "retrying", "message": "模型工具格式不正确，正在纠正后继续"})
 			}
-			return map[string]any{"ok": true}, w.Event(map[string]any{"stage": "retrying", "message": message})
+			message := fmt.Sprintf("上游连接暂时中断，正在重试模型请求（%d/%d）",
+				util.ToInt(params["attempt"], 1), util.ToInt(w.modelAttempt["maxAttempts"], 0)-1)
+			return map[string]any{"ok": true}, w.recordModelRetry(params, "retrying", message)
+		case "model":
+			if w.record.ModelRetryAt != "" {
+				w.record.ModelRetryAt = ""
+				if err := w.Save(); err != nil {
+					return nil, err
+				}
+			}
 		case "session":
 			return ApplyAgentSDKSession(&w.record.SDK, params, func(next *AgentSDKSession) error {
 				previous := w.record.SDK
@@ -380,18 +466,32 @@ func (w *AgentExecutionWorker) Run(ctx context.Context, config map[string]any, b
 			w.record.Status = "waiting"
 			return map[string]any{"ok": true}, w.Save()
 		case "finish":
-			if params["status"] == "waiting" {
-				w.record.SDK.State = ""
+			if params["retryBudgetExceeded"] == true {
+				if w.record.SDK.State == "" {
+					return nil, errors.New("延后重试缺少执行检查点")
+				}
 				w.record.Status = "waiting"
-			} else if w.record.Result == nil {
+				w.record.Error = fmt.Sprintf("等待时间超过本次自动重试预算，进度已保存。请在 %s 后继续。", util.Clean(params["retryAt"]))
+				return map[string]any{"ok": true}, w.recordModelRetry(params, "retry_deferred", w.record.Error)
+			}
+			waiting := params["status"] == "waiting"
+			if !waiting && w.record.Result == nil {
 				return nil, errors.New("任务尚未通过业务验收")
-			} else {
-				w.record.Status = "success"
-				w.record.SDK.State = ""
+			}
+			if err := w.record.SDK.retainCompactedContext(true); err != nil {
+				return nil, err
+			}
+			w.record.SDK.State = ""
+			w.record.SDK.RetryWaitMS = 0
+			w.record.ModelRetryAt = ""
+			w.record.Status = "success"
+			if waiting {
+				w.record.Status = "waiting"
 			}
 			return map[string]any{"ok": true}, w.Save()
 		case "tool":
 			id := util.Clean(params["id"])
+			delete(params, "diagnostic")
 			fingerprint := agentJSON(params)
 			if receipt := w.record.Receipts[id]; receipt != nil {
 				if receipt["fingerprint"] != fingerprint {
@@ -423,8 +523,28 @@ func (w *AgentExecutionWorker) Run(ctx context.Context, config map[string]any, b
 	})
 }
 
+func (w *AgentExecutionWorker) recordModelRetry(params map[string]any, stage, message string) error {
+	retryAt := util.Clean(params["retryAt"])
+	wait, validWait := util.StrictInt(params["retryWaitMs"])
+	if _, err := time.Parse(time.RFC3339Nano, retryAt); err != nil || !validWait || wait < 0 || int64(wait) > agentModelRetryBudgetMS {
+		return errors.New("模型重试时间或等待预算无效")
+	}
+	w.record.ModelRetryAt = retryAt
+	w.record.SDK.RetryWaitMS = int64(wait)
+	event := map[string]any{
+		"stage": stage, "message": message, "retryAt": retryAt,
+		"retryDelayMs": params["delayMs"], "retryWaitMs": wait, "rateLimited": params["rateLimited"],
+	}
+	if code := util.Clean(params["failureCode"]); code != "" {
+		event["failureCode"] = code
+	}
+	return w.Event(event)
+}
+
 // WaitAgentExecution observes saved state; disconnecting never cancels the worker.
 func WaitAgentExecution(ctx context.Context, s *AgentExecutionService, identity Identity, id string, onProgress func(AgentExecution)) (AgentExecution, error) {
+	changed, stop := s.WatchProgress(identity, id)
+	defer stop()
 	for {
 		run, err := s.Snapshot(identity, id, "")
 		if err != nil {
@@ -439,12 +559,10 @@ func WaitAgentExecution(ctx context.Context, s *AgentExecutionService, identity 
 			}
 			return run, nil
 		}
-		timer := time.NewTimer(250 * time.Millisecond)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return run, ctx.Err()
-		case <-timer.C:
+		case <-changed:
 		}
 	}
 }

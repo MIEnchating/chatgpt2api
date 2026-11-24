@@ -2,10 +2,66 @@ import assert from "node:assert/strict";
 import { afterAll, mock, test } from "bun:test";
 const actual = { ...await import("../src/lib/request.ts") };
 let calls = [], handler;
-mock.module("@/lib/request", () => ({ ...actual, httpRequest: async (path, options = {}) => { calls.push({ path, options }); return handler(path, options); } }));
+mock.module("@/lib/request", () => ({
+  ...actual,
+  httpRequest: async (path, options = {}) => { calls.push({ path, options }); return handler(path, options); },
+  httpRequestEventStream: async (path, options) => {
+    calls.push({ path, options, stream: true });
+    const response = await handler(path, options);
+    for (const event of response.events || [{ type: "snapshot", ...response }]) options.onData(JSON.stringify(event));
+  },
+}));
 const { runBackendCanvasAgent, fetchCanvasAgentRun, runBackendCanvasTool, answerBackendWorkflowReview, CanvasAgentStopError, CanvasAgentObservationError } = await import("../src/app/canvas/agent/canvas-agent-backend.ts");
 afterAll(() => mock.module("@/lib/request", () => actual));
 const snapshot = (status) => ({ document: { id: "project", revision: 2, agent_run: { id: "run", status } } });
+test("canvas progress reconstructs ordered deltas without mutating older snapshots", async () => {
+  calls = [];
+  const running = { ...snapshot("running").document, nodes: [{ id: "old", generation_progress: 40 }], connections: [{ id: "unchanged" }], agent_sessions: [{ messages: ["first"], protocolMessages: [{ role: "user", content: "unchanged" }] }], pending_agent_request: {} };
+  handler = (_path, options) => options.method === "POST" ? { document: running } : { events: [
+    { type: "snapshot", document: running },
+    { type: "delta", base_revision: 2, revision: 3, operations: [
+      { path: ["revision"], value: 3 },
+      { path: ["nodes", 0, "generation_progress"], value: 41 },
+      { path: ["agent_sessions", 0, "messages", 1], value: "second" },
+      { path: ["pending_agent_request"], remove: true },
+    ] },
+    { type: "delta", base_revision: 3, revision: 4, operations: [
+      { path: ["revision"], value: 4 },
+      { path: ["nodes", 0], remove: true },
+      { path: ["agent_sessions", 0, "messages", 1], append: true, value: " message" },
+      { path: ["agent_run", "status"], value: "success" },
+    ] },
+  ] };
+  const received = [];
+  const result = await runBackendCanvasAgent("project", { id: "run", references: [] }, document => received.push(document), new AbortController().signal);
+  assert.deepEqual(received.map(document => document.revision), [2, 3, 4]);
+  assert.equal(received[0].nodes[0].generation_progress, 40);
+  assert.deepEqual(received[1].nodes, [{ id: "old", generation_progress: 41 }]);
+  assert.equal(received[2].connections, received[1].connections);
+  assert.equal(received[2].agent_sessions[0].protocolMessages, received[1].agent_sessions[0].protocolMessages);
+  assert.notEqual(received[2].agent_sessions[0].messages, received[1].agent_sessions[0].messages);
+  assert.deepEqual(received[1].agent_sessions[0].messages, ["first", "second"]);
+  assert.deepEqual(result.agent_sessions[0].messages, ["first", "second message"]);
+  assert.deepEqual(result.nodes, []);
+  assert.equal(Object.hasOwn(result, "pending_agent_request"), false);
+  assert.equal(result.agent_run.status, "success");
+});
+
+test("a delta from a missing baseline reconnects to a fresh snapshot", async () => {
+  calls = [];
+  let streams = 0;
+  handler = (_path, options) => {
+    if (options.method === "POST") return snapshot("running");
+    if (++streams === 1) return { events: [{ type: "delta", base_revision: 3, revision: 4, operations: [] }] };
+    return { document: { ...snapshot("success").document, revision: 4 } };
+  };
+  const errors = [];
+  const result = await runBackendCanvasAgent("project", { id: "run", references: [] }, () => {}, new AbortController().signal, error => errors.push(error.message));
+  assert.equal(calls.filter(call => call.options.method === "POST").length, 1);
+  assert.equal(streams, 2);
+  assert.match(errors[0], /进度版本不同步/);
+  assert.equal(result.revision, 4);
+});
 test("closing the page detaches without cancelling the backend run", async () => {
   calls = []; handler = () => snapshot("running"); const controller = new AbortController();
   await runBackendCanvasAgent("project", { id: "run", references: [] }, () => controller.abort("canvas-detached"), controller.signal);
@@ -30,7 +86,7 @@ test("an invalid first acknowledgement keeps observing the same run until a vali
     if (!document.valid) throw new Error("invalid transcript snapshot");
     accepted.push(document.agent_run.status);
   }, new AbortController().signal, error => errors.push(error));
-  assert.equal(errors.length, 2);
+  assert.equal(errors.filter(error => /invalid transcript snapshot/.test(error.message)).length, 2);
   assert.ok(errors.every(error => error instanceof CanvasAgentObservationError));
   assert.deepEqual(accepted, ["success"]);
   assert.equal(result.agent_run.id, "run");
@@ -85,7 +141,7 @@ test("explicit stop cancels the same run and receives its final snapshot", async
   assert.equal(calls.filter((call) => call.options.method === "DELETE").length, 1);
   assert.match(calls.find((call) => call.options.method === "DELETE").path, /run_id=run/);
   assert.equal(seen.at(-1), "cancelled");
-  assert.equal(calls.filter((call) => !call.options.method).length, 0, "terminal stop response should not wait for polling");
+  assert.equal(calls.filter((call) => !call.options.method).length, 0, "terminal stop response should not open a stream");
 });
 test("stop can cancel an accepted run while its start acknowledgement is delayed", async () => {
   calls = []; let releaseStart;
@@ -114,7 +170,7 @@ test("stop retries after start when the initial stop arrives before the run exis
   assert.equal(stops, 2);
   assert.equal(seen.at(-1), "cancelled");
 });
-test("stop interrupts an in-flight poll and applies the stop response", async () => {
+test("stop interrupts an active progress stream and applies the stop response", async () => {
   calls = []; let polling;
   const started = new Promise(resolve => { polling = resolve; });
   handler = (_path, options) => {
@@ -167,14 +223,14 @@ test("tool submission recovery returns the saved result without executing again"
   calls = []; const result = { ok: true, nodeId: "existing" };
   handler = (_path, options) => {
     if (options.method === "POST") throw new Error("tool acknowledgement lost");
-    return { document: { agent_run: { id: "run", status: "success", toolResult: result } } };
+    return { document: { ...snapshot("success").document, agent_run: { id: "run", status: "success", toolResult: result } } };
   };
   const response = await runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "create_text_node", arguments: {} }, () => {}, new AbortController().signal);
   assert.deepEqual(response.result, result);
   assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
 });
 
-test("Codex tool dispatch shares persisted backend progress and returns its result", async () => {
+test("Codex tool dispatch receives persisted backend progress and its result over SSE", async () => {
   calls = []; const result = { ok: true, nodeIds: ["poster", "video"] };
   handler = (_path, options) => options.method === "POST" ? snapshot("running") : { document: { ...snapshot("success").document, agent_run: { id: "run", status: "success", toolResult: result } } };
   const seen = [];
@@ -183,7 +239,8 @@ test("Codex tool dispatch shares persisted backend progress and returns its resu
   assert.deepEqual(seen, ["running", "success"]);
   assert.equal(calls[0].path, "/api/canvas/agent-tools?history=active&project_id=project");
   assert.equal(calls[0].options.body.call.name, "run_canvas_workflow");
-  assert.equal(calls[1].path, "/api/canvas/agent-runs?history=active&project_id=project");
+  assert.equal(calls[1].path, "/api/canvas/agent-runs?history=active&project_id=project&run_id=run");
+  assert.equal(calls[1].stream, true);
 });
 test("workflow approval sends the user's actual answer and reviewed fingerprints separately", async () => {
   calls = []; handler = () => snapshot("success");
@@ -192,7 +249,7 @@ test("workflow approval sends the user's actual answer and reviewed fingerprints
   assert.deepEqual(calls[0].options.body, { sessionId: "session", prompts: { poster: "fingerprint" }, answer: "暂不生成，先修改颜色" });
 });
 test("missing or replaced tool results never masquerade as successful execution", async () => {
-  calls = []; handler = () => ({ document: { agent_run: { id: "run", status: "error", error: "服务已重启，执行已暂停；请检查已有结果后继续。" } } });
+  calls = []; handler = () => ({ document: { ...snapshot("error").document, agent_run: { id: "run", status: "error", error: "服务已重启，执行已暂停；请检查已有结果后继续。" } } });
   await assert.rejects(() => runBackendCanvasTool("project", { id: "run", references: [] }, { id: "call", name: "get_canvas_summary", arguments: {} }, () => {}, new AbortController().signal), /服务已重启，执行已暂停/);
 
   calls = []; handler = () => snapshot("error");

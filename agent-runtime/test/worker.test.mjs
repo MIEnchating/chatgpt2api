@@ -5,6 +5,8 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const definition = (name) => ({ function: { name, description: name, parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } } });
+const killBeforeReply = Symbol('kill worker before RPC reply');
+
 function worker(config, handler, store = { items: [], transactions: new Map() }) {
   config.sessionId ||= 'test';
   config.completionTool ||= 'finish_task';
@@ -41,14 +43,147 @@ function worker(config, handler, store = { items: [], transactions: new Map() })
           } else throw new Error(`unhandled session action ${params.action}`);
         } else if (message.method === 'context') result = { instructions: config.instructions || 'Use tools.', ...(config.contextSnapshots ? { snapshot: config.contextSnapshots[Math.min(contextCalls++, config.contextSnapshots.length - 1)] } : {}) };
         else result = await handler(message.method, message.params);
-        child.stdin.write(JSON.stringify(result?.rpcError ? { id: message.id, error: result.rpcError, retryable: result.retryable } : { id: message.id, result }) + '\n');
+        if (result === killBeforeReply) {
+          assert.ok(child.kill('SIGKILL'));
+          return;
+        }
+        child.stdin.write(JSON.stringify(result?.rpcError ? { id: message.id, error: result.rpcError, retryable: result.retryable, retryAfterMs: result.retryAfterMs, failureCode: result.failureCode } : { id: message.id, result }) + '\n');
       } catch (e) { child.kill(); reject(e); }
     });
     child.on('error', reject);
-    child.on('close', code => { clearTimeout(timer); lines.close(); if (code) reject(new Error(error || `worker exit ${code}`)); else resolve(); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      lines.close();
+      if (code !== 0 || signal) reject(Object.assign(new Error(error || `worker exit ${signal || code}`), { code, signal }));
+      else resolve();
+    });
     child.stdin.write(JSON.stringify(config) + '\n');
   });
 }
+
+function workerReplay(steps, checkpoint) {
+  let position = 0;
+  return {
+    handle(method, params) {
+      if (method === 'checkpoint') {
+        checkpoint(params.state);
+        return {};
+      }
+      const event = method === 'model' && params.summary ? 'summary' : method;
+      const step = steps[position++];
+      assert.equal(event, step?.event, `replay step ${position}: unexpected ${event}`);
+      return step.reply?.(params) ?? {};
+    },
+    assertConsumed() {
+      assert.equal(position, steps.length, `unconsumed replay steps: ${steps.slice(position).map(step => step.event).join(', ')}`);
+    },
+  };
+}
+
+test('a killed worker resumes a committed tool using the original call ID', async () => {
+  const store = { items: [], transactions: new Map() };
+  const config = {
+    tools: [definition('create_text_node')],
+    input: [{ role: 'user', content: 'Create one node.' }],
+  };
+  const call = { id: 'create-once', function: { name: 'create_text_node', arguments: '{"text":"Draft"}' } };
+  const receipts = new Map();
+  let checkpoint, writes = 0;
+  await assert.rejects(worker(config, (method, params) => {
+    if (method === 'checkpoint') checkpoint = params.state;
+    if (method === 'model') return { tool_calls: [call] };
+    if (method === 'tool') {
+      assert.equal(params.id, call.id);
+      const saved = JSON.parse(checkpoint);
+      assert.deepEqual(saved.pending, [call]);
+      assert.equal(store.items.at(-1).callId, call.id);
+      assert.equal(store.items.at(-1).type, 'function_call');
+      writes++;
+      receipts.set(params.id, { ok: true, nodeId: 'existing-node' });
+      return killBeforeReply;
+    }
+    return {};
+  }, store), { code: null, signal: 'SIGKILL' });
+
+  const events = [];
+  await worker({ ...config, input: [], state: checkpoint }, (method, params) => {
+    if (['model', 'tool', 'finish'].includes(method)) events.push(method);
+    if (method === 'tool') {
+      assert.equal(params.id, call.id);
+      assert.equal(params.name, call.function.name);
+      assert.deepEqual(params.arguments, { text: 'Draft' });
+      return { result: receipts.get(params.id) };
+    }
+    if (method === 'model') {
+      const result = params.messages.find(message => message.role === 'tool');
+      assert.equal(result.tool_call_id, call.id);
+      assert.deepEqual(JSON.parse(result.content), { ok: true, nodeId: 'existing-node' });
+      return { text_response: 'Done.' };
+    }
+    if (method === 'finish') assert.equal(params.status, 'success');
+    return {};
+  }, store);
+  assert.deepEqual(events, ['tool', 'model', 'finish']);
+  assert.equal(writes, 1);
+  assert.deepEqual(store.items.filter(item => item.callId === call.id).map(item => item.type),
+    ['function_call', 'function_call_result']);
+});
+test('a relay retry delay is announced before retrying and an over-budget delay pauses with the saved checkpoint', async () => {
+  let requests = 0, scheduled = 0;
+  let firstRequest, latestCheckpoint, finished;
+  await worker({ tools: [], preserveRetryCheckpoint: true, retryWaitMs: 100, input: [{ role: 'user', content: 'Work' }] }, async (method, params) => {
+    if (method === 'checkpoint') latestCheckpoint = JSON.parse(params.state);
+    if (method === 'model') {
+      requests++;
+      firstRequest ||= params.diagnostic.requestId;
+      assert.equal(params.diagnostic.requestId, firstRequest);
+      assert.equal(params.diagnostic.attempt, requests);
+      if (requests === 2) assert.ok(Date.now() >= scheduled);
+      return { rpcError: '429', retryable: true, retryAfterMs: requests === 1 ? 60 : 31000, failureCode: 'RATE_LIMIT' };
+    }
+    if (method === 'retry') {
+      assert.equal(requests, 1);
+      assert.equal(params.delayMs, 60);
+      assert.equal(params.retryWaitMs, 160);
+      assert.equal(params.failureCode, 'RATE_LIMIT');
+      assert.equal(params.rateLimited, true);
+      scheduled = Date.parse(params.retryAt);
+    }
+    if (method === 'finish') finished = params;
+    return {};
+  });
+  assert.equal(requests, 2);
+  assert.equal(latestCheckpoint.turns, 0);
+  assert.equal(finished.status, 'waiting');
+  assert.equal(finished.retryBudgetExceeded, true);
+});
+
+test('unchanged read results remind the model without blocking the read, and changed progress resets the count', async () => {
+  let reads = 0;
+  let turns = 0;
+  let finished = false;
+  await worker({ tools: [definition('read'), definition('finish_task')], repeatReminderTools: ['read'], input: [{ role: 'user', content: 'Check the task' }] }, async (method, params) => {
+    if (method === 'model') {
+      const lastRead = params.messages.findLast(message => message.role === 'tool');
+      if (lastRead) {
+        const result = JSON.parse(lastRead.content);
+        assert.equal(Boolean(result.repeatedReadReminder), reads === 3 || reads === 6);
+      }
+      const next = ++turns;
+      const name = next <= 6 ? 'read' : 'finish_task';
+      return { tool_calls: [{ id: 'call-' + next, function: { name, arguments: next % 2 ? '{"a":1,"b":2}' : '{"b":2,"a":1}' } }] };
+    }
+    if (method === 'tool') {
+      if (params.name === 'read') return { result: { ok: true, progress: ++reads <= 3 ? 25 : 50 } };
+      return { result: { ok: true, text: 'Done' } };
+    }
+    if (method === 'finish') finished = true;
+    return {};
+  });
+  assert.equal(reads, 6);
+  assert.equal(finished, true);
+});
+
 test('an upstream context rejection compacts retained history and retries without repeating tools', async () => {
   const store = { items: [{ role: 'user', content: 'Earlier work '.repeat(5000) }, { role: 'assistant', content: 'Already done.' }], transactions: new Map() };
   let models = 0, summaries = 0, finished = 0;
@@ -137,49 +272,95 @@ test('compacted context survives model failure and later tool turns without summ
   const old = '旧任务上下文'.repeat(1000);
   const store = { items: [{ role: 'user', content: old }, { role: 'assistant', content: 'Previous task complete.' }], transactions: new Map() };
   const config = { contextWindowTokens: 2000, tools: [definition('create_text_node'), definition('finish_task')], input: [{ role: 'user', content: 'Create two nodes.' }] };
-  let state, summaries = 0, models = 0;
-  const writes = [], requests = [];
-  const handler = async (method, params) => {
-    if (method === 'checkpoint') state = params.state;
-    if (method === 'model') {
-      if (params.summary) { summaries++; return { text_response: 'Keep the original constraints and existing node IDs.' }; }
-      requests.push(params.messages);
-      assert.doesNotMatch(JSON.stringify(params.messages), new RegExp(old));
-      assert.match(JSON.stringify(params.messages), /original constraints/);
-      if (++models === 2) return { rpcError: 'HTTP 400 model unavailable' };
-      const name = models < 4 ? 'create_text_node' : 'finish_task';
-      return { tool_calls: [{ id: `call-${models}`, function: { name, arguments: '{"text":"done"}' } }] };
-    }
-    if (method === 'tool') { writes.push(params.id); return { result: { ok: true } }; }
-    return {};
-  };
-  await assert.rejects(worker(config, handler, store), /HTTP 400/);
-  assert.ok(JSON.parse(state).modelContext);
-  await worker({ ...config, input: [], state }, handler, store);
-  assert.equal(summaries, 1);
-  assert.deepEqual(writes, ['call-1', 'call-3', 'call-4']);
-  for (const request of requests.slice(1)) assert.deepEqual(request.slice(0, requests[0].length), requests[0]);
+  let state, firstRequest;
+  const nodes = [];
+  const checkpoint = value => { state = value; };
+  const model = response => ({
+    event: 'model',
+    reply({ messages }) {
+      assert.ok(!JSON.stringify(messages).includes(old));
+      assert.match(JSON.stringify(messages), /original constraints/);
+      firstRequest ??= messages;
+      assert.deepEqual(messages.slice(0, firstRequest.length), firstRequest);
+      return response;
+    },
+  });
+  const create = (id, title) => [
+    model({ tool_calls: [{ id, function: { name: 'create_text_node', arguments: JSON.stringify({ text: title }) } }] }),
+    { event: 'prepare' },
+    { event: 'tool', reply(params) {
+      assert.equal(params.id, id);
+      assert.deepEqual(params.arguments, { text: title });
+      nodes.push(title);
+      return { result: { ok: true, nodeId: id } };
+    } },
+  ];
+  const before = workerReplay([
+    { event: 'summary', reply: () => ({ text_response: 'Keep the original constraints and existing node IDs.' }) },
+    { event: 'memory' },
+    ...create('first', 'First draft'),
+    model({ rpcError: 'HTTP 400 model unavailable' }),
+  ], checkpoint);
+  await assert.rejects(worker(config, before.handle, store), /HTTP 400/);
+  before.assertConsumed();
+  const records = JSON.parse(state).modelContext.compactions;
+  assert.equal(records.length, 1);
+  const [record] = records;
+  assert.equal(record.trigger, 'pressure');
+  assert.equal(record.summary, 'Keep the original constraints and existing node IDs.');
+  assert.deepEqual(record.sourceRanges, [[0, 2]]);
+  assert.equal(record.through, 3);
+  assert.deepEqual(nodes, ['First draft']);
+  const after = workerReplay([
+    ...create('second', 'Second draft'),
+    model({ tool_calls: [{ id: 'finish', function: { name: 'finish_task', arguments: '{"text":"Done"}' } }] }),
+    { event: 'prepare' },
+    { event: 'tool', reply(params) {
+      assert.equal(params.id, 'finish');
+      return { result: { ok: true, text: 'Done' } };
+    } },
+    { event: 'finish', reply(params) { assert.equal(params.status, 'success'); } },
+  ], checkpoint);
+  await worker({ ...config, input: [], state }, after.handle, store);
+  after.assertConsumed();
+  assert.deepEqual(JSON.parse(state).modelContext.compactions, records);
+  assert.deepEqual(nodes, ['First draft', 'Second draft']);
+  assert.deepEqual(store.items.filter(item => item.type === 'function_call_result').map(item => item.callId), ['first', 'second', 'finish']);
   assert.equal(store.items[0].content, old, 'authoritative history must remain intact');
 });
 test('SDK approval state survives worker exit and resumes without repeating the question', async () => {
-  let state = ''; let tools = 0;
+  let state;
   const config = { tools: [definition('ask_user_question')], input: [{ role: 'user', content: 'Ask me.' }] };
   const store = { items: [], transactions: new Map() };
-  await worker(config, async (method, params) => {
-    if (method === 'model') return { text_response: '', tool_calls: [{ id: 'question', function: { name: 'ask_user_question', arguments: JSON.stringify({ text: '什么比例？' }) } }] };
-    if (method === 'tool') tools++;
-    if (method === 'pause') { state = params.state; assert.deepEqual(params.callIds, ['question']); }
-    return { ok: true };
-  }, store);
-  assert.equal(tools, 0); assert.ok(state);
-  const events = [];
-  await worker({ ...config, input: [], state, answerCallId: 'question' }, async (method, params) => {
-    if (['model', 'tool', 'finish', 'pause'].includes(method)) events.push(method);
-    if (method === 'tool') { tools++; assert.equal(params.id, 'question'); return { result: { ok: true, answer: '1:1' } }; }
-    if (method === 'model') return { text_response: '已确认', tool_calls: [] };
-    return { ok: true };
-  }, store);
-  assert.equal(tools, 1); assert.deepEqual(events, ['tool', 'model', 'finish']);
+  const before = workerReplay([
+    { event: 'model', reply: () => ({ tool_calls: [{ id: 'question', function: { name: 'ask_user_question', arguments: JSON.stringify({ text: '什么比例？' }) } }] }) },
+    { event: 'prepare' },
+    { event: 'pause', reply(params) {
+      state = params.state;
+      assert.deepEqual(params.callIds, ['question']);
+    } },
+  ], () => {});
+  await worker(config, before.handle, store);
+  before.assertConsumed();
+  assert.ok(state);
+  const after = workerReplay([
+    { event: 'tool', reply(params) {
+      assert.equal(params.id, 'question');
+      assert.equal(params.name, 'ask_user_question');
+      return { result: { ok: true, answer: '1:1' } };
+    } },
+    { event: 'model', reply({ messages }) {
+      const answer = messages.find(message => message.role === 'tool');
+      assert.equal(answer.tool_call_id, 'question');
+      assert.deepEqual(JSON.parse(answer.content), { ok: true, answer: '1:1' });
+      return { text_response: '已确认' };
+    } },
+    { event: 'prepare' },
+    { event: 'finish', reply(params) { assert.equal(params.status, 'success'); } },
+  ], () => {});
+  await worker({ ...config, input: [], state, answerCallId: 'question' }, after.handle, store);
+  after.assertConsumed();
+  assert.deepEqual(store.items.filter(item => item.callId === 'question').map(item => item.type), ['function_call', 'function_call_result']);
 });
 
 test('a completed checkpoint resumes final acknowledgement without rerunning model or tool', async () => {
@@ -251,11 +432,41 @@ test('SDK turn limit pauses with a resumable finish instead of claiming completi
   assert.ok(store.items.some(item => item.type === 'function_call_result' && item.callId === 'read-40'), 'last completed tool result must survive the SDK turn limit');
 });
 
+test('goal continuation extends the same history up to the admitted round limit', async () => {
+  for (const admitted of [0, 1, 2]) {
+    const store = { items: [], transactions: new Map() };
+    const rounds = [], calls = [];
+    let turns = 0;
+    const yieldBeforeDispatch = admitted === 1;
+    let finished;
+    await worker({ maxTurns: 1, goalContinuation: 2, tools: [definition('get_canvas_summary')], input: [{ role: 'user', content: 'Continue the goal.' }] }, (method, params) => {
+      if (method === 'model') {
+        if (yieldBeforeDispatch && turns === 2) return { goalContinuationYielded: true };
+        assert.equal(params.messages.filter(message => message.role === 'user').length, 1);
+        assert.deepEqual(params.messages.filter(message => message.role === 'tool').map(message => message.tool_call_id), calls);
+        return { tool_calls: [{ id: `read-${++turns}`, function: { name: 'get_canvas_summary', arguments: '{"text":"read"}' } }] };
+      }
+      if (method === 'tool') { calls.push(params.id); return { result: { ok: true } }; }
+      if (method === 'goal_continue') { rounds.push(params.round); return { allowed: admitted > 0 }; }
+      if (method === 'finish') finished = params;
+      return {};
+    }, store);
+    assert.deepEqual(rounds, admitted ? [1, 2] : [1]);
+    assert.equal(turns, admitted + 1);
+    assert.deepEqual(calls, Array.from({ length: turns }, (_, index) => `read-${index + 1}`));
+    assert.equal(finished.status, 'waiting');
+    assert.equal(finished.exhausted, true);
+    assert.equal(store.items.filter(item => item.role === 'user').length, 1);
+  }
+});
+
 test('continue does not approve a pending SDK question or call the model', async () => {
   const store = { items: [], transactions: new Map() };
   let state;
   const config = { tools: [definition('ask_user_question')], input: [{ role: 'user', content: 'Ask first.' }] };
-  await worker(config, async (method, params) => {
+  await worker({ ...config, maxTurns: 1, goalContinuation: 1 }, async (method, params) => {
+    assert.notEqual(method, 'goal_continue');
+    assert.notEqual(method, 'tool');
     if (method === 'model') return { tool_calls: [{ id: 'approval', function: { name: 'ask_user_question', arguments: '{"text":"需要授权"}' } }] };
     if (method === 'pause') state = params.state;
     return {};
@@ -282,18 +493,22 @@ test('independent SDK turns load one session without duplicating historical inpu
   assert.deepEqual(store.items.filter(item => item.role === 'user').map(item => item.content), ['First request', 'Second request']);
 });
 
-test('a new request keeps its own image without resending previous request images', async () => {
+test('a new request keeps its own image and represents previous request images as omitted', async () => {
   const store = { items: [], transactions: new Map() };
   for (const image of ['/old.png', '/new.png']) {
     await worker({ tools: [], input: [{ role: 'user', content: [{ type: 'input_text', text: 'Inspect' }, { type: 'input_image', image }] }] }, async (method, params) => {
       if (method === 'model') {
         assert.match(JSON.stringify(params.messages), new RegExp(image));
-        if (image === '/new.png') assert.doesNotMatch(JSON.stringify(params.messages), /old\.png/);
+        if (image === '/new.png') {
+          assert.doesNotMatch(JSON.stringify(params.messages), /old\.png/);
+          assert.match(JSON.stringify(params.messages), /此处图片已从模型上下文省略/);
+        }
         return { text_response: 'Done.' };
       }
       return {};
     }, store);
   }
+  assert.equal(store.items[0].content[1].image, '/old.png');
 });
 
 test('legacy pending question is imported and its actual answer resumes the same SDK call', async () => {
@@ -328,20 +543,28 @@ test('a finish call in the same batch cannot bypass a pending question', async (
   assert.equal(paused, true);
 });
 
-test('SDK retries a reset model stream without replaying completed business tools', async () => {
-  let models = 0, writes = 0;
-  await worker({ tools: [definition('create_text_node')], input: [{role:'user',content:'Create once.'}] }, async method => {
+test('SDK correlates a retried model request with its tool and executes it once', async () => {
+  const seen = [];
+  let tool;
+  await worker({ tools: [definition('create_text_node')], input: [{role:'user',content:'Create once.'}] }, async (method, params) => {
     if (method === 'model') {
-      models++;
-      if (models === 1) return { tool_calls: [{id:'create-once',function:{name:'create_text_node',arguments:'{"text":"saved"}'}}] };
-      if (models === 2) return { rpcError: 'stream error: stream ID 127; INTERNAL_ERROR; received from peer', retryable: true };
+      seen.push(params.diagnostic);
+      if (seen.length === 1) return { rpcError: 'stream reset', retryable: true };
+      if (seen.length === 2) return { tool_calls: [{id:'create-once',function:{name:'create_text_node',arguments:'{"text":"saved"}'}}] };
       return {text_response:'完成'};
     }
-    if (method === 'tool') { writes++; return {result:{ok:true}}; }
+    if (method === 'tool') {
+      assert.equal(tool, undefined);
+      tool = params.diagnostic;
+      return {result:{ok:true}};
+    }
     return {ok:true};
   });
-  assert.equal(models,3);
-  assert.equal(writes,1);
+  assert.equal(seen.length, 3);
+  assert.equal(seen[0].requestId, seen[1].requestId);
+  assert.deepEqual(seen.map(({step, attempt}) => [step, attempt]), [[1, 1], [1, 2], [2, 1]]);
+  assert.notEqual(seen[1].requestId, seen[2].requestId);
+  assert.deepEqual(tool, seen[1]);
 });
 
 test('SDK preserves checkpoint and does not retry a rejected model request', async () => {
@@ -537,20 +760,26 @@ test('a rejected oversized input publishes its current counters instead of leavi
 
 test('SDK retries five times with identical input and cache identity before executing tools once', async () => {
   let calls = 0, writes = 0;
-  const requests = [], retries = [];
+  const requests = [], retries = [], retryDelays = [];
   await worker({ tools: [definition('finish_task')], input: [{ role: 'user', content: 'Finish once.' }] }, async (method, params) => {
     if (method === 'model') {
       requests.push(params);
       if (++calls < 6) return { rpcError: 'upstream chat stream ended without a finish reason', retryable: true };
       return { tool_calls: [{ id: 'finish-once', function: { name: 'finish_task', arguments: '{"text":"done"}' } }] };
     }
-    if (method === 'retry') retries.push(params.attempt);
+    if (method === 'retry') { retries.push(params.attempt); retryDelays.push(params.delayMs); }
     if (method === 'tool') { writes++; return { result: { ok: true, text: 'done' } }; }
     return {};
   });
   assert.equal(calls, 6);
   assert.equal(writes, 1);
   assert.deepEqual(retries, [1, 2, 3, 4, 5]);
+  assert.equal(retryDelays.length, 5);
+  assert(retryDelays[0] >= 450 && retryDelays[0] <= 550);
+  assert(retryDelays[1] >= 900 && retryDelays[1] <= 1100);
+  assert(retryDelays[2] >= 1800 && retryDelays[2] <= 2200);
+  assert(retryDelays[3] >= 3600 && retryDelays[3] <= 4400);
+  assert(retryDelays[4] >= 7200 && retryDelays[4] <= 8800);
   for (const [index, request] of requests.entries()) {
     assert.equal(request.attempt, index + 1);
     assert.deepEqual(request.messages, requests[0].messages);

@@ -3,6 +3,8 @@ package service
 import (
 	"encoding/json"
 	"testing"
+
+	"chatgpt2api/internal/util"
 )
 
 func TestCanvasAgentMergeVideoSelectionPreservesConcurrentPreferences(t *testing.T) {
@@ -35,6 +37,8 @@ func TestCanvasAgentMergeVideoSelectionPreservesConcurrentPreferences(t *testing
 func TestCanvasAgentMergePreservesUserEditsAndDeletedNodes(t *testing.T) {
 	base := DefaultCanvasDocument()
 	base.Nodes = []CanvasNode{{ID: "n", Type: "image", X: 0, Prompt: "original"}, {ID: "deleted", Type: "text"}}
+	base.AgentRun = &CanvasAgentRun{ID: "run", SessionID: "s", AssistantID: "a"}
+	base.AgentSessions = []byte(`[{"id":"s","messages":[{"id":"a","role":"assistant"}]}]`)
 	edited := cloneCanvasAgentDocument(base)
 	edited.Nodes[0].URL = "/generated.png"
 	edited.Nodes[0].Prompt = "worker edit"
@@ -47,6 +51,22 @@ func TestCanvasAgentMergePreservesUserEditsAndDeletedNodes(t *testing.T) {
 	merged := mergeCanvasAgentDocument(base, edited, current)
 	if len(merged.Nodes) != 2 || merged.Nodes[0].X != 200 || merged.Nodes[0].Prompt != "user edit" || merged.Nodes[0].URL != "/generated.png" || merged.Nodes[1].ID != "created" || merged.Revision != 5 {
 		t.Fatalf("lost concurrent changes: %+v", merged)
+	}
+	if err := recordCanvasAgentChanges(current, &merged); err != nil {
+		t.Fatal(err)
+	}
+	_, session, err := agentSession(merged, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := agentMap(session["messages"].([]any)[0])["canvasChanges"].([]any)
+	if len(changes) != 2 || agentMap(changes[0])["id"] != "n" || agentMap(changes[0])["action"] != "updated" ||
+		agentMap(changes[1])["id"] != "created" || agentMap(changes[1])["action"] != "added" {
+		t.Fatalf("incorrect change attribution: %v", changes)
+	}
+	summary := agentMap(session["messages"].([]any)[0])["canvasChangeSummary"]
+	if util.ToInt(agentMap(summary)["added"], -1) != 1 || util.ToInt(agentMap(summary)["updated"], -1) != 1 || util.ToInt(agentMap(summary)["removed"], -1) != 0 || util.ToInt(agentMap(summary)["total"], -1) != 2 {
+		t.Fatalf("incorrect change summary: %v", summary)
 	}
 }
 

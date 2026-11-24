@@ -8,6 +8,8 @@ import { Brain, ImagePlus, Settings2, Waves } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 import type { CanvasAgentConfig } from "./agent/canvas-agent-types";
 
@@ -48,6 +50,13 @@ export function CanvasAgentRunSettings({ config, mode, busy, onChange }: {
             <div className="border-t border-border/70">
               <RunSetting icon={Brain} label="深入思考" description={supportsReasoning ? "让模型充分推理，再规划和执行任务。" : "切换到 Responses 协议后可开启。"} id="canvas-agent-reasoning" checked={config.textReasoningEnabled === true && supportsReasoning} disabled={busy || !supportsReasoning} onCheckedChange={(checked) => onChange({ textReasoningEnabled: checked })} />
             </div>
+            <Field className="gap-2 border-t p-3">
+              <FieldLabel htmlFor="canvas-agent-model-request-limit">单次执行的模型请求上限</FieldLabel>
+              <Input id="canvas-agent-model-request-limit" type="number" min={0} max={1000} step={1} placeholder="不限" defaultValue={config.modelRequestLimit || ""} onChange={(event) => {
+                const input = event.currentTarget;
+                if (input.validity.valid) onChange({ modelRequestLimit: input.valueAsNumber || 0 });
+              }} />
+            </Field>
           </Card> : null}
         </div>
         </ScrollArea><DialogFooter><Button type="button" onClick={() => setOpen(false)}>完成</Button></DialogFooter>

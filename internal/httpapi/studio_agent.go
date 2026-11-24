@@ -290,7 +290,7 @@ func (a *App) executeStudioAgent(ctx context.Context, identity service.Identity,
 		if err := worker.SetData(state); err != nil {
 			return err
 		}
-		return worker.Save()
+		return worker.SaveProgress()
 	}
 	taskItems := func() ([]map[string]any, error) {
 		ids := []string{}
@@ -304,6 +304,7 @@ func (a *App) executeStudioAgent(ctx context.Context, identity service.Identity,
 		return util.AsMapSlice(list["items"]), err
 	}
 	config := map[string]any{"name": "Studio Agent", "completionTool": "finish_task", "tools": tools, "maxTurns": 40, "input": []map[string]any{{"role": "user", "content": util.Clean(turn["prompt"])}}}
+	config["repeatReminderTools"] = []string{"get_history", "get_generation_config", "read_image", "get_generation_task"}
 	return worker.Run(ctx, config, func(method string, params map[string]any) (any, error) {
 		switch method {
 		case "context":

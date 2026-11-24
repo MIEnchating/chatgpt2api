@@ -37,6 +37,18 @@ func TestAgentModelRetryClassification(t *testing.T) {
 	}
 }
 
+func TestAgentModelRetryClassificationUsesFailureCode(t *testing.T) {
+	if !AgentModelRetryable(protocol.HTTPError{Status: 400, Message: "provider busy", Code: "RATE_LIMIT"}) {
+		t.Fatal("RATE_LIMIT should be retryable even when the provider status is non-standard")
+	}
+	if AgentModelRetryable(protocol.HTTPError{Status: 503, Message: "unauthorized", Code: "AUTH"}) {
+		t.Fatal("AUTH should not be retried when it overrides a generic server status")
+	}
+	if got := AgentFailureCode(protocol.HTTPError{Status: 429}); got != "RATE_LIMIT" {
+		t.Fatalf("AgentFailureCode() = %q, want RATE_LIMIT", got)
+	}
+}
+
 func TestAgentSDKHistoryDeadlineDoesNotAcknowledgeTransactionAndRetryIsIdempotent(t *testing.T) {
 	session := &AgentSDKSession{
 		Items: []map[string]any{{"role": "user", "content": "original request"}},

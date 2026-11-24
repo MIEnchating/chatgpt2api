@@ -279,10 +279,11 @@ test("Codex plan and question tools use the current run and wait for a real answ
   let resolveAnswer;
   const questions = [];
   const checkpoints = [];
+  const trace = [];
   const f = fixture({ ask: async (request) => { questions.push(request); return new Promise((resolve) => { resolveAnswer = resolve; }); } });
   try {
     const agent = await f.connect();
-    const pending = agent.run({ ...f.runInput(), onCheckpoint: (checkpoint) => checkpoints.push(checkpoint) });
+    const pending = agent.run({ ...f.runInput(), onCheckpoint: (checkpoint) => checkpoints.push(checkpoint), onTrace: (entry) => trace.push(entry) });
     await flush(); f.threadReady[0]({ turn: { id: "turn" } }); await flush();
     const tool = (name, args, id) => f.event({ type: "rpc", message: { id, method: "item/tool/call", params: { threadId: "thread", turnId: "turn", tool: name, arguments: args, callId: id } } });
     tool("update_plan", { explanation: "确认方向", steps: [{ id: "brief", title: "确认风格", status: "in_progress" }] }, "plan");
@@ -293,9 +294,13 @@ test("Codex plan and question tools use the current run and wait for a real answ
     assert.equal(questions.length, 1);
     assert.ok(!f.replies.some((reply) => reply.id === "question"));
     assert.equal(f.executions.length, 0);
+    const pendingQuestion = trace.findLast(entry => entry.type === "question");
+    assert.equal(pendingQuestion?.question, "选择风格");
+    assert.equal(pendingQuestion.answer, undefined);
     resolveAnswer({ accepted: true, answers: { [questions[0].questions[0].id]: "插画" } }); await flush();
     const response = f.replies.find((reply) => reply.id === "question");
     assert.deepEqual(JSON.parse(response.result.contentItems[0].text), { ok: true, answer: "插画" });
+    assert.deepEqual(trace.findLast(entry => entry.type === "question"), { ...pendingQuestion, answer: "插画" });
     f.event({ type: "rpc", message: { method: "turn/completed", params: { threadId: "thread", turnId: "turn", turn: { status: "completed" } } } });
     const result = await pending;
     assert.equal(result.state.plan.steps[0].id, "brief");

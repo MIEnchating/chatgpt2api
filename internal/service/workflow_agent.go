@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var workflowDraftPlaceholder = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
 
 const WorkflowAgentSystemPrompt = `你是一个用于创建图片创作工作流的产品设计助理。请根据用户需求输出严格 JSON，不要输出 Markdown。
 目标：把用户的自然语言需求整理为一个可复用的图片生成工作流。
@@ -108,39 +111,52 @@ func NormalizeWorkflowAgentDraft(content, scope string) (map[string]any, []strin
 	if strings.TrimSpace(scope) == "public" {
 		draft["scope"] = "public"
 	}
-	if err := normalizeWorkflowAgentDraftVariables(draft); err != nil {
+	variables, err := normalizeWorkflowAgentDraftVariables(draft)
+	if err != nil {
 		return nil, nil, fmt.Errorf("工作流 Agent 返回的变量配置无效: %w", err)
+	}
+	config, _ := draft["config"].(map[string]any)
+	prompt, _ := config["prompt_template"].(string)
+	keys := make(map[string]bool, len(variables))
+	for _, variable := range variables {
+		keys[variable.Key] = true
+	}
+	for _, match := range workflowDraftPlaceholder.FindAllStringSubmatch(prompt, -1) {
+		key := strings.TrimSpace(match[1])
+		if !keys[key] {
+			return nil, nil, fmt.Errorf("提示词模板中的变量 %q 未定义，请修正占位符或在 variables 中声明同名变量", key)
+		}
 	}
 	return draft, []string{}, nil
 }
 
-func normalizeWorkflowAgentDraftVariables(draft map[string]any) error {
+func normalizeWorkflowAgentDraftVariables(draft map[string]any) ([]WorkflowVariable, error) {
 	raw, exists := draft["variables"]
 	if !exists {
-		return nil
+		return nil, nil
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
-		return errors.New("variables 必须是变量数组")
+		return nil, errors.New("variables 必须是变量数组")
 	}
 	var variables []WorkflowVariable
 	if err := json.Unmarshal(data, &variables); err != nil {
-		return errors.New("variables 必须是变量数组")
+		return nil, errors.New("variables 必须是变量数组")
 	}
 	for index := range variables {
 		variables[index].Key = sanitizeWorkflowTemplateVariableKey(strings.TrimSpace(variables[index].Key))
 	}
 	if err := normalizeWorkflowVariables(variables); err != nil {
-		return err
+		return nil, err
 	}
 	data, err = json.Marshal(variables)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var normalized []any
 	if err := json.Unmarshal(data, &normalized); err != nil {
-		return err
+		return nil, err
 	}
 	draft["variables"] = normalized
-	return nil
+	return variables, nil
 }

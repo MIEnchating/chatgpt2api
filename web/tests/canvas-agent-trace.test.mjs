@@ -2,7 +2,8 @@ import { canvasAgentUserMediaChoice } from "../src/app/canvas/agent/canvas-agent
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 import { canvasAgentActionTrace, canvasAgentTraceProgress, canvasAgentTraceDetailLines, canvasCodexItemTrace, updateCanvasAgentQuestionTrace, upsertCanvasAgentOperationTrace, upsertCanvasAgentTrace } from "../src/app/canvas/agent/canvas-agent-trace.ts";
-import { isCanvasAgentSession, syncCanvasAgentSessions } from "../src/app/canvas/agent/canvas-agent-sessions.ts";
+import { canvasAgentTextTaskRows, isCanvasAgentSession, syncCanvasAgentSessions } from "../src/app/canvas/agent/canvas-agent-sessions.ts";
+import { canvasAgentTurnDiagnostic } from "../src/app/canvas/agent/canvas-agent-diagnostics.ts";
 
 test("trace updates keep operation position and survive session serialization and refresh", () => {
   const intro = { id: "intro", type: "text", text: "先读取当前画布。" };
@@ -22,6 +23,18 @@ test("trace updates keep operation position and survive session serialization an
   assert.equal(isCanvasAgentSession(saved), false);
 });
 
+test("turn diagnostics preserve normalized model failure categories", () => {
+  const diagnostic = canvasAgentTurnDiagnostic([{ id: "assistant", role: "assistant", text: "", modelAttempts: [
+    { runId: "run-12345678901234567890", requestId: "12345678-1234-1234-1234-123456789012", step: 1, attempt: 2, purpose: "turn", status: "retryable_error", failureCode: "RATE_LIMIT", retryAt: "2026-11-23T00:00:00.000Z", retryDelayMs: 500, retryWaitMs: 500, rateLimited: true },
+    { runId: "run-12345678901234567890", requestId: "12345678-1234-1234-1234-123456789013", step: 1, attempt: 3, purpose: "turn", status: "error", failureCode: "provider-specific" },
+  ] }]);
+  assert.equal(diagnostic.attempts[0].failureCode, "RATE_LIMIT");
+  assert.equal(diagnostic.attempts[0].retryDelayMs, 500);
+  assert.equal(diagnostic.attempts[0].retryWaitMs, 500);
+  assert.equal(diagnostic.attempts[0].rateLimited, true);
+  assert.equal(diagnostic.attempts[1].failureCode, undefined);
+});
+
 test("answered and cancelled questions update their original trace row and survive refresh", () => {
   const question = { id: "question-1", type: "question", question: "要生成角色图吗？" };
   const answered = updateCanvasAgentQuestionTrace([question], "question-1", { answer: "暂不生成", cancelled: false });
@@ -30,6 +43,53 @@ test("answered and cancelled questions update their original trace row and survi
   assert.deepEqual(cancelled[0], { ...question, cancelled: true });
   const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "", trace: answered }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
   assert.deepEqual(syncCanvasAgentSessions([JSON.parse(JSON.stringify(session))], [], true)[0].messages[0].trace, answered);
+});
+
+test("agent session parser validates assistant message feedback metadata", () => {
+  const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "Done", status: "success", feedback: {
+    rating: "negative", category: "instruction-following", note: "Missed a constraint", version: "v1", createdAt: "now", updatedAt: "now",
+  } }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
+  assert.equal(isCanvasAgentSession(session), true);
+  assert.equal(isCanvasAgentSession({ ...session, messages: [{ ...session.messages[0], role: "user" }] }), false);
+  assert.equal(isCanvasAgentSession({ ...session, messages: [{ ...session.messages[0], feedback: { ...session.messages[0].feedback, rating: "mixed" } }] }), false);
+  assert.equal(isCanvasAgentSession({ ...session, messages: [{ ...session.messages[0], feedback: { ...session.messages[0].feedback, note: "x".repeat(8193) } }] }), false);
+});
+
+test("agent session parser preserves durable task board state and rejects broken task dependencies", () => {
+  const root = { id: "task-root", key: "root", nodeId: "text-root", question: "Revise opening", dependsOn: [], revision: 3, status: "completed" };
+  const child = { id: "task-child", key: "child", nodeId: "text-child", question: "Follow the opening", dependsOn: ["task-root"], revision: 2, status: "pending" };
+  const session = {
+    id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [],
+    agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] },
+    protocolMessages: [], textEditTasks: { [root.id]: root, [child.id]: child },
+  };
+  const saved = JSON.parse(JSON.stringify(session));
+  assert.equal(isCanvasAgentSession(saved), true);
+  assert.deepEqual(syncCanvasAgentSessions([saved], [])[0].textEditTasks, session.textEditTasks);
+  assert.equal(isCanvasAgentSession({ ...session, textEditTasks: { ...session.textEditTasks, [child.id]: { ...child, dependsOn: ["missing"] } } }), false);
+  assert.equal(isCanvasAgentSession({ ...session, textEditTasks: { [root.id]: { ...root, revision: 0 } } }), false);
+  assert.equal(isCanvasAgentSession({ ...session, textEditTasks: { [root.id]: { ...root, status: "finished" } } }), false);
+});
+
+test("text task board orders active and ready work before blocked and completed tasks", () => {
+  const make = (id, status, dependsOn = []) => ({ id, key: id, nodeId: id, question: id, dependsOn, revision: 1, status });
+  const tasks = [
+    make("done", "completed"),
+    make("blocked", "pending", ["failed-task"]),
+    make("ready", "pending", ["done"]),
+    make("failed-task", "failed"),
+    make("busy", "pending"),
+    make("missing", "pending"),
+    make("draft", "drafted"),
+    make("running", "in_progress"),
+    make("old-failed", "completed"),
+  ];
+  const nodes = tasks.filter(task => task.id !== "missing").map(task => ({ id: task.nodeId, type: "text", generation_status: task.id === "busy" ? "loading" : "idle" }));
+  const board = Object.fromEntries(tasks.map(task => [task.id, task]));
+  const rows = canvasAgentTextTaskRows(board, nodes);
+  assert.deepEqual(rows.map(row => row.task.id), ["running", "draft", "failed-task", "ready", "blocked", "busy", "missing", "done", "old-failed"]);
+  assert.deepEqual(rows.filter(row => row.status === "blocked").map(row => row.task.id), ["blocked", "busy", "missing"]);
+  assert.deepEqual(rows.find(row => row.task.id === "blocked").blockers, ["failed-task"]);
 });
 
 test("canvas clicks add only the clicked node when the canvas has a multi-node selection", async () => {
@@ -141,7 +201,8 @@ test("Codex published reasoning, terminal output and subagent states survive ses
   const subagent = canvasCodexItemTrace({ id: "delegate", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", prompt: "检查画布", model: "agent-model", receiverThreadIds: ["child"], agentsStates: { child: { status: "completed", message: "检查完成" } } }, true);
   assert.equal(subagent.kind, "subagent");
   assert.deepEqual(subagent.subagent.agents, [{ id: "child", status: "completed", message: "检查完成" }]);
-  const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "", trace: [reasoning, terminal, subagent] }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
+  const review = { ...subagent, id: "review", subagent: { agents: [{ id: "draft", name: "海报草稿", status: "changed", message: "节点已变化" }] } };
+  const session = { id: "s", title: "创作", createdAt: "now", updatedAt: "now", messages: [{ id: "a", role: "assistant", text: "", trace: [reasoning, terminal, subagent, review] }], agentState: { phase: "intake", approvedNodeIds: [], referenceNodeIds: [], pendingTaskIds: [], completedTaskIds: [] }, protocolMessages: [] };
   assert.deepEqual(syncCanvasAgentSessions([JSON.parse(JSON.stringify(session))], [], true)[0].messages[0].trace, session.messages[0].trace);
   session.messages[0].trace[1].terminal.output = 12;
   assert.equal(isCanvasAgentSession(session), false);

@@ -1,5 +1,5 @@
 import { httpRequest } from "./request";
-import { fetchAgentExecution, type AgentExecution } from "./agent-executions";
+import { watchAgentExecution, type AgentExecution } from "./agent-executions";
 import type { ImageTurn, StoredImage } from "./image-conversation-types";
 import { normalizeImageGenerationOptions } from "./image-generation-options";
 import { isImageOutputFormat, isImageQuality } from "./api";
@@ -28,20 +28,10 @@ export async function startStudioAgent(conversationId: string, turn: ImageTurn, 
 }
 
 export async function waitStudioAgent(id: string, signal: AbortSignal, onProgress: (run: AgentExecution<StudioAgentResult>) => void) {
-  while (true) {
-    signal.throwIfAborted();
-    const run = await fetchAgentExecution<StudioAgentResult>({ id }, signal);
-    if (!run) throw new Error("智能生成任务不存在");
-    onProgress(run);
-    if (run.status === "success" && run.result) return run.result;
-    if (!["running", "waiting"].includes(run.status)) throw new Error(run.error || "智能生成已中断，可从已保存进度继续");
-    await new Promise<void>((resolve, reject) => {
-      const abort = () => { clearTimeout(timer); reject(signal.reason || new DOMException("观察已结束", "AbortError")); };
-      const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 1000);
-      signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted) abort();
-    });
-  }
+  const run = await watchAgentExecution<StudioAgentResult>(id, signal, (next) => { if (next) onProgress(next); }, { awaitResume: true });
+  if (!run) throw new Error("智能生成任务不存在");
+  if (run.status === "success" && run.result) return run.result;
+  throw new Error(run.error || "智能生成已中断，可从已保存进度继续");
 }
 
 export function studioAgentTurnResult(turn: ImageTurn, result: StudioAgentResult, images: StoredImage[]): ImageTurn {

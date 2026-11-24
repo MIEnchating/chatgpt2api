@@ -405,7 +405,7 @@ http://127.0.0.1:8090
 ```bash
 cd web
 bun install
-VITE_BACKEND_URL=http://127.0.0.1:8090 bun run dev -- --host 0.0.0.0 --port 8002
+VITE_BACKEND_URL=http://127.0.0.1:8090 bun run dev
 ```
 
 前端开发服务器必须使用 Vite `dev` 模式，访问：
@@ -413,6 +413,8 @@ VITE_BACKEND_URL=http://127.0.0.1:8090 bun run dev -- --host 0.0.0.0 --port 8002
 ```text
 http://127.0.0.1:8002
 ```
+
+远程开发时，将本机 `8002` 通过 SSH 转发到开发机的 `127.0.0.1:8002`。
 
 前端通过同源代理访问后端，代理目标由 `VITE_BACKEND_URL` 设置。开发环境统一使用：
 

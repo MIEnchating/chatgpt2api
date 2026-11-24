@@ -3,29 +3,38 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
-let calls = [], handler;
+let calls = [], handler, streamHandler;
 const loaded = new Map();
 function loadModule(name) {
  if (loaded.has(name)) return loaded.get(name);
  const module = { exports: {} };
  const require = createRequire(import.meta.url);
- const source = ts.transpileModule(readFileSync(new URL(["agent-executions", "agent-execution-monitor"].includes(name) ? `../src/lib/${name}.ts` : `../src/services/api/${name}.ts`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+ const source = ts.transpileModule(readFileSync(new URL(["agent-executions", "agent-execution-monitor", "generation-task-contract"].includes(name) ? `../src/lib/${name}.ts` : `../src/services/api/${name}.ts`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
  new Function("require", "module", "exports", source)((id) => {
-  if (id === "@/lib/request") return { httpRequest: async (path, options = {}) => { calls.push({ path, options }); return handler(path, options); } };
+  if (id === "@/lib/request") return {
+   httpRequest: async (path, options = {}) => { calls.push({ path, options }); return handler(path, options); },
+   httpRequestEventStream: async (path, options) => {
+    calls.push({ path, options, stream: true });
+    if (streamHandler) return streamHandler(path, options);
+    const { run } = await handler(path, options);
+    options.onData(JSON.stringify({ type: "snapshot", run }));
+   },
+  };
   if (id === "@/lib/agent-executions" || id === "./agent-executions") return loadModule("agent-executions");
+  if (id === "./generation-task-contract") return loadModule("generation-task-contract");
   return require(id);
  }, module, module.exports);
  loaded.set(name, module.exports);
  return module.exports;
 }
-const { observeAgentExecution, resumeAgentExecution } = loadModule("agent-executions");
+const { observeAgentExecution, resumeAgentExecution, watchAgentExecution } = loadModule("agent-executions");
 const { draftWorkflowWithAgent } = loadModule("workflows");
 
 test("a detached observer does not cancel or resubmit the server-side execution", async () => {
  calls=[];handler=()=>({run:{id:"saved",domain:"workflow",status:"running",events:[]}});
  const controller=new AbortController();
  await assert.rejects(observeAgentExecution("saved",controller.signal,()=>controller.abort()),{name:"AbortError"});
- assert.equal(calls.length,1);assert.equal(calls[0].options.method,undefined);
+ assert.equal(calls.length,1);assert.equal(calls[0].stream,true);assert.equal(calls[0].options.method,undefined);
 });
 test("failed executions need explicit resume and keep the original execution ID",async()=>{
  calls=[];handler=()=>({run:{id:"saved",domain:"video_contract",status:"error",error:"上游 HTTP 400",events:[]}});
@@ -53,6 +62,43 @@ test("an incomplete success response cannot be presented as a completed draft",a
 const { AgentExecutionMonitor } = loadModule("agent-execution-monitor");
 const execution = (status = "running") => ({ id: "saved", domain: "workflow", status, events: [], updatedAt: "2026-11-09T10:00:00Z" });
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
+
+test("Agent observation reconnects with saved progress and ignores a repeated snapshot", async () => {
+ calls = [];
+ const result = { draft: true };
+ const seen = [];
+ const current = execution();
+ streamHandler = (path, { onData }) => {
+  assert.equal(path, "/api/agent-runs?id=saved");
+  onData(JSON.stringify({ type: "snapshot", run: current }));
+  if (calls.length === 1) throw new Error("socket disconnected");
+  onData(JSON.stringify({ type: "snapshot", run: { ...execution("success"), result } }));
+ };
+ try {
+  assert.deepEqual(await observeAgentExecution("saved", new AbortController().signal, (run) => seen.push(run.status)), result);
+  assert.deepEqual(seen, ["running", "success"]);
+  assert.equal(calls.length, 2);
+  assert(calls.every((call) => call.stream));
+ } finally { streamHandler = undefined; }
+});
+
+test("studio observation receives the pending question and then the completed run on one connection", async () => {
+ calls = [];
+ const seen = [];
+ const result = { text: "done" };
+ streamHandler = (path, { onData }) => {
+  assert.equal(path, "/api/agent-runs?id=saved&await_resume=1");
+  for (const status of ["running", "waiting", "running", "success"]) {
+   onData(JSON.stringify({ type: "snapshot", run: { ...execution(status), domain: "studio", result: status === "success" ? result : undefined } }));
+  }
+ };
+ try {
+  const run = await watchAgentExecution("saved", new AbortController().signal, (next) => seen.push(next.status), { awaitResume: true });
+  assert.deepEqual(run.result, result);
+  assert.deepEqual(seen, ["running", "waiting", "running", "success"]);
+  assert.equal(calls.length, 1);
+ } finally { streamHandler = undefined; }
+});
 
 test("an obsolete success response cannot reach a detached observer", async () => {
  calls = []; const response = deferred(); const controller = new AbortController(); let progress = 0;
@@ -99,6 +145,7 @@ test("stop interrupts observation, reads server state and rejects late results",
  const response = deferred(), stopped = deferred(); let stops = 0, progress, results = 0, resumes = 0;
  const monitor = new AgentExecutionMonitor("workflow", {
   fetch: async query => execution("id" in query ? "cancelled" : "running"),
+  watch: async () => execution(),
   resume: async () => { resumes++; return execution(); },
   observe: async (id, signal, notify) => { progress = notify; return response.promise; },
   stop: async () => { stops++; await stopped.promise; },
@@ -126,11 +173,20 @@ test("workflow creation publishes the submitted ID for live progress before the 
  assert.deepEqual(await draftWorkflowWithAgent({ prompt: "create", scope: "private" }, { signal: new AbortController().signal, onStarted: id => { assert.equal(calls.length, 0); startedID = id; } }), result);
  assert.ok(startedID); assert.equal(calls.length, 1);
 });
-test("live progress queries the submitted ID while the run is being persisted", async () => {
- const queries = [];
- const monitor = new AgentExecutionMonitor({ id: "submitted" }, { fetch: async query => { queries.push(query); return null; } });
+test("live progress subscribes once by submitted ID before the run is persisted", async () => {
+ const subscriptions = [];
+ const terminal = { ...execution("success"), id: "submitted" };
+ const monitor = new AgentExecutionMonitor({ id: "submitted" }, { watch: async (id, _signal, progress, options) => {
+  subscriptions.push({ id, options });
+  progress(null);
+  assert.equal(monitor.getSnapshot().run, null);
+  progress(terminal);
+  return terminal;
+ } });
  try {
-  await monitor.refresh(); assert.deepEqual(queries, [{ id: "submitted" }]); assert.equal(monitor.getSnapshot().run, null);
+  await monitor.refresh();
+  assert.deepEqual(subscriptions, [{ id: "submitted", options: { awaitStart: true } }]);
+  assert.equal(monitor.getSnapshot().run, terminal);
  } finally { monitor.dispose(); }
 });
 test("a superseded progress response cannot overwrite a newer snapshot", async () => {

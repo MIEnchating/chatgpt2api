@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canvasAgentComposerAction, canvasAgentCanResume, canvasAgentNextQueuedMessage, canvasAgentConsumeQueuedMessage } from "../src/app/canvas/agent/canvas-agent-message-queue.ts";
 import { isCanvasAgentSession, syncCanvasAgentSessions } from "../src/app/canvas/agent/canvas-agent-sessions.ts";
+import { canvasAgentMessageRunStatus } from "../src/app/canvas/agent/canvas-agent-run-state.ts";
 const queued = id => ({ id, text: `message ${id}`, references: [], createdAt: "now" });
 const session = status => ({ id:"s",title:"test",createdAt:"now",updatedAt:"now",messages:[{id:"a",role:"assistant",text:"reply",status}],protocolMessages:[],agentState:{phase:"intake",approvedNodeIds:[],referenceNodeIds:[],pendingTaskIds:[],completedTaskIds:[]},messageQueue:{paused:false,messages:[queued("1"),queued("2")]}});
 
@@ -48,4 +49,17 @@ test("queued turns wait for the current server execution to succeed", () => {
   }
   assert.equal(canvasAgentNextQueuedMessage(session("waiting"), { sessionId: "s", assistantId: "a", status: "success" }).id, "1");
   assert.equal(canvasAgentNextQueuedMessage(session("success"), { sessionId: "other", assistantId: "a", status: "error" }).id, "1");
+});
+
+test("a Codex canvas tool result does not settle the enclosing conversation turn", () => {
+  const tool = { sessionId: "s", assistantId: "a", engine: "codex-tools", status: "success" };
+  const waiting = session("waiting");
+  assert.equal(canvasAgentMessageRunStatus(waiting.messages[0], tool), "waiting");
+  assert.equal(canvasAgentCanResume(waiting, tool), true);
+  assert.equal(canvasAgentNextQueuedMessage(waiting, tool), undefined);
+  const done = session("success");
+  const failedTool = { ...tool, status: "error" };
+  assert.equal(canvasAgentMessageRunStatus(done.messages[0], failedTool), "success");
+  assert.equal(canvasAgentNextQueuedMessage(done, failedTool).id, "1");
+  assert.equal(canvasAgentMessageRunStatus(session("thinking").messages[0], tool), "running");
 });
